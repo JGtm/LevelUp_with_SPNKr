@@ -1266,7 +1266,7 @@ def main() -> None:
             f"Par **{bucket_label}** : on regroupe les parties par {bucket_label} et on compte le nombre de "
             "victoires/défaites (et autres statuts) pour suivre l'évolution."
         )
-        st.caption("Basé sur Players[].Outcome (2=win, 3=loss, 1=tie, 4=no finish).")
+        st.caption("Basé sur Players[].Outcome (2=victoire, 3=défaite, 1=égalité, 4=non terminé).")
         st.plotly_chart(fig_out, width="stretch")
 
     with tab_kda:
