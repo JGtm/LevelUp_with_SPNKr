@@ -413,6 +413,19 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         )
     )
 
+    # Sur un axe datetime, Plotly peut rendre les barres quasi invisibles si les parties sont
+    # très rapprochées: on force une largeur raisonnable (en millisecondes).
+    x_times = pd.to_datetime(df["start_time"], errors="coerce")
+    width_ms = 60 * 60 * 1000  # fallback: 1h
+    if len(x_times) >= 2:
+        deltas_ms = x_times.sort_values().diff().dt.total_seconds().mul(1000).dropna()
+        if not deltas_ms.empty:
+            med = float(deltas_ms.median())
+            if med == med and med > 0:
+                width_ms = med * 0.70
+    width_ms = max(width_ms, 8 * 60 * 1000)  # min: 8 minutes
+    width_ms = min(width_ms, 18 * 60 * 60 * 1000)  # max: 18 heures
+
     fig.add_trace(
         go.Bar(
             x=df["start_time"],
@@ -420,6 +433,7 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             name="Frags",
             marker_color=HALO_COLORS["cyan"],
             opacity=0.85,
+            width=width_ms,
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -433,6 +447,7 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             name="Morts",
             marker_color=HALO_COLORS["red"],
             opacity=0.65,
+            width=width_ms,
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -458,6 +473,8 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         margin=dict(l=40, r=20, t=80, b=40),
         hovermode="x unified",
         barmode="group",
+        bargap=0.15,
+        bargroupgap=0.06,
     )
 
     fig.update_yaxes(title_text="Frags / Morts", rangemode="tozero", secondary_y=False)
