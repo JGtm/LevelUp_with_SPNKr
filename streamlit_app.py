@@ -32,6 +32,14 @@ def _default_db_path() -> str:
 DEFAULT_DB = _default_db_path()
 DEFAULT_WAYPOINT_PLAYER = "JGtm"
 
+
+def _default_workshop_exe_path() -> str:
+    # Chemin par défaut fourni par l'utilisateur, avec adaptation via variables d'env.
+    pf86 = os.environ.get("ProgramFiles(x86)")
+    if not pf86:
+        pf86 = r"C:\Program Files (x86)"
+    return os.path.join(pf86, "Den.Dev", "OpenSpartan Workshop", "OpenSpartan.Workshop.exe")
+
 # Alias (local) pour un affichage plus lisible dans la GUI.
 XUID_ALIASES: dict[str, str] = {
     "2533274823110022": "JGtm",
@@ -584,6 +592,28 @@ def main() -> None:
             value=DEFAULT_WAYPOINT_PLAYER,
             help="Ex: JGtm (sert à construire l'URL de match).",
         )
+
+        st.divider()
+        st.header("OpenSpartan")
+        workshop_exe = st.text_input(
+            "Chemin de OpenSpartan.Workshop.exe",
+            value=_default_workshop_exe_path(),
+            help="Bouton pratique pour lancer l'app OpenSpartan Workshop.",
+        )
+        if st.button("Lancer OpenSpartan Workshop", use_container_width=True):
+            if not os.path.exists(workshop_exe):
+                st.error("Executable introuvable à ce chemin.")
+            else:
+                try:
+                    if hasattr(os, "startfile"):
+                        os.startfile(workshop_exe)  # type: ignore[attr-defined]
+                    else:
+                        import subprocess
+
+                        subprocess.Popen([workshop_exe], close_fds=True)
+                    st.success("OpenSpartan Workshop lancé.")
+                except Exception as e:
+                    st.error(f"Impossible de lancer OpenSpartan Workshop: {e}")
 
         if not db_path.strip():
             st.error(
