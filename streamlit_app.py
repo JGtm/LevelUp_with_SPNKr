@@ -434,6 +434,8 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             marker_color=HALO_COLORS["cyan"],
             opacity=0.85,
             width=width_ms,
+            alignmentgroup="kda_main",
+            offsetgroup="kills",
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -448,6 +450,8 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             marker_color=HALO_COLORS["red"],
             opacity=0.65,
             width=width_ms,
+            alignmentgroup="kda_main",
+            offsetgroup="deaths",
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -476,6 +480,10 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         bargap=0.15,
         bargroupgap=0.06,
     )
+
+    # Plotly peut rendre les barres quasi invisibles sur un axe datetime selon la densité des points.
+    # Forcer un axe "category" garantit des barres visibles (espacement uniforme par match).
+    fig.update_xaxes(type="category")
 
     fig.update_yaxes(title_text="Frags / Morts", rangemode="tozero", secondary_y=False)
     fig.update_yaxes(title_text="Ratio", secondary_y=True)
