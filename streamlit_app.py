@@ -197,7 +197,7 @@ def compute_sessions(df: pd.DataFrame, gap_minutes: int = 35) -> pd.DataFrame:
         start = row["min"]
         end = row["max"]
         cnt = int(row["count"])
-        labels[sid] = f"{start:%Y-%m-%d} {start:%H:%M}–{end:%H:%M} ({cnt})"
+        labels[sid] = f"{start:%d/%m/%Y} {start:%H:%M}–{end:%H:%M} ({cnt})"
     d["session_label"] = d["session_id"].map(labels)
     return d
 
@@ -278,6 +278,52 @@ def plot_map_comparison(df_breakdown: pd.DataFrame, metric: str, title: str) -> 
         title=title,
         margin=dict(l=40, r=20, t=60, b=40),
     )
+    return _apply_halo_plot_style(fig, title=title, height=520)
+
+
+def plot_map_ratio_with_winloss(df_breakdown: pd.DataFrame, title: str) -> go.Figure:
+    d = df_breakdown.dropna(subset=["win_rate", "loss_rate"]).copy()
+    if d.empty:
+        fig = go.Figure()
+        fig.update_layout(height=360, margin=dict(l=40, r=20, t=30, b=40))
+        return _apply_halo_plot_style(fig, height=360)
+
+    fig = go.Figure()
+
+    # Barres Win/Loss (en %)
+    fig.add_trace(
+        go.Bar(
+            x=d["win_rate"],
+            y=d["map_name"],
+            orientation="h",
+            name="Taux de victoire",
+            marker_color=HALO_COLORS["green"],
+            opacity=0.70,
+            hovertemplate="win=%{x:.1%}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=d["loss_rate"],
+            y=d["map_name"],
+            orientation="h",
+            name="Taux de défaite",
+            marker_color=HALO_COLORS["red"],
+            opacity=0.55,
+            hovertemplate="loss=%{x:.1%}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        height=520,
+        title=title,
+        margin=dict(l=40, r=20, t=60, b=40),
+        barmode="group",
+        bargap=0.18,
+        bargroupgap=0.06,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    fig.update_xaxes(title_text="Win / Loss", tickformat=".0%", range=[0, 1])
     return _apply_halo_plot_style(fig, title=title, height=520)
 
 
@@ -733,16 +779,27 @@ def plot_outcomes_over_time(df: pd.DataFrame) -> tuple[go.Figure, str]:
 
     tmin = pd.to_datetime(d["start_time"], errors="coerce").min()
     tmax = pd.to_datetime(d["start_time"], errors="coerce").max()
-    days = int((tmax - tmin).days) if (tmin == tmin and tmax == tmax) else 999
 
-    # Heuristique simple: si on filtre sur peu de jours, "par mois" n'a plus de sens.
+    dt_range = (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
+    days = float(dt_range.total_seconds() / 86400.0) if dt_range is not None else 999.0
+
+    # Heuristique simple: adapter le bucket selon l'intervalle sélectionné.
+    # - < 1 jour: par partie
+    # - <= 6 jours: par heure
     # - <= 10 jours: par jour
     # - <= 45 jours: par semaine
     # - sinon: par mois
-    if days <= 10:
+    if days < 1.0:
+        d = d.sort_values("start_time").reset_index(drop=True)
+        bucket = (d.index + 1)
+        bucket_label = "partie"
+    elif days <= 6.0:
+        bucket = d["start_time"].dt.floor("h")
+        bucket_label = "heure"
+    elif days <= 10.0:
         bucket = d["start_time"].dt.to_period("D").astype(str)
         bucket_label = "jour"
-    elif days <= 45:
+    elif days <= 45.0:
         bucket = d["start_time"].dt.to_period("W-MON").astype(str)
         bucket_label = "semaine"
     else:
@@ -772,6 +829,8 @@ def plot_outcomes_over_time(df: pd.DataFrame) -> tuple[go.Figure, str]:
     fig.add_bar(x=pivot.index, y=nofin, name="Non terminés", marker_color=HALO_COLORS["violet"])
     fig.update_layout(barmode="stack", height=360, margin=dict(l=40, r=20, t=30, b=40))
     fig.update_yaxes(title_text="Nombre")
+    if bucket_label == "partie" and len(pivot.index) > 30:
+        fig.update_xaxes(showticklabels=False, title_text="")
     return _apply_halo_plot_style(fig, height=360), bucket_label
 
 
@@ -933,22 +992,29 @@ def main() -> None:
         """
         <style>
                     :root {
-                        --bg: #0b1220;
-                        --border: rgba(255,255,255,0.10);
+                        /* Palette inspirée Halo Waypoint (export CSS) */
+                        --bg: #141414;
+                        --panel: #20272c;
+                        --panel-2: #242c2f;
+                        --border: rgba(255,255,255,0.14);
                         --text: rgba(255,255,255,0.92);
-                        --muted: rgba(255,255,255,0.70);
+                        --muted: rgba(180,180,180,0.95);
+                        --accent: #70cddf;
                     }
 
                     .block-container {padding-top: 1.2rem; padding-bottom: 2.2rem; max-width: 1400px;}
                     section.main {
                         background:
-                            radial-gradient(1200px 600px at 20% 0%, rgba(53,208,255,0.26), transparent 60%),
-                            radial-gradient(900px 500px at 80% 15%, rgba(142,108,255,0.22), transparent 60%),
-                            linear-gradient(180deg, #0b1220 0%, #070b16 100%);
+                            /* signature Waypoint: glow radial bleu-gris côté bas/droite */
+                            radial-gradient(116.5% 168.84% at 115.37% 167.93%, rgba(107,155,183,0.30) 0%, rgba(0,52,82,0) 55%),
+                            /* léger accent cyan côté haut/gauche */
+                            radial-gradient(900px 520px at 10% -12%, rgba(112,205,223,0.18) 0%, transparent 55%),
+                            linear-gradient(180deg, #141414 0%, #101214 55%, #0b0c0e 100%);
                         color: var(--text);
+                        position: relative;
                     }
 
-                    /* Overlay style "Halo" : grille + scanlines légères */
+                    /* Overlay style "Halo Waypoint" (inspiré): grille fine + scanlines + vignette + grain */
                     section.main:before {
                         content: "";
                         position: fixed;
@@ -957,30 +1023,57 @@ def main() -> None:
                         background:
                             repeating-linear-gradient(
                                 0deg,
-                                rgba(255,255,255,0.035) 0px,
-                                rgba(255,255,255,0.035) 1px,
+                                rgba(255,255,255,0.030) 0px,
+                                rgba(255,255,255,0.030) 1px,
                                 transparent 1px,
-                                transparent 28px
+                                transparent 30px
                             ),
                             repeating-linear-gradient(
                                 90deg,
+                                rgba(255,255,255,0.018) 0px,
+                                rgba(255,255,255,0.018) 1px,
+                                transparent 1px,
+                                transparent 30px
+                            );
+                        opacity: 0.28;
+                        mix-blend-mode: overlay;
+                    }
+
+                    section.main:after {
+                        content: "";
+                        position: fixed;
+                        inset: 0;
+                        pointer-events: none;
+                        background:
+                            /* vignette */
+                            radial-gradient(1200px 820px at 50% 12%, rgba(0,0,0,0.00) 45%, rgba(0,0,0,0.62) 100%),
+                            /* scanlines */
+                            repeating-linear-gradient(
+                                180deg,
                                 rgba(255,255,255,0.020) 0px,
                                 rgba(255,255,255,0.020) 1px,
                                 transparent 1px,
-                                transparent 28px
-                            );
-                        opacity: 0.35;
+                                transparent 6px
+                            ),
+                            /* grain (points) */
+                            radial-gradient(rgba(255,255,255,0.050) 1px, transparent 1.3px);
+                        background-size: auto, auto, 22px 22px;
+                        opacity: 0.16;
                         mix-blend-mode: overlay;
                     }
 
                     [data-testid="stSidebar"] {
-                        border-right: 1px solid rgba(255,255,255,0.08);
-                        background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+                        border-right: 1px solid rgba(255,255,255,0.10);
+                        background:
+                            radial-gradient(800px 380px at 0% 0%, rgba(112,205,223,0.10) 0%, transparent 55%),
+                            linear-gradient(180deg, rgba(36,44,47,0.90), rgba(32,39,44,0.75));
                     }
 
                     .hero {
                         border: 1px solid var(--border);
-                        background: linear-gradient(135deg, rgba(53,208,255,0.20), rgba(142,108,255,0.14));
+                        background:
+                            radial-gradient(900px 520px at 15% 0%, rgba(112,205,223,0.18) 0%, transparent 58%),
+                            linear-gradient(135deg, rgba(36,44,47,0.85), rgba(20,20,20,0.90));
                         box-shadow: 0 12px 30px rgba(0,0,0,0.28);
                         border-radius: 18px;
                         padding: 18px 18px;
@@ -991,7 +1084,7 @@ def main() -> None:
                     .chips {display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;}
                     .chip {
                         border: 1px solid rgba(255,255,255,0.14);
-                        background: rgba(0,0,0,0.14);
+                        background: rgba(0,0,0,0.20);
                         color: rgba(255,255,255,0.86);
                         padding: 6px 10px;
                         border-radius: 999px;
@@ -1000,7 +1093,7 @@ def main() -> None:
 
                     .stButton>button {border-radius: 12px; border: 1px solid rgba(255,255,255,0.14);}
                     .stButton>button[kind="primary"] {
-                        background: linear-gradient(90deg, rgba(53,208,255,0.95), rgba(142,108,255,0.95));
+                        background: linear-gradient(90deg, rgba(112,205,223,0.98), rgba(46,195,229,0.98));
                         border: 0;
                     }
 
@@ -1012,10 +1105,10 @@ def main() -> None:
                         padding: 10px 12px;
                         color: rgba(255,255,255,0.86);
                     }
-                    .stTabs [aria-selected="true"] {background: rgba(53,208,255,0.14); border-color: rgba(53,208,255,0.32);}
+                    .stTabs [aria-selected="true"] {background: rgba(112,205,223,0.14); border-color: rgba(112,205,223,0.32);}
 
                     div[data-testid="stMetric"] {
-                        background: rgba(255,255,255,0.05);
+                        background: rgba(0,0,0,0.28);
                         border: 1px solid rgba(255,255,255,0.10);
                         border-radius: 14px;
                         padding: 14px 14px;
@@ -1103,12 +1196,27 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Filtres")
-        dmin, dmax = _date_range(df)
+
+        with st.expander("Paramètres avancés", expanded=False):
+            include_firefight = st.toggle(
+                "Inclure Firefight (PvE)",
+                value=False,
+                help="Par défaut, Firefight est exclu des stats.",
+            )
+
+    # Firefight est exclu par défaut (toggle caché dans Paramètres avancés).
+    base_for_filters = df.copy()
+    if (not include_firefight) and ("is_firefight" in base_for_filters.columns):
+        base_for_filters = base_for_filters.loc[~base_for_filters["is_firefight"]].copy()
+
+    with st.sidebar:
+        dmin, dmax = _date_range(base_for_filters)
         filter_mode = st.radio("Sélection", options=["Période", "Sessions"], horizontal=True)
 
         # Période en haut, sous forme de deux calendriers.
         start_d, end_d = dmin, dmax
         gap_minutes = 35
+        picked_session_labels: Optional[list[str]] = None
         if filter_mode == "Période":
             cols = st.columns(2)
             with cols[0]:
@@ -1127,7 +1235,67 @@ def main() -> None:
                 help="Au-delà de cet écart, on considère que c'est une nouvelle session.",
             )
 
-        playlist_opts = _build_option_map(df["playlist_name"], df["playlist_id"])
+            # Session dropdown juste sous le radio.
+            base_s_ui = compute_sessions(base_for_filters, gap_minutes=gap_minutes)
+            session_labels_ui = (
+                base_s_ui[["session_id", "session_label"]]
+                .drop_duplicates()
+                .sort_values("session_id", ascending=False)
+            )
+            options_ui = session_labels_ui["session_label"].tolist()
+
+            compare_multi = st.toggle(
+                "Comparer plusieurs sessions",
+                value=False,
+                help="Active pour sélectionner plusieurs sessions à la fois.",
+            )
+
+            def _set_session_selection(label: str) -> None:
+                st.session_state.picked_session_label = label
+                # En mode multi, on force aussi la sélection pour que les boutons restent utiles.
+                if label == "(toutes)":
+                    st.session_state.picked_sessions = []
+                elif label in options_ui:
+                    st.session_state.picked_sessions = [label]
+
+            # Raccourcis UX: dernière session / session précédente.
+            if "picked_session_label" not in st.session_state:
+                _set_session_selection(options_ui[0] if options_ui else "(toutes)")
+            if "picked_sessions" not in st.session_state:
+                st.session_state.picked_sessions = options_ui[:1] if options_ui else []
+
+            cols = st.columns(2)
+            if cols[0].button("Dernière session", use_container_width=True):
+                _set_session_selection(options_ui[0] if options_ui else "(toutes)")
+            if cols[1].button("Session précédente", use_container_width=True):
+                current = st.session_state.get("picked_session_label", "(toutes)")
+                if not options_ui:
+                    _set_session_selection("(toutes)")
+                elif current == "(toutes)" or current not in options_ui:
+                    # Si rien n'est sélectionné, on part de la plus récente.
+                    _set_session_selection(options_ui[0])
+                else:
+                    idx = options_ui.index(current)
+                    next_idx = min(idx + 1, len(options_ui) - 1)  # plus ancien à chaque clic
+                    _set_session_selection(options_ui[next_idx])
+
+            if compare_multi:
+                picked = st.multiselect(
+                    "Sessions",
+                    options=options_ui,
+                    key="picked_sessions",
+                    help="Tu peux en sélectionner plusieurs pour comparer.",
+                )
+                picked_session_labels = picked if picked else None
+            else:
+                picked_one = st.selectbox(
+                    "Session",
+                    options=["(toutes)"] + options_ui,
+                    key="picked_session_label",
+                )
+                picked_session_labels = None if picked_one == "(toutes)" else [picked_one]
+
+        playlist_opts = _build_option_map(base_for_filters["playlist_name"], base_for_filters["playlist_id"])
         playlist_label = st.selectbox(
             "Playlist",
             options=["(toutes)"] + list(playlist_opts.keys()),
@@ -1137,7 +1305,7 @@ def main() -> None:
         if playlist_label != "(toutes)":
             playlist_id = playlist_opts[playlist_label]
 
-        map_opts = _build_option_map(df["map_name"], df["map_id"])
+        map_opts = _build_option_map(base_for_filters["map_name"], base_for_filters["map_id"])
         map_label = st.selectbox(
             "Carte",
             options=["(toutes)"] + list(map_opts.keys()),
@@ -1155,80 +1323,39 @@ def main() -> None:
             help="Exclut par défaut tous les autres modes.",
         )
 
-        include_firefight = st.toggle(
-            "Inclure Firefight (PvE)",
-            value=False,
-            help="Par défaut, les parties Firefight sont exclues des stats.",
-        )
-
         # (la sélection période/sessions est gérée plus haut)
 
-    # Apply filters (map/playlist puis période ou sessions)
-    base = df.copy()
-    if not include_firefight and "is_firefight" in base.columns:
-        base = base.loc[~base["is_firefight"]].copy()
+    # Apply filters (Firefight déjà exclu) + sélection période/sessions
+    base = base_for_filters.copy()
+
+    if filter_mode == "Sessions":
+        base_s = compute_sessions(base, gap_minutes=gap_minutes)
+        dff = (
+            base_s.loc[base_s["session_label"].isin(picked_session_labels)].copy()
+            if picked_session_labels
+            else base_s.copy()
+        )
+    else:
+        dff = base.copy()
 
     if restrict_playlists:
-        pl = base["playlist_name"].fillna("").astype(str)
+        pl = dff["playlist_name"].fillna("").astype(str)
         allowed_mask = pl.apply(_is_allowed_playlist_name)
         if allowed_mask.any():
-            base = base.loc[allowed_mask].copy()
+            dff = dff.loc[allowed_mask].copy()
         else:
             st.sidebar.warning(
                 "Aucune playlist n'a matché Quick Play / Ranked Slayer / Ranked Arena. "
                 "Désactive ce filtre si tes libellés sont différents."
             )
     if playlist_id is not None:
-        base = base.loc[base["playlist_id"].fillna("") == playlist_id]
+        dff = dff.loc[dff["playlist_id"].fillna("") == playlist_id]
     if map_id is not None:
-        base = base.loc[base["map_id"].fillna("") == map_id]
+        dff = dff.loc[dff["map_id"].fillna("") == map_id]
 
-    if filter_mode == "Sessions":
-        base_s = compute_sessions(base, gap_minutes=gap_minutes)
-        session_labels = (
-            base_s[["session_id", "session_label"]]
-            .drop_duplicates()
-            .sort_values("session_id", ascending=False)
-        )
-        options = session_labels["session_label"].tolist()
-
-        compare_multi = st.sidebar.toggle(
-            "Comparer plusieurs sessions",
-            value=False,
-            help="Active pour sélectionner plusieurs sessions à la fois.",
-        )
-
-        # Raccourcis UX: dernière session / session précédente.
-        if "picked_session_label" not in st.session_state:
-            st.session_state.picked_session_label = options[0] if options else "(toutes)"
-
-        cols = st.sidebar.columns(2)
-        if cols[0].button("Dernière session", use_container_width=True):
-            st.session_state.picked_session_label = options[0] if options else "(toutes)"
-        if cols[1].button("Session précédente", use_container_width=True):
-            st.session_state.picked_session_label = options[1] if len(options) >= 2 else (options[0] if options else "(toutes)")
-
-        if compare_multi:
-            if "picked_sessions" not in st.session_state:
-                st.session_state.picked_sessions = options[:1] if options else []
-            picked = st.sidebar.multiselect(
-                "Sessions",
-                options=options,
-                key="picked_sessions",
-                help="Tu peux en sélectionner plusieurs pour comparer.",
-            )
-            dff = base_s.loc[base_s["session_label"].isin(picked)].copy() if picked else base_s.copy()
-        else:
-            picked_one = st.sidebar.selectbox(
-                "Session",
-                options=["(toutes)"] + options,
-                index=1 if options else 0,
-                key="picked_session_label",
-            )
-            dff = base_s.copy() if picked_one == "(toutes)" else base_s.loc[base_s["session_label"] == picked_one].copy()
-    else:
-        mask = (base["date"] >= start_d) & (base["date"] <= end_d)
-        dff = base.loc[mask].copy()
+    if filter_mode == "Période":
+        mask = (dff["date"] >= start_d) & (dff["date"] <= end_d)
+        dff = dff.loc[mask].copy()
 
     # KPIs demandés: accuracy moyenne, ratio wins/losses, ratio global
     rates = compute_outcome_rates(dff)
@@ -1287,7 +1414,7 @@ def main() -> None:
             "FDA (répartition)",
             "Avec un joueur",
             "Avec mes amis",
-            "Comparaison maps",
+            "Ratio par cartes",
             "Historique des parties",
         ]
     )
@@ -1697,12 +1824,15 @@ def main() -> None:
                 ).head(20)
                 view = view.iloc[::-1]
 
-                title = f"Δ {label} par map — {scope} vs {baseline_scope_label} (min {min_matches} matchs)"
+                title = f"Δ {label} par carte — {scope} vs {baseline_scope_label} (min {min_matches} matchs)"
                 fig = plot_map_comparison(view.rename(columns={f"{key}_delta": key}), key, title=title)
             else:
                 view = breakdown.head(20).iloc[::-1]  # top 20, affichage vertical lisible
-                title = f"{label} par map — {scope} (min {min_matches} matchs)"
-                fig = plot_map_comparison(view, key, title=title)
+                title = f"{label} par carte — {scope} (min {min_matches} matchs)"
+                if key == "ratio_global":
+                    fig = plot_map_ratio_with_winloss(view, title=title)
+                else:
+                    fig = plot_map_comparison(view, key, title=title)
 
             # Ajuste l'affichage des pourcentages.
             if key in ("win_rate",):
