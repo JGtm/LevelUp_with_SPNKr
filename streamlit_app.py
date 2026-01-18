@@ -111,13 +111,20 @@ def format_selected_matches_summary(n: int, rates: dict) -> str:
     # Mise en forme plus lisible pour l'UI.
     if n <= 0:
         return "Aucun match sélectionné"
+
+    def plural(n_: int, one: str, many: str) -> str:
+        return one if int(n_) == 1 else many
+
     wins = int(rates.get("wins", 0))
     losses = int(rates.get("losses", 0))
     ties = int(rates.get("ties", 0))
     nofinish = int(rates.get("nofinish", 0))
     return (
-        f"Matchs sélectionnés: {n} | "
-        f"Victoires: {wins} | Défaites: {losses} | Égalités: {ties} | Abandons: {nofinish}"
+        f"{plural(n, 'Partie', 'Parties')} sélectionnée{'' if n == 1 else 's'}: {n} | "
+        f"{plural(wins, 'Victoire', 'Victoires')}: {wins} | "
+        f"{plural(losses, 'Défaite', 'Défaites')}: {losses} | "
+        f"{plural(ties, 'Égalité', 'Égalités')}: {ties} | "
+        f"{plural(nofinish, 'Non terminé', 'Non terminés')}: {nofinish}"
     )
 
 
@@ -254,7 +261,7 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
     )
 
     fig.add_trace(
-        go.Scatter(
+            go.Scatter(
             x=d["start_time"],
             y=d["accuracy"],
             mode="lines+markers",
@@ -558,12 +565,12 @@ def plot_outcomes_mom(df: pd.DataFrame) -> go.Figure:
     nofin = col(4)
 
     fig = go.Figure()
-    fig.add_bar(x=pivot.index, y=wins, name="Wins", marker_color="#3A7D44")
-    fig.add_bar(x=pivot.index, y=losses, name="Losses", marker_color="#D1495B")
-    fig.add_bar(x=pivot.index, y=ties, name="Ties", marker_color="#2E86AB")
-    fig.add_bar(x=pivot.index, y=nofin, name="NoFinishes", marker_color="#8E8E8E")
+    fig.add_bar(x=pivot.index, y=wins, name="Victoires", marker_color="#3A7D44")
+    fig.add_bar(x=pivot.index, y=losses, name="Défaites", marker_color="#D1495B")
+    fig.add_bar(x=pivot.index, y=ties, name="Égalités", marker_color="#2E86AB")
+    fig.add_bar(x=pivot.index, y=nofin, name="Non terminés", marker_color="#8E8E8E")
     fig.update_layout(template="plotly_white", barmode="stack", height=360, margin=dict(l=40, r=20, t=30, b=40))
-    fig.update_yaxes(title_text="Matches")
+    fig.update_yaxes(title_text="Nombre")
     return fig
 
 
@@ -575,13 +582,13 @@ def plot_kda_distribution(df: pd.DataFrame) -> go.Figure:
                 x=d["kda"],
                 nbinsx=40,
                 marker_color="#2E86AB",
-                hovertemplate="KDA=%{x:.2f}<br>count=%{y}<extra></extra>",
+                hovertemplate="FDA=%{x:.2f}<br>nombre=%{y}<extra></extra>",
             )
         ]
     )
     fig.update_layout(template="plotly_white", height=360, margin=dict(l=40, r=20, t=30, b=40))
-    fig.update_xaxes(title_text="KDA")
-    fig.update_yaxes(title_text="Count")
+    fig.update_xaxes(title_text="FDA")
+    fig.update_yaxes(title_text="Nombre")
     return fig
 
 
@@ -751,8 +758,26 @@ def main() -> None:
         dmin, dmax = _date_range(df)
         filter_mode = st.radio("Sélection", options=["Période", "Sessions"], horizontal=True)
 
+        # Période en haut, sous forme de deux calendriers.
         start_d, end_d = dmin, dmax
         gap_minutes = 35
+        if filter_mode == "Période":
+            cols = st.columns(2)
+            with cols[0]:
+                start_d = st.date_input("Début", value=dmin, min_value=dmin, max_value=dmax)
+            with cols[1]:
+                end_d = st.date_input("Fin", value=dmax, min_value=dmin, max_value=dmax)
+            if start_d > end_d:
+                st.warning("La date de début est après la date de fin.")
+        else:
+            gap_minutes = st.slider(
+                "Écart max entre parties (minutes)",
+                min_value=15,
+                max_value=90,
+                value=35,
+                step=5,
+                help="Au-delà de cet écart, on considère que c'est une nouvelle session.",
+            )
 
         playlist_opts = _build_option_map(df["playlist_name"], df["playlist_id"])
         playlist_label = st.selectbox(
@@ -766,7 +791,7 @@ def main() -> None:
 
         map_opts = _build_option_map(df["map_name"], df["map_id"])
         map_label = st.selectbox(
-            "Map",
+            "Carte",
             options=["(toutes)"] + list(map_opts.keys()),
             index=0,
         )
@@ -788,22 +813,7 @@ def main() -> None:
             help="Par défaut, les parties Firefight sont exclues des stats.",
         )
 
-        if filter_mode == "Période":
-            start_d, end_d = st.date_input(
-                "Période",
-                value=(dmin, dmax),
-                min_value=dmin,
-                max_value=dmax,
-            )
-        else:
-            gap_minutes = st.slider(
-                "Écart max entre parties (minutes)",
-                min_value=15,
-                max_value=90,
-                value=35,
-                step=5,
-                help="Au-delà de cet écart, on considère que c'est une nouvelle session.",
-            )
+        # (la sélection période/sessions est gérée plus haut)
 
     # Apply filters (map/playlist puis période ou sessions)
     base = df.copy()
@@ -872,24 +882,34 @@ def main() -> None:
         m, sec = divmod(max(0, s_i), 60)
         return f"{m:d}:{sec:02d}"
 
+    # Moyennes par partie (en haut)
+    kpg = dff["kills"].mean() if not dff.empty else None
+    dpg = dff["deaths"].mean() if not dff.empty else None
+    apg = dff["assists"].mean() if not dff.empty else None
+
+    avg_row = st.columns(3)
+    avg_row[0].metric("Frags par partie", f"{kpg:.2f}" if kpg == kpg else "-")
+    avg_row[1].metric("Morts par partie", f"{dpg:.2f}" if dpg == dpg else "-")
+    avg_row[2].metric("Assistances par partie", f"{apg:.2f}" if apg == apg else "-")
+
     kpi = st.columns(5)
     kpi[0].metric("Précision moyenne", f"{avg_acc:.2f}%" if avg_acc is not None else "-")
-    kpi[1].metric("Win rate", f"{win_rate*100:.1f}%" if rates["total"] else "-")
-    kpi[2].metric("Loss rate", f"{loss_rate*100:.1f}%" if rates["total"] else "-")
+    kpi[1].metric("Taux de victoire", f"{win_rate*100:.1f}%" if rates["total"] else "-")
+    kpi[2].metric("Taux de défaite", f"{loss_rate*100:.1f}%" if rates["total"] else "-")
     kpi[3].metric("Ratio global", f"{global_ratio:.2f}" if global_ratio is not None else "-")
-    kpi[4].metric("Average life", _mmss(avg_life))
+    kpi[4].metric("Durée de vie moyenne", _mmss(avg_life))
 
-    st.caption(format_selected_matches_summary(len(dff), rates))
+    st.info(format_selected_matches_summary(len(dff), rates))
 
     tab_series, tab_mom, tab_kda, tab_friend, tab_friends, tab_maps, tab_table = st.tabs(
         [
             "Séries temporelles",
-            "Wins/Losses MoM",
-            "KDA (distribution)",
+            "Victoires/Défaites MoM",
+            "FDA (distribution)",
             "Avec un joueur",
             "Avec mes amis",
             "Comparaison maps",
-            "Table",
+            "Historique des parties",
         ]
     )
 
@@ -910,16 +930,20 @@ def main() -> None:
         st.plotly_chart(plot_accuracy_last_n(dff, last_n_acc), width="stretch")
 
     with tab_mom:
+        st.markdown(
+            "MoM = *Month-over-Month* : on regroupe les parties **par mois** et on compte "
+            "le nombre de victoires/défaites (et autres statuts) pour suivre l'évolution."
+        )
         st.caption("Basé sur Players[].Outcome (2=win, 3=loss, 1=tie, 4=no finish).")
         st.plotly_chart(plot_outcomes_mom(dff), width="stretch")
 
     with tab_kda:
         valid = dff.dropna(subset=["kda"]) if "kda" in dff.columns else pd.DataFrame()
         if valid.empty:
-            st.warning("KDA indisponible sur ce filtre.")
+            st.warning("FDA indisponible sur ce filtre.")
         else:
-            st.metric("KDA médiane", f"{valid['kda'].median():.2f}")
-            st.metric("KDA moyenne", f"{valid['kda'].mean():.2f}")
+            st.metric("FDA médiane", f"{valid['kda'].median():.2f}")
+            st.metric("FDA moyenne", f"{valid['kda'].mean():.2f}")
             st.plotly_chart(plot_kda_distribution(dff), width="stretch")
 
     with tab_friend:
@@ -959,9 +983,11 @@ def main() -> None:
                 dfr = dfr.sort_values("start_time", ascending=False)
 
                 # outcome counts
-                outcome_map = {2: "Win", 3: "Loss", 1: "Tie", 4: "NoFinish"}
+                outcome_map = {2: "Victoire", 3: "Défaite", 1: "Égalité", 4: "Non terminé"}
                 dfr["my_outcome_label"] = dfr["my_outcome"].map(outcome_map).fillna("?")
-                counts = dfr["my_outcome_label"].value_counts().reindex(["Win", "Loss", "Tie", "NoFinish", "?"], fill_value=0)
+                counts = dfr["my_outcome_label"].value_counts().reindex(
+                    ["Victoire", "Défaite", "Égalité", "Non terminé", "?"], fill_value=0
+                )
                 fig = go.Figure(
                     data=[go.Bar(x=counts.index, y=counts.values, marker_color="#2E86AB")]
                 )
@@ -1290,11 +1316,11 @@ def main() -> None:
             st.dataframe(
                 tbl.rename(
                     columns={
-                        "map_name": "Map",
-                        "matches": "Matchs",
-                        "accuracy_avg": "Accuracy avg (%)",
-                        "win_rate": "Win rate (%)",
-                        "loss_rate": "Loss rate (%)",
+                        "map_name": "Carte",
+                        "matches": "Parties",
+                        "accuracy_avg": "Précision moy. (%)",
+                        "win_rate": "Taux victoire (%)",
+                        "loss_rate": "Taux défaite (%)",
                         "ratio_global": "Ratio global",
                     }
                 ),
@@ -1303,7 +1329,7 @@ def main() -> None:
             )
 
     with tab_table:
-        st.subheader("Table")
+        st.subheader("Historique des parties")
         dff = dff.copy()
         dff["match_url"] = (
             "https://www.halowaypoint.com/halo-infinite/players/"
@@ -1312,6 +1338,7 @@ def main() -> None:
             + dff["match_id"].astype(str)
         )
         show_cols = [
+            "match_url",
             "start_time",
             "map_name",
             "playlist_name",
@@ -1325,7 +1352,6 @@ def main() -> None:
             "assists",
             "accuracy",
             "ratio",
-            "match_url",
         ]
         table = dff[show_cols].sort_values("start_time", ascending=False).reset_index(drop=True)
         st.dataframe(
@@ -1334,10 +1360,10 @@ def main() -> None:
             hide_index=True,
             column_config={
                 "match_url": st.column_config.LinkColumn(
-                    "Match",
+                    "Consulter sur HaloWaypoint",
                     display_text="Ouvrir",
                     help="Ouvre la page HaloWaypoint du match",
-                )
+                ),
             },
         )
 
