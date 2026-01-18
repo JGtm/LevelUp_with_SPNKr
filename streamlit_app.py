@@ -11,6 +11,47 @@ from plotly.subplots import make_subplots
 from openspartan_graph import _guess_xuid_from_db_path, load_matches, query_matches_with_friend
 
 
+HALO_COLORS = {
+    "cyan": "#35D0FF",
+    "violet": "#8E6CFF",
+    "green": "#3DFFB5",
+    "red": "#FF4D6D",
+    "amber": "#FFB703",
+    "slate": "#A8B2D1",
+}
+
+
+def _apply_halo_plot_style(fig: go.Figure, *, title: str | None = None, height: int | None = None) -> go.Figure:
+    # Thème sombre + fonds transparents pour s'intégrer au background CSS.
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="rgba(255,255,255,0.90)", size=13),
+        hoverlabel=dict(bgcolor="rgba(10,16,32,0.92)", bordercolor="rgba(255,255,255,0.18)"),
+    )
+    if title is not None:
+        fig.update_layout(title=title)
+    if height is not None:
+        fig.update_layout(height=height)
+
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="rgba(255,255,255,0.06)",
+        zeroline=False,
+        showline=True,
+        linecolor="rgba(255,255,255,0.10)",
+    )
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor="rgba(255,255,255,0.06)",
+        zeroline=False,
+        showline=True,
+        linecolor="rgba(255,255,255,0.10)",
+    )
+    return fig
+
+
 def _default_db_path() -> str:
     local = os.environ.get("LOCALAPPDATA")
     if not local:
@@ -213,8 +254,8 @@ def plot_map_comparison(df_breakdown: pd.DataFrame, metric: str, title: str) -> 
     d = df_breakdown.dropna(subset=[metric]).copy()
     if d.empty:
         fig = go.Figure()
-        fig.update_layout(template="plotly_white", height=360, margin=dict(l=40, r=20, t=30, b=40))
-        return fig
+        fig.update_layout(height=360, margin=dict(l=40, r=20, t=30, b=40))
+        return _apply_halo_plot_style(fig, height=360)
 
     fig = go.Figure(
         data=[
@@ -222,7 +263,7 @@ def plot_map_comparison(df_breakdown: pd.DataFrame, metric: str, title: str) -> 
                 x=d[metric],
                 y=d["map_name"],
                 orientation="h",
-                marker_color="#2E86AB",
+                marker_color=HALO_COLORS["cyan"],
                 customdata=list(zip(d["matches"], d.get("accuracy_avg"))),
                 hovertemplate=(
                     "%{y}<br>value=%{x}<br>matches=%{customdata[0]}"
@@ -232,12 +273,11 @@ def plot_map_comparison(df_breakdown: pd.DataFrame, metric: str, title: str) -> 
         ]
     )
     fig.update_layout(
-        template="plotly_white",
         height=520,
         title=title,
         margin=dict(l=40, r=20, t=60, b=40),
     )
-    return fig
+    return _apply_halo_plot_style(fig, title=title, height=520)
 
 
 def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
@@ -250,8 +290,8 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
             y=d["max_killing_spree"],
             mode="lines+markers",
             name="Max killing spree",
-            line=dict(width=2, color="#FFB020"),
-            marker=dict(size=6, color="#FFB020"),
+            line=dict(width=2.4, color=HALO_COLORS["amber"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["amber"]),
             hovertemplate="%{x|%Y-%m-%d %H:%M}<br>spree=%{y}<extra></extra>",
         )
     )
@@ -262,8 +302,8 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
             y=d["headshot_kills"],
             mode="lines+markers",
             name="Headshot kills",
-            line=dict(width=2, color="#E84A5F"),
-            marker=dict(size=6, color="#E84A5F"),
+            line=dict(width=2.4, color=HALO_COLORS["red"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["red"]),
             hovertemplate="%{x|%Y-%m-%d %H:%M}<br>headshots=%{y}<extra></extra>",
         )
     )
@@ -275,13 +315,13 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
             mode="lines+markers",
             name="Précision (%)",
             yaxis="y2",
-            marker=dict(size=6, color="#7B61FF"),
+            line=dict(width=2.4, color=HALO_COLORS["violet"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["violet"]),
             hovertemplate="%{x|%Y-%m-%d %H:%M}<br>précision=%{y:.2f}%<extra></extra>",
         )
     )
 
     fig.update_layout(
-        template="plotly_white",
         height=420,
         margin=dict(l=40, r=50, t=30, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -296,7 +336,7 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
             ticksuffix="%",
         ),
     )
-    return fig
+    return _apply_halo_plot_style(fig, height=420)
 
 
 def _date_range(df: pd.DataFrame) -> Tuple[date, date]:
@@ -389,8 +429,8 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             y=df["kills"],
             mode="lines+markers",
             name="Frags",
-            line=dict(width=2, color="#2E86AB"),
-            marker=dict(size=6, color="#2E86AB"),
+            line=dict(width=2.6, color=HALO_COLORS["cyan"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["cyan"]),
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -403,8 +443,8 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             y=df["deaths"],
             mode="lines+markers",
             name="Morts",
-            line=dict(width=2, color="#D1495B"),
-            marker=dict(size=6, color="#D1495B"),
+            line=dict(width=2.6, color=HALO_COLORS["red"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["red"]),
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -417,8 +457,8 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             y=df["ratio"],
             mode="lines+markers",
             name="Ratio",
-            line=dict(width=2, color="#3A7D44"),
-            marker=dict(size=6, color="#3A7D44"),
+            line=dict(width=2.6, color=HALO_COLORS["green"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["green"]),
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -426,8 +466,6 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     )
 
     fig.update_layout(
-        template="plotly_white",
-        height=520,
         title=title,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=40, r=20, t=80, b=40),
@@ -436,7 +474,7 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
 
     fig.update_yaxes(title_text="Frags / Morts", rangemode="tozero", secondary_y=False)
     fig.update_yaxes(title_text="Ratio", secondary_y=True)
-    return fig
+    return _apply_halo_plot_style(fig, title=title, height=520)
 
 
 def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
@@ -469,22 +507,20 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             y=df["assists"],
             mode="lines+markers",
             name="Assistances",
-            line=dict(width=2, color="#6A4C93"),
-            marker=dict(size=6, color="#6A4C93"),
+            line=dict(width=2.6, color=HALO_COLORS["violet"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["violet"]),
             customdata=customdata,
             hovertemplate=hover,
         )
     )
     fig.update_layout(
-        template="plotly_white",
-        height=360,
         title=title,
         margin=dict(l=40, r=20, t=60, b=40),
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     fig.update_yaxes(title_text="Assistances", rangemode="tozero")
-    return fig
+    return _apply_halo_plot_style(fig, title=title, height=360)
 
 
 def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
@@ -512,8 +548,8 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             y=df["kills_per_min"],
             mode="lines+markers",
             name="Frags/min",
-            line=dict(width=2, color="#2E86AB"),
-            marker=dict(size=6, color="#2E86AB"),
+            line=dict(width=2.4, color=HALO_COLORS["cyan"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["cyan"]),
             customdata=customdata,
             hovertemplate=(
                 "%{x|%Y-%m-%d %H:%M}<br>"
@@ -529,8 +565,8 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             y=df["deaths_per_min"],
             mode="lines+markers",
             name="Morts/min",
-            line=dict(width=2, color="#D1495B"),
-            marker=dict(size=6, color="#D1495B"),
+            line=dict(width=2.4, color=HALO_COLORS["red"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["red"]),
             customdata=customdata,
             hovertemplate=(
                 "%{x|%Y-%m-%d %H:%M}<br>"
@@ -546,8 +582,8 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             y=df["assists_per_min"],
             mode="lines+markers",
             name="Assist./min",
-            line=dict(width=2, color="#6A4C93"),
-            marker=dict(size=6, color="#6A4C93"),
+            line=dict(width=2.4, color=HALO_COLORS["violet"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["violet"]),
             customdata=customdata,
             hovertemplate=(
                 "%{x|%Y-%m-%d %H:%M}<br>"
@@ -559,15 +595,13 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     )
 
     fig.update_layout(
-        template="plotly_white",
-        height=360,
         title=title,
         margin=dict(l=40, r=20, t=60, b=40),
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     fig.update_yaxes(title_text="Par minute", rangemode="tozero")
-    return fig
+    return _apply_halo_plot_style(fig, title=title, height=360)
 
 
 def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
@@ -579,14 +613,15 @@ def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
                 y=d["accuracy"],
                 mode="lines+markers",
                 name="Accuracy",
-                line=dict(width=2, color="#7B61FF"),
+                line=dict(width=2.6, color=HALO_COLORS["violet"], shape="spline", smoothing=0.85),
+                marker=dict(size=6, color=HALO_COLORS["violet"]),
                 hovertemplate="%{x|%Y-%m-%d %H:%M}<br>accuracy=%{y:.2f}%<extra></extra>",
             )
         ]
     )
-    fig.update_layout(template="plotly_white", height=320, margin=dict(l=40, r=20, t=30, b=40))
+    fig.update_layout(height=320, margin=dict(l=40, r=20, t=30, b=40))
     fig.update_yaxes(title_text="%", rangemode="tozero")
-    return fig
+    return _apply_halo_plot_style(fig, height=320)
 
 
 def plot_average_life(df: pd.DataFrame) -> go.Figure:
@@ -614,8 +649,8 @@ def plot_average_life(df: pd.DataFrame) -> go.Figure:
             y=d["average_life_seconds"],
             mode="lines+markers",
             name="Average life (s)",
-            line=dict(width=2, color="#00A389"),
-            marker=dict(size=6, color="#00A389"),
+            line=dict(width=2.6, color=HALO_COLORS["green"], shape="spline", smoothing=0.85),
+            marker=dict(size=6, color=HALO_COLORS["green"]),
             customdata=custom,
             hovertemplate=(
                 "%{x|%Y-%m-%d %H:%M}<br>"
@@ -628,13 +663,11 @@ def plot_average_life(df: pd.DataFrame) -> go.Figure:
     )
 
     fig.update_layout(
-        template="plotly_white",
-        height=320,
         margin=dict(l=40, r=20, t=30, b=40),
         hovermode="x unified",
     )
     fig.update_yaxes(title_text="Secondes (voir hover pour mm:ss)", rangemode="tozero")
-    return fig
+    return _apply_halo_plot_style(fig, height=320)
 
 
 def plot_trio_metric(
@@ -651,7 +684,7 @@ def plot_trio_metric(
 ) -> go.Figure:
     # Suppose que les 3 DF sont déjà alignées sur les mêmes match_id (inner join côté appelant).
     fig = go.Figure()
-    colors = ["#2E86AB", "#D1495B", "#3A7D44"]
+    colors = [HALO_COLORS["cyan"], HALO_COLORS["red"], HALO_COLORS["green"]]
     for d, name, color in zip((d_self, d_f1, d_f2), names, colors):
         fig.add_trace(
             go.Scatter(
@@ -670,8 +703,6 @@ def plot_trio_metric(
         )
 
     fig.update_layout(
-        template="plotly_white",
-        height=360,
         title=title,
         margin=dict(l=40, r=20, t=60, b=40),
         hovermode="x unified",
@@ -680,7 +711,7 @@ def plot_trio_metric(
     fig.update_yaxes(title_text=y_title)
     if y_suffix:
         fig.update_yaxes(ticksuffix=y_suffix)
-    return fig
+    return _apply_halo_plot_style(fig, title=title, height=360)
 
 
 def plot_outcomes_mom(df: pd.DataFrame) -> go.Figure:
@@ -704,13 +735,13 @@ def plot_outcomes_mom(df: pd.DataFrame) -> go.Figure:
     nofin = col(4)
 
     fig = go.Figure()
-    fig.add_bar(x=pivot.index, y=wins, name="Victoires", marker_color="#3A7D44")
-    fig.add_bar(x=pivot.index, y=losses, name="Défaites", marker_color="#D1495B")
-    fig.add_bar(x=pivot.index, y=ties, name="Égalités", marker_color="#8E6CFF")
-    fig.add_bar(x=pivot.index, y=nofin, name="Non terminés", marker_color="#8E6CFF")
-    fig.update_layout(template="plotly_white", barmode="stack", height=360, margin=dict(l=40, r=20, t=30, b=40))
+    fig.add_bar(x=pivot.index, y=wins, name="Victoires", marker_color=HALO_COLORS["green"])
+    fig.add_bar(x=pivot.index, y=losses, name="Défaites", marker_color=HALO_COLORS["red"])
+    fig.add_bar(x=pivot.index, y=ties, name="Égalités", marker_color=HALO_COLORS["violet"])
+    fig.add_bar(x=pivot.index, y=nofin, name="Non terminés", marker_color=HALO_COLORS["violet"])
+    fig.update_layout(barmode="stack", height=360, margin=dict(l=40, r=20, t=30, b=40))
     fig.update_yaxes(title_text="Nombre")
-    return fig
+    return _apply_halo_plot_style(fig, height=360)
 
 
 def plot_kda_distribution(df: pd.DataFrame) -> go.Figure:
@@ -720,15 +751,15 @@ def plot_kda_distribution(df: pd.DataFrame) -> go.Figure:
             go.Histogram(
                 x=d["kda"],
                 nbinsx=40,
-                marker_color="#2E86AB",
+                marker_color=HALO_COLORS["cyan"],
                 hovertemplate="FDA=%{x:.2f}<br>nombre=%{y}<extra></extra>",
             )
         ]
     )
-    fig.update_layout(template="plotly_white", height=360, margin=dict(l=40, r=20, t=30, b=40))
+    fig.update_layout(height=360, margin=dict(l=40, r=20, t=30, b=40))
     fig.update_xaxes(title_text="FDA")
     fig.update_yaxes(title_text="Nombre")
-    return fig
+    return _apply_halo_plot_style(fig, height=360)
 
 
 @st.cache_data(show_spinner=False)
@@ -826,8 +857,8 @@ def main() -> None:
     st.set_page_config(page_title="OpenSpartan Graphs", layout="wide")
 
     st.markdown(
-                """
-                <style>
+        """
+        <style>
                     :root {
                         --bg: #0b1220;
                         --border: rgba(255,255,255,0.10);
@@ -838,10 +869,35 @@ def main() -> None:
                     .block-container {padding-top: 1.2rem; padding-bottom: 2.2rem; max-width: 1400px;}
                     section.main {
                         background:
-                            radial-gradient(1200px 600px at 20% 0%, rgba(46,134,171,0.25), transparent 60%),
-                            radial-gradient(900px 500px at 80% 15%, rgba(142,108,255,0.20), transparent 60%),
-                            linear-gradient(180deg, #0b1220 0%, #0a1020 100%);
+                            radial-gradient(1200px 600px at 20% 0%, rgba(53,208,255,0.26), transparent 60%),
+                            radial-gradient(900px 500px at 80% 15%, rgba(142,108,255,0.22), transparent 60%),
+                            linear-gradient(180deg, #0b1220 0%, #070b16 100%);
                         color: var(--text);
+                    }
+
+                    /* Overlay style "Halo" : grille + scanlines légères */
+                    section.main:before {
+                        content: "";
+                        position: fixed;
+                        inset: 0;
+                        pointer-events: none;
+                        background:
+                            repeating-linear-gradient(
+                                0deg,
+                                rgba(255,255,255,0.035) 0px,
+                                rgba(255,255,255,0.035) 1px,
+                                transparent 1px,
+                                transparent 28px
+                            ),
+                            repeating-linear-gradient(
+                                90deg,
+                                rgba(255,255,255,0.020) 0px,
+                                rgba(255,255,255,0.020) 1px,
+                                transparent 1px,
+                                transparent 28px
+                            );
+                        opacity: 0.35;
+                        mix-blend-mode: overlay;
                     }
 
                     [data-testid="stSidebar"] {
@@ -851,7 +907,7 @@ def main() -> None:
 
                     .hero {
                         border: 1px solid var(--border);
-                        background: linear-gradient(135deg, rgba(46,134,171,0.22), rgba(142,108,255,0.14));
+                        background: linear-gradient(135deg, rgba(53,208,255,0.20), rgba(142,108,255,0.14));
                         box-shadow: 0 12px 30px rgba(0,0,0,0.28);
                         border-radius: 18px;
                         padding: 18px 18px;
@@ -871,7 +927,7 @@ def main() -> None:
 
                     .stButton>button {border-radius: 12px; border: 1px solid rgba(255,255,255,0.14);}
                     .stButton>button[kind="primary"] {
-                        background: linear-gradient(90deg, rgba(46,134,171,0.95), rgba(142,108,255,0.95));
+                        background: linear-gradient(90deg, rgba(53,208,255,0.95), rgba(142,108,255,0.95));
                         border: 0;
                     }
 
@@ -883,7 +939,7 @@ def main() -> None:
                         padding: 10px 12px;
                         color: rgba(255,255,255,0.86);
                     }
-                    .stTabs [aria-selected="true"] {background: rgba(46,134,171,0.18); border-color: rgba(46,134,171,0.35);}
+                    .stTabs [aria-selected="true"] {background: rgba(53,208,255,0.14); border-color: rgba(53,208,255,0.32);}
 
                     div[data-testid="stMetric"] {
                         background: rgba(255,255,255,0.05);
@@ -897,25 +953,25 @@ def main() -> None:
 
                     div[data-testid="stAlert"] {border-radius: 14px; border: 1px solid rgba(255,255,255,0.12);}
                     .stDataFrame {border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.10);}
-                </style>
-                """,
-                unsafe_allow_html=True,
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.markdown(
-                """
-                <div class="hero">
-                    <div class="title">OpenSpartan Graphs (local)</div>
-                    <div class="subtitle">Analyse tes parties Halo Infinite depuis la DB OpenSpartan Workshop — filtres, séries temporelles, amis, maps.</div>
-                    <div class="chips">
-                        <span class="chip">DB locale SQLite</span>
-                        <span class="chip">Streamlit + Plotly</span>
-                        <span class="chip">Survol (hover) riche</span>
-                        <span class="chip">Filtres playlists / période</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+        """
+        <div class="hero">
+            <div class="title">OpenSpartan Graphs (local)</div>
+            <div class="subtitle">Analyse tes parties Halo Infinite depuis la DB OpenSpartan Workshop — filtres, séries temporelles, amis, maps.</div>
+            <div class="chips">
+                <span class="chip">DB locale SQLite</span>
+                <span class="chip">Streamlit + Plotly</span>
+                <span class="chip">Survol (hover) riche</span>
+                <span class="chip">Filtres playlists / période</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     with st.sidebar:
@@ -1137,7 +1193,7 @@ def main() -> None:
     tab_series, tab_mom, tab_kda, tab_friend, tab_friends, tab_maps, tab_table = st.tabs(
         [
             "Séries temporelles",
-            "Victoires/Défaites MoM",
+            "Victoires/Défaites (par mois)",
             "FDA (distribution)",
             "Avec un joueur",
             "Avec mes amis",
@@ -1173,8 +1229,8 @@ def main() -> None:
 
     with tab_mom:
         st.markdown(
-            "MoM = *Month-over-Month* : on regroupe les parties **par mois** et on compte "
-            "le nombre de victoires/défaites (et autres statuts) pour suivre l'évolution."
+            "Par mois : on regroupe les parties **par mois** et on compte le nombre de "
+            "victoires/défaites (et autres statuts) pour suivre l'évolution."
         )
         st.caption("Basé sur Players[].Outcome (2=win, 3=loss, 1=tie, 4=no finish).")
         st.plotly_chart(plot_outcomes_mom(dff), width="stretch")
