@@ -826,17 +826,97 @@ def main() -> None:
     st.set_page_config(page_title="OpenSpartan Graphs", layout="wide")
 
     st.markdown(
-        """
-        <style>
-          .block-container {padding-top: 1.4rem; padding-bottom: 2rem;}
-          h1 {letter-spacing: -0.02em;}
-          [data-testid="stSidebar"] {border-right: 1px solid rgba(49,51,63,0.12);}
-          .stMetric {background: rgba(46,134,171,0.06); padding: 12px 14px; border-radius: 12px;}
-        </style>
-        """,
-        unsafe_allow_html=True,
+                """
+                <style>
+                    :root {
+                        --bg: #0b1220;
+                        --border: rgba(255,255,255,0.10);
+                        --text: rgba(255,255,255,0.92);
+                        --muted: rgba(255,255,255,0.70);
+                    }
+
+                    .block-container {padding-top: 1.2rem; padding-bottom: 2.2rem; max-width: 1400px;}
+                    section.main {
+                        background:
+                            radial-gradient(1200px 600px at 20% 0%, rgba(46,134,171,0.25), transparent 60%),
+                            radial-gradient(900px 500px at 80% 15%, rgba(142,108,255,0.20), transparent 60%),
+                            linear-gradient(180deg, #0b1220 0%, #0a1020 100%);
+                        color: var(--text);
+                    }
+
+                    [data-testid="stSidebar"] {
+                        border-right: 1px solid rgba(255,255,255,0.08);
+                        background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+                    }
+
+                    .hero {
+                        border: 1px solid var(--border);
+                        background: linear-gradient(135deg, rgba(46,134,171,0.22), rgba(142,108,255,0.14));
+                        box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+                        border-radius: 18px;
+                        padding: 18px 18px;
+                        margin-bottom: 14px;
+                    }
+                    .hero .title {font-size: 28px; font-weight: 750; letter-spacing: -0.02em; margin: 0;}
+                    .hero .subtitle {margin-top: 4px; color: var(--muted); font-size: 14px;}
+                    .chips {display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;}
+                    .chip {
+                        border: 1px solid rgba(255,255,255,0.14);
+                        background: rgba(0,0,0,0.14);
+                        color: rgba(255,255,255,0.86);
+                        padding: 6px 10px;
+                        border-radius: 999px;
+                        font-size: 12px;
+                    }
+
+                    .stButton>button {border-radius: 12px; border: 1px solid rgba(255,255,255,0.14);}
+                    .stButton>button[kind="primary"] {
+                        background: linear-gradient(90deg, rgba(46,134,171,0.95), rgba(142,108,255,0.95));
+                        border: 0;
+                    }
+
+                    .stTabs [data-baseweb="tab-list"] {gap: 6px;}
+                    .stTabs [data-baseweb="tab"] {
+                        background: rgba(255,255,255,0.04);
+                        border: 1px solid rgba(255,255,255,0.10);
+                        border-radius: 12px;
+                        padding: 10px 12px;
+                        color: rgba(255,255,255,0.86);
+                    }
+                    .stTabs [aria-selected="true"] {background: rgba(46,134,171,0.18); border-color: rgba(46,134,171,0.35);}
+
+                    div[data-testid="stMetric"] {
+                        background: rgba(255,255,255,0.05);
+                        border: 1px solid rgba(255,255,255,0.10);
+                        border-radius: 14px;
+                        padding: 14px 14px;
+                        box-shadow: 0 10px 22px rgba(0,0,0,0.20);
+                    }
+                    div[data-testid="stMetric"] label {color: rgba(255,255,255,0.74) !important;}
+                    div[data-testid="stMetric"] div {color: rgba(255,255,255,0.92) !important;}
+
+                    div[data-testid="stAlert"] {border-radius: 14px; border: 1px solid rgba(255,255,255,0.12);}
+                    .stDataFrame {border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.10);}
+                </style>
+                """,
+                unsafe_allow_html=True,
     )
-    st.title("OpenSpartan Graphs (local)")
+
+    st.markdown(
+                """
+                <div class="hero">
+                    <div class="title">OpenSpartan Graphs (local)</div>
+                    <div class="subtitle">Analyse tes parties Halo Infinite depuis la DB OpenSpartan Workshop — filtres, séries temporelles, amis, maps.</div>
+                    <div class="chips">
+                        <span class="chip">DB locale SQLite</span>
+                        <span class="chip">Streamlit + Plotly</span>
+                        <span class="chip">Survol (hover) riche</span>
+                        <span class="chip">Filtres playlists / période</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+    )
 
     with st.sidebar:
         st.header("Source")
