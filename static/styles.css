@@ -1,0 +1,251 @@
+/* =============================================================================
+   OpenSpartan Graphs - Thème Halo Waypoint
+   ============================================================================= */
+
+:root {
+    /* Palette inspirée Halo Waypoint */
+    --bg: #0f1518;
+    --panel: #20272c;
+    --panel-2: #242c2f;
+    --border: rgba(255,255,255,0.14);
+    --text: rgba(255,255,255,0.92);
+    --muted: rgba(180,180,180,0.95);
+    --accent: #70cddf;
+}
+
+/* =============================================================================
+   Layout principal
+   ============================================================================= */
+
+.block-container {
+    padding-top: 1.2rem;
+    padding-bottom: 2.2rem;
+    max-width: 1400px;
+    position: relative;
+    z-index: 2;
+}
+
+section.main {
+    background:
+        /* brume centrale douce */
+        radial-gradient(1200px 820px at 50% 12%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.00) 58%),
+        /* signature Waypoint: glow radial bleu-gris */
+        radial-gradient(116.5% 168.84% at 115.37% 167.93%, rgba(107,155,183,0.22) 0%, rgba(0,52,82,0) 62%),
+        /* accent cyan haut/gauche */
+        radial-gradient(900px 520px at 10% -12%, rgba(112,205,223,0.14) 0%, transparent 60%),
+        linear-gradient(180deg, var(--bg) 0%, #0c1012 70%, #090c0e 100%);
+    color: var(--text);
+    position: relative;
+    z-index: 1;
+}
+
+/* =============================================================================
+   Overlays style Waypoint
+   ============================================================================= */
+
+/* Hatch diagonal */
+section.main:before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+        repeating-linear-gradient(
+            135deg,
+            rgba(255,255,255,0.060) 0px,
+            rgba(255,255,255,0.060) 2px,
+            transparent 2px,
+            transparent 8px
+        );
+    opacity: 0.14;
+    mix-blend-mode: overlay;
+}
+
+/* Vignette + grain */
+section.main:after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+        radial-gradient(1400px 900px at 50% 10%, rgba(0,0,0,0.00) 40%, rgba(0,0,0,0.72) 100%),
+        radial-gradient(rgba(255,255,255,0.060) 1px, transparent 1.35px);
+    background-size: auto, 24px 24px;
+    opacity: 0.14;
+    mix-blend-mode: overlay;
+}
+
+/* =============================================================================
+   Découpes haut/bas façon Waypoint
+   ============================================================================= */
+
+.wp-notch-top,
+.wp-notch-bottom {
+    position: fixed;
+    left: 0;
+    right: 0;
+    height: 64px;
+    pointer-events: none;
+    z-index: 1;
+    background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.00));
+}
+
+.wp-notch-top {
+    top: 0;
+    clip-path: polygon(
+        0 0,
+        100% 0,
+        100% 70%,
+        70% 70%,
+        calc(70% - 72px) 100%,
+        calc(30% + 72px) 100%,
+        30% 70%,
+        0 70%
+    );
+}
+
+.wp-notch-bottom {
+    bottom: 0;
+    transform: rotate(180deg);
+    clip-path: polygon(
+        0 0,
+        100% 0,
+        100% 70%,
+        70% 70%,
+        calc(70% - 72px) 100%,
+        calc(30% + 72px) 100%,
+        30% 70%,
+        0 70%
+    );
+}
+
+/* =============================================================================
+   Sidebar
+   ============================================================================= */
+
+[data-testid="stSidebar"] {
+    border-right: 1px solid rgba(255,255,255,0.10);
+    background:
+        radial-gradient(800px 380px at 0% 0%, rgba(112,205,223,0.10) 0%, transparent 55%),
+        linear-gradient(180deg, rgba(36,44,47,0.92), rgba(32,39,44,0.78));
+}
+
+/* =============================================================================
+   Hero banner
+   ============================================================================= */
+
+.hero {
+    border: 1px solid var(--border);
+    background:
+        radial-gradient(900px 520px at 15% 0%, rgba(112,205,223,0.18) 0%, transparent 58%),
+        linear-gradient(135deg, rgba(36,44,47,0.85), rgba(20,20,20,0.90));
+    box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+    border-radius: 18px;
+    padding: 18px 18px;
+    margin-bottom: 14px;
+}
+
+.hero .title {
+    font-size: 28px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
+.hero .subtitle {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+/* =============================================================================
+   Chips
+   ============================================================================= */
+
+.chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.chip {
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.20);
+    color: rgba(255,255,255,0.86);
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+}
+
+/* =============================================================================
+   Buttons
+   ============================================================================= */
+
+.stButton>button {
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+}
+
+.stButton>button[kind="primary"] {
+    background: linear-gradient(90deg, rgba(112,205,223,0.98), rgba(46,195,229,0.98));
+    border: 0;
+}
+
+/* =============================================================================
+   Tabs
+   ============================================================================= */
+
+.stTabs [data-baseweb="tab-list"] {
+    gap: 6px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: rgba(255,255,255,0.86);
+}
+
+.stTabs [aria-selected="true"] {
+    background: rgba(112,205,223,0.14);
+    border-color: rgba(112,205,223,0.32);
+}
+
+/* =============================================================================
+   Metrics
+   ============================================================================= */
+
+div[data-testid="stMetric"] {
+    background: rgba(0,0,0,0.28);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 14px;
+    padding: 14px 14px;
+    box-shadow: 0 10px 22px rgba(0,0,0,0.20);
+}
+
+div[data-testid="stMetric"] label {
+    color: rgba(255,255,255,0.74) !important;
+}
+
+div[data-testid="stMetric"] div {
+    color: rgba(255,255,255,0.92) !important;
+}
+
+/* =============================================================================
+   Alerts & DataFrames
+   ============================================================================= */
+
+div[data-testid="stAlert"] {
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+
+.stDataFrame {
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.10);
+}

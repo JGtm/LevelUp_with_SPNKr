@@ -1,58 +1,159 @@
-# OpenSpartan Graph (Halo Infinite)
+# 🎮 OpenSpartan Graph
 
-Dashboard Streamlit + outils CLI pour analyser ta progression (frags/morts/ratio, précision, FDA, durée de vie moyenne, etc.) à partir de la base SQLite locale d’OpenSpartan Workshop.
+> **Dashboard interactif et CLI pour analyser vos statistiques Halo Infinite**
 
-## Prérequis
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-FF4B4B.svg)](https://streamlit.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- Windows 10/11
-- Python 3.10+ (idéalement 3.11)
-- OpenSpartan Workshop installé (pour générer/mettre à jour la DB)
+## ✨ Fonctionnalités
 
-## Installation
+- 📊 **Dashboard interactif** — Visualisez vos stats en temps réel avec Streamlit
+- 📈 **Graphiques détaillés** — Évolution frags/morts/assistances, précision, durée de vie moyenne, séries de frags
+- 🗺️ **Analyse par carte** — Performance détaillée sur chaque map
+- 👥 **Analyse des coéquipiers** — Statistiques avec vos amis (même équipe ou adversaires)
+- 🎯 **Sessions de jeu** — Détection automatique des sessions avec métriques
+- 🖼️ **Export PNG** — Générez des graphiques statiques via CLI
+- 🎨 **Thème Halo** — Interface inspirée de Halo Waypoint
 
-Dans un terminal, à la racine du projet:
+## 📋 Prérequis
+
+- **Windows 10/11**
+- **Python 3.10+** (recommandé: 3.11 ou 3.12)
+- **[OpenSpartan Workshop](https://github.com/OpenSpartan/openspartan-workshop)** installé et synchronisé
+
+## 🚀 Installation
+
+### Installation rapide
 
 ```bash
+# Cloner le projet
+git clone https://github.com/username/openspartan-graph.git
+cd openspartan-graph
+
+# Créer l'environnement virtuel
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install -U pip
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Activer l'environnement
+.venv\Scripts\activate
+
+# Installer les dépendances
+pip install -e .
 ```
 
-## Lancer le dashboard
-
-Le plus simple:
-
-- Double-clique sur `run_dashboard.bat`
-
-Ou en ligne de commande:
+### Installation développeur
 
 ```bash
-.venv\Scripts\python.exe run_dashboard.py
+# Avec les outils de dev (tests, linting, typing)
+pip install -e ".[dev]"
+
+# Avec le CLI matplotlib
+pip install -e ".[cli]"
+
+# Tout installer
+pip install -e ".[all]"
 ```
 
-Ou directement Streamlit:
+## 🎮 Utilisation
+
+### Dashboard (recommandé)
+
+**Le plus simple :** double-cliquez sur `run_dashboard.bat`
+
+Ou en ligne de commande :
 
 ```bash
-.venv\Scripts\python.exe -m streamlit run streamlit_app.py
+# Via le launcher
+python run_dashboard.py
+
+# Ou directement Streamlit
+streamlit run streamlit_app.py
 ```
 
-### Base de données
+Le dashboard s'ouvre automatiquement dans votre navigateur.
 
-Par défaut, l’app essaye de trouver automatiquement la DB la plus récente dans:
-
-- `%LOCALAPPDATA%\OpenSpartan.Workshop\data\*.db`
-
-Tu peux aussi fournir un chemin de DB différent dans la sidebar.
-
-## CLI (PNG)
-
-Le script CLI peut générer un PNG statique:
+### CLI (génération PNG)
 
 ```bash
-.venv\Scripts\python.exe openspartan_graph.py --db "%LOCALAPPDATA%\OpenSpartan.Workshop\data\<ton_xuid>.db" --last 80 --out "out\kills_deaths_ratio.png"
+python openspartan_graph.py --db "%LOCALAPPDATA%\OpenSpartan.Workshop\data\<votre_xuid>.db" --last 80 --out "out\stats.png"
 ```
 
-## Notes
+Options disponibles :
 
-- Certaines stats (ex: temps joué) peuvent être absentes sur certains matchs; les métriques “par minute” ignorent les matchs sans durée valide.
-- Le filtrage par défaut exclut Firefight et limite à certaines playlists (Quick Play / Ranked Slayer / Ranked Arena), mais tu peux le désactiver dans la sidebar.
+| Option | Description |
+|--------|-------------|
+| `--db` | Chemin vers la base de données SQLite |
+| `--last N` | Limiter aux N derniers matchs |
+| `--out` | Chemin du fichier PNG de sortie |
+
+## 🗄️ Base de données
+
+Par défaut, l'application détecte automatiquement la DB la plus récente dans :
+
+```
+%LOCALAPPDATA%\OpenSpartan.Workshop\data\*.db
+```
+
+Vous pouvez aussi spécifier un chemin personnalisé dans la sidebar du dashboard.
+
+## 🧪 Tests
+
+```bash
+# Lancer tous les tests
+pytest
+
+# Avec couverture
+pytest --cov=src --cov-report=html
+
+# Tests spécifiques
+pytest tests/test_models.py -v
+```
+
+## 📁 Structure du projet
+
+```
+openspartan-graph/
+├── src/                    # Code source modulaire
+│   ├── config.py          # Configuration centralisée
+│   ├── models.py          # Modèles de données (dataclasses)
+│   ├── db/                # Accès base de données
+│   ├── analysis/          # Fonctions d'analyse
+│   ├── visualization/     # Génération des graphiques
+│   └── ui/                # Helpers interface utilisateur
+├── static/
+│   └── styles.css         # Thème CSS Halo Waypoint
+├── tests/                  # Suite de tests pytest
+├── streamlit_app.py       # Point d'entrée dashboard
+├── openspartan_graph.py   # Point d'entrée CLI
+├── run_dashboard.py       # Launcher avec port auto
+├── run_dashboard.bat      # Script Windows
+└── pyproject.toml         # Configuration projet
+```
+
+## ⚙️ Configuration
+
+### Filtres par défaut
+
+- **Playlists** : Quick Play, Ranked Slayer, Ranked Arena
+- **Firefight** : Exclu par défaut (configurable)
+- **Sessions** : Détection avec seuil de 30 minutes d'inactivité
+
+Ces options sont modifiables dans la sidebar du dashboard.
+
+## 📝 Notes
+
+- Certaines stats (temps joué, précision) peuvent être absentes sur d'anciens matchs
+- Les métriques "par minute" ignorent automatiquement les matchs sans durée valide
+- Le système d'alias permet de renommer les joueurs (stocké dans `aliases.json`)
+
+## 🤝 Contribution
+
+Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou une PR.
+
+## 📄 Licence
+
+Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+
+---
+
+**Fait avec ❤️ pour la communauté Halo**
