@@ -82,6 +82,14 @@ def load_df(db_path: str, xuid: str) -> pd.DataFrame:
     # Facilite les filtres date (Streamlit n'aime pas toujours les tz-aware)
     df["start_time"] = pd.to_datetime(df["start_time"], utc=True).dt.tz_convert(None)
     df["date"] = df["start_time"].dt.date
+
+    # Stats "par minute" basées sur le temps joué de chaque match.
+    # Note: certaines entrées peuvent ne pas avoir de TimePlayed (NaN/0).
+    minutes = (pd.to_numeric(df["time_played_seconds"], errors="coerce") / 60.0).astype(float)
+    minutes = minutes.where(minutes > 0)
+    df["kills_per_min"] = pd.to_numeric(df["kills"], errors="coerce") / minutes
+    df["deaths_per_min"] = pd.to_numeric(df["deaths"], errors="coerce") / minutes
+    df["assists_per_min"] = pd.to_numeric(df["assists"], errors="coerce") / minutes
     return df
 
 
@@ -428,6 +436,137 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
 
     fig.update_yaxes(title_text="Frags / Morts", rangemode="tozero", secondary_y=False)
     fig.update_yaxes(title_text="Ratio", secondary_y=True)
+    return fig
+
+
+def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
+    customdata = list(
+        zip(
+            df["kills"],
+            df["deaths"],
+            df["assists"],
+            df["accuracy"].round(2).astype(object),
+            df["ratio"],
+            df["map_name"].fillna(""),
+            df["playlist_name"].fillna(""),
+            df["match_id"],
+        )
+    )
+    hover = (
+        "%{x|%Y-%m-%d %H:%M}<br>"
+        "assists=%{y}<br>"
+        "kills=%{customdata[0]} deaths=%{customdata[1]}<br>"
+        "précision=%{customdata[3]}% ratio=%{customdata[4]:.3f}<br>"
+        "map=%{customdata[5]}<br>"
+        "playlist=%{customdata[6]}<br>"
+        "match=%{customdata[7]}<extra></extra>"
+    )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["start_time"],
+            y=df["assists"],
+            mode="lines+markers",
+            name="Assistances",
+            line=dict(width=2, color="#6A4C93"),
+            marker=dict(size=6, color="#6A4C93"),
+            customdata=customdata,
+            hovertemplate=hover,
+        )
+    )
+    fig.update_layout(
+        template="plotly_white",
+        height=360,
+        title=title,
+        margin=dict(l=40, r=20, t=60, b=40),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    fig.update_yaxes(title_text="Assistances", rangemode="tozero")
+    return fig
+
+
+def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
+    fig = go.Figure()
+
+    customdata = list(
+        zip(
+            df["time_played_seconds"].fillna(float("nan")).astype(float),
+            df["kills"],
+            df["deaths"],
+            df["assists"],
+            df["match_id"],
+        )
+    )
+
+    hover = (
+        "%{x|%Y-%m-%d %H:%M}<br>"
+        "k/min=%{y:.2f} d/min=%{customdata[2]:.0f} a=%{customdata[3]:.0f}<br>"
+        "time played=%{customdata[0]:.0f}s (match=%{customdata[4]})<extra></extra>"
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["start_time"],
+            y=df["kills_per_min"],
+            mode="lines+markers",
+            name="Frags/min",
+            line=dict(width=2, color="#2E86AB"),
+            marker=dict(size=6, color="#2E86AB"),
+            customdata=customdata,
+            hovertemplate=(
+                "%{x|%Y-%m-%d %H:%M}<br>"
+                "frags/min=%{y:.2f}<br>"
+                "time played=%{customdata[0]:.0f}s (kills=%{customdata[1]:.0f})<br>"
+                "match=%{customdata[4]}<extra></extra>"
+            ),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["start_time"],
+            y=df["deaths_per_min"],
+            mode="lines+markers",
+            name="Morts/min",
+            line=dict(width=2, color="#D1495B"),
+            marker=dict(size=6, color="#D1495B"),
+            customdata=customdata,
+            hovertemplate=(
+                "%{x|%Y-%m-%d %H:%M}<br>"
+                "morts/min=%{y:.2f}<br>"
+                "time played=%{customdata[0]:.0f}s (deaths=%{customdata[2]:.0f})<br>"
+                "match=%{customdata[4]}<extra></extra>"
+            ),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["start_time"],
+            y=df["assists_per_min"],
+            mode="lines+markers",
+            name="Assist./min",
+            line=dict(width=2, color="#6A4C93"),
+            marker=dict(size=6, color="#6A4C93"),
+            customdata=customdata,
+            hovertemplate=(
+                "%{x|%Y-%m-%d %H:%M}<br>"
+                "assist./min=%{y:.2f}<br>"
+                "time played=%{customdata[0]:.0f}s (assists=%{customdata[3]:.0f})<br>"
+                "match=%{customdata[4]}<extra></extra>"
+            ),
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        height=360,
+        title=title,
+        margin=dict(l=40, r=20, t=60, b=40),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    fig.update_yaxes(title_text="Par minute", rangemode="tozero")
     return fig
 
 
@@ -892,6 +1031,20 @@ def main() -> None:
     avg_row[1].metric("Morts par partie", f"{dpg:.2f}" if dpg == dpg else "-")
     avg_row[2].metric("Assistances par partie", f"{apg:.2f}" if apg == apg else "-")
 
+    # Stats par minute (basées sur le temps joué total)
+    total_minutes = (
+        pd.to_numeric(dff["time_played_seconds"], errors="coerce").dropna().sum() / 60.0
+        if not dff.empty and "time_played_seconds" in dff.columns
+        else 0.0
+    )
+    kpm = (float(dff["kills"].sum()) / total_minutes) if total_minutes > 0 else None
+    dpm = (float(dff["deaths"].sum()) / total_minutes) if total_minutes > 0 else None
+    apm = (float(dff["assists"].sum()) / total_minutes) if total_minutes > 0 else None
+    per_min_row = st.columns(3)
+    per_min_row[0].metric("Frags / min", f"{kpm:.2f}" if kpm is not None else "-")
+    per_min_row[1].metric("Morts / min", f"{dpm:.2f}" if dpm is not None else "-")
+    per_min_row[2].metric("Assistances / min", f"{apm:.2f}" if apm is not None else "-")
+
     kpi = st.columns(5)
     kpi[0].metric("Précision moyenne", f"{avg_acc:.2f}%" if avg_acc is not None else "-")
     kpi[1].metric("Taux de victoire", f"{win_rate*100:.1f}%" if rates["total"] else "-")
@@ -916,6 +1069,15 @@ def main() -> None:
     with tab_series:
         fig = plot_timeseries(dff, title=f"{me_name}")
         st.plotly_chart(fig, width="stretch")
+
+        st.subheader("Assistances")
+        st.plotly_chart(plot_assists_timeseries(dff, title=f"{me_name} — Assistances"), width="stretch")
+
+        st.subheader("Stats par minute")
+        st.plotly_chart(
+            plot_per_minute_timeseries(dff, title=f"{me_name} — Frags/Morts/Assistances par minute"),
+            width="stretch",
+        )
 
         st.subheader("Durée de vie moyenne (Average Life)")
         if dff.dropna(subset=["average_life_seconds"]).empty:
@@ -1191,7 +1353,25 @@ def main() -> None:
                 k[1].metric("Win/Loss", f"{win_rate_sub*100:.1f}% / {loss_rate_sub*100:.1f}%")
                 k[2].metric("Ratio global", f"{global_ratio_sub:.2f}" if global_ratio_sub is not None else "-")
 
+                total_minutes_sub = (
+                    pd.to_numeric(sub["time_played_seconds"], errors="coerce").dropna().sum() / 60.0
+                    if "time_played_seconds" in sub.columns
+                    else 0.0
+                )
+                kpm_sub = (float(sub["kills"].sum()) / total_minutes_sub) if total_minutes_sub > 0 else None
+                dpm_sub = (float(sub["deaths"].sum()) / total_minutes_sub) if total_minutes_sub > 0 else None
+                apm_sub = (float(sub["assists"].sum()) / total_minutes_sub) if total_minutes_sub > 0 else None
+                per_min = st.columns(3)
+                per_min[0].metric("Frags / min", f"{kpm_sub:.2f}" if kpm_sub is not None else "-")
+                per_min[1].metric("Morts / min", f"{dpm_sub:.2f}" if dpm_sub is not None else "-")
+                per_min[2].metric("Assistances / min", f"{apm_sub:.2f}" if apm_sub is not None else "-")
+
                 st.plotly_chart(plot_timeseries(sub, title=f"{me_name} avec {name}"), width="stretch")
+
+                st.plotly_chart(
+                    plot_per_minute_timeseries(sub, title=f"{me_name} avec {name} — stats par minute"),
+                    width="stretch",
+                )
 
     with tab_maps:
         st.caption(
