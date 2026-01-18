@@ -292,7 +292,7 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
             name="Max killing spree",
             line=dict(width=2.4, color=HALO_COLORS["amber"], shape="spline", smoothing=0.85),
             marker=dict(size=6, color=HALO_COLORS["amber"]),
-            hovertemplate="%{x|%Y-%m-%d %H:%M}<br>spree=%{y}<extra></extra>",
+            hovertemplate="spree=%{y}<extra></extra>",
         )
     )
 
@@ -304,7 +304,7 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
             name="Headshot kills",
             line=dict(width=2.4, color=HALO_COLORS["red"], shape="spline", smoothing=0.85),
             marker=dict(size=6, color=HALO_COLORS["red"]),
-            hovertemplate="%{x|%Y-%m-%d %H:%M}<br>headshots=%{y}<extra></extra>",
+            hovertemplate="headshots=%{y}<extra></extra>",
         )
     )
 
@@ -317,7 +317,7 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
             yaxis="y2",
             line=dict(width=2.4, color=HALO_COLORS["violet"], shape="spline", smoothing=0.85),
             marker=dict(size=6, color=HALO_COLORS["violet"]),
-            hovertemplate="%{x|%Y-%m-%d %H:%M}<br>précision=%{y:.2f}%<extra></extra>",
+            hovertemplate="précision=%{y:.2f}%<extra></extra>",
         )
     )
 
@@ -491,13 +491,9 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         )
     )
     hover = (
-        "%{x|%Y-%m-%d %H:%M}<br>"
-        "assists=%{y}<br>"
-        "kills=%{customdata[0]} deaths=%{customdata[1]}<br>"
-        "précision=%{customdata[3]}% ratio=%{customdata[4]:.3f}<br>"
-        "map=%{customdata[5]}<br>"
-        "playlist=%{customdata[6]}<br>"
-        "match=%{customdata[7]}<extra></extra>"
+        "assistances=%{y}<br>"
+        "frags=%{customdata[0]} morts=%{customdata[1]}<br>"
+        "précision=%{customdata[3]}% ratio=%{customdata[4]:.3f}<extra></extra>"
     )
 
     fig = go.Figure()
@@ -536,12 +532,6 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         )
     )
 
-    hover = (
-        "%{x|%Y-%m-%d %H:%M}<br>"
-        "k/min=%{y:.2f} d/min=%{customdata[2]:.0f} a=%{customdata[3]:.0f}<br>"
-        "time played=%{customdata[0]:.0f}s (match=%{customdata[4]})<extra></extra>"
-    )
-
     fig.add_trace(
         go.Scatter(
             x=df["start_time"],
@@ -552,10 +542,8 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             marker=dict(size=6, color=HALO_COLORS["cyan"]),
             customdata=customdata,
             hovertemplate=(
-                "%{x|%Y-%m-%d %H:%M}<br>"
                 "frags/min=%{y:.2f}<br>"
-                "time played=%{customdata[0]:.0f}s (kills=%{customdata[1]:.0f})<br>"
-                "match=%{customdata[4]}<extra></extra>"
+                "temps joué=%{customdata[0]:.0f}s (frags=%{customdata[1]:.0f})<extra></extra>"
             ),
         )
     )
@@ -569,10 +557,8 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             marker=dict(size=6, color=HALO_COLORS["red"]),
             customdata=customdata,
             hovertemplate=(
-                "%{x|%Y-%m-%d %H:%M}<br>"
                 "morts/min=%{y:.2f}<br>"
-                "time played=%{customdata[0]:.0f}s (deaths=%{customdata[2]:.0f})<br>"
-                "match=%{customdata[4]}<extra></extra>"
+                "temps joué=%{customdata[0]:.0f}s (morts=%{customdata[2]:.0f})<extra></extra>"
             ),
         )
     )
@@ -586,10 +572,8 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             marker=dict(size=6, color=HALO_COLORS["violet"]),
             customdata=customdata,
             hovertemplate=(
-                "%{x|%Y-%m-%d %H:%M}<br>"
                 "assist./min=%{y:.2f}<br>"
-                "time played=%{customdata[0]:.0f}s (assists=%{customdata[3]:.0f})<br>"
-                "match=%{customdata[4]}<extra></extra>"
+                "temps joué=%{customdata[0]:.0f}s (assistances=%{customdata[3]:.0f})<extra></extra>"
             ),
         )
     )
@@ -615,7 +599,7 @@ def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
                 name="Accuracy",
                 line=dict(width=2.6, color=HALO_COLORS["violet"], shape="spline", smoothing=0.85),
                 marker=dict(size=6, color=HALO_COLORS["violet"]),
-                hovertemplate="%{x|%Y-%m-%d %H:%M}<br>accuracy=%{y:.2f}%<extra></extra>",
+                hovertemplate="précision=%{y:.2f}%<extra></extra>",
             )
         ]
     )
@@ -653,11 +637,9 @@ def plot_average_life(df: pd.DataFrame) -> go.Figure:
             marker=dict(size=6, color=HALO_COLORS["green"]),
             customdata=custom,
             hovertemplate=(
-                "%{x|%Y-%m-%d %H:%M}<br>"
-                "avg life=%{y:.1f}s<br>"
-                "deaths=%{customdata[0]}<br>"
-                "time played=%{customdata[1]:.0f}s<br>"
-                "match=%{customdata[2]}<extra></extra>"
+                "durée de vie moy.=%{y:.1f}s<br>"
+                "morts=%{customdata[0]}<br>"
+                "temps joué=%{customdata[1]:.0f}s<extra></extra>"
             ),
         )
     )
@@ -695,9 +677,7 @@ def plot_trio_metric(
                 line=dict(width=2, color=color),
                 marker=dict(size=6, color=color),
                 hovertemplate=(
-                    "%{x|%Y-%m-%d %H:%M}<br>"
-                    + f"{metric}=%{{y{':' + y_format if y_format else ''}}}{y_suffix}"
-                    + "<extra></extra>"
+                    f"{metric}=%{{y{':' + y_format if y_format else ''}}}{y_suffix}<extra></extra>"
                 ),
             )
         )
