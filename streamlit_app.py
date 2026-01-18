@@ -459,7 +459,7 @@ def plot_trio_metric(
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     fig.update_yaxes(title_text=y_title)
-    if y_suffix and not y_format:
+    if y_suffix:
         fig.update_yaxes(ticksuffix=y_suffix)
     return fig
 
