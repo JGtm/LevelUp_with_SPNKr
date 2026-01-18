@@ -1258,8 +1258,7 @@ def main() -> None:
         st.subheader("Spree / Headshots / Précision")
         st.plotly_chart(plot_spree_headshots_accuracy(dff), width="stretch")
 
-        st.subheader("Précision — derniers matchs")
-        st.plotly_chart(plot_accuracy_last_n(dff, last_n_acc), width="stretch")
+        # Masqué sur demande (graph redondant avec les autres vues).
 
     with tab_mom:
         fig_out, bucket_label = plot_outcomes_over_time(dff)
