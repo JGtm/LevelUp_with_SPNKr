@@ -173,7 +173,7 @@ def main() -> None:
                 ax = st.text_input("XUID à aliaser", value="")
                 an = st.text_input("Gamertag", value="")
                 cols = st.columns(2)
-                if cols[0].button("Enregistrer l'alias", use_container_width=True):
+                if cols[0].button("Enregistrer l'alias", width="stretch"):
                     axc = (ax or "").strip()
                     anc = (an or "").strip()
                     if not axc.isdigit():
@@ -186,7 +186,7 @@ def main() -> None:
                         st.success("Alias enregistré.")
                         st.rerun()
 
-                if cols[1].button("Supprimer l'alias", use_container_width=True):
+                if cols[1].button("Supprimer l'alias", width="stretch"):
                     axc = (ax or "").strip()
                     if not axc:
                         st.error("Renseigne un XUID à supprimer.")
@@ -204,7 +204,7 @@ def main() -> None:
                             sorted(current_aliases.items()),
                             columns=["XUID", "Gamertag"],
                         ),
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
                 else:
@@ -217,7 +217,7 @@ def main() -> None:
             value=get_default_workshop_exe_path(),
             help="Bouton pratique pour lancer l'app OpenSpartan Workshop.",
         )
-        if st.button("Lancer OpenSpartan Workshop", use_container_width=True):
+        if st.button("Lancer OpenSpartan Workshop", width="stretch"):
             if not os.path.exists(workshop_exe):
                 st.error("Executable introuvable à ce chemin.")
             else:
@@ -322,9 +322,9 @@ def main() -> None:
                 st.session_state.picked_sessions = options_ui[:1] if options_ui else []
 
             cols = st.columns(2)
-            if cols[0].button("Dernière session", use_container_width=True):
+            if cols[0].button("Dernière session", width="stretch"):
                 _set_session_selection(options_ui[0] if options_ui else "(toutes)")
-            if cols[1].button("Session précédente", use_container_width=True):
+            if cols[1].button("Session précédente", width="stretch"):
                 current = st.session_state.get("picked_session_label", "(toutes)")
                 if not options_ui:
                     _set_session_selection("(toutes)")
@@ -462,25 +462,25 @@ def main() -> None:
     with tab_series:
         with st.spinner("Génération des graphes…"):
             fig = plot_timeseries(dff, title=f"{me_name}")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
             st.subheader("Assistances")
-            st.plotly_chart(plot_assists_timeseries(dff, title=f"{me_name} — Assistances"), use_container_width=True)
+            st.plotly_chart(plot_assists_timeseries(dff, title=f"{me_name} — Assistances"), width="stretch")
 
             st.subheader("Stats par minute")
             st.plotly_chart(
                 plot_per_minute_timeseries(dff, title=f"{me_name} — Frags/Morts/Assistances par minute"),
-                use_container_width=True,
+                width="stretch",
             )
 
             st.subheader("Durée de vie moyenne (Average Life)")
             if dff.dropna(subset=["average_life_seconds"]).empty:
                 st.info("Average Life indisponible sur ce filtre.")
             else:
-                st.plotly_chart(plot_average_life(dff), use_container_width=True)
+                st.plotly_chart(plot_average_life(dff), width="stretch")
 
             st.subheader("Spree / Headshots / Précision")
-            st.plotly_chart(plot_spree_headshots_accuracy(dff), use_container_width=True)
+            st.plotly_chart(plot_spree_headshots_accuracy(dff), width="stretch")
 
     # --------------------------------------------------------------------------
     # Tab: Victoires/Défaites
@@ -493,7 +493,7 @@ def main() -> None:
                 "victoires/défaites (et autres statuts) pour suivre l'évolution."
             )
             st.caption("Basé sur Players[].Outcome (2=victoire, 3=défaite, 1=égalité, 4=non terminé).")
-            st.plotly_chart(fig_out, use_container_width=True)
+            st.plotly_chart(fig_out, width="stretch")
 
     # --------------------------------------------------------------------------
     # Tab: FDA (distribution)
@@ -507,7 +507,7 @@ def main() -> None:
                 st.metric("FDA médiane", f"{valid['kda'].median():.2f}")
                 st.metric("FDA moyenne", f"{valid['kda'].mean():.2f}")
                 st.caption("Densité (KDE) + rug : forme de la distribution + position des matchs.")
-                st.plotly_chart(plot_kda_distribution(dff), use_container_width=True)
+                st.plotly_chart(plot_kda_distribution(dff), width="stretch")
 
     # --------------------------------------------------------------------------
     # Tab: Avec un joueur
@@ -569,14 +569,14 @@ def main() -> None:
                     colors = HALO_COLORS.as_dict()
                     fig = go.Figure(data=[go.Bar(x=counts.index, y=counts.values, marker_color=colors["cyan"])])
                     fig.update_layout(height=300, margin=dict(l=40, r=20, t=30, b=40))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
                     st.dataframe(
                         dfr[
                             ["start_time", "playlist_name", "pair_name", "same_team",
                              "my_team_id", "my_outcome", "friend_team_id", "friend_outcome", "match_id"]
                         ].reset_index(drop=True),
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
 
@@ -642,7 +642,7 @@ def main() -> None:
                 else:
                     view_all = breakdown_all.head(20).iloc[::-1]
                     title = f"Ratio global par carte — avec mes amis (min {min_matches_maps_friends} matchs)"
-                    st.plotly_chart(plot_map_ratio_with_winloss(view_all, title=title), use_container_width=True)
+                    st.plotly_chart(plot_map_ratio_with_winloss(view_all, title=title), width="stretch")
 
             # Vue trio (moi + 2 coéquipiers) : uniquement si on a au moins deux personnes.
             if len(picked_xuids) >= 2:
@@ -711,27 +711,27 @@ def main() -> None:
                         names = (me_name, f1_name, f2_name)
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="kills", names=names, title="Frags (tous les trois)", y_title="Frags"),
-                            use_container_width=True,
+                            width="stretch",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="deaths", names=names, title="Morts (tous les trois)", y_title="Morts"),
-                            use_container_width=True,
+                            width="stretch",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="assists", names=names, title="Assistances (tous les trois)", y_title="Assists"),
-                            use_container_width=True,
+                            width="stretch",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="ratio", names=names, title="Ratio (tous les trois)", y_title="Ratio", y_format=".3f"),
-                            use_container_width=True,
+                            width="stretch",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="accuracy", names=names, title="Précision (tous les trois)", y_title="%", y_suffix="%", y_format=".2f"),
-                            use_container_width=True,
+                            width="stretch",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="average_life_seconds", names=names, title="Durée de vie moyenne (tous les trois)", y_title="Secondes", y_format=".1f"),
-                            use_container_width=True,
+                            width="stretch",
                         )
 
             # Stats individuelles par ami
@@ -775,25 +775,25 @@ def main() -> None:
                 # Graphiques Kills/Deaths/Ratio
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.plotly_chart(plot_timeseries(sub, title=f"{me_name} — matchs avec {name}"), use_container_width=True)
+                    st.plotly_chart(plot_timeseries(sub, title=f"{me_name} — matchs avec {name}"), width="stretch")
                 with c2:
                     if friend_sub.empty:
                         st.warning("Impossible de charger les stats de l'ami sur les matchs partagés.")
                     else:
-                        st.plotly_chart(plot_timeseries(friend_sub, title=f"{name} — matchs avec {me_name}"), use_container_width=True)
+                        st.plotly_chart(plot_timeseries(friend_sub, title=f"{name} — matchs avec {me_name}"), width="stretch")
 
                 # Graphiques par minute
                 c3, c4 = st.columns(2)
                 with c3:
                     st.plotly_chart(
                         plot_per_minute_timeseries(sub, title=f"{me_name} — stats/min (avec {name})"),
-                        use_container_width=True,
+                        width="stretch",
                     )
                 with c4:
                     if not friend_sub.empty:
                         st.plotly_chart(
                             plot_per_minute_timeseries(friend_sub, title=f"{name} — stats/min (avec {me_name})"),
-                            use_container_width=True,
+                            width="stretch",
                         )
 
                 # Graphiques Average Life
@@ -802,13 +802,13 @@ def main() -> None:
                     if not sub.dropna(subset=["average_life_seconds"]).empty:
                         st.plotly_chart(
                             plot_average_life(sub, title=f"{me_name} — Durée de vie (avec {name})"),
-                            use_container_width=True,
+                            width="stretch",
                         )
                 with c6:
                     if not friend_sub.empty and not friend_sub.dropna(subset=["average_life_seconds"]).empty:
                         st.plotly_chart(
                             plot_average_life(friend_sub, title=f"{name} — Durée de vie (avec {me_name})"),
-                            use_container_width=True,
+                            width="stretch",
                         )
 
     # --------------------------------------------------------------------------
@@ -869,7 +869,7 @@ def main() -> None:
             if key in ("accuracy_avg",):
                 fig.update_xaxes(ticksuffix="%")
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
             tbl = breakdown.copy()
             tbl["win_rate"] = (tbl["win_rate"] * 100).round(1)
@@ -888,7 +888,7 @@ def main() -> None:
                         "ratio_global": "Ratio global",
                     }
                 ),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -940,7 +940,7 @@ def main() -> None:
 
         st.dataframe(
             styled,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "match_url": st.column_config.LinkColumn(
