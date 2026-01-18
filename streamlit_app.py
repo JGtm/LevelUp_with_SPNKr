@@ -380,7 +380,7 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             x=df["start_time"],
             y=df["kills"],
             mode="lines+markers",
-            name="Kills",
+            name="Frags",
             line=dict(width=2, color="#2E86AB"),
             marker=dict(size=6, color="#2E86AB"),
             customdata=customdata,
@@ -394,7 +394,7 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
             x=df["start_time"],
             y=df["deaths"],
             mode="lines+markers",
-            name="Deaths",
+            name="Morts",
             line=dict(width=2, color="#D1495B"),
             marker=dict(size=6, color="#D1495B"),
             customdata=customdata,
@@ -426,7 +426,7 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         hovermode="x unified",
     )
 
-    fig.update_yaxes(title_text="Kills / Deaths", rangemode="tozero", secondary_y=False)
+    fig.update_yaxes(title_text="Frags / Morts", rangemode="tozero", secondary_y=False)
     fig.update_yaxes(title_text="Ratio", secondary_y=True)
     return fig
 
@@ -567,8 +567,8 @@ def plot_outcomes_mom(df: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     fig.add_bar(x=pivot.index, y=wins, name="Victoires", marker_color="#3A7D44")
     fig.add_bar(x=pivot.index, y=losses, name="Défaites", marker_color="#D1495B")
-    fig.add_bar(x=pivot.index, y=ties, name="Égalités", marker_color="#2E86AB")
-    fig.add_bar(x=pivot.index, y=nofin, name="Non terminés", marker_color="#8E8E8E")
+    fig.add_bar(x=pivot.index, y=ties, name="Égalités", marker_color="#8E6CFF")
+    fig.add_bar(x=pivot.index, y=nofin, name="Non terminés", marker_color="#8E6CFF")
     fig.update_layout(template="plotly_white", barmode="stack", height=360, margin=dict(l=40, r=20, t=30, b=40))
     fig.update_yaxes(title_text="Nombre")
     return fig
@@ -1337,25 +1337,62 @@ def main() -> None:
             + "/matches/"
             + dff["match_id"].astype(str)
         )
+
+        outcome_map = {
+            2: "Victoire",
+            3: "Défaite",
+            1: "Égalité",
+            4: "Non terminé",
+        }
+        dff["outcome_label"] = dff["outcome"].map(outcome_map).fillna("-")
+
         show_cols = [
             "match_url",
             "start_time",
             "map_name",
             "playlist_name",
-            "outcome",
+            "outcome_label",
             "kda",
+            "kills",
+            "deaths",
             "max_killing_spree",
             "headshot_kills",
             "average_life_seconds",
-            "kills",
-            "deaths",
             "assists",
             "accuracy",
             "ratio",
         ]
         table = dff[show_cols].sort_values("start_time", ascending=False).reset_index(drop=True)
+
+        def _style_outcome(v: str) -> str:
+            s = (v or "").strip().lower()
+            if s == "victoire":
+                return "color: #1B5E20; font-weight: 700;"
+            if s == "défaite" or s == "defaite":
+                return "color: #B71C1C; font-weight: 700;"
+            if s == "égalité" or s == "egalite":
+                return "color: #8E6CFF; font-weight: 700;"
+            if s == "non terminé" or s == "non termine":
+                return "color: #8E6CFF; font-weight: 700;"
+            return ""
+
+        def _style_kda(v) -> str:
+            try:
+                x = float(v)
+            except Exception:
+                return ""
+            if x > 0:
+                return "color: #1B5E20; font-weight: 700;"
+            if x < 0:
+                return "color: #B71C1C; font-weight: 700;"
+            return "color: #424242;"
+
+        styled = table.style.applymap(_style_outcome, subset=["outcome_label"]).applymap(
+            _style_kda, subset=["kda"]
+        )
+
         st.dataframe(
-            table,
+            styled,
             width="stretch",
             hide_index=True,
             column_config={
@@ -1364,6 +1401,14 @@ def main() -> None:
                     display_text="Ouvrir",
                     help="Ouvre la page HaloWaypoint du match",
                 ),
+                "map_name": st.column_config.TextColumn("Carte"),
+                "playlist_name": st.column_config.TextColumn("Playlist"),
+                "outcome_label": st.column_config.TextColumn("Résultat"),
+                "kda": st.column_config.NumberColumn("FDA", format="%.2f"),
+                "kills": st.column_config.NumberColumn("Frags"),
+                "deaths": st.column_config.NumberColumn("Morts"),
+                "assists": st.column_config.NumberColumn("Assistances"),
+                "accuracy": st.column_config.NumberColumn("Précision (%)", format="%.2f"),
             },
         )
 
