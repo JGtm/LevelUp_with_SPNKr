@@ -398,6 +398,10 @@ def _is_allowed_playlist_name(name: str) -> bool:
 def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
 
+    # Axe X: index de match (robuste pour afficher des barres). On garde l'info temps en labels.
+    d = df.sort_values("start_time").reset_index(drop=True)
+    x_idx = list(range(len(d)))
+
     common_hover = (
         "frags=%{customdata[0]} morts=%{customdata[1]} assistances=%{customdata[2]}<br>"
         "précision=%{customdata[3]}% ratio=%{customdata[4]:.3f}<extra></extra>"
@@ -405,37 +409,24 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
 
     customdata = list(
         zip(
-            df["kills"],
-            df["deaths"],
-            df["assists"],
-            df["accuracy"].round(2).astype(object),
-            df["ratio"],
+            d["kills"],
+            d["deaths"],
+            d["assists"],
+            d["accuracy"].round(2).astype(object),
+            d["ratio"],
         )
     )
 
-    # Sur un axe datetime, Plotly peut rendre les barres quasi invisibles si les parties sont
-    # très rapprochées: on force une largeur raisonnable (en millisecondes).
-    x_times = pd.to_datetime(df["start_time"], errors="coerce")
-    width_ms = 60 * 60 * 1000  # fallback: 1h
-    if len(x_times) >= 2:
-        deltas_ms = x_times.sort_values().diff().dt.total_seconds().mul(1000).dropna()
-        if not deltas_ms.empty:
-            med = float(deltas_ms.median())
-            if med == med and med > 0:
-                width_ms = med * 0.70
-    width_ms = max(width_ms, 8 * 60 * 1000)  # min: 8 minutes
-    width_ms = min(width_ms, 18 * 60 * 60 * 1000)  # max: 18 heures
-
     fig.add_trace(
         go.Bar(
-            x=df["start_time"],
-            y=df["kills"],
+            x=x_idx,
+            y=d["kills"],
             name="Frags",
             marker_color=HALO_COLORS["cyan"],
             opacity=0.85,
-            width=width_ms,
             alignmentgroup="kda_main",
             offsetgroup="kills",
+            width=0.42,
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -444,14 +435,14 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
 
     fig.add_trace(
         go.Bar(
-            x=df["start_time"],
-            y=df["deaths"],
+            x=x_idx,
+            y=d["deaths"],
             name="Morts",
             marker_color=HALO_COLORS["red"],
             opacity=0.65,
-            width=width_ms,
             alignmentgroup="kda_main",
             offsetgroup="deaths",
+            width=0.42,
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -460,8 +451,8 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
 
     fig.add_trace(
         go.Scatter(
-            x=df["start_time"],
-            y=df["ratio"],
+            x=x_idx,
+            y=d["ratio"],
             mode="lines",
             name="Ratio",
             line=dict(width=2.2, color=HALO_COLORS["green"]),
@@ -487,6 +478,17 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
 
     fig.update_yaxes(title_text="Frags / Morts", rangemode="tozero", secondary_y=False)
     fig.update_yaxes(title_text="Ratio", secondary_y=True)
+
+    # Affiche quelques labels de date/heure (sinon c'est illisible avec beaucoup de matchs).
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    if len(labels) <= 1:
+        tickvals = x_idx
+        ticktext = labels
+    else:
+        step = max(1, len(labels) // 10)
+        tickvals = x_idx[::step]
+        ticktext = labels[::step]
+    fig.update_xaxes(title_text="Match (chronologique)", tickmode="array", tickvals=tickvals, ticktext=ticktext)
     return _apply_halo_plot_style(fig, title=title, height=520)
 
 
