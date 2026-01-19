@@ -831,7 +831,7 @@ def main() -> None:
                 perf_d = pm.get("deaths") or {}
                 perf_a = pm.get("assists") or {}
 
-                st.subheader("Attendu vs réel")
+                st.subheader("Réel vs attendu")
                 av_cols = st.columns(4)
                 with av_cols[0]:
                     _metric_expected_vs_actual("Kills", perf_k, delta_color="normal")
