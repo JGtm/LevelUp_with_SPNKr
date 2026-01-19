@@ -40,14 +40,8 @@ def get_hero_html() -> str:
     <div class="wp-notch-top"></div>
     <div class="wp-notch-bottom"></div>
     <div class="hero">
-        <div class="title">OpenSpartan Graphs (local)</div>
+        <div class="title">OpenSpartan Graphs</div>
         <div class="subtitle">Analyse tes parties Halo Infinite depuis la DB OpenSpartan Workshop — filtres, séries temporelles, amis, maps.</div>
-        <div class="chips">
-            <span class="chip">DB locale SQLite</span>
-            <span class="chip">Streamlit + Plotly</span>
-            <span class="chip">Survol (hover) riche</span>
-            <span class="chip">Filtres playlists / période</span>
-        </div>
     </div>
     """
 

@@ -340,7 +340,7 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
     fig.add_trace(
         go.Bar(
             x=x_idx,
-            y=d["max_killing_spree"],
+            y=d["Folie meurtrière"],
             name="Spree (max)",
             marker_color=colors["amber"],
             opacity=PLOT_CONFIG.bar_opacity,
