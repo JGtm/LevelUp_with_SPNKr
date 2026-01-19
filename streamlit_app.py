@@ -185,7 +185,7 @@ def _style_outcome_text(v: str) -> str:
     if s in ("égalité", "egalite"):
         return "color: #8E6CFF; font-weight: 700;"
     if s in ("non terminé", "non termine"):
-        return "color: #616161; font-weight: 700;"
+        return "color: #8E6CFF; font-weight: 700;"
     return ""
 
 
@@ -326,6 +326,151 @@ def _plot_metric_bars_by_match(
     )
 
     return apply_halo_plot_style(fig, height=320)
+
+
+def _plot_multi_metric_bars_by_match(
+    series: list[tuple[str, pd.DataFrame]],
+    *,
+    metric_col: str,
+    title: str,
+    y_axis_title: str,
+    hover_label: str,
+    colors: dict[str, str] | list[str] | None,
+    smooth_window: int = 10,
+    show_smooth_lines: bool = True,
+) -> go.Figure | None:
+    if not series:
+        return None
+
+    prepared: list[tuple[str, pd.DataFrame]] = []
+    all_times: list[pd.Timestamp] = []
+    for name, df_ in series:
+        if df_ is None or df_.empty:
+            continue
+        if metric_col not in df_.columns or "start_time" not in df_.columns:
+            continue
+        d = df_[["start_time", metric_col]].copy()
+        d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
+        d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
+        if d.empty:
+            continue
+        prepared.append((str(name), d))
+        all_times.extend(d["start_time"].tolist())
+
+    if not prepared or not all_times:
+        return None
+
+    # Axe X commun (timeline de tous les joueurs)
+    uniq = pd.Series(all_times).dropna().drop_duplicates().sort_values()
+    times = uniq.tolist()
+    idx_map = {t: i for i, t in enumerate(times)}
+    labels = [pd.to_datetime(t).strftime("%d/%m %H:%M") for t in times]
+    step = max(1, len(labels) // 10) if labels else 1
+
+    fig = go.Figure()
+    w = int(smooth_window) if smooth_window else 0
+    for i, (name, d) in enumerate(prepared):
+        if isinstance(colors, dict):
+            color = colors.get(name) or "#35D0FF"
+        elif isinstance(colors, list) and colors:
+            color = colors[i % len(colors)]
+        else:
+            color = "#35D0FF"
+        y = pd.to_numeric(d[metric_col], errors="coerce")
+        mask = y.notna()
+        d2 = d.loc[mask].copy()
+        if d2.empty:
+            continue
+        y2 = pd.to_numeric(d2[metric_col], errors="coerce")
+        x = [idx_map.get(t) for t in d2["start_time"].tolist()]
+        x = [xi for xi in x if xi is not None]
+        if not x:
+            continue
+
+        fig.add_trace(
+            go.Bar(
+                x=x,
+                y=y2,
+                name=name,
+                marker_color=color,
+                opacity=0.70,
+                hovertemplate=f"{name}<br>{hover_label}=%{{y}}<extra></extra>",
+                legendgroup=name,
+            )
+        )
+
+        if bool(show_smooth_lines):
+            smooth = y2.rolling(window=max(1, w), min_periods=1).mean() if w and w > 1 else y2
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=smooth,
+                    mode="lines",
+                    name=f"{name} — moyenne lissée",
+                    line=dict(width=3, color=color),
+                    opacity=0.95,
+                    hovertemplate=f"{name}<br>moyenne=%{{y:.2f}}<extra></extra>",
+                    legendgroup=name,
+                )
+            )
+
+    if not fig.data:
+        return None
+
+    fig.update_layout(
+        title=title,
+        margin=dict(l=40, r=20, t=40, b=90),
+        hovermode="x unified",
+        legend=get_legend_horizontal_bottom(),
+        barmode="group",
+    )
+    fig.update_yaxes(title_text=y_axis_title, rangemode="tozero")
+    fig.update_xaxes(
+        title_text="Match (chronologique)",
+        tickmode="array",
+        tickvals=list(range(len(labels)))[::step],
+        ticktext=labels[::step],
+        type="category",
+    )
+
+    return apply_halo_plot_style(fig, height=320)
+
+
+def _assign_player_colors(names: list[str]) -> dict[str, str]:
+    palette = HALO_COLORS.as_dict()
+    cycle = [
+        palette["cyan"],
+        palette["violet"],
+        palette["amber"],
+        palette["red"],
+        palette["green"],
+        palette["slate"],
+    ]
+    state_key = "_os_player_colors"
+    persisted = st.session_state.get(state_key)
+    if not isinstance(persisted, dict):
+        persisted = {}
+
+    used = {str(v) for v in persisted.values() if v is not None}
+
+    for n in names:
+        key = str(n)
+        if not key or key in persisted:
+            continue
+
+        chosen = None
+        for c in cycle:
+            if c not in used:
+                chosen = c
+                break
+        if chosen is None:
+            chosen = cycle[len(persisted) % len(cycle)]
+
+        persisted[key] = chosen
+        used.add(chosen)
+
+    st.session_state[state_key] = persisted
+    return {str(n): persisted[str(n)] for n in names if str(n) in persisted}
 
 
 def _compute_session_span_seconds(df_: pd.DataFrame) -> float | None:
@@ -865,15 +1010,47 @@ def main() -> None:
         if filter_mode == "Période":
             cols = st.columns(2)
             with cols[0]:
-                if "start_date_fr" not in st.session_state:
-                    st.session_state["start_date_fr"] = format_date_fr(dmin)
-                start_raw = st.text_input("Début (dd/mm/yyyy)", key="start_date_fr")
-                start_d = _parse_date_fr_input(start_raw, default_value=dmin)
+                start_default = pd.to_datetime(dmin, errors="coerce")
+                if pd.isna(start_default):
+                    start_default = pd.Timestamp.today().normalize()
+                start_default_date = start_default.date()
+                end_limit = pd.to_datetime(dmax, errors="coerce")
+                if pd.isna(end_limit):
+                    end_limit = start_default
+                end_limit_date = end_limit.date()
+                start_value = st.session_state.get("start_date_cal", start_default_date)
+                if not isinstance(start_value, date) or start_value < start_default_date or start_value > end_limit_date:
+                    start_value = start_default_date
+                start_date = st.date_input(
+                    "Début",
+                    value=start_value,
+                    min_value=start_default_date,
+                    max_value=end_limit_date,
+                    format="DD/MM/YYYY",
+                    key="start_date_cal",
+                )
+                start_d = start_date
             with cols[1]:
-                if "end_date_fr" not in st.session_state:
-                    st.session_state["end_date_fr"] = format_date_fr(dmax)
-                end_raw = st.text_input("Fin (dd/mm/yyyy)", key="end_date_fr")
-                end_d = _parse_date_fr_input(end_raw, default_value=dmax)
+                end_default = pd.to_datetime(dmax, errors="coerce")
+                if pd.isna(end_default):
+                    end_default = pd.Timestamp.today().normalize()
+                end_default_date = end_default.date()
+                start_limit = pd.to_datetime(dmin, errors="coerce")
+                if pd.isna(start_limit):
+                    start_limit = end_default
+                start_limit_date = start_limit.date()
+                end_value = st.session_state.get("end_date_cal", end_default_date)
+                if not isinstance(end_value, date) or end_value < start_limit_date or end_value > end_default_date:
+                    end_value = end_default_date
+                end_date = st.date_input(
+                    "Fin",
+                    value=end_value,
+                    min_value=start_limit_date,
+                    max_value=end_default_date,
+                    format="DD/MM/YYYY",
+                    key="end_date_cal",
+                )
+                end_d = end_date
             if start_d > end_d:
                 st.warning("La date de début est après la date de fin.")
         else:
@@ -1117,60 +1294,52 @@ def main() -> None:
         avg_life = dff["average_life_seconds"].dropna().mean() if not dff.empty else None
 
     # ------------------------------------------------------------------
-    # Bandeau résumé (en haut du site)
+    # Bandeau résumé (en haut du site) — regroupé
     # ------------------------------------------------------------------
-    _render_top_summary(len(dff), rates)
-
     avg_match_seconds = _avg_match_duration_seconds(dff)
     total_play_seconds = _compute_total_play_seconds(dff)
     avg_match_txt = _format_duration_hms(avg_match_seconds)
     total_play_txt = _format_duration_dhm(total_play_seconds)
-    st.markdown(
-        "<div class='os-top-kpis'>"
-        "  <div class='os-top-kpi'>"
-        "    <div class='os-top-kpi__label'>Durée moyenne / match</div>"
-        f"    <div class='os-top-kpi__value'>{avg_match_txt}</div>"
-        "  </div>"
-        "  <div class='os-top-kpi'>"
-        "    <div class='os-top-kpi__label'>Durée totale</div>"
-        f"    <div class='os-top-kpi__value'>{total_play_txt}</div>"
-        "  </div>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+
+    # Stats par minute / totaux
+    stats = compute_aggregated_stats(dff)
 
     # Moyennes par partie
     kpg = dff["kills"].mean() if not dff.empty else None
     dpg = dff["deaths"].mean() if not dff.empty else None
     apg = dff["assists"].mean() if not dff.empty else None
 
+    st.subheader("Parties")
+    _render_top_summary(len(dff), rates)
     _render_kpi_cards(
         [
-            ("Frags par partie", f"{kpg:.2f}" if (kpg is not None and pd.notna(kpg)) else "-"),
-            ("Morts par partie", f"{dpg:.2f}" if (dpg is not None and pd.notna(dpg)) else "-"),
-            ("Assistances par partie", f"{apg:.2f}" if (apg is not None and pd.notna(apg)) else "-"),
+            ("Durée moyenne / match", avg_match_txt),
         ]
     )
 
-    # Stats par minute
-    stats = compute_aggregated_stats(dff)
-
+    st.subheader("Carrière")
+    _render_kpi_cards(
+        [
+            ("Durée moyenne / match", avg_match_txt),
+            ("Frags par partie", f"{kpg:.2f}" if (kpg is not None and pd.notna(kpg)) else "-"),
+            ("Morts par partie", f"{dpg:.2f}" if (dpg is not None and pd.notna(dpg)) else "-"),
+            ("Assistances par partie", f"{apg:.2f}" if (apg is not None and pd.notna(apg)) else "-"),
+        ],
+        dense=False,
+    )
     _render_kpi_cards(
         [
             ("Frags / min", f"{stats.kills_per_minute:.2f}" if stats.kills_per_minute else "-"),
             ("Morts / min", f"{stats.deaths_per_minute:.2f}" if stats.deaths_per_minute else "-"),
             ("Assistances / min", f"{stats.assists_per_minute:.2f}" if stats.assists_per_minute else "-"),
-        ]
-    )
-
-    _render_kpi_cards(
-        [
             ("Précision moyenne", f"{avg_acc:.2f}%" if avg_acc is not None else "-"),
+            ("Durée totale", total_play_txt),
+            ("Durée de vie moyenne", format_mmss(avg_life)),
             ("Taux de victoire", f"{win_rate*100:.1f}%" if rates.total else "-"),
             ("Taux de défaite", f"{loss_rate*100:.1f}%" if rates.total else "-"),
-            ("Ratio global", f"{global_ratio:.2f}" if global_ratio is not None else "-"),
-            ("Durée de vie moyenne", format_mmss(avg_life)),
-        ]
+            ("Ratio", f"{global_ratio:.2f}" if global_ratio is not None else "-"),
+        ],
+        dense=False,
     )
 
     # (Résumé déplacé en haut du site)
@@ -1226,6 +1395,8 @@ def main() -> None:
                 outcome_color = colors["red"]
             elif outcome_code == OUTCOME_CODES.TIE:
                 outcome_color = colors["violet"]
+            elif outcome_code == OUTCOME_CODES.NO_FINISH:
+                outcome_color = colors["violet"]
             else:
                 outcome_color = colors["slate"]
 
@@ -1239,21 +1410,26 @@ def main() -> None:
             if wp and last_match_id and last_match_id.strip() and last_match_id.strip() != "-":
                 match_url = f"https://www.halowaypoint.com/halo-infinite/players/{wp}/matches/{last_match_id.strip()}"
 
-            top_cols = st.columns([2, 3])
+            # Date plus large, et carte résultat plus propre.
+            top_cols = st.columns([3, 4])
             with top_cols[0]:
-                top_cols_0 = st.columns([2, 3])
-                with top_cols_0[0]:
-                    st.metric("Date", format_date_fr(last_time))
-                with top_cols_0[1]:
-                    st.markdown(
-                        "<div style='border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:10px 12px; background: rgba(255,255,255,0.03)'>"
-                        "<div style='display:flex; align-items:baseline; gap:10px; justify-content:space-between'>"
-                        f"<div style='font-weight:900; font-size:1.05rem; color:{outcome_color}'>{outcome_label}</div>"
-                        f"<div style='font-weight:900; font-size:1.05rem; color:{score_color}'>{score_label}</div>"
-                        "</div>"
-                        "</div>",
-                        unsafe_allow_html=True,
-                    )
+                st.metric("Date", format_date_fr(last_time))
+            with top_cols[1]:
+                outcome_border = f"{outcome_color}55" if str(outcome_color).startswith("#") else outcome_color
+                outcome_bg = f"{outcome_color}14" if str(outcome_color).startswith("#") else "rgba(255,255,255,0.03)"
+                st.markdown(
+                    "<div style='border:1px solid "
+                    + str(outcome_border)
+                    + "; border-radius:14px; padding:12px 14px; background: "
+                    + str(outcome_bg)
+                    + "; box-shadow: 0 6px 18px rgba(0,0,0,0.18)'>"
+                    "<div style='display:flex; align-items:center; gap:12px; justify-content:space-between'>"
+                    f"<div style='font-weight:900; font-size:1.10rem; color:{outcome_color}; letter-spacing:0.2px'>{outcome_label}</div>"
+                    f"<div style='font-weight:900; font-size:1.10rem; color:{score_color}; letter-spacing:0.2px'>{score_label}</div>"
+                    "</div>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
 
             # Carte + Playlist + Mode sur la même ligne
             last_mode_ui = last_row.get("mode_ui") or _normalize_mode_label(str(last_pair) if last_pair else None)
@@ -1471,8 +1647,7 @@ def main() -> None:
                 st.info("FDA indisponible sur ce filtre.")
             else:
                 m = st.columns(1)
-                m[0].metric("Moyenne FDA", f"{valid['kda'].mean():.2f}")
-                st.caption("Densité (KDE) + rug : forme de la distribution + position des matchs.")
+                m[0].metric("", f"{valid['kda'].mean():.2f}")
                 st.plotly_chart(plot_kda_distribution(dff), width="stretch")
 
             st.subheader("Assistances")
@@ -1540,10 +1715,6 @@ def main() -> None:
                     else:
                         d["bucket"] = d["start_time"].dt.to_period("M").astype(str)
 
-                d["my_score"] = pd.to_numeric(d.get("my_team_score"), errors="coerce")
-                d["enemy_score"] = pd.to_numeric(d.get("enemy_team_score"), errors="coerce")
-                d["score_diff"] = d["my_score"] - d["enemy_score"]
-
                 pivot = (
                     d.pivot_table(index="bucket", columns="outcome", values="match_id", aggfunc="count")
                     .fillna(0)
@@ -1561,9 +1732,6 @@ def main() -> None:
                     * (out_tbl["Victoires"] / out_tbl["Total"].where(out_tbl["Total"] > 0))
                 ).fillna(0.0)
 
-                score_diff_avg = d.groupby("bucket")["score_diff"].mean(numeric_only=True)
-                out_tbl["Diff score moy."] = score_diff_avg
-
                 out_tbl = out_tbl.reset_index().rename(columns={"bucket": bucket_label.capitalize()})
 
                 def _style_pct(v) -> str:
@@ -1573,14 +1741,13 @@ def main() -> None:
                         return ""
                     return "color: #E0E0E0; font-weight: 700;"
 
-                out_styled = out_tbl.style.map(_style_pct, subset=["Win rate"]).map(_style_signed_number, subset=["Diff score moy."])
+                out_styled = out_tbl.style.map(_style_pct, subset=["Win rate"])
                 st.dataframe(
                     out_styled,
                     width="stretch",
                     hide_index=True,
                     column_config={
                         "Win rate": st.column_config.NumberColumn("Win rate", format="%.1f%%"),
-                        "Diff score moy.": st.column_config.NumberColumn("Diff score moy.", format="%.2f"),
                     },
                 )
 
@@ -1715,7 +1882,63 @@ def main() -> None:
                     "Ratio global",
                 ]
                 tbl_disp = tbl_disp[[c for c in ordered_cols if c in tbl_disp.columns]]
-                st.dataframe(tbl_disp, width="stretch", hide_index=True)
+
+                # Style: vert/rouge selon l'avantage (win% vs loss%), et violet si égalité.
+                # Ratio: >1 vert, <1 rouge, ==1 violet (8E6CFF).
+                def _to_float(v: object) -> Optional[float]:
+                    try:
+                        if v is None:
+                            return None
+                        x = float(v)
+                        return x if x == x else None
+                    except Exception:
+                        return None
+
+                def _style_map_table_row(row: pd.Series) -> pd.Series:
+                    green = str(getattr(HALO_COLORS, "green", "#2ECC71"))
+                    red = str(getattr(HALO_COLORS, "red", "#E74C3C"))
+                    violet = "#8E6CFF"
+
+                    w = _to_float(row.get("Taux victoire (%)"))
+                    l = _to_float(row.get("Taux défaite (%)"))
+                    r = _to_float(row.get("Ratio global"))
+
+                    styles: dict[str, str] = {str(c): "" for c in row.index}
+
+                    if w is not None and l is not None:
+                        if w > l:
+                            styles["Taux victoire (%)"] = f"color: {green}; font-weight: 800;"
+                            styles["Taux défaite (%)"] = f"color: {red}; font-weight: 800;"
+                        elif w < l:
+                            styles["Taux victoire (%)"] = f"color: {red}; font-weight: 800;"
+                            styles["Taux défaite (%)"] = f"color: {green}; font-weight: 800;"
+                        else:
+                            styles["Taux victoire (%)"] = f"color: {violet}; font-weight: 800;"
+                            styles["Taux défaite (%)"] = f"color: {violet}; font-weight: 800;"
+
+                    if r is not None:
+                        if r > 1.0:
+                            styles["Ratio global"] = f"color: {green}; font-weight: 800;"
+                        elif r < 1.0:
+                            styles["Ratio global"] = f"color: {red}; font-weight: 800;"
+                        else:
+                            styles["Ratio global"] = f"color: {violet}; font-weight: 800;"
+
+                    return pd.Series(styles)
+
+                tbl_styled = tbl_disp.style.apply(_style_map_table_row, axis=1)
+                st.dataframe(
+                    tbl_styled,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Parties": st.column_config.NumberColumn("Parties", format="%d"),
+                        "Précision moy. (%)": st.column_config.NumberColumn("Précision moy. (%)", format="%.2f"),
+                        "Taux victoire (%)": st.column_config.NumberColumn("Taux victoire (%)", format="%.1f"),
+                        "Taux défaite (%)": st.column_config.NumberColumn("Taux défaite (%)", format="%.1f"),
+                        "Ratio global": st.column_config.NumberColumn("Ratio global", format="%.2f"),
+                    },
+                )
 
             # (Le graphique "Net victoires/défaites" a été retiré :
             #  l'onglet se concentre sur le graphe Victoires au-dessus / Défaites en dessous.)
@@ -1732,6 +1955,13 @@ def main() -> None:
             key="apply_current_filters_teammates",
         )
         same_team_only_teammates = st.checkbox("Même équipe", value=True, key="teammates_same_team_only")
+
+        show_smooth_teammates = st.toggle(
+            "Afficher les courbes lissées",
+            value=bool(st.session_state.get("teammates_show_smooth", True)),
+            key="teammates_show_smooth",
+            help="Active/désactive les courbes de moyenne lissée sur les graphes de cette section.",
+        )
 
         opts_map, default_labels = _build_friends_opts_map(db_path, xuid.strip(), db_key, aliases_key)
         picked_labels = st.multiselect(
@@ -1874,69 +2104,44 @@ def main() -> None:
                                     width="stretch",
                                     key=f"friend_life_fr_{friend_xuid}",
                                 )
+                        # Folie meurtrière / Tirs à la tête (tout en bas, avant les médailles) — 1 graphe par ligne.
+                        series = [(me_name, sub)]
+                        if not friend_sub.empty:
+                            series.append((name, friend_sub))
+                        colors_by_name = _assign_player_colors([n for n, _ in series])
 
-                        # Avant-dernier: Folie meurtrière / Tirs à la tête (style barres + moyenne lissée) puis médailles.
-                        st.subheader("Folie meurtrière (max) & tirs à la tête")
-                        colors = HALO_COLORS.as_dict()
-                        s1, s2 = st.columns(2)
-                        with s1:
-                            st.caption(f"{me_name}")
-                            fig_spree_me = _plot_metric_bars_by_match(
-                                sub,
-                                metric_col="max_killing_spree",
-                                title="Folie meurtrière (max)",
-                                y_axis_title="Folie meurtrière (max)",
-                                hover_label="folie meurtrière",
-                                bar_color=colors["amber"],
-                                smooth_color=colors["green"],
-                                smooth_window=10,
-                            )
-                            if fig_spree_me is not None:
-                                st.plotly_chart(fig_spree_me, width="stretch", key=f"friend_spree_me_{friend_xuid}")
-                            fig_hs_me = _plot_metric_bars_by_match(
-                                sub,
-                                metric_col="headshot_kills",
-                                title="Tirs à la tête",
-                                y_axis_title="Tirs à la tête",
-                                hover_label="tirs à la tête",
-                                bar_color=colors["red"],
-                                smooth_color=colors["green"],
-                                smooth_window=10,
-                            )
-                            if fig_hs_me is not None:
-                                st.plotly_chart(fig_hs_me, width="stretch", key=f"friend_hs_me_{friend_xuid}")
+                        fig_spree = _plot_multi_metric_bars_by_match(
+                            series,
+                            metric_col="max_killing_spree",
+                            title="Folie meurtrière (max)",
+                            y_axis_title="Folie meurtrière (max)",
+                            hover_label="folie meurtrière",
+                            colors=colors_by_name,
+                            smooth_window=10,
+                            show_smooth_lines=show_smooth_teammates,
+                        )
+                        if fig_spree is None:
+                            st.info("Aucune donnée de folie meurtrière (max) sur ces matchs.")
+                        else:
+                            st.plotly_chart(fig_spree, width="stretch", key=f"friend_spree_multi_{friend_xuid}")
 
-                        with s2:
-                            st.caption(f"{name}")
-                            if friend_sub.empty:
-                                st.info("Stats du coéquipier indisponibles pour ces matchs.")
-                            else:
-                                fig_spree_fr = _plot_metric_bars_by_match(
-                                    friend_sub,
-                                    metric_col="max_killing_spree",
-                                    title="Folie meurtrière (max)",
-                                    y_axis_title="Folie meurtrière (max)",
-                                    hover_label="folie meurtrière",
-                                    bar_color=colors["amber"],
-                                    smooth_color=colors["green"],
-                                    smooth_window=10,
-                                )
-                                if fig_spree_fr is not None:
-                                    st.plotly_chart(fig_spree_fr, width="stretch", key=f"friend_spree_fr_{friend_xuid}")
-                                fig_hs_fr = _plot_metric_bars_by_match(
-                                    friend_sub,
-                                    metric_col="headshot_kills",
-                                    title="Tirs à la tête",
-                                    y_axis_title="Tirs à la tête",
-                                    hover_label="tirs à la tête",
-                                    bar_color=colors["red"],
-                                    smooth_color=colors["green"],
-                                    smooth_window=10,
-                                )
-                                if fig_hs_fr is not None:
-                                    st.plotly_chart(fig_hs_fr, width="stretch", key=f"friend_hs_fr_{friend_xuid}")
+                        fig_hs = _plot_multi_metric_bars_by_match(
+                            series,
+                            metric_col="headshot_kills",
+                            title="Tirs à la tête",
+                            y_axis_title="Tirs à la tête",
+                            hover_label="tirs à la tête",
+                            colors=colors_by_name,
+                            smooth_window=10,
+                            show_smooth_lines=show_smooth_teammates,
+                        )
+                        if fig_hs is None:
+                            st.info("Aucune donnée de tirs à la tête sur ces matchs.")
+                        else:
+                            st.plotly_chart(fig_hs, width="stretch", key=f"friend_hs_multi_{friend_xuid}")
 
                         st.subheader("Médailles (matchs partagés)")
+
                         shared_list = sorted({str(x) for x in shared_ids if str(x).strip()})
                         if not shared_list:
                             st.info("Aucun match partagé pour calculer les médailles.")
@@ -2006,54 +2211,23 @@ def main() -> None:
                     base_for_friends_all["match_id"].astype(str).isin(all_match_ids)
                 ].copy()
 
-                # Graphes demandés: style identique (barres + moyenne lissée), un sous-onglet par coéquipier.
-                st.subheader("Folie meurtrière (max) & tirs à la tête")
-                colors = HALO_COLORS.as_dict()
-                tab_labels = [display_name_from_xuid(fx) for fx in picked_xuids]
-                max_tabs = 8
-                if len(tab_labels) > max_tabs:
-                    st.warning(f"Beaucoup de coéquipiers sélectionnés : affichage limité aux {max_tabs} premiers pour garder l'UI lisible.")
-                use_xuids = picked_xuids[:max_tabs]
-                use_tabs = tab_labels[:max_tabs]
-                friend_tabs = st.tabs(use_tabs)
-                for tab_obj, fx in zip(friend_tabs, use_xuids):
-                    with tab_obj:
-                        ids = per_friend_ids.get(str(fx), set())
-                        sub_fx = base_for_friends_all.loc[
-                            base_for_friends_all["match_id"].astype(str).isin(ids)
-                        ].copy()
-                        g1, g2 = st.columns(2)
-                        with g1:
-                            fig_spree = _plot_metric_bars_by_match(
-                                sub_fx,
-                                metric_col="max_killing_spree",
-                                title="Folie meurtrière (max)",
-                                y_axis_title="Folie meurtrière (max)",
-                                hover_label="folie meurtrière",
-                                bar_color=colors["amber"],
-                                smooth_color=colors["green"],
-                                smooth_window=10,
-                            )
-                            if fig_spree is None:
-                                st.info("Aucune donnée de folie meurtrière (max) sur ces matchs.")
-                            else:
-                                st.plotly_chart(fig_spree, width="stretch", key=f"friends_pick_spree_{fx}")
+                use_xuids = picked_xuids
 
-                        with g2:
-                            fig_hs = _plot_metric_bars_by_match(
-                                sub_fx,
-                                metric_col="headshot_kills",
-                                title="Tirs à la tête",
-                                y_axis_title="Tirs à la tête",
-                                hover_label="tirs à la tête",
-                                bar_color=colors["red"],
-                                smooth_color=colors["green"],
-                                smooth_window=10,
-                            )
-                            if fig_hs is None:
-                                st.info("Aucune donnée de tirs à la tête sur ces matchs.")
-                            else:
-                                st.plotly_chart(fig_hs, width="stretch", key=f"friends_pick_hs_{fx}")
+                series: list[tuple[str, pd.DataFrame]] = [(me_name, sub_all)]
+                with st.spinner("Chargement des stats des coéquipiers…"):
+                    for fx in use_xuids:
+                        ids = per_friend_ids.get(str(fx), set())
+                        if not ids:
+                            continue
+                        try:
+                            fr_df = load_df(db_path, str(fx), db_key=db_key)
+                        except Exception:
+                            continue
+                        fr_sub = fr_df.loc[fr_df["match_id"].astype(str).isin(ids)].copy()
+                        if fr_sub.empty:
+                            continue
+                        series.append((display_name_from_xuid(str(fx)), fr_sub))
+                colors_by_name = _assign_player_colors([n for n, _ in series])
 
                 breakdown_all = compute_map_breakdown(sub_all)
                 breakdown_all = breakdown_all.loc[breakdown_all["matches"] >= int(min_matches_maps_friends)].copy()
@@ -2089,6 +2263,23 @@ def main() -> None:
                     friends_table["score"] = friends_table.apply(
                         lambda r: _format_score_label(r.get("my_team_score"), r.get("enemy_team_score")), axis=1
                     )
+
+                    # MMR équipe/adverse : même source que l'onglet "Dernier match" (PlayerMatchStats).
+                    def _mmr_tuple(match_id: str):
+                        pm = cached_load_player_match_result(db_path, str(match_id), xuid.strip(), db_key=db_key)
+                        if not isinstance(pm, dict):
+                            return (None, None)
+                        return (pm.get("team_mmr"), pm.get("enemy_mmr"))
+
+                    mmr_pairs = friends_table["match_id"].astype(str).apply(_mmr_tuple)
+                    friends_table["team_mmr"] = mmr_pairs.apply(lambda t: t[0])
+                    friends_table["enemy_mmr"] = mmr_pairs.apply(lambda t: t[1])
+                    friends_table["delta_mmr"] = friends_table.apply(
+                        lambda r: (float(r.get("team_mmr")) - float(r.get("enemy_mmr")))
+                        if (r.get("team_mmr") is not None and r.get("enemy_mmr") is not None)
+                        else None,
+                        axis=1,
+                    )
                     wp = str(waypoint_player or "").strip()
                     if wp:
                         friends_table["match_url"] = (
@@ -2108,11 +2299,9 @@ def main() -> None:
                         "mode",
                         "outcome_label",
                         "score",
-                        "kda",
-                        "kills",
-                        "deaths",
-                        "assists",
-                        "accuracy",
+                        "team_mmr",
+                        "enemy_mmr",
+                        "delta_mmr",
                     ]
                     friends_view = (
                         friends_table.sort_values("start_time", ascending=False)[friends_show]
@@ -2122,7 +2311,7 @@ def main() -> None:
                         friends_view.style
                         .map(_style_outcome_text, subset=["outcome_label"])
                         .map(_style_score_label, subset=["score"])
-                        .map(_style_signed_number, subset=["kda"])
+                        .map(_style_signed_number, subset=["delta_mmr"])
                     )
                     st.dataframe(
                         friends_styled,
@@ -2136,13 +2325,14 @@ def main() -> None:
                             "mode": st.column_config.TextColumn("Mode"),
                             "outcome_label": st.column_config.TextColumn("Résultat"),
                             "score": st.column_config.TextColumn("Score"),
-                            "kda": st.column_config.NumberColumn("FDA", format="%.2f"),
-                            "kills": st.column_config.NumberColumn("Frags"),
-                            "deaths": st.column_config.NumberColumn("Morts"),
-                            "assists": st.column_config.NumberColumn("Assistances"),
-                            "accuracy": st.column_config.NumberColumn("Précision (%)", format="%.2f"),
+                            "team_mmr": st.column_config.NumberColumn("MMR d'équipe", format="%.1f"),
+                            "enemy_mmr": st.column_config.NumberColumn("MMR adverse", format="%.1f"),
+                            "delta_mmr": st.column_config.NumberColumn("Écart MMR", format="%+.1f"),
                         },
                     )
+
+                # Graphes : on les rendra tout en bas (idéalement juste avant les médailles).
+                rendered_bottom_charts = False
 
             # Vue trio (moi + 2 coéquipiers) : uniquement si on a au moins deux personnes.
             if len(picked_xuids) >= 2:
@@ -2299,6 +2489,39 @@ def main() -> None:
                             key=f"trio_life_{f1_xuid}_{f2_xuid}",
                         )
 
+                        # Graphes (tout en bas, juste avant les médailles) — 1 graphe par ligne.
+                        fig_spree = _plot_multi_metric_bars_by_match(
+                            series,
+                            metric_col="max_killing_spree",
+                            title="Folie meurtrière (max)",
+                            y_axis_title="Folie meurtrière (max)",
+                            hover_label="folie meurtrière",
+                            colors=colors_by_name,
+                            smooth_window=10,
+                            show_smooth_lines=show_smooth_teammates,
+                        )
+                        if fig_spree is None:
+                            st.info("Aucune donnée de folie meurtrière (max) sur ces matchs.")
+                        else:
+                            st.plotly_chart(fig_spree, width="stretch", key=f"teammates_multi_spree_{len(series)}")
+
+                        fig_hs = _plot_multi_metric_bars_by_match(
+                            series,
+                            metric_col="headshot_kills",
+                            title="Tirs à la tête",
+                            y_axis_title="Tirs à la tête",
+                            hover_label="tirs à la tête",
+                            colors=colors_by_name,
+                            smooth_window=10,
+                            show_smooth_lines=show_smooth_teammates,
+                        )
+                        if fig_hs is None:
+                            st.info("Aucune donnée de tirs à la tête sur ces matchs.")
+                        else:
+                            st.plotly_chart(fig_hs, width="stretch", key=f"teammates_multi_hs_{len(series)}")
+
+                        rendered_bottom_charts = True
+
                         st.subheader("Médailles")
                         trio_match_ids = [str(x) for x in merged["match_id"].dropna().astype(str).tolist()]
                         if not trio_match_ids:
@@ -2329,6 +2552,38 @@ def main() -> None:
                                         cols_per_row=6,
                                     )
 
+                if not rendered_bottom_charts:
+                    # S'il n'y a pas de trio (ou pas assez de données), on affiche quand même les graphes tout en bas.
+                    fig_spree = _plot_multi_metric_bars_by_match(
+                        series,
+                        metric_col="max_killing_spree",
+                        title="Folie meurtrière (max)",
+                        y_axis_title="Folie meurtrière (max)",
+                        hover_label="folie meurtrière",
+                        colors=colors_by_name,
+                        smooth_window=10,
+                        show_smooth_lines=show_smooth_teammates,
+                    )
+                    if fig_spree is None:
+                        st.info("Aucune donnée de folie meurtrière (max) sur ces matchs.")
+                    else:
+                        st.plotly_chart(fig_spree, width="stretch", key=f"teammates_multi_spree_{len(series)}")
+
+                    fig_hs = _plot_multi_metric_bars_by_match(
+                        series,
+                        metric_col="headshot_kills",
+                        title="Tirs à la tête",
+                        y_axis_title="Tirs à la tête",
+                        hover_label="tirs à la tête",
+                        colors=colors_by_name,
+                        smooth_window=10,
+                        show_smooth_lines=show_smooth_teammates,
+                    )
+                    if fig_hs is None:
+                        st.info("Aucune donnée de tirs à la tête sur ces matchs.")
+                    else:
+                        st.plotly_chart(fig_hs, width="stretch", key=f"teammates_multi_hs_{len(series)}")
+
 
     # --------------------------------------------------------------------------
     # Tab: Historique des parties
@@ -2354,12 +2609,31 @@ def main() -> None:
             lambda r: _format_score_label(r.get("my_team_score"), r.get("enemy_team_score")), axis=1
         )
 
+        # MMR équipe/adverse pour chaque match (source PlayerMatchStats).
+        with st.spinner("Chargement des MMR (équipe/adverse)…"):
+            def _mmr_tuple(match_id: str):
+                pm = cached_load_player_match_result(db_path, str(match_id), xuid.strip(), db_key=db_key)
+                if not isinstance(pm, dict):
+                    return (None, None)
+                return (pm.get("team_mmr"), pm.get("enemy_mmr"))
+
+            mmr_pairs = dff_table["match_id"].astype(str).apply(_mmr_tuple)
+            dff_table["team_mmr"] = mmr_pairs.apply(lambda t: t[0])
+            dff_table["enemy_mmr"] = mmr_pairs.apply(lambda t: t[1])
+            dff_table["delta_mmr"] = dff_table.apply(
+                lambda r: (float(r.get("team_mmr")) - float(r.get("enemy_mmr")))
+                if (r.get("team_mmr") is not None and r.get("enemy_mmr") is not None)
+                else None,
+                axis=1,
+            )
+
         dff_table["start_time_fr"] = dff_table["start_time"].apply(_format_datetime_fr_hm)
 
         dff_table["average_life_mmss"] = dff_table["average_life_seconds"].apply(lambda x: format_mmss(x))
 
         show_cols = [
             "match_url", "start_time_fr", "map_name", "playlist_fr", "mode_ui", "outcome_label", "score",
+            "team_mmr", "enemy_mmr", "delta_mmr",
             "kda", "kills", "deaths", "max_killing_spree", "headshot_kills",
             "average_life_mmss", "assists", "accuracy", "ratio",
         ]
@@ -2371,6 +2645,7 @@ def main() -> None:
             .map(_style_outcome_text, subset=["outcome_label"])
             .map(_style_score_label, subset=["score"])
             .map(_style_signed_number, subset=["kda"])
+            .map(_style_signed_number, subset=["delta_mmr"])
         )
 
         st.dataframe(
@@ -2388,6 +2663,9 @@ def main() -> None:
                 "mode_ui": st.column_config.TextColumn("Mode"),
                 "outcome_label": st.column_config.TextColumn("Résultat"),
                 "score": st.column_config.TextColumn("Score"),
+                "team_mmr": st.column_config.NumberColumn("MMR d'équipe", format="%.1f"),
+                "enemy_mmr": st.column_config.NumberColumn("MMR adverse", format="%.1f"),
+                "delta_mmr": st.column_config.NumberColumn("Écart MMR", format="%+.1f"),
                 "kda": st.column_config.NumberColumn("FDA", format="%.2f"),
                 "kills": st.column_config.NumberColumn("Frags"),
                 "deaths": st.column_config.NumberColumn("Morts"),

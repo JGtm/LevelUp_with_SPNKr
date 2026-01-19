@@ -375,6 +375,7 @@ div[data-testid="stMetric"] div {
 
 .os-top-chip--win {
     border-color: rgba(35, 209, 139, 0.35);
+    background: rgba(35, 209, 139, 0.10);
 }
 .os-top-chip--win .os-top-chip__value {
     background: rgba(35, 209, 139, 0.12);
@@ -383,6 +384,7 @@ div[data-testid="stMetric"] div {
 
 .os-top-chip--loss {
     border-color: rgba(255, 77, 77, 0.35);
+    background: rgba(255, 77, 77, 0.10);
 }
 .os-top-chip--loss .os-top-chip__value {
     background: rgba(255, 77, 77, 0.12);
@@ -390,15 +392,21 @@ div[data-testid="stMetric"] div {
 }
 
 .os-top-chip--tie {
-    border-color: rgba(255, 255, 255, 0.18);
+    border-color: rgba(142, 108, 255, 0.35);
+    background: rgba(142, 108, 255, 0.10);
+}
+.os-top-chip--tie .os-top-chip__value {
+    background: rgba(142, 108, 255, 0.12);
+    border-color: rgba(142, 108, 255, 0.20);
 }
 
 .os-top-chip--nf {
-    border-color: rgba(255, 176, 32, 0.35);
+    border-color: rgba(142, 108, 255, 0.35);
+    background: rgba(142, 108, 255, 0.10);
 }
 .os-top-chip--nf .os-top-chip__value {
-    background: rgba(255, 176, 32, 0.12);
-    border-color: rgba(255, 176, 32, 0.20);
+    background: rgba(142, 108, 255, 0.12);
+    border-color: rgba(142, 108, 255, 0.20);
 }
 
 /* =============================================================================

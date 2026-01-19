@@ -6,6 +6,7 @@ import time
 import webbrowser
 import argparse
 import sqlite3
+import re
 
 
 def _pick_free_port() -> int:
@@ -34,6 +35,16 @@ def _is_spnkr_db_empty(db_path: str) -> bool:
         return True
 
 
+def _safe_filename_component(s: str) -> str:
+    s = (s or "").strip()
+    if not s:
+        return ""
+    # Conserve uniquement des caractères sûrs pour un nom de fichier.
+    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_ .")
+    return s[:80]
+
+
 def _maybe_refresh_spnkr_db(*, repo_root: str, args: argparse.Namespace) -> int:
     if not args.refresh_spnkr:
         return 0
@@ -45,7 +56,13 @@ def _maybe_refresh_spnkr_db(*, repo_root: str, args: argparse.Namespace) -> int:
 
     out_db = args.refresh_out_db
     if not out_db:
-        out_db = os.path.join(repo_root, "data", "spnkr.db")
+        # Par défaut on inclut le joueur dans le nom afin de pouvoir gérer plusieurs DB.
+        # Exemples:
+        #   - data/spnkr_gt_MonGamertag.db
+        #   - data/spnkr_xuid_2533....db
+        tag = f"xuid_{player}" if str(player).strip().isdigit() else f"gt_{player}"
+        safe = _safe_filename_component(tag)
+        out_db = os.path.join(repo_root, "data", f"spnkr_{safe}.db") if safe else os.path.join(repo_root, "data", "spnkr.db")
 
     is_bootstrap = _is_spnkr_db_empty(out_db)
     max_matches = int(args.refresh_bootstrap_max_matches if is_bootstrap else args.refresh_max_matches)
@@ -104,7 +121,7 @@ def main() -> int:
     ap.add_argument(
         "--refresh-spnkr",
         action="store_true",
-        help="Rafraîchit la DB SPNKr (data/spnkr.db) avant de lancer Streamlit.",
+        help="Rafraîchit la DB SPNKr (défaut: data/spnkr_<player>.db) avant de lancer Streamlit.",
     )
     ap.add_argument(
         "--refresh-player",
@@ -113,7 +130,11 @@ def main() -> int:
         default=None,
         help="Gamertag ou XUID pour SPNKr (sinon: SPNKR_PLAYER env).",
     )
-    ap.add_argument("--refresh-out-db", default=None, help="Chemin DB SPNKr (défaut: data/spnkr.db)")
+    ap.add_argument(
+        "--refresh-out-db",
+        default=None,
+        help="Chemin DB SPNKr (override). Par défaut: data/spnkr_<player>.db",
+    )
     ap.add_argument(
         "--refresh-match-type",
         default="matchmaking",

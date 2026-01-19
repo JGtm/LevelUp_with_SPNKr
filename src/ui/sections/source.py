@@ -44,9 +44,26 @@ def render_source_section(
 
     # DB SPNKr locale (par défaut: data/spnkr.db à la racine du repo)
     repo_root = Path(__file__).resolve().parents[3]
-    spnkr_db_path = str(repo_root / "data" / "spnkr.db")
+    data_dir = repo_root / "data"
+    spnkr_db_path = str(data_dir / "spnkr.db")
+    try:
+        spnkr_candidates = [p for p in data_dir.glob("spnkr*.db") if p.is_file()]
+    except Exception:
+        spnkr_candidates = []
+
+    spnkr_candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+    latest_spnkr_db_path = str(spnkr_candidates[0]) if spnkr_candidates else spnkr_db_path
+
     current_db_path = str(st.session_state.get("db_path", "") or "")
-    is_spnkr = os.path.normcase(current_db_path) == os.path.normcase(spnkr_db_path)
+    try:
+        cur_parent = Path(current_db_path).resolve().parent
+    except Exception:
+        cur_parent = Path(current_db_path).parent
+    is_spnkr = (
+        os.path.normcase(str(cur_parent)) == os.path.normcase(str(data_dir))
+        and Path(current_db_path).suffix.lower() == ".db"
+        and Path(current_db_path).name.lower().startswith("spnkr")
+    )
 
     c_top = st.columns(3)
     if c_top[0].button("Vider caches", width="stretch"):
@@ -70,16 +87,16 @@ def render_source_section(
                 st.session_state["xuid_input"] = guessed
             st.rerun()
         else:
-            if not os.path.exists(spnkr_db_path):
-                st.warning("DB SPNKr introuvable (data/spnkr.db). Lance d'abord le refresh SPNKr.")
-            st.session_state["db_path"] = spnkr_db_path
+            if not os.path.exists(latest_spnkr_db_path):
+                st.warning("DB SPNKr introuvable (data/spnkr*.db). Lance d'abord le refresh SPNKr.")
+            st.session_state["db_path"] = latest_spnkr_db_path
             # Si SPNKR_PLAYER est un gamertag, on résout le XUID via la DB.
             spnkr_player = (os.environ.get("SPNKR_PLAYER") or "").strip()
             if spnkr_player:
                 if spnkr_player.isdigit():
                     st.session_state["xuid_input"] = spnkr_player
                 else:
-                    resolved = resolve_xuid_from_db(spnkr_db_path, spnkr_player)
+                    resolved = resolve_xuid_from_db(latest_spnkr_db_path, spnkr_player)
                     if resolved:
                         st.session_state["xuid_input"] = resolved
             else:
@@ -165,6 +182,15 @@ def render_source_section(
                     guessed = guess_xuid_from_db_path(sel_path) or ""
                     if guessed:
                         st.session_state["xuid_input"] = guessed
+                    st.rerun()
+
+        if spnkr_candidates:
+            opts_s = ["(garder actuelle)"] + [p.name for p in spnkr_candidates]
+            pick_s = st.selectbox("DB détectées (SPNKr)", options=opts_s, index=0)
+            if st.button("Utiliser cette DB SPNKr", width="stretch") and pick_s != "(garder actuelle)":
+                sel_p = next((p for p in spnkr_candidates if p.name == pick_s), None)
+                if sel_p:
+                    st.session_state["db_path"] = str(sel_p)
                     st.rerun()
 
     db_path = st.text_input("Chemin du .db", key="db_path")
