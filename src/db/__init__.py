@@ -14,6 +14,7 @@ from src.db.loaders import (
 from src.db.parsers import (
     guess_xuid_from_db_path,
     parse_iso_utc,
+    resolve_xuid_from_db,
 )
 from src.db.profiles import (
     PROFILES_PATH,
@@ -38,6 +39,7 @@ __all__ = [
     # parsers
     "guess_xuid_from_db_path",
     "parse_iso_utc",
+    "resolve_xuid_from_db",
     # profiles
     "PROFILES_PATH",
     "load_profiles",

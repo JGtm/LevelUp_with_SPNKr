@@ -574,10 +574,23 @@ def load_matches(
 
             my_team_score, enemy_team_score = _extract_team_scores(obj, last_team_id)
 
+            # Fallback important pour les DB générées sans import d'assets (SPNKr --no-assets).
+            # Sans ça, playlist/pair/map sont None => filtres UI vides.
             playlist_name = playlist_names.get(playlist_id) if playlist_id else None
+            if playlist_name is None and playlist_id:
+                playlist_name = playlist_id
+
             pair_name = map_mode_pair_names.get(map_mode_pair_id) if map_mode_pair_id else None
+            if pair_name is None and map_mode_pair_id:
+                pair_name = map_mode_pair_id
+
             map_name = map_names.get(map_id) if map_id else None
+            if map_name is None and map_id:
+                map_name = map_id
+
             game_variant_name = game_variant_names.get(game_variant_id) if game_variant_id else None
+            if game_variant_name is None and game_variant_id:
+                game_variant_name = game_variant_id
 
             rows.append(
                 MatchRow(

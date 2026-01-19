@@ -87,6 +87,12 @@ class TestIsAllowedPlaylistName:
         """Test Ranked Arena."""
         assert is_allowed_playlist_name("Ranked Arena") is True
 
+    def test_french_labels(self):
+        """Test libellés FR (UI)."""
+        assert is_allowed_playlist_name("Partie rapide") is True
+        assert is_allowed_playlist_name("Arène classée") is True
+        assert is_allowed_playlist_name("Assassin classé") is True
+
     def test_not_allowed(self):
         """Test playlists non autorisées."""
         assert is_allowed_playlist_name("Custom Game") is False

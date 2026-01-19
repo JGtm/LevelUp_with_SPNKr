@@ -3,9 +3,12 @@ __pycache__/
 *.pyc
 out/
 .streamlit/
+.env
+.env.local
 .DS_Store
 Thumbs.db
 .vscode/
 build/
 dist/
 *.spec
+data/spnkr.db

@@ -53,7 +53,17 @@ def get_aliases_file_path() -> str:
 # Constantes de l'application
 # =============================================================================
 
-DEFAULT_WAYPOINT_PLAYER = "JGtm"
+# =============================================================================
+# Identité par défaut (local)
+# =============================================================================
+
+# Valeurs par défaut pour simplifier l'usage en local.
+# (Le dashboard peut toujours utiliser une autre DB/XUID via la sidebar.)
+DEFAULT_PLAYER_GAMERTAG = "JGtm"
+DEFAULT_PLAYER_XUID = "2533274823110022"
+
+
+DEFAULT_WAYPOINT_PLAYER = DEFAULT_PLAYER_GAMERTAG
 
 
 # =============================================================================
@@ -61,7 +71,7 @@ DEFAULT_WAYPOINT_PLAYER = "JGtm"
 # =============================================================================
 
 XUID_ALIASES_DEFAULT: Dict[str, str] = {
-    "2533274823110022": "JGtm",
+    DEFAULT_PLAYER_XUID: DEFAULT_PLAYER_GAMERTAG,
     "2533274858283686": "Madina972",
     "2535469190789936": "Chocoboflor",
 }

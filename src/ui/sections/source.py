@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Callable
 
 import pandas as pd
 import streamlit as st
 
 from src.config import DEFAULT_WAYPOINT_PLAYER, get_aliases_file_path
-from src.db import guess_xuid_from_db_path, load_profiles, save_profiles
+from src.db import guess_xuid_from_db_path, load_profiles, save_profiles, resolve_xuid_from_db
 from src.ui.aliases import load_aliases_file, save_aliases_file, display_name_from_xuid
 
 
@@ -30,12 +31,22 @@ def render_source_section(
 
     if "db_path" not in st.session_state:
         st.session_state["db_path"] = default_db
-    if "xuid" not in st.session_state:
-        st.session_state["xuid"] = guess_xuid_from_db_path(st.session_state.get("db_path", "")) or ""
+    # IMPORTANT Streamlit: ne pas modifier une key de widget après instanciation.
+    # On sépare donc l'entrée utilisateur (xuid_input) du XUID effectivement utilisé (résolu plus bas).
+    if "xuid_input" not in st.session_state:
+        # migration douce depuis l'ancien key "xuid" s'il existe encore
+        legacy = str(st.session_state.get("xuid", "") or "").strip()
+        st.session_state["xuid_input"] = legacy or (guess_xuid_from_db_path(st.session_state.get("db_path", "")) or "")
     if "waypoint_player" not in st.session_state:
         st.session_state["waypoint_player"] = DEFAULT_WAYPOINT_PLAYER
 
-    c_top = st.columns(2)
+    # DB SPNKr locale (par défaut: data/spnkr.db à la racine du repo)
+    repo_root = Path(__file__).resolve().parents[3]
+    spnkr_db_path = str(repo_root / "data" / "spnkr.db")
+    current_db_path = str(st.session_state.get("db_path", "") or "")
+    is_spnkr = os.path.normcase(current_db_path) == os.path.normcase(spnkr_db_path)
+
+    c_top = st.columns(3)
     if c_top[0].button("Vider caches", width="stretch"):
         on_clear_caches()
         st.success("Caches vidés.")
@@ -47,6 +58,29 @@ def render_source_section(
         except Exception:
             pass
         st.rerun()
+
+    switch_label = "Basculer vers DB OpenSpartan" if is_spnkr else "Basculer vers DB SPNKr"
+    if c_top[2].button(switch_label, width="stretch"):
+        if is_spnkr:
+            st.session_state["db_path"] = default_db
+            guessed = guess_xuid_from_db_path(str(default_db)) or ""
+            if guessed:
+                st.session_state["xuid_input"] = guessed
+            st.rerun()
+        else:
+            if not os.path.exists(spnkr_db_path):
+                st.warning("DB SPNKr introuvable (data/spnkr.db). Lance d'abord le refresh SPNKr.")
+            st.session_state["db_path"] = spnkr_db_path
+            # Si SPNKR_PLAYER est un gamertag, on résout le XUID via la DB.
+            spnkr_player = (os.environ.get("SPNKR_PLAYER") or "").strip()
+            if spnkr_player:
+                if spnkr_player.isdigit():
+                    st.session_state["xuid_input"] = spnkr_player
+                else:
+                    resolved = resolve_xuid_from_db(spnkr_db_path, spnkr_player)
+                    if resolved:
+                        st.session_state["xuid_input"] = resolved
+            st.rerun()
 
     with st.expander("Multi-DB (profils)", expanded=False):
         prof_names = ["(aucun)"] + sorted(profiles.keys())
@@ -60,7 +94,7 @@ def render_source_section(
                 if p.get("db_path"):
                     st.session_state["db_path"] = p["db_path"]
                 if p.get("xuid"):
-                    st.session_state["xuid"] = p["xuid"]
+                    st.session_state["xuid_input"] = p["xuid"]
                 if p.get("waypoint_player"):
                     st.session_state["waypoint_player"] = p["waypoint_player"]
                 st.rerun()
@@ -72,7 +106,7 @@ def render_source_section(
             else:
                 profiles[name] = {
                     "db_path": str(st.session_state.get("db_path", "")).strip(),
-                    "xuid": str(st.session_state.get("xuid", "")).strip(),
+                    "xuid": str(st.session_state.get("xuid_input", "")).strip(),
                     "waypoint_player": str(st.session_state.get("waypoint_player", "")).strip(),
                 }
                 ok, err = save_profiles(profiles)
@@ -91,7 +125,7 @@ def render_source_section(
                 else:
                     profiles[nn] = {
                         "db_path": str(st.session_state.get("db_path", "")).strip(),
-                        "xuid": str(st.session_state.get("xuid", "")).strip(),
+                        "xuid": str(st.session_state.get("xuid_input", "")).strip(),
                         "waypoint_player": str(st.session_state.get("waypoint_player", "")).strip(),
                     }
                     ok, err = save_profiles(profiles)
@@ -125,21 +159,29 @@ def render_source_section(
                     st.session_state["db_path"] = sel_path
                     guessed = guess_xuid_from_db_path(sel_path) or ""
                     if guessed:
-                        st.session_state["xuid"] = guessed
+                        st.session_state["xuid_input"] = guessed
                     st.rerun()
 
     db_path = st.text_input("Chemin du .db", key="db_path")
     cols_x = st.columns([2, 1])
     with cols_x[0]:
-        xuid = st.text_input("XUID", key="xuid")
+        xuid_input = st.text_input("XUID ou Gamertag", key="xuid_input")
     with cols_x[1]:
-        if st.button("Deviner XUID", width="stretch"):
-            guessed = guess_xuid_from_db_path(str(db_path)) or ""
-            if guessed:
-                st.session_state["xuid"] = guessed
-                st.rerun()
-            else:
-                st.warning("Impossible de deviner le XUID depuis ce chemin.")
+        def _on_resolve_xuid() -> None:
+            raw = str(st.session_state.get("xuid_input", "") or "").strip()
+            guessed = guess_xuid_from_db_path(str(st.session_state.get("db_path", "") or "")) or ""
+            resolved = resolve_xuid_from_db(str(st.session_state.get("db_path", "") or ""), raw) or ""
+            if resolved:
+                st.session_state["xuid_input"] = resolved
+            elif guessed:
+                st.session_state["xuid_input"] = guessed
+
+        st.button("Résoudre XUID", width="stretch", on_click=_on_resolve_xuid)
+
+    # Résolution douce pour l'affichage (sans modifier la valeur du widget)
+    xuid = resolve_xuid_from_db(str(db_path), str(xuid_input)) or str(xuid_input).strip()
+    if xuid and xuid != str(xuid_input).strip():
+        st.caption(f"XUID résolu: {xuid}")
 
     _ = display_name_from_xuid(xuid.strip())
 

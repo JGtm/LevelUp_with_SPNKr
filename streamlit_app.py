@@ -235,6 +235,29 @@ def _format_datetime_fr_hm(dt_value) -> str:
     return f"{format_date_fr(d)} {d:%H:%M}"
 
 
+_DATE_FR_RE = re.compile(r"^\s*(\d{1,2})\s*[\-/]\s*(\d{1,2})\s*[\-/]\s*(\d{4})\s*$")
+
+
+def _parse_date_fr_input(value: str | None, *, default_value: date) -> date:
+    """Parse une date au format dd/mm/yyyy (ou dd-mm-yyyy).
+
+    Retourne default_value si la saisie est invalide.
+    """
+    s = (value or "").strip()
+    if not s:
+        return default_value
+    m = _DATE_FR_RE.match(s)
+    if not m:
+        return default_value
+    try:
+        dd = int(m.group(1))
+        mm = int(m.group(2))
+        yyyy = int(m.group(3))
+        return date(yyyy, mm, dd)
+    except Exception:
+        return default_value
+
+
 def _plot_metric_bars_by_match(
     df_: pd.DataFrame,
     *,
@@ -321,6 +344,38 @@ def _compute_session_span_seconds(df_: pd.DataFrame) -> float | None:
     if pd.isna(t0) or pd.isna(t1):
         return None
     return float((t1 - t0).total_seconds())
+
+
+def _compute_total_play_seconds(df_: pd.DataFrame) -> float | None:
+    if df_ is None or df_.empty or "time_played_seconds" not in df_.columns:
+        return None
+    s = pd.to_numeric(df_["time_played_seconds"], errors="coerce").dropna()
+    if s.empty:
+        return None
+    return float(s.sum())
+
+
+def _format_duration_dhm(seconds: float | int | None) -> str:
+    if seconds is None or seconds != seconds:
+        return "-"
+    try:
+        total = int(round(float(seconds)))
+    except Exception:
+        return "-"
+    if total < 0:
+        return "-"
+
+    minutes, _s = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}D")
+    if hours or days:
+        parts.append(f"{hours}H")
+    parts.append(f"{minutes}M")
+    return " ".join(parts)
 
 
 def _avg_match_duration_seconds(df_: pd.DataFrame) -> float | None:
@@ -706,9 +761,25 @@ def main() -> None:
             if not os.path.exists(db_path):
                 st.error("Le fichier .db n'existe pas à ce chemin.")
                 st.stop()
-            if not xuid.strip().isdigit():
-                st.error("XUID invalide (doit être numérique).")
+            # XUID: accepte aussi un gamertag et tente de le résoudre depuis la DB.
+            # IMPORTANT: ne pas écrire dans st.session_state["xuid"] ici (widget déjà instancié).
+            from src.db.parsers import parse_xuid_input
+            from src.db import resolve_xuid_from_db
+
+            xraw = (xuid or "").strip()
+            xuid_resolved = parse_xuid_input(xraw) or ""
+            if not xuid_resolved and xraw and not xraw.isdigit():
+                xuid_resolved = resolve_xuid_from_db(db_path, xraw) or ""
+
+            if not xuid_resolved:
+                st.error(
+                    "XUID invalide. Tu peux entrer ton gamertag (s'il est connu via les valeurs par défaut ou les aliases)."
+                )
                 st.stop()
+
+            if xuid_resolved != xraw:
+                st.caption(f"XUID résolu: {xuid_resolved}")
+            xuid = xuid_resolved
 
     me_name = display_name_from_xuid(xuid.strip())
     aliases_key = _aliases_cache_key()
@@ -791,9 +862,15 @@ def main() -> None:
         if filter_mode == "Période":
             cols = st.columns(2)
             with cols[0]:
-                start_d = st.date_input("Début", value=dmin, min_value=dmin, max_value=dmax)
+                if "start_date_fr" not in st.session_state:
+                    st.session_state["start_date_fr"] = format_date_fr(dmin)
+                start_raw = st.text_input("Début (dd/mm/yyyy)", key="start_date_fr")
+                start_d = _parse_date_fr_input(start_raw, default_value=dmin)
             with cols[1]:
-                end_d = st.date_input("Fin", value=dmax, min_value=dmin, max_value=dmax)
+                if "end_date_fr" not in st.session_state:
+                    st.session_state["end_date_fr"] = format_date_fr(dmax)
+                end_raw = st.text_input("Fin (dd/mm/yyyy)", key="end_date_fr")
+                end_d = _parse_date_fr_input(end_raw, default_value=dmax)
             if start_d > end_d:
                 st.warning("La date de début est après la date de fin.")
         else:
@@ -1042,9 +1119,9 @@ def main() -> None:
     _render_top_summary(len(dff), rates)
 
     avg_match_seconds = _avg_match_duration_seconds(dff)
-    span_seconds = _compute_session_span_seconds(dff)
+    total_play_seconds = _compute_total_play_seconds(dff)
     avg_match_txt = _format_duration_hms(avg_match_seconds)
-    span_txt = _format_duration_hms(span_seconds)
+    total_play_txt = _format_duration_dhm(total_play_seconds)
     st.markdown(
         "<div class='os-top-kpis'>"
         "  <div class='os-top-kpi'>"
@@ -1053,7 +1130,7 @@ def main() -> None:
         "  </div>"
         "  <div class='os-top-kpi'>"
         "    <div class='os-top-kpi__label'>Durée totale</div>"
-        f"    <div class='os-top-kpi__value'>{span_txt}</div>"
+        f"    <div class='os-top-kpi__value'>{total_play_txt}</div>"
         "  </div>"
         "</div>",
         unsafe_allow_html=True,
@@ -1746,7 +1823,11 @@ def main() -> None:
 
                         c1, c2 = st.columns(2)
                         with c1:
-                            st.plotly_chart(plot_timeseries(sub, title=f"{me_name} — matchs avec {name}"), width="stretch")
+                            st.plotly_chart(
+                                plot_timeseries(sub, title=f"{me_name} — matchs avec {name}"),
+                                width="stretch",
+                                key=f"friend_ts_me_{friend_xuid}",
+                            )
                         with c2:
                             if friend_sub.empty:
                                 st.warning("Impossible de charger les stats du coéquipier sur les matchs partagés.")
@@ -1754,6 +1835,7 @@ def main() -> None:
                                 st.plotly_chart(
                                     plot_timeseries(friend_sub, title=f"{name} — matchs avec {me_name}"),
                                     width="stretch",
+                                    key=f"friend_ts_fr_{friend_xuid}",
                                 )
 
                         c3, c4 = st.columns(2)
@@ -1761,6 +1843,7 @@ def main() -> None:
                             st.plotly_chart(
                                 plot_per_minute_timeseries(sub, title=f"{me_name} — stats/min (avec {name})"),
                                 width="stretch",
+                                key=f"friend_pm_me_{friend_xuid}",
                             )
                         with c4:
                             if not friend_sub.empty:
@@ -1770,6 +1853,7 @@ def main() -> None:
                                         title=f"{name} — stats/min (avec {me_name})",
                                     ),
                                     width="stretch",
+                                    key=f"friend_pm_fr_{friend_xuid}",
                                 )
 
                         c5, c6 = st.columns(2)
@@ -1778,12 +1862,14 @@ def main() -> None:
                                 st.plotly_chart(
                                     plot_average_life(sub, title=f"{me_name} — Durée de vie (avec {name})"),
                                     width="stretch",
+                                    key=f"friend_life_me_{friend_xuid}",
                                 )
                         with c6:
                             if not friend_sub.empty and not friend_sub.dropna(subset=["average_life_seconds"]).empty:
                                 st.plotly_chart(
                                     plot_average_life(friend_sub, title=f"{name} — Durée de vie (avec {me_name})"),
                                     width="stretch",
+                                    key=f"friend_life_fr_{friend_xuid}",
                                 )
 
                         # Avant-dernier: Folie meurtrière / Tirs à la tête (style barres + moyenne lissée) puis médailles.
@@ -1803,7 +1889,7 @@ def main() -> None:
                                 smooth_window=10,
                             )
                             if fig_spree_me is not None:
-                                st.plotly_chart(fig_spree_me, width="stretch")
+                                st.plotly_chart(fig_spree_me, width="stretch", key=f"friend_spree_me_{friend_xuid}")
                             fig_hs_me = _plot_metric_bars_by_match(
                                 sub,
                                 metric_col="headshot_kills",
@@ -1815,7 +1901,7 @@ def main() -> None:
                                 smooth_window=10,
                             )
                             if fig_hs_me is not None:
-                                st.plotly_chart(fig_hs_me, width="stretch")
+                                st.plotly_chart(fig_hs_me, width="stretch", key=f"friend_hs_me_{friend_xuid}")
 
                         with s2:
                             st.caption(f"{name}")
@@ -1833,7 +1919,7 @@ def main() -> None:
                                     smooth_window=10,
                                 )
                                 if fig_spree_fr is not None:
-                                    st.plotly_chart(fig_spree_fr, width="stretch")
+                                    st.plotly_chart(fig_spree_fr, width="stretch", key=f"friend_spree_fr_{friend_xuid}")
                                 fig_hs_fr = _plot_metric_bars_by_match(
                                     friend_sub,
                                     metric_col="headshot_kills",
@@ -1845,7 +1931,7 @@ def main() -> None:
                                     smooth_window=10,
                                 )
                                 if fig_hs_fr is not None:
-                                    st.plotly_chart(fig_hs_fr, width="stretch")
+                                    st.plotly_chart(fig_hs_fr, width="stretch", key=f"friend_hs_fr_{friend_xuid}")
 
                         st.subheader("Médailles (matchs partagés)")
                         shared_list = sorted({str(x) for x in shared_ids if str(x).strip()})
@@ -1948,7 +2034,7 @@ def main() -> None:
                             if fig_spree is None:
                                 st.info("Aucune donnée de folie meurtrière (max) sur ces matchs.")
                             else:
-                                st.plotly_chart(fig_spree, width="stretch")
+                                st.plotly_chart(fig_spree, width="stretch", key=f"friends_pick_spree_{fx}")
 
                         with g2:
                             fig_hs = _plot_metric_bars_by_match(
@@ -1964,7 +2050,7 @@ def main() -> None:
                             if fig_hs is None:
                                 st.info("Aucune donnée de tirs à la tête sur ces matchs.")
                             else:
-                                st.plotly_chart(fig_hs, width="stretch")
+                                st.plotly_chart(fig_hs, width="stretch", key=f"friends_pick_hs_{fx}")
 
                 breakdown_all = compute_map_breakdown(sub_all)
                 breakdown_all = breakdown_all.loc[breakdown_all["matches"] >= int(min_matches_maps_friends)].copy()
@@ -2182,26 +2268,32 @@ def main() -> None:
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="kills", names=names, title="Frags", y_title="Frags"),
                             width="stretch",
+                            key=f"trio_kills_{f1_xuid}_{f2_xuid}",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="deaths", names=names, title="Morts", y_title="Morts"),
                             width="stretch",
+                            key=f"trio_deaths_{f1_xuid}_{f2_xuid}",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="assists", names=names, title="Assistances", y_title="Assists"),
                             width="stretch",
+                            key=f"trio_assists_{f1_xuid}_{f2_xuid}",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="ratio", names=names, title="FDA", y_title="FDA", y_format=".3f"),
                             width="stretch",
+                            key=f"trio_ratio_{f1_xuid}_{f2_xuid}",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="accuracy", names=names, title="Précision", y_title="%", y_suffix="%", y_format=".2f"),
                             width="stretch",
+                            key=f"trio_accuracy_{f1_xuid}_{f2_xuid}",
                         )
                         st.plotly_chart(
                             plot_trio_metric(d_self, d_f1, d_f2, metric="average_life_seconds", names=names, title="Durée de vie moyenne", y_title="Secondes", y_format=".1f"),
                             width="stretch",
+                            key=f"trio_life_{f1_xuid}_{f2_xuid}",
                         )
 
                         st.subheader("Médailles")
@@ -2259,14 +2351,17 @@ def main() -> None:
             lambda r: _format_score_label(r.get("my_team_score"), r.get("enemy_team_score")), axis=1
         )
 
+        dff_table["start_time_fr"] = dff_table["start_time"].apply(_format_datetime_fr_hm)
+
         dff_table["average_life_mmss"] = dff_table["average_life_seconds"].apply(lambda x: format_mmss(x))
 
         show_cols = [
-            "match_url", "start_time", "map_name", "playlist_fr", "mode_ui", "outcome_label", "score",
+            "match_url", "start_time_fr", "map_name", "playlist_fr", "mode_ui", "outcome_label", "score",
             "kda", "kills", "deaths", "max_killing_spree", "headshot_kills",
             "average_life_mmss", "assists", "accuracy", "ratio",
         ]
-        table = dff_table[show_cols].sort_values("start_time", ascending=False).reset_index(drop=True)
+        table = dff_table[show_cols + ["start_time"]].sort_values("start_time", ascending=False).reset_index(drop=True)
+        table = table[show_cols]
 
         styled = (
             table.style
@@ -2284,6 +2379,7 @@ def main() -> None:
                     "Consulter sur HaloWaypoint",
                     display_text="Ouvrir",
                 ),
+                "start_time_fr": st.column_config.TextColumn("Date de début"),
                 "map_name": st.column_config.TextColumn("Carte"),
                 "playlist_fr": st.column_config.TextColumn("Playlist"),
                 "mode_ui": st.column_config.TextColumn("Mode"),
@@ -2300,7 +2396,8 @@ def main() -> None:
             },
         )
 
-        csv = table.to_csv(index=False).encode("utf-8")
+        csv_table = table.rename(columns={"start_time_fr": "Date de début"})
+        csv = csv_table.to_csv(index=False).encode("utf-8")
         st.download_button(
             "Télécharger CSV",
             data=csv,
