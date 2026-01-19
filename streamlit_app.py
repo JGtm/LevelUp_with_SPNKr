@@ -488,21 +488,38 @@ def main() -> None:
                 picked_one = st.selectbox("Session", options=["(toutes)"] + options_ui, key="picked_session_label")
                 picked_session_labels = None if picked_one == "(toutes)" else [picked_one]
 
-        playlist_opts = build_option_map(base_for_filters["playlist_name"], base_for_filters["playlist_id"])
+        # ------------------------------------------------------------------
+        # Filtres en cascade (ne montrent que les valeurs réellement jouées)
+        # Playlist -> Mode (pair) -> Carte
+        # ------------------------------------------------------------------
         base_for_filters = base_for_filters.copy()
         base_for_filters["playlist_fr"] = base_for_filters["playlist_name"].apply(translate_playlist_name)
+        base_for_filters["pair_fr"] = base_for_filters["pair_name"].apply(translate_pair_name)
+
         playlist_fr_values = sorted(
-            {str(x).strip() for x in base_for_filters["playlist_fr"].dropna().tolist() if str(x).strip()}
+            {
+                str(x).strip()
+                for x in base_for_filters["playlist_fr"].dropna().tolist()
+                if str(x).strip()
+            }
         )
         playlist_fr = st.selectbox("Playlist", options=["(toutes)"] + playlist_fr_values, index=0)
 
-        mode_opts = build_option_map(base_for_filters["game_variant_name"], base_for_filters["game_variant_id"])
-        mode_label = st.selectbox("Mode", options=["(tous)"] + list(mode_opts.keys()), index=0)
-        mode_id: Optional[str] = None
-        if mode_label != "(tous)":
-            mode_id = mode_opts[mode_label]
+        scope1 = base_for_filters
+        if playlist_fr != "(toutes)":
+            scope1 = scope1.loc[scope1["playlist_fr"].fillna("") == playlist_fr].copy()
 
-        map_opts = build_option_map(base_for_filters["map_name"], base_for_filters["map_id"])
+        pair_opts = build_option_map(scope1["pair_fr"], scope1["pair_id"])
+        pair_label = st.selectbox("Mode", options=["(tous)"] + list(pair_opts.keys()), index=0)
+        pair_id: Optional[str] = None
+        if pair_label != "(tous)":
+            pair_id = pair_opts[pair_label]
+
+        scope2 = scope1
+        if pair_id is not None:
+            scope2 = scope2.loc[scope2["pair_id"].fillna("") == pair_id].copy()
+
+        map_opts = build_option_map(scope2["map_name"], scope2["map_id"])
         map_label = st.selectbox("Carte", options=["(toutes)"] + list(map_opts.keys()), index=0)
         map_id: Optional[str] = None
         if map_label != "(toutes)":
@@ -550,12 +567,15 @@ def main() -> None:
                 "Désactive ce filtre si tes libellés sont différents."
             )
             
+    if "playlist_fr" not in dff.columns:
+        dff["playlist_fr"] = dff["playlist_name"].apply(translate_playlist_name)
+    if "pair_fr" not in dff.columns:
+        dff["pair_fr"] = dff["pair_name"].apply(translate_pair_name)
+
     if playlist_fr != "(toutes)":
-        if "playlist_fr" not in dff.columns:
-            dff["playlist_fr"] = dff["playlist_name"].apply(translate_playlist_name)
         dff = dff.loc[dff["playlist_fr"].fillna("") == playlist_fr]
-    if mode_id is not None:
-        dff = dff.loc[dff["game_variant_id"].fillna("") == mode_id]
+    if pair_id is not None:
+        dff = dff.loc[dff["pair_id"].fillna("") == pair_id]
     if map_id is not None:
         dff = dff.loc[dff["map_id"].fillna("") == map_id]
 

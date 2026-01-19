@@ -67,19 +67,27 @@ def plot_trio_metric(
             return s
         return s.rolling(window=w, min_periods=1).mean()
 
-    xs = aligned["start_time"]
+    xs_dt = pd.to_datetime(aligned["start_time"], errors="coerce")
+    xs = list(range(len(aligned)))
+    ticktext = (
+        xs_dt.dt.strftime("%d/%m")
+        .fillna("")
+        .astype(str)
+        .tolist()
+    )
     series = [aligned["v0"], aligned["v1"], aligned["v2"]]
     avg_all = pd.concat(series, axis=1).mean(axis=1)
 
     for idx, (s, name, color) in enumerate(zip(series, names, color_list)):
-        hover_format = f"%{{y{':' + y_format if y_format else ''}}}{y_suffix}<extra></extra>"
+        hover_format = f"%{{customdata}}<br>%{{y{':' + y_format if y_format else ''}}}{y_suffix}<extra></extra>"
         fig.add_trace(
             go.Bar(
                 x=xs,
                 y=s,
                 name=f"{name} (match)",
                 marker_color=color,
-                opacity=0.28,
+                opacity=0.32,
+                customdata=ticktext,
                 hovertemplate=hover_format,
             )
         )
@@ -91,13 +99,14 @@ def plot_trio_metric(
                 mode="lines",
                 name=f"{name} (moy. lissée)",
                 line=dict(width=3, color=color),
+                customdata=ticktext,
                 hovertemplate=hover_format,
             )
         )
 
     # Moyenne lissée des 3 (pointillés)
     avg_color = colors.get("amber", "rgba(255, 255, 255, 0.85)")
-    hover_format_avg = f"%{{y{':' + y_format if y_format else ''}}}{y_suffix}<extra></extra>"
+    hover_format_avg = f"%{{customdata}}<br>%{{y{':' + y_format if y_format else ''}}}{y_suffix}<extra></extra>"
     fig.add_trace(
         go.Scatter(
             x=xs,
@@ -105,6 +114,7 @@ def plot_trio_metric(
             mode="lines",
             name="Moyenne (3) lissée",
             line=dict(width=3, color=avg_color, dash="dot"),
+            customdata=ticktext,
             hovertemplate=hover_format_avg,
         )
     )
@@ -116,6 +126,7 @@ def plot_trio_metric(
         legend=get_legend_horizontal_bottom(),
         barmode="group",
     )
+    fig.update_xaxes(tickmode="array", tickvals=xs, ticktext=ticktext, title_text="")
     fig.update_yaxes(title_text=y_title)
     
     if y_suffix:
