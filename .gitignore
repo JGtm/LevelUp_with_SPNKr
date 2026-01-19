@@ -12,3 +12,4 @@ build/
 dist/
 *.spec
 data/spnkr.db
+data/spnkr.db-journal
