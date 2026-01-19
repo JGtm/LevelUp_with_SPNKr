@@ -399,6 +399,21 @@ def main() -> None:
 
     with st.sidebar:
         dmin, dmax = _date_range(base_for_filters)
+
+        # Streamlit interdit de modifier l'état d'un widget après instanciation.
+        # On applique donc les changements demandés (depuis d'autres onglets/boutons)
+        # ici, avant de créer le radio/selectbox associés.
+        pending_mode = st.session_state.pop("_pending_filter_mode", None)
+        if pending_mode in ("Période", "Sessions"):
+            st.session_state["filter_mode"] = pending_mode
+
+        pending_label = st.session_state.pop("_pending_picked_session_label", None)
+        if isinstance(pending_label, str) and pending_label:
+            st.session_state["picked_session_label"] = pending_label
+        pending_sessions = st.session_state.pop("_pending_picked_sessions", None)
+        if isinstance(pending_sessions, list):
+            st.session_state["picked_sessions"] = pending_sessions
+
         if "filter_mode" not in st.session_state:
             st.session_state["filter_mode"] = "Période"
         filter_mode = st.radio(
@@ -1042,10 +1057,11 @@ def main() -> None:
                     bcols = st.columns([2, 3])
                     with bcols[0]:
                         if st.button("Focus: dernière session (trio)", width="stretch", disabled=(latest_label is None)):
-                            st.session_state["filter_mode"] = "Sessions"
+                            # Demande de changement appliquée au prochain rerun (avant création des widgets).
+                            st.session_state["_pending_filter_mode"] = "Sessions"
                             if latest_label:
-                                st.session_state["picked_session_label"] = latest_label
-                                st.session_state["picked_sessions"] = [latest_label]
+                                st.session_state["_pending_picked_session_label"] = latest_label
+                                st.session_state["_pending_picked_sessions"] = [latest_label]
                             st.rerun()
                     with bcols[1]:
                         if latest_label:
