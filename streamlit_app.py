@@ -5,6 +5,7 @@ depuis la base de données OpenSpartan Workshop.
 """
 
 import os
+import re
 from datetime import date
 from typing import Optional
 
@@ -85,6 +86,45 @@ from src.db.profiles import (
 from src.config import get_aliases_file_path
 
 
+_LABEL_SUFFIX_RE = re.compile(r"^(.*?)(?:\s*[\-–—]\s*[0-9A-Za-z]{8,})$", re.IGNORECASE)
+
+
+def _clean_asset_label(s: str | None) -> str | None:
+    if s is None:
+        return None
+    v = str(s).strip()
+    if not v:
+        return None
+    m = _LABEL_SUFFIX_RE.match(v)
+    if m:
+        v = (m.group(1) or "").strip()
+    return v or None
+
+
+def _normalize_mode_label(pair_name: str | None) -> str | None:
+    if pair_name is None:
+        return None
+    # On traduit d'abord (le mapping complet contient souvent la carte), puis on retire le nom de carte si besoin.
+    base = _clean_asset_label(pair_name)
+    t = translate_pair_name(base)
+    if t is None:
+        return None
+    s = str(t).strip()
+    if " on " in s:
+        s = s.split(" on ", 1)[0].strip()
+    s = re.sub(r"\s*-\s*Forge\b", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r"\s*-\s*Ranked\b", "", s, flags=re.IGNORECASE).strip()
+    return s or None
+
+
+def _normalize_map_label(map_name: str | None) -> str | None:
+    base = _clean_asset_label(map_name)
+    if base is None:
+        return None
+    s = re.sub(r"\s*-\s*Forge\b", "", base, flags=re.IGNORECASE).strip()
+    return s or None
+
+
 # =============================================================================
 # Chargement des données (avec cache)
 # =============================================================================
@@ -152,6 +192,27 @@ def _date_range(df: pd.DataFrame) -> tuple[date, date]:
     dmin = df["date"].min()
     dmax = df["date"].max()
     return dmin, dmax
+
+
+def _build_friends_opts_map(db_path: str, self_xuid: str) -> tuple[dict[str, str], list[str]]:
+    top = cached_list_top_teammates(db_path, self_xuid, limit=20)
+    default_two = [t[0] for t in top[:2]]
+    all_other = cached_list_other_xuids(db_path, self_xuid, limit=500)
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for xx, _cnt in top:
+        if xx not in seen:
+            ordered.append(xx)
+            seen.add(xx)
+    for xx in all_other:
+        if xx not in seen:
+            ordered.append(xx)
+            seen.add(xx)
+
+    opts_map = build_xuid_option_map(ordered, display_name_fn=display_name_from_xuid)
+    default_labels = [k for k, v in opts_map.items() if v in default_two]
+    return opts_map, default_labels
 
 
 # =============================================================================
@@ -481,6 +542,52 @@ def main() -> None:
                     next_idx = min(idx + 1, len(options_ui) - 1)
                     _set_session_selection(options_ui[next_idx])
 
+            # Trio: on calcule le label ici (avant le bouton) à partir de la sélection
+            # d'amis, afin que le bouton soit activable sans devoir visiter l'onglet.
+            trio_label = None
+            try:
+                friends_opts_map, friends_default_labels = _build_friends_opts_map(db_path, xuid.strip())
+                picked_friend_labels = st.session_state.get("friends_picked_labels")
+                if not isinstance(picked_friend_labels, list) or not picked_friend_labels:
+                    picked_friend_labels = friends_default_labels
+                picked_xuids = [friends_opts_map[lbl] for lbl in picked_friend_labels if lbl in friends_opts_map]
+                if len(picked_xuids) >= 2:
+                    f1_xuid, f2_xuid = picked_xuids[0], picked_xuids[1]
+                    rows_m = [r for r in query_matches_with_friend(db_path, xuid.strip(), f1_xuid) if r.same_team]
+                    rows_c = [r for r in query_matches_with_friend(db_path, xuid.strip(), f2_xuid) if r.same_team]
+                    ids_m = {str(r.match_id) for r in rows_m}
+                    ids_c = {str(r.match_id) for r in rows_c}
+                    trio_ids = ids_m & ids_c
+
+                    # Sécurité: ne garde que les matchs présents dans la base utilisée pour les sessions.
+                    trio_ids = trio_ids & set(base_for_filters["match_id"].astype(str))
+                    if trio_ids:
+                        base_s_trio = compute_sessions(base_for_filters, gap_minutes=gap_minutes)
+                        trio_rows = base_s_trio.loc[base_s_trio["match_id"].astype(str).isin(trio_ids)].copy()
+                        if not trio_rows.empty:
+                            latest_sid = int(trio_rows["session_id"].max())
+                            latest_labels = (
+                                trio_rows.loc[trio_rows["session_id"] == latest_sid, "session_label"]
+                                .dropna()
+                                .unique()
+                                .tolist()
+                            )
+                            trio_label = latest_labels[0] if latest_labels else None
+            except Exception:
+                trio_label = None
+
+            st.session_state["_trio_latest_session_label"] = trio_label
+            disabled_trio = not isinstance(trio_label, str) or not trio_label
+            if st.button("Dernière session en trio", width="stretch", disabled=disabled_trio):
+                st.session_state["_pending_filter_mode"] = "Sessions"
+                st.session_state["_pending_picked_session_label"] = trio_label
+                st.session_state["_pending_picked_sessions"] = [trio_label]
+                st.rerun()
+            if disabled_trio:
+                st.caption('Trio : sélectionne 2 amis dans "Avec mes amis" pour activer.')
+            else:
+                st.caption(f"Trio : {trio_label}")
+
             if compare_multi:
                 picked = st.multiselect("Sessions", options=options_ui, key="picked_sessions")
                 picked_session_labels = picked if picked else None
@@ -492,38 +599,49 @@ def main() -> None:
         # Filtres en cascade (ne montrent que les valeurs réellement jouées)
         # Playlist -> Mode (pair) -> Carte
         # ------------------------------------------------------------------
-        base_for_filters = base_for_filters.copy()
-        base_for_filters["playlist_fr"] = base_for_filters["playlist_name"].apply(translate_playlist_name)
-        base_for_filters["pair_fr"] = base_for_filters["pair_name"].apply(translate_pair_name)
+        # Le scope des dropdowns suit les filtres au-dessus (période/sessions)
+        # + les réglages avancés (Firefight / restriction playlists).
+        dropdown_base = base_for_filters.copy()
 
-        playlist_fr_values = sorted(
-            {
-                str(x).strip()
-                for x in base_for_filters["playlist_fr"].dropna().tolist()
-                if str(x).strip()
-            }
-        )
-        playlist_fr = st.selectbox("Playlist", options=["(toutes)"] + playlist_fr_values, index=0)
+        restrict_playlists_ui = bool(st.session_state.get("restrict_playlists", True))
+        if restrict_playlists_ui:
+            pl0 = dropdown_base["playlist_name"].apply(_clean_asset_label).fillna("").astype(str)
+            allowed_mask0 = pl0.apply(is_allowed_playlist_name)
+            if allowed_mask0.any():
+                dropdown_base = dropdown_base.loc[allowed_mask0].copy()
 
-        scope1 = base_for_filters
-        if playlist_fr != "(toutes)":
-            scope1 = scope1.loc[scope1["playlist_fr"].fillna("") == playlist_fr].copy()
+        if filter_mode == "Période":
+            dropdown_base = dropdown_base.loc[(dropdown_base["date"] >= start_d) & (dropdown_base["date"] <= end_d)].copy()
+        else:
+            # Sessions: on utilise la sélection de sessions pour limiter les options.
+            base_s_dd = compute_sessions(dropdown_base, gap_minutes=gap_minutes)
+            if picked_session_labels:
+                dropdown_base = base_s_dd.loc[base_s_dd["session_label"].isin(picked_session_labels)].copy()
+            else:
+                dropdown_base = base_s_dd.copy()
 
-        pair_opts = build_option_map(scope1["pair_fr"], scope1["pair_id"])
-        pair_label = st.selectbox("Mode", options=["(tous)"] + list(pair_opts.keys()), index=0)
-        pair_id: Optional[str] = None
-        if pair_label != "(tous)":
-            pair_id = pair_opts[pair_label]
+        dropdown_base["playlist_ui"] = dropdown_base["playlist_name"].apply(_clean_asset_label).apply(translate_playlist_name)
+        dropdown_base["mode_ui"] = dropdown_base["pair_name"].apply(_normalize_mode_label)
+        dropdown_base["map_ui"] = dropdown_base["map_name"].apply(_normalize_map_label)
+
+        playlist_values = sorted({str(x).strip() for x in dropdown_base["playlist_ui"].dropna().tolist() if str(x).strip()})
+        preferred_order = ["Partie rapide", "Arène classée", "Assassin classé"]
+        playlist_values = [p for p in preferred_order if p in playlist_values] + [p for p in playlist_values if p not in preferred_order]
+        playlist_selected = st.selectbox("Playlist", options=["(toutes)"] + playlist_values, index=0)
+
+        scope1 = dropdown_base
+        if playlist_selected != "(toutes)":
+            scope1 = scope1.loc[scope1["playlist_ui"].fillna("") == playlist_selected].copy()
+
+        mode_values = sorted({str(x).strip() for x in scope1["mode_ui"].dropna().tolist() if str(x).strip()})
+        mode_selected = st.selectbox("Mode", options=["(tous)"] + mode_values, index=0)
 
         scope2 = scope1
-        if pair_id is not None:
-            scope2 = scope2.loc[scope2["pair_id"].fillna("") == pair_id].copy()
+        if mode_selected != "(tous)":
+            scope2 = scope2.loc[scope2["mode_ui"].fillna("") == mode_selected].copy()
 
-        map_opts = build_option_map(scope2["map_name"], scope2["map_id"])
-        map_label = st.selectbox("Carte", options=["(toutes)"] + list(map_opts.keys()), index=0)
-        map_id: Optional[str] = None
-        if map_label != "(toutes)":
-            map_id = map_opts[map_label]
+        map_values = sorted({str(x).strip() for x in scope2["map_ui"].dropna().tolist() if str(x).strip()})
+        map_selected = st.selectbox("Carte", options=["(toutes)"] + map_values, index=0)
 
         last_n_acc = st.slider("Précision: derniers matchs", 5, 50, 20, step=1)
 
@@ -557,7 +675,7 @@ def main() -> None:
 
     restrict_playlists = bool(st.session_state.get("restrict_playlists", True))
     if restrict_playlists:
-        pl = dff["playlist_name"].fillna("").astype(str)
+        pl = dff["playlist_name"].apply(_clean_asset_label).fillna("").astype(str)
         allowed_mask = pl.apply(is_allowed_playlist_name)
         if allowed_mask.any():
             dff = dff.loc[allowed_mask].copy()
@@ -567,17 +685,19 @@ def main() -> None:
                 "Désactive ce filtre si tes libellés sont différents."
             )
             
-    if "playlist_fr" not in dff.columns:
-        dff["playlist_fr"] = dff["playlist_name"].apply(translate_playlist_name)
-    if "pair_fr" not in dff.columns:
-        dff["pair_fr"] = dff["pair_name"].apply(translate_pair_name)
+    if "playlist_ui" not in dff.columns:
+        dff["playlist_ui"] = dff["playlist_name"].apply(_clean_asset_label).apply(translate_playlist_name)
+    if "mode_ui" not in dff.columns:
+        dff["mode_ui"] = dff["pair_name"].apply(_normalize_mode_label)
+    if "map_ui" not in dff.columns:
+        dff["map_ui"] = dff["map_name"].apply(_normalize_map_label)
 
-    if playlist_fr != "(toutes)":
-        dff = dff.loc[dff["playlist_fr"].fillna("") == playlist_fr]
-    if pair_id is not None:
-        dff = dff.loc[dff["pair_id"].fillna("") == pair_id]
-    if map_id is not None:
-        dff = dff.loc[dff["map_id"].fillna("") == map_id]
+    if playlist_selected != "(toutes)":
+        dff = dff.loc[dff["playlist_ui"].fillna("") == playlist_selected]
+    if mode_selected != "(tous)":
+        dff = dff.loc[dff["mode_ui"].fillna("") == mode_selected]
+    if map_selected != "(toutes)":
+        dff = dff.loc[dff["map_ui"].fillna("") == map_selected]
 
     if filter_mode == "Période":
         mask = (dff["date"] >= start_d) & (dff["date"] <= end_d)
@@ -603,9 +723,9 @@ def main() -> None:
     apg = dff["assists"].mean() if not dff.empty else None
 
     avg_row = st.columns(3)
-    avg_row[0].metric("Frags par partie", f"{kpg:.2f}" if kpg == kpg else "-")
-    avg_row[1].metric("Morts par partie", f"{dpg:.2f}" if dpg == dpg else "-")
-    avg_row[2].metric("Assistances par partie", f"{apg:.2f}" if apg == apg else "-")
+    avg_row[0].metric("Frags par partie", f"{kpg:.2f}" if (kpg is not None and pd.notna(kpg)) else "-")
+    avg_row[1].metric("Morts par partie", f"{dpg:.2f}" if (dpg is not None and pd.notna(dpg)) else "-")
+    avg_row[2].metric("Assistances par partie", f"{apg:.2f}" if (apg is not None and pd.notna(apg)) else "-")
 
     # Stats par minute
     stats = compute_aggregated_stats(dff)
@@ -904,21 +1024,50 @@ def main() -> None:
     # Tab: Avec un joueur
     # --------------------------------------------------------------------------
     with tab_friend:
+        pending_friend_raw = st.session_state.pop("_pending_friend_raw", None)
+        if isinstance(pending_friend_raw, str):
+            st.session_state["friend_raw"] = pending_friend_raw
+        pending_friend_pick_label = st.session_state.pop("_pending_friend_pick_label", None)
+        if isinstance(pending_friend_pick_label, str):
+            st.session_state["friend_pick_label"] = pending_friend_pick_label
+
         st.caption(
             "La DB locale ne contient pas les gamertags, uniquement des PlayerId de type xuid(...). "
             "Tu peux soit coller un XUID, soit sélectionner un XUID rencontré dans tes matchs."
         )
+
+        quick = st.columns(2)
+        if quick[0].button("Madina97294", width="stretch"):
+            st.session_state["_pending_friend_raw"] = "2533274858283686"
+            st.session_state["_pending_friend_pick_label"] = "(aucun)"
+            st.rerun()
+        if quick[1].button("Chocoboflor", width="stretch"):
+            st.session_state["_pending_friend_raw"] = "2535469190789936"
+            st.session_state["_pending_friend_pick_label"] = "(aucun)"
+            st.rerun()
+
+        apply_current_filters_friend = st.toggle(
+            "Appliquer les filtres actuels (période/sessions + map/playlist)",
+            value=True,
+            key="apply_current_filters_friend",
+        )
+
         cols = st.columns([2, 2, 1])
         with cols[0]:
-            friend_raw = st.text_input("Ami: XUID ou xuid(123)", value="")
+            friend_raw = st.text_input("Ami: XUID ou xuid(123)", value="", key="friend_raw")
         with cols[1]:
             opts_map = build_xuid_option_map(
                 cached_list_other_xuids(db_path, xuid.strip(), limit=500),
                 display_name_fn=display_name_from_xuid,
             )
-            friend_pick_label = st.selectbox("Ou choisir un XUID vu", options=["(aucun)"] + list(opts_map.keys()), index=0)
+            friend_pick_label = st.selectbox(
+                "Ou choisir un XUID vu",
+                options=["(aucun)"] + list(opts_map.keys()),
+                index=0,
+                key="friend_pick_label",
+            )
         with cols[2]:
-            same_team_only = st.checkbox("Même équipe", value=True)
+            same_team_only = st.checkbox("Même équipe", value=True, key="friend_same_team_only")
 
         friend_xuid = parse_xuid_input(friend_raw) or (
             opts_map.get(friend_pick_label) if friend_pick_label != "(aucun)" else None
@@ -962,14 +1111,127 @@ def main() -> None:
                     fig.update_layout(height=300, margin=dict(l=40, r=20, t=30, b=40))
                     st.plotly_chart(fig, width="stretch")
 
-                    st.dataframe(
-                        dfr[
-                            ["start_time", "playlist_name", "pair_name", "same_team",
-                             "my_team_id", "my_outcome", "friend_team_id", "friend_outcome", "match_id"]
-                        ].reset_index(drop=True),
-                        width="stretch",
-                        hide_index=True,
-                    )
+                    with st.expander("Détails des matchs (joueur vs joueur)", expanded=False):
+                        st.dataframe(
+                            dfr[
+                                [
+                                    "start_time",
+                                    "playlist_name",
+                                    "pair_name",
+                                    "same_team",
+                                    "my_team_id",
+                                    "my_outcome",
+                                    "friend_team_id",
+                                    "friend_outcome",
+                                    "match_id",
+                                ]
+                            ].reset_index(drop=True),
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                    base_for_friend = dff if apply_current_filters_friend else df
+                    shared_ids = {str(r.match_id) for r in rows}
+                    sub = base_for_friend.loc[base_for_friend["match_id"].astype(str).isin(shared_ids)].copy()
+
+                    if sub.empty:
+                        st.info("Aucun match à afficher avec les filtres actuels (période/sessions + map/playlist).")
+                    else:
+                        name = display_name_from_xuid(friend_xuid)
+
+                        rates_sub = compute_outcome_rates(sub)
+                        total_out = max(1, rates_sub.total)
+                        win_rate_sub = rates_sub.wins / total_out
+                        loss_rate_sub = rates_sub.losses / total_out
+                        global_ratio_sub = compute_global_ratio(sub)
+
+                        k = st.columns(3)
+                        k[0].metric("Matchs", f"{len(sub)}")
+                        k[1].metric("Win/Loss", f"{win_rate_sub*100:.1f}% / {loss_rate_sub*100:.1f}%")
+                        k[2].metric("Ratio global", f"{global_ratio_sub:.2f}" if global_ratio_sub is not None else "-")
+
+                        stats_sub = compute_aggregated_stats(sub)
+                        per_min = st.columns(3)
+                        per_min[0].metric(
+                            "Frags / min",
+                            f"{stats_sub.kills_per_minute:.2f}" if stats_sub.kills_per_minute else "-",
+                        )
+                        per_min[1].metric(
+                            "Morts / min",
+                            f"{stats_sub.deaths_per_minute:.2f}" if stats_sub.deaths_per_minute else "-",
+                        )
+                        per_min[2].metric(
+                            "Assistances / min",
+                            f"{stats_sub.assists_per_minute:.2f}" if stats_sub.assists_per_minute else "-",
+                        )
+
+                        friend_df = load_df(db_path, friend_xuid)
+                        friend_sub = friend_df.loc[friend_df["match_id"].astype(str).isin(shared_ids)].copy()
+
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.plotly_chart(plot_timeseries(sub, title=f"{me_name} — matchs avec {name}"), width="stretch")
+                        with c2:
+                            if friend_sub.empty:
+                                st.warning("Impossible de charger les stats de l'ami sur les matchs partagés.")
+                            else:
+                                st.plotly_chart(
+                                    plot_timeseries(friend_sub, title=f"{name} — matchs avec {me_name}"),
+                                    width="stretch",
+                                )
+
+                        c3, c4 = st.columns(2)
+                        with c3:
+                            st.plotly_chart(
+                                plot_per_minute_timeseries(sub, title=f"{me_name} — stats/min (avec {name})"),
+                                width="stretch",
+                            )
+                        with c4:
+                            if not friend_sub.empty:
+                                st.plotly_chart(
+                                    plot_per_minute_timeseries(
+                                        friend_sub,
+                                        title=f"{name} — stats/min (avec {me_name})",
+                                    ),
+                                    width="stretch",
+                                )
+
+                        c5, c6 = st.columns(2)
+                        with c5:
+                            if not sub.dropna(subset=["average_life_seconds"]).empty:
+                                st.plotly_chart(
+                                    plot_average_life(sub, title=f"{me_name} — Durée de vie (avec {name})"),
+                                    width="stretch",
+                                )
+                        with c6:
+                            if not friend_sub.empty and not friend_sub.dropna(subset=["average_life_seconds"]).empty:
+                                st.plotly_chart(
+                                    plot_average_life(friend_sub, title=f"{name} — Durée de vie (avec {me_name})"),
+                                    width="stretch",
+                                )
+
+                        st.subheader("Médailles (matchs partagés)")
+                        shared_list = sorted({str(x) for x in shared_ids if str(x).strip()})
+                        if not shared_list:
+                            st.info("Aucun match partagé pour calculer les médailles.")
+                        else:
+                            with st.spinner("Agrégation des médailles (moi + ami)…"):
+                                my_top = load_top_medals(db_path, xuid.strip(), shared_list, top_n=12)
+                                fr_top = load_top_medals(db_path, friend_xuid, shared_list, top_n=12)
+
+                            m1, m2 = st.columns(2)
+                            with m1:
+                                st.caption(f"{me_name}")
+                                render_medals_grid(
+                                    [{"name_id": int(n), "count": int(c)} for n, c in (my_top or [])],
+                                    cols_per_row=6,
+                                )
+                            with m2:
+                                st.caption(f"{name}")
+                                render_medals_grid(
+                                    [{"name_id": int(n), "count": int(c)} for n, c in (fr_top or [])],
+                                    cols_per_row=6,
+                                )
 
     # --------------------------------------------------------------------------
     # Tab: Avec mes amis
@@ -979,28 +1241,14 @@ def main() -> None:
         apply_current_filters = st.toggle(
             "Appliquer les filtres actuels (période/sessions + map/playlist)",
             value=True,
+            key="apply_current_filters_friends",
         )
-
-        top = cached_list_top_teammates(db_path, xuid.strip(), limit=20)
-        default_two = [t[0] for t in top[:2]]
-        all_other = cached_list_other_xuids(db_path, xuid.strip(), limit=500)
-        
-        ordered = []
-        seen: set[str] = set()
-        for xx, _cnt in top:
-            if xx not in seen:
-                ordered.append(xx)
-                seen.add(xx)
-        for xx in all_other:
-            if xx not in seen:
-                ordered.append(xx)
-                seen.add(xx)
-
-        opts_map = build_xuid_option_map(ordered, display_name_fn=display_name_from_xuid)
+        opts_map, default_labels = _build_friends_opts_map(db_path, xuid.strip())
         picked_labels = st.multiselect(
             "Coéquipiers",
             options=list(opts_map.keys()),
-            default=[k for k, v in opts_map.items() if v in default_two],
+            default=default_labels,
+            key="friends_picked_labels",
         )
         picked_xuids = [opts_map[lbl] for lbl in picked_labels if lbl in opts_map]
         # Forcé: les stats "avec mes amis" n'ont de sens que si vous êtes dans la même équipe.
@@ -1074,20 +1322,11 @@ def main() -> None:
                         latest_labels = trio_rows.loc[trio_rows["session_id"] == latest_sid, "session_label"].dropna().unique().tolist()
                         latest_label = latest_labels[0] if latest_labels else None
 
-                    bcols = st.columns([2, 3])
-                    with bcols[0]:
-                        if st.button("Focus: dernière session (trio)", width="stretch", disabled=(latest_label is None)):
-                            # Demande de changement appliquée au prochain rerun (avant création des widgets).
-                            st.session_state["_pending_filter_mode"] = "Sessions"
-                            if latest_label:
-                                st.session_state["_pending_picked_session_label"] = latest_label
-                                st.session_state["_pending_picked_sessions"] = [latest_label]
-                            st.rerun()
-                    with bcols[1]:
-                        if latest_label:
-                            st.caption(f"Cible: {latest_label} (gap {gm} min)")
-                        else:
-                            st.caption("Impossible de déterminer une session trio (données insuffisantes).")
+                    st.session_state["_trio_latest_session_label"] = latest_label
+                    if latest_label:
+                        st.caption(f"Dernière session trio détectée : {latest_label} (gap {gm} min). Bouton dans la sidebar.")
+                    else:
+                        st.caption("Impossible de déterminer une session trio (données insuffisantes).")
 
                     # Charge les stats de chacun et aligne par match_id.
                     me_df = base_for_trio.loc[base_for_trio["match_id"].isin(trio_ids)].copy()
@@ -1188,20 +1427,17 @@ def main() -> None:
                                     cols_per_row=6,
                                 )
 
-            # Stats individuelles par ami
+            st.subheader("Résumé par ami")
+            base_for_friends = dff if apply_current_filters else df
+            summary_rows = []
             for fx in picked_xuids:
                 name = display_name_from_xuid(fx)
                 rows = query_matches_with_friend(db_path, xuid.strip(), fx)
                 if same_team_only_friends:
                     rows = [r for r in rows if r.same_team]
-                match_ids = {r.match_id for r in rows}
-
-                base_for_friends = dff if apply_current_filters else df
-                sub = base_for_friends.loc[base_for_friends["match_id"].isin(match_ids)].copy()
-                st.subheader(f"Avec {name}")
-                
+                match_ids = {str(r.match_id) for r in rows}
+                sub = base_for_friends.loc[base_for_friends["match_id"].astype(str).isin(match_ids)].copy()
                 if sub.empty:
-                    st.warning("Aucun match trouvé (avec les filtres actuels).")
                     continue
 
                 rates_sub = compute_outcome_rates(sub)
@@ -1209,85 +1445,25 @@ def main() -> None:
                 win_rate_sub = rates_sub.wins / total_out
                 loss_rate_sub = rates_sub.losses / total_out
                 global_ratio_sub = compute_global_ratio(sub)
-
-                k = st.columns(3)
-                k[0].metric("Matchs", f"{len(sub)}")
-                k[1].metric("Win/Loss", f"{win_rate_sub*100:.1f}% / {loss_rate_sub*100:.1f}%")
-                k[2].metric("Ratio global", f"{global_ratio_sub:.2f}" if global_ratio_sub is not None else "-")
-
                 stats_sub = compute_aggregated_stats(sub)
-                per_min = st.columns(3)
-                per_min[0].metric("Frags / min", f"{stats_sub.kills_per_minute:.2f}" if stats_sub.kills_per_minute else "-")
-                per_min[1].metric("Morts / min", f"{stats_sub.deaths_per_minute:.2f}" if stats_sub.deaths_per_minute else "-")
-                per_min[2].metric("Assistances / min", f"{stats_sub.assists_per_minute:.2f}" if stats_sub.assists_per_minute else "-")
 
-                # Chargement des stats de l'ami
-                shared_ids = set(sub["match_id"].astype(str))
-                friend_df = load_df(db_path, fx)
-                friend_sub = friend_df.loc[friend_df["match_id"].astype(str).isin(shared_ids)].copy()
+                summary_rows.append(
+                    {
+                        "Ami": name,
+                        "Matchs": int(len(sub)),
+                        "Win%": round(win_rate_sub * 100, 1),
+                        "Loss%": round(loss_rate_sub * 100, 1),
+                        "Ratio": round(float(global_ratio_sub), 2) if global_ratio_sub is not None else None,
+                        "Frags/min": round(float(stats_sub.kills_per_minute), 2) if stats_sub.kills_per_minute else None,
+                        "Morts/min": round(float(stats_sub.deaths_per_minute), 2) if stats_sub.deaths_per_minute else None,
+                        "Assists/min": round(float(stats_sub.assists_per_minute), 2) if stats_sub.assists_per_minute else None,
+                    }
+                )
 
-                # Graphiques Kills/Deaths/Ratio
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.plotly_chart(plot_timeseries(sub, title=f"{me_name} — matchs avec {name}"), width="stretch")
-                with c2:
-                    if friend_sub.empty:
-                        st.warning("Impossible de charger les stats de l'ami sur les matchs partagés.")
-                    else:
-                        st.plotly_chart(plot_timeseries(friend_sub, title=f"{name} — matchs avec {me_name}"), width="stretch")
-
-                # Graphiques par minute
-                c3, c4 = st.columns(2)
-                with c3:
-                    st.plotly_chart(
-                        plot_per_minute_timeseries(sub, title=f"{me_name} — stats/min (avec {name})"),
-                        width="stretch",
-                    )
-                with c4:
-                    if not friend_sub.empty:
-                        st.plotly_chart(
-                            plot_per_minute_timeseries(friend_sub, title=f"{name} — stats/min (avec {me_name})"),
-                            width="stretch",
-                        )
-
-                # Graphiques Average Life
-                c5, c6 = st.columns(2)
-                with c5:
-                    if not sub.dropna(subset=["average_life_seconds"]).empty:
-                        st.plotly_chart(
-                            plot_average_life(sub, title=f"{me_name} — Durée de vie (avec {name})"),
-                            width="stretch",
-                        )
-                with c6:
-                    if not friend_sub.empty and not friend_sub.dropna(subset=["average_life_seconds"]).empty:
-                        st.plotly_chart(
-                            plot_average_life(friend_sub, title=f"{name} — Durée de vie (avec {me_name})"),
-                            width="stretch",
-                        )
-
-                # Médailles (simple) : top médailles sur les matchs partagés
-                st.subheader("Médailles (matchs partagés)")
-                shared_list = sorted({str(x) for x in shared_ids if str(x).strip()})
-                if not shared_list:
-                    st.info("Aucun match partagé pour calculer les médailles.")
-                else:
-                    with st.spinner("Agrégation des médailles (moi + ami)…"):
-                        my_top = load_top_medals(db_path, xuid.strip(), shared_list, top_n=12)
-                        fr_top = load_top_medals(db_path, fx, shared_list, top_n=12)
-
-                    m1, m2 = st.columns(2)
-                    with m1:
-                        st.caption(f"{me_name}")
-                        render_medals_grid(
-                            [{"name_id": int(n), "count": int(c)} for n, c in (my_top or [])],
-                            cols_per_row=6,
-                        )
-                    with m2:
-                        st.caption(f"{name}")
-                        render_medals_grid(
-                            [{"name_id": int(n), "count": int(c)} for n, c in (fr_top or [])],
-                            cols_per_row=6,
-                        )
+            if not summary_rows:
+                st.info("Aucun match trouvé avec ces amis (selon le filtre actuel).")
+            else:
+                st.dataframe(pd.DataFrame(summary_rows).sort_values(["Matchs"], ascending=False), width="stretch", hide_index=True)
 
     # --------------------------------------------------------------------------
     # Tab: Ratio par cartes
