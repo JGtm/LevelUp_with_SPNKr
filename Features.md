@@ -3,7 +3,8 @@
 
 
 1. S'assurer que le script pourra fonctionner sur un NAS
-2. Retravailler et épurer la sidebar, tout ce qui est paramètres, sera transféré dans un nouvel onglet "Paramètres"
+2. Ne plus limiter les médaille à 25
+3. Retravailler et épurer la sidebar, tout ce qui est paramètres, sera transféré dans un nouvel onglet "Paramètres"
 3. Un bouton "Actualiser" devra toujours être présent et visible dans la sidebar
 4. Ajouter le MMR personnel dans la section "Carrière"
 5. Après analyse de ce qu'il est possible de récupérer, ajouter le rang et la bannière et les images associées du joueur en haut de la page.
