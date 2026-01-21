@@ -45,6 +45,52 @@ DEFAULT_IMPORTER = REPO_ROOT / "scripts" / "spnkr_import_db.py"
 DEFAULT_FILM_ROSTER_REFETCH = REPO_ROOT / "scripts" / "refetch_film_roster.py"
 
 
+def _preferred_python_executable() -> Path | None:
+    # Préfère un venv local si présent (évite d'utiliser un python système
+    # qui n'a pas les dépendances: streamlit, aiohttp, etc.).
+    candidates = [
+        REPO_ROOT / ".venv" / "Scripts" / "python.exe",  # Windows
+        REPO_ROOT / ".venv" / "bin" / "python",  # Linux/macOS
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def _maybe_reexec_into_venv(argv: list[str]) -> None:
+    if os.environ.get("OPENSPARTAN_LAUNCHER_NO_REEXEC"):
+        return
+
+    preferred = _preferred_python_executable()
+    if preferred is None:
+        return
+
+    try:
+        current = Path(sys.executable).resolve()
+        preferred_r = preferred.resolve()
+    except Exception:
+        return
+
+    if current == preferred_r:
+        return
+
+    os.environ["OPENSPARTAN_LAUNCHER_NO_REEXEC"] = "1"
+    os.execv(str(preferred_r), [str(preferred_r), str(Path(__file__).resolve()), *argv])
+
+
+def _require_module(name: str, *, install_hint: str) -> None:
+    try:
+        __import__(name)
+    except Exception as e:
+        print(f"Dépendance manquante: {name}")
+        print("Détail:", e)
+        print("Installe-la dans ton environnement Python actif puis relance.")
+        print("Si tu utilises le venv du repo, tu peux faire:")
+        print(f"  {install_hint}")
+        raise SystemExit(2)
+
+
 def _pick_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
@@ -163,6 +209,8 @@ def _launch_streamlit(*, db_path: Path | None, port: int | None, no_browser: boo
     if not DEFAULT_STREAMLIT_APP.exists():
         raise SystemExit(f"Introuvable: {DEFAULT_STREAMLIT_APP}")
 
+    _require_module("streamlit", install_hint="./.venv/Scripts/python -m pip install -r requirements.txt")
+
     if db_path is not None:
         os.environ["OPENSPARTAN_DB_PATH"] = str(db_path)
 
@@ -229,6 +277,103 @@ def _guess_default_spnkr_db() -> Path | None:
         return None
     # Choisit la plus récemment modifiée.
     return max(dbs, key=lambda p: p.stat().st_mtime)
+
+
+def _display_path(p: Path) -> str:
+    try:
+        return str(p.resolve().relative_to(REPO_ROOT))
+    except Exception:
+        return str(p)
+
+
+def _prompt_db_choice(*, purpose: str, default_db: Path | None, allow_none: bool = False) -> Path | None:
+    candidates: list[Path] = []
+
+    if default_db is not None and default_db.exists():
+        candidates.append(default_db.resolve())
+
+    for p in _iter_spnkr_dbs(DEFAULT_DATA_DIR):
+        rp = p.resolve()
+        if rp not in candidates:
+            candidates.append(rp)
+
+    if candidates:
+        print(f"\nDBs disponibles ({purpose}):")
+        if allow_none:
+            print("  0) (auto / aucune DB forcée)")
+        for i, p in enumerate(candidates, start=1):
+            marker = " (défaut)" if default_db is not None and p == default_db.resolve() else ""
+            print(f"  {i}) {_display_path(p)}{marker}")
+        print("(Tu peux aussi coller un chemin complet vers une DB .db)")
+    else:
+        print(f"\nAucune DB détectée pour {purpose}.")
+        print("Colle un chemin complet vers une DB .db")
+
+    default_hint = _display_path(default_db) if default_db is not None else ""
+    raw = input(f"DB ({purpose}) [défaut: {default_hint}]: ").strip()
+    if not raw:
+        if allow_none:
+            return default_db.resolve() if default_db is not None and default_db.exists() else None
+        if default_db is not None and default_db.exists():
+            return default_db.resolve()
+        return candidates[0] if candidates else None
+
+    if allow_none and raw == "0":
+        return None
+
+    if raw.isdigit() and candidates:
+        idx = int(raw)
+        if 1 <= idx <= len(candidates):
+            return candidates[idx - 1]
+        print("Numéro invalide.")
+        return None
+
+    # Sinon, l'entrée est interprétée comme un chemin.
+    p = Path(raw).expanduser()
+    try:
+        p = p.resolve()
+    except Exception:
+        pass
+    if not p.exists():
+        print("DB introuvable:", p)
+        return None
+    return p
+
+
+def _prompt_player_choice(*, default_player: str | None) -> str | None:
+    candidates: list[tuple[str, Path | None]] = []
+
+    dp = (default_player or "").strip()
+    if dp:
+        candidates.append((dp, None))
+
+    for db in _iter_spnkr_dbs(DEFAULT_DATA_DIR):
+        p = _infer_player_from_db_filename(db)
+        if not p:
+            continue
+        if any(p == existing for existing, _ in candidates):
+            continue
+        candidates.append((p, db))
+
+    if candidates:
+        print("\nJoueurs détectés (depuis les DB existantes):")
+        for i, (p, db) in enumerate(candidates, start=1):
+            origin = f" ({db.name})" if db is not None else ""
+            marker = " (défaut)" if dp and p == dp else ""
+            print(f"  {i}) {p}{origin}{marker}")
+
+    raw = input("Joueur SPNKr (gamertag ou XUID) [SPNKR_PLAYER]: ").strip()
+    if not raw:
+        return dp or (candidates[0][0] if candidates else None)
+
+    if raw.isdigit() and candidates:
+        idx = int(raw)
+        if 1 <= idx <= len(candidates):
+            return candidates[idx - 1][0]
+        print("Numéro invalide.")
+        return None
+
+    return raw
 
 
 def _latest_match_id_from_db(db_path: Path) -> str | None:
@@ -337,12 +482,18 @@ def _cmd_repair_aliases(args: argparse.Namespace) -> int:
     if not DEFAULT_FILM_ROSTER_REFETCH.exists():
         raise SystemExit(f"Introuvable: {DEFAULT_FILM_ROSTER_REFETCH}")
 
+    _require_module("aiohttp", install_hint="./.venv/Scripts/python -m pip install -r requirements.txt")
+
     db_path = Path(args.db).expanduser().resolve() if args.db else None
     if db_path is None:
         guessed = _guess_default_spnkr_db()
         if guessed is None:
             raise SystemExit("Fournis --db (aucune DB par défaut détectée).")
         db_path = guessed
+
+    # Par défaut (sans options), on fait comme l'interactif: --latest.
+    if not getattr(args, "all_matches", False) and not getattr(args, "latest", False) and not getattr(args, "match_id", None):
+        args.latest = True
 
     match_id = str(getattr(args, "match_id", "") or "").strip() or None
     if getattr(args, "latest", False) and not match_id:
@@ -407,20 +558,19 @@ def _interactive(argv0: str) -> int:
     # Question 2 max: demander le joueur uniquement si nécessaire.
     player: str | None = None
     if choice in {"2", "3"}:
-        player = (input("Joueur SPNKr (gamertag ou XUID) [SPNKR_PLAYER]: ").strip() or os.environ.get("SPNKR_PLAYER"))
+        player = _prompt_player_choice(default_player=os.environ.get("SPNKR_PLAYER"))
         if not player:
             print("Aucun joueur fourni.")
             return 2
 
     if choice == "5":
         default_db = _guess_default_spnkr_db()
-        default_str = str(default_db) if default_db else ""
-        db_s = input(f"DB à réparer [défaut: {default_str}]: ").strip() or default_str
-        if not db_s:
+        db_p = _prompt_db_choice(purpose="à réparer", default_db=default_db)
+        if db_p is None:
             print("Aucune DB fournie.")
             return 2
         args = argparse.Namespace(
-            db=db_s,
+            db=str(db_p),
             latest=True,
             match_id=None,
             all_matches=False,
@@ -435,7 +585,8 @@ def _interactive(argv0: str) -> int:
         return _cmd_repair_aliases(args)
 
     if choice == "1":
-        return _launch_streamlit(db_path=None, port=None, no_browser=False)
+        db_p = _prompt_db_choice(purpose="à utiliser", default_db=_guess_default_spnkr_db(), allow_none=True)
+        return _launch_streamlit(db_path=db_p, port=None, no_browser=False)
 
     if choice == "2":
         args = argparse.Namespace(
@@ -612,6 +763,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+
+    _maybe_reexec_into_venv(argv)
 
     if not argv:
         return _interactive(argv0=f"{Path(sys.argv[0]).name}")
