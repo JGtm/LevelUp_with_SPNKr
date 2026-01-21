@@ -181,7 +181,8 @@ def _compute_mastery_display(
 
     master_target = targets[-1]
     if cur >= master_target:
-        return "Maître", f"{cur}/{master_target}", True, 1.0
+        # En Maître, on affiche uniquement le total.
+        return "Maître", f"{cur}", True, 1.0
 
     # Niveau = palier actuel + 1 (en considérant qu'en dessous du palier 1 => niveau 1)
     completed = 0

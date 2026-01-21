@@ -669,7 +669,7 @@ div[data-testid="stNumberInput"] input:focus {
     /* Taille responsive dans une colonne Streamlit */
     width: 100%;
     aspect-ratio: 1 / 1;
-    max-width: 110px;
+    max-width: 140px;
     margin: 0 auto;
     position: relative;
     border-radius: 999px;
@@ -765,9 +765,20 @@ div[data-testid="stNumberInput"] input:focus {
     opacity: 0.9;
 }
 
+.os-medal-name {
+    /* Aligner toutes les vignettes: nom sur 2 lignes max */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: calc(2 * 1.15rem);
+}
+
 .os-medal-count {
     font-weight: 700;
     font-size: 0.95rem;
+    line-height: 1.1rem;
+    min-height: 1.1rem;
 }
 
 .os-medal-missing {

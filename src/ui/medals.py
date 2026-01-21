@@ -204,7 +204,8 @@ def render_medals_grid(medals: list[dict[str, int]], cols_per_row: int = 8) -> N
 
         col.markdown(
             "<div class='os-medal-caption'>"
-            + f"{name}<br><span class='os-medal-count'>x{cnt}</span>"
+            + "<div class='os-medal-name'>" + name + "</div>"
+            + "<div class='os-medal-count'>x" + str(cnt) + "</div>"
             + "</div>",
             unsafe_allow_html=True,
         )
