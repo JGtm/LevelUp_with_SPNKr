@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import unescape
@@ -24,6 +25,69 @@ from urllib.request import Request, urlopen
 
 BASE_URL = "https://wiki.halo.fr"
 DEFAULT_URL = "https://wiki.halo.fr/index.php?title=Citations_de_Halo_5_:_Guardians&printable=yes"
+
+
+def _normalize_name(s: str) -> str:
+    base = " ".join(str(s or "").strip().lower().split())
+    return "".join(ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch))
+
+
+def _load_exclusions(path: str | None) -> tuple[set[str], set[str]]:
+    """Charge une liste d'exclusion optionnelle.
+
+    Formats acceptés:
+    - Liste JSON: ["basename.png", "Nom de citation", ...]
+    - Dict JSON: {"image_basenames": [...], "names": [...], "items": [...]} (items traité comme noms)
+    """
+    if not path:
+        return set(), set()
+    p = Path(path)
+    if not p.exists():
+        return set(), set()
+
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return set(), set()
+
+    image_basenames: set[str] = set()
+    names: set[str] = set()
+
+    def _consume(values: Any, *, as_image: bool) -> None:
+        if not isinstance(values, list):
+            return
+        for v in values:
+            if not isinstance(v, str):
+                continue
+            s = v.strip()
+            if not s:
+                continue
+            if as_image:
+                image_basenames.add(Path(s).name)
+            else:
+                names.add(_normalize_name(s))
+
+    if isinstance(raw, list):
+        # Heuristique: si ça ressemble à un nom de fichier, c'est une image, sinon un nom.
+        for v in raw:
+            if not isinstance(v, str):
+                continue
+            s = v.strip()
+            if not s:
+                continue
+            if "." in Path(s).name:
+                image_basenames.add(Path(s).name)
+            else:
+                names.add(_normalize_name(s))
+        return image_basenames, names
+
+    if isinstance(raw, dict):
+        _consume(raw.get("image_basenames"), as_image=True)
+        _consume(raw.get("names"), as_image=False)
+        _consume(raw.get("items"), as_image=False)
+        return image_basenames, names
+
+    return set(), set()
 
 
 def _fetch_html(url: str) -> str:
@@ -421,6 +485,14 @@ def main() -> int:
         help="HTML local à parser (si fourni, n'effectue pas de fetch HTTP)",
     )
     ap.add_argument(
+        "--allow-network",
+        action="store_true",
+        help=(
+            "Autorise les accès réseau (fetch HTTP et/ou téléchargement d'images). "
+            "Par défaut, le script refuse toute connexion réseau."
+        ),
+    )
+    ap.add_argument(
         "--output",
         default=str(Path("data") / "wiki" / "halo5_commendations_fr.json"),
         help="Chemin du JSON de sortie",
@@ -429,6 +501,14 @@ def main() -> int:
         "--missing-output",
         default=str(Path("data") / "wiki" / "halo5_commendations_missing.json"),
         help="Chemin du JSON listant les citations présentes sur la page mais non extraites",
+    )
+    ap.add_argument(
+        "--exclude",
+        default=str(Path("data") / "wiki" / "halo5_commendations_exclude.json"),
+        help=(
+            "Chemin d'une blacklist JSON (optionnelle) pour exclure certaines citations (par nom et/ou basename d'icône). "
+            "Formats: liste JSON ou dict {image_basenames: [...], names: [...]}"
+        ),
     )
     ap.add_argument(
         "--no-merge-existing",
@@ -452,6 +532,13 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    if (not args.input_html) and (not bool(args.allow_network)):
+        print("ERROR: accès réseau désactivé. Fournis --input-html ou utilise --allow-network.")
+        return 2
+    if bool(args.download_images) and (not bool(args.allow_network)):
+        print("ERROR: --download-images nécessite --allow-network (téléchargement réseau).")
+        return 2
+
     if args.input_html:
         html_text = Path(args.input_html).read_text(encoding="utf-8", errors="replace")
         source_url = args.url
@@ -472,12 +559,14 @@ def main() -> int:
     if merge_existing:
         existing_by_img, existing_items = _load_existing_items_for_merge(out_path)
 
+    excluded_images, excluded_names = _load_exclusions(args.exclude)
+
     images_dir = Path(args.images_dir)
     payload: dict[str, Any] = {
         "source_url": source_url,
         "fetched_at": fetched_at,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "count": len(comms),
+        "count": 0,
         "missing_count": len(missing),
         "items": [],
     }
@@ -486,6 +575,12 @@ def main() -> int:
 
     generated_items: list[dict[str, Any]] = []
     for c in sorted(comms, key=lambda x: (x.category, x.name)):
+        img_key = (c.image_url or "").strip().split("/")[-1]
+        if img_key and (Path(img_key).name in excluded_images):
+            continue
+        if _normalize_name(c.name) in excluded_names:
+            continue
+
         item: dict[str, Any] = {
             "category": c.category,
             "name": c.name,
@@ -521,7 +616,13 @@ def main() -> int:
         for it in existing_items:
             key = _image_basename_from_item(it)
             if key and key not in gen_keys:
+                if excluded_images and (Path(key).name in excluded_images):
+                    continue
+                if excluded_names and _normalize_name(str(it.get("name") or "")) in excluded_names:
+                    continue
                 generated_items.append(it)
+
+    payload["count"] = len(generated_items)
 
     payload["items"] = sorted(
         generated_items,

@@ -10,3 +10,7 @@
 - Mis de côté pour l’instant.
 - À terme, cette fonctionnalité sera intégrée dans l’onglet **"Médailles"**, qu’on renommera **"Citations"**.
 - Concept: un système de progression (5 niveaux + Maîtrise) avec une bordure circulaire qui se remplit selon la quantité par niveau. Il y aura 5 niveaux.
+
+### 12) Comparer des matchs
+- À analyser.
+- Objectif: comparer 2+ matchs (K/D/A, MMR, durée de vie, objectifs, etc.) avec un mode “côte à côte”.

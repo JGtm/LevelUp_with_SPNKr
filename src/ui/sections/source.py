@@ -195,49 +195,6 @@ def render_source_section(
         waypoint_player = secret_wp
         st.session_state["waypoint_player"] = waypoint_player
 
-    with st.expander("Alias (XUID → gamertag)", expanded=False):
-        st.caption(
-            "La DB OpenSpartan ne contient pas les gamertags. "
-            "Ici tu peux définir des alias locaux (persistés dans un fichier JSON)."
-        )
-        aliases_path = get_aliases_file_path()
-        current_aliases = load_aliases_file(aliases_path)
-
-        ax = st.text_input("XUID à aliaser", value="")
-        an = st.text_input("Gamertag", value="")
-        cols = st.columns(2)
-        if cols[0].button("Enregistrer l'alias", width="stretch"):
-            axc = (ax or "").strip()
-            anc = (an or "").strip()
-            if not axc.isdigit():
-                st.error("XUID invalide (doit être numérique).")
-            elif not anc:
-                st.error("Gamertag vide.")
-            else:
-                current_aliases[axc] = anc
-                save_aliases_file(current_aliases, aliases_path)
-                st.success("Alias enregistré.")
-                st.rerun()
-
-        if cols[1].button("Supprimer l'alias", width="stretch"):
-            axc = (ax or "").strip()
-            if not axc:
-                st.error("Renseigne un XUID à supprimer.")
-            elif axc not in current_aliases:
-                st.warning("Cet alias n'existe pas.")
-            else:
-                del current_aliases[axc]
-                save_aliases_file(current_aliases, aliases_path)
-                st.success("Alias supprimé.")
-                st.rerun()
-
-        if current_aliases:
-            st.dataframe(
-                pd.DataFrame(sorted(current_aliases.items()), columns=["XUID", "Gamertag"]),
-                width="stretch",
-                hide_index=True,
-            )
-        else:
-            st.info("Aucun alias personnalisé pour l'instant.")
+    # Alias (XUID → gamertag) : UI masquée.
 
     return str(db_path), str(xuid), str(waypoint_player)

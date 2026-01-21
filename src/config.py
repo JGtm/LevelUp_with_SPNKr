@@ -1,8 +1,45 @@
 """Configuration centralisée et constantes du projet."""
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict
+
+
+def get_repo_root(start_path: str | None = None) -> str:
+    """Retourne le répertoire racine du repo.
+
+    Objectif: éviter les chemins faux quand le CWD Streamlit n'est pas le repo,
+    ou quand le script est lancé depuis un autre dossier.
+    """
+
+    def _as_dir(p: Path) -> Path:
+        try:
+            p = p.resolve()
+        except Exception:
+            pass
+        return p.parent if p.is_file() else p
+
+    def _looks_like_repo_root(p: Path) -> bool:
+        return (p / "pyproject.toml").exists() and (p / "src").is_dir()
+
+    starts: list[Path] = []
+    if start_path:
+        starts.append(_as_dir(Path(start_path)))
+    starts.append(_as_dir(Path(__file__)))
+    try:
+        starts.append(Path.cwd().resolve())
+    except Exception:
+        starts.append(Path.cwd())
+
+    # Cherche dans les parents proches.
+    for s in starts:
+        for p in [s] + list(s.parents)[:8]:
+            if _looks_like_repo_root(p):
+                return str(p)
+
+    # Fallback raisonnable.
+    return str(starts[0])
 
 
 # =============================================================================

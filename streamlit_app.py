@@ -5,6 +5,8 @@ depuis la base de données OpenSpartan Workshop.
 """
 
 import os
+import json
+import html
 import re
 import subprocess
 import sys
@@ -863,10 +865,10 @@ def _format_duration_dhm(seconds: float | int | None) -> str:
 
     parts: list[str] = []
     if days:
-        parts.append(f"{days}D")
+        parts.append(f"{days}j")
     if hours or days:
-        parts.append(f"{hours}H")
-    parts.append(f"{minutes}M")
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}min")
     return " ".join(parts)
 
 
@@ -1476,24 +1478,43 @@ def _render_match_view(
     if wp and match_id and match_id.strip() and match_id.strip() != "-":
         match_url = f"https://www.halowaypoint.com/halo-infinite/players/{wp}/matches/{match_id.strip()}"
 
+    def _os_card(
+        title: str,
+        kpi: str,
+        sub_html: str | None = None,
+        *,
+        accent: str | None = None,
+        kpi_color: str | None = None,
+        sub_style: str | None = None,
+        min_h: int = 112,
+    ) -> None:
+        t = html.escape(str(title or ""))
+        k = html.escape(str(kpi or "-"))
+        s = "" if not sub_html else str(sub_html)
+        style = "min-height:" + str(int(min_h)) + "px; margin-bottom:10px;"
+        if accent and str(accent).startswith("#"):
+            style += f"border-color:{accent}66;"
+        kpi_style = "" if not (kpi_color and str(kpi_color).startswith("#")) else f" style='color:{kpi_color}'"
+        sub_style_attr = "" if not sub_style else " style=\"" + html.escape(str(sub_style), quote=True) + "\""
+        st.markdown(
+            "<div class='os-card' style='" + style + "'>"
+            f"<div class='os-card-title'>{t}</div>"
+            f"<div class='os-card-kpi'{kpi_style}>{k}</div>"
+            + ("" if not s else f"<div class='os-card-sub'{sub_style_attr}>{s}</div>")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
     top_cols = st.columns(2)
     with top_cols[0]:
-        st.metric("Date", format_date_fr(last_time))
+        _os_card("Date", format_date_fr(last_time))
     with top_cols[1]:
-        outcome_border = f"{outcome_color}55" if str(outcome_color).startswith("#") else outcome_color
-        outcome_bg = f"{outcome_color}14" if str(outcome_color).startswith("#") else "rgba(255,255,255,0.03)"
-        st.markdown(
-            "<div style='border:1px solid "
-            + str(outcome_border)
-            + "; border-radius:14px; padding:12px 14px; background: "
-            + str(outcome_bg)
-            + "; box-shadow: 0 6px 18px rgba(0,0,0,0.18)'>"
-            "<div style='display:flex; align-items:center; gap:12px; justify-content:space-between'>"
-            f"<div style='font-weight:900; font-size:1.10rem; color:{outcome_color}; letter-spacing:0.2px'>{outcome_label}</div>"
-            f"<div style='font-weight:900; font-size:1.10rem; color:{score_color}; letter-spacing:0.2px'>{score_label}</div>"
-            "</div>"
-            "</div>",
-            unsafe_allow_html=True,
+        _os_card(
+            "Résultats",
+            str(outcome_label),
+            f"<span style='color:{score_color}; font-weight:800'>{html.escape(str(score_label))}</span>",
+            accent=str(outcome_color),
+            kpi_color=str(outcome_color),
         )
 
     last_mode_ui = row.get("mode_ui") or _normalize_mode_label(str(last_pair) if last_pair else None)
@@ -1522,28 +1543,40 @@ def _render_match_view(
         delta_mmr = (team_mmr - enemy_mmr) if (team_mmr is not None and enemy_mmr is not None) else None
 
         mmr_cols = st.columns(3)
-        mmr_cols[0].metric("MMR d'équipe", f"{team_mmr:.1f}" if team_mmr is not None else "-")
-        mmr_cols[1].metric("MMR adverse", f"{enemy_mmr:.1f}" if enemy_mmr is not None else "-")
-        if delta_mmr is None:
-            mmr_cols[2].metric("Écart MMR", "-")
-        else:
-            mmr_cols[2].metric(
-                "Écart MMR (équipe - adverse)",
-                "-",
-                f"{float(delta_mmr):+.1f}",
-                delta_color="normal",
-            )
-
-
-
-        def _metric_expected_vs_actual(title: str, perf: dict, delta_color: str) -> None:
+        with mmr_cols[0]:
+            _os_card("MMR d'équipe", f"{team_mmr:.1f}" if team_mmr is not None else "-")
+        with mmr_cols[1]:
+            _os_card("MMR adverse", f"{enemy_mmr:.1f}" if enemy_mmr is not None else "-")
+        with mmr_cols[2]:
+            if delta_mmr is None:
+                _os_card("Écart MMR", "-")
+            else:
+                dm = float(delta_mmr)
+                col = colors["green"] if dm > 0 else (colors["red"] if dm < 0 else colors["violet"])
+                _os_card("Écart MMR", f"{dm:+.1f}", "équipe - adverse", accent=col, kpi_color=col)
+        def _ev_card(title: str, perf: dict, *, mode: str) -> None:
             count = perf.get("count")
             expected = perf.get("expected")
             if count is None or expected is None:
-                st.metric(title, "-")
+                _os_card(title, "-", "")
                 return
+
             delta = float(count) - float(expected)
-            st.metric(title, f"{count:.0f} vs {expected:.1f}", f"{delta:+.1f}", delta_color=delta_color)
+
+            # Couleurs: comme st.metric(delta_color=...)
+            # - normal: vert si delta>0, rouge si delta<0
+            # - inverse: rouge si delta>0, vert si delta<0
+            if delta == 0:
+                col = colors["violet"]
+            else:
+                good = delta > 0
+                if mode == "inverse":
+                    good = not good
+                col = colors["green"] if good else colors["red"]
+
+            arrow = "↑" if delta > 0 else ("↓" if delta < 0 else "→")
+            sub = f"<span style='color:{col}; font-weight:900; font-size:14px'>{arrow} {delta:+.1f}</span>"
+            _os_card(title, f"{float(count):.0f} vs {float(expected):.1f}", sub)
 
         perf_k = pm.get("kills") or {}
         perf_d = pm.get("deaths") or {}
@@ -1552,12 +1585,12 @@ def _render_match_view(
         st.subheader("Réel vs attendu")
         av_cols = st.columns(3)
         with av_cols[0]:
-            _metric_expected_vs_actual("Frags", perf_k, delta_color="normal")
+            _ev_card("Frags", perf_k, mode="normal")
         with av_cols[1]:
-            _metric_expected_vs_actual("Morts", perf_d, delta_color="inverse")
+            _ev_card("Morts", perf_d, mode="inverse")
         with av_cols[2]:
             avg_life_last = row.get("average_life_seconds")
-            st.metric("Durée de vie moyenne", format_mmss(avg_life_last))
+            _os_card("Durée de vie moyenne", format_mmss(avg_life_last), "")
 
     st.subheader("Médailles")
     if not medals_last:
@@ -1683,24 +1716,40 @@ def _render_match_view(
             me_killed_bully = bully_kills
             bully_killed_me = _count_kills(killed_me, col="killer_xuid", xuid_value=bully_xu)
 
-            def _fmt_pair(a: int | None, b: int | None, *, left: str, right: str) -> str | None:
-                if a is None and b is None:
-                    return None
-                la = "-" if a is None else str(int(a))
-                lb = "-" if b is None else str(int(b))
-                return f"{left}: {la} · {right}: {lb}"
+            def _cmp_color(deaths_: int | None, kills_: int | None) -> str:
+                if deaths_ is None or kills_ is None:
+                    return colors["slate"]
+                if int(deaths_) > int(kills_):
+                    return colors["red"]
+                if int(deaths_) < int(kills_):
+                    return colors["green"]
+                return colors["violet"]
+
+            def _fmt_two_lines(deaths_: int | None, kills_: int | None) -> str:
+                d = "-" if deaths_ is None else f"{int(deaths_)} morts"
+                k = "-" if kills_ is None else f"Tué {int(kills_)} fois"
+                return html.escape(d) + "<br/>" + html.escape(k)
 
             c = st.columns(2)
-            c[0].metric(
-                "Némésis",
-                nemesis_name,
-                _fmt_pair(nemesis_killed_me, me_killed_nemesis, left="m'a tué", right="je l'ai tué"),
-            )
-            c[1].metric(
-                "Souffre-douleur",
-                bully_name,
-                _fmt_pair(me_killed_bully, bully_killed_me, left="je l'ai tué", right="il m'a tué"),
-            )
+            with c[0]:
+                _os_card(
+                    "Némésis",
+                    nemesis_name,
+                    _fmt_two_lines(nemesis_killed_me, me_killed_nemesis),
+                    accent=_cmp_color(nemesis_killed_me, me_killed_nemesis),
+                    sub_style="color: rgba(245, 248, 255, 0.92); font-weight: 800; font-size: 16px; line-height: 1.15;",
+                    min_h=110,
+                )
+            with c[1]:
+                # même règle couleur: rouge si il m'a tué plus que je ne l'ai tué
+                _os_card(
+                    "Souffre-douleur",
+                    bully_name,
+                    _fmt_two_lines(bully_killed_me, me_killed_bully),
+                    accent=_cmp_color(bully_killed_me, me_killed_bully),
+                    sub_style="color: rgba(245, 248, 255, 0.92); font-weight: 800; font-size: 16px; line-height: 1.15;",
+                    min_h=110,
+                )
 
     _render_media_section(row=row, settings=settings)
 
@@ -1794,6 +1843,38 @@ def _build_friends_opts_map(
     db_key: tuple[int, int] | None,
     aliases_key: int | None,
 ) -> tuple[dict[str, str], list[str]]:
+    def _load_local_friends_defaults() -> dict[str, list[str]]:
+        """Charge un mapping local {self_xuid: [friend1, friend2, ...]}.
+
+        Fichier local (ignoré git): .streamlit/friends_defaults.json
+        Valeurs: gamertags OU XUIDs.
+        """
+        try:
+            p = Path(__file__).resolve().parent / ".streamlit" / "friends_defaults.json"
+            if not p.exists():
+                return {}
+            with open(p, "r", encoding="utf-8") as f:
+                obj = json.load(f) or {}
+        except Exception:
+            return {}
+
+        if not isinstance(obj, dict):
+            return {}
+
+        out: dict[str, list[str]] = {}
+        for k, v in obj.items():
+            if not isinstance(k, str) or not k.strip():
+                continue
+            if not isinstance(v, list):
+                continue
+            vals: list[str] = []
+            for it in v:
+                if isinstance(it, str) and it.strip():
+                    vals.append(it.strip())
+            if vals:
+                out[k.strip()] = vals
+        return out
+
     top = cached_list_top_teammates(db_path, self_xuid, db_key=db_key, limit=20)
     default_two = [t[0] for t in top[:2]]
     all_other = cached_list_other_xuids(db_path, self_xuid, db_key=db_key, limit=500)
@@ -1810,7 +1891,36 @@ def _build_friends_opts_map(
             seen.add(xx)
 
     opts_map = build_xuid_option_map(ordered, display_name_fn=display_name_from_xuid)
-    default_labels = [k for k, v in opts_map.items() if v in default_two]
+
+    # Defaults: top 2, ou override local.
+    default_xuids = list(default_two)
+    try:
+        overrides = _load_local_friends_defaults().get(str(self_xuid).strip())
+        if overrides:
+            name_to_xuid = {
+                str(display_name_from_xuid(xu) or "").strip().casefold(): str(xu).strip() for xu in ordered
+            }
+            ordered_xuids = [str(xu).strip() for xu in ordered]
+
+            chosen: list[str] = []
+            for ident in overrides:
+                s = str(ident or "").strip()
+                if not s:
+                    continue
+                if s.isdigit() and s in ordered_xuids:
+                    chosen.append(s)
+                    continue
+                xu = name_to_xuid.get(s.casefold())
+                if xu:
+                    chosen.append(xu)
+            chosen = [x for x in chosen if x]
+            if len(chosen) >= 2:
+                default_xuids = chosen[:2]
+    except Exception:
+        pass
+
+    label_by_xuid = {v: k for k, v in opts_map.items()}
+    default_labels = [label_by_xuid[x] for x in default_xuids if x in label_by_xuid]
     return opts_map, default_labels
 
 
@@ -2142,8 +2252,6 @@ def main() -> None:
             options_ui = session_labels_ui["session_label"].tolist()
             st.session_state["_latest_session_label"] = options_ui[0] if options_ui else None
 
-            compare_multi = st.toggle("Comparer plusieurs sessions", value=False)
-
             def _set_session_selection(label: str) -> None:
                 st.session_state.picked_session_label = label
                 if label == "(toutes)":
@@ -2228,12 +2336,8 @@ def main() -> None:
             else:
                 st.caption(f"Trio : {trio_label}")
 
-            if compare_multi:
-                picked = st.multiselect("Sessions", options=options_ui, key="picked_sessions")
-                picked_session_labels = picked if picked else None
-            else:
-                picked_one = st.selectbox("Session", options=["(toutes)"] + options_ui, key="picked_session_label")
-                picked_session_labels = None if picked_one == "(toutes)" else [picked_one]
+            picked_one = st.selectbox("Session", options=["(toutes)"] + options_ui, key="picked_session_label")
+            picked_session_labels = None if picked_one == "(toutes)" else [picked_one]
 
         # ------------------------------------------------------------------
         # Filtres en cascade (ne montrent que les valeurs réellement jouées)
@@ -2461,7 +2565,7 @@ def main() -> None:
         st.caption("Afficher un match précis via un MatchId, une date/heure, ou une sélection.")
 
         # Entrée MatchId
-        match_id_input = st.text_input("MatchId", value=str(st.session_state.get("match_id_input", "") or ""), key="match_id_input")
+        match_id_input = st.text_input("MatchId", key="match_id_input")
 
         # Sélection rapide (sur les filtres actuels, triés du plus récent au plus ancien)
         quick_df = dff.sort_values("start_time", ascending=False).head(200).copy()
@@ -2655,7 +2759,7 @@ def main() -> None:
                 out_tbl["Égalités"] = pivot[1] if 1 in pivot.columns else 0
                 out_tbl["Non terminés"] = pivot[4] if 4 in pivot.columns else 0
                 out_tbl["Total"] = out_tbl[["Victoires", "Défaites", "Égalités", "Non terminés"]].sum(axis=1)
-                out_tbl["Win rate"] = (
+                out_tbl["Taux de victoires"] = (
                     100.0
                     * (out_tbl["Victoires"] / out_tbl["Total"].where(out_tbl["Total"] > 0))
                 ).fillna(0.0)
@@ -2734,7 +2838,7 @@ def main() -> None:
                     "Métrique",
                     options=[
                         ("ratio_global", "Ratio Victoire/défaite"),
-                        ("win_rate", "Win rate"),
+                        ("win_rate", "Taux de victoires"),
                         ("accuracy_avg", "Précision moyenne"),
                     ],
                     format_func=lambda x: x[1],
@@ -3219,63 +3323,94 @@ def main() -> None:
                     else:
                         friends_table["match_url"] = ""
 
-                    st.caption("Ouvre un match dans l'onglet Match (sans nouvel onglet navigateur).")
-                    friends_quick = friends_table.sort_values("start_time", ascending=False).head(200).copy()
-                    friends_quick["label"] = (
-                        friends_quick["start_time_fr"].astype(str)
-                        + " — "
-                        + friends_quick["map_name"].astype(str)
-                        + " — "
-                        + friends_quick["mode"].astype(str)
-                    )
-                    friends_open_opts = {r["label"]: str(r["match_id"]) for _, r in friends_quick.iterrows()}
-                    picked_open = st.selectbox(
-                        "Sélection rapide",
-                        options=["(aucun)"] + list(friends_open_opts.keys()),
-                        index=0,
-                        key="friends_history_open_match_label",
-                    )
-                    if st.button("Ouvrir ce match (dans l'app)", width="stretch", key="friends_history_open_match_btn") and picked_open != "(aucun)":
-                        _request_open_match(friends_open_opts[picked_open])
+                    # Table HTML: colonne "Match" ouvre dans l'onglet Match (même onglet navigateur).
+                    view = friends_table.sort_values("start_time", ascending=False).head(250).reset_index(drop=True)
 
-                    friends_show = [
-                        "match_url",
-                        "start_time_fr",
-                        "map_name",
-                        "playlist_fr",
-                        "mode",
-                        "outcome_label",
-                        "score",
-                        "team_mmr",
-                        "enemy_mmr",
-                        "delta_mmr",
+                    def _fmt(v) -> str:
+                        if v is None:
+                            return "-"
+                        try:
+                            if v != v:  # NaN
+                                return "-"
+                        except Exception:
+                            pass
+                        s = str(v)
+                        return s if s.strip() else "-"
+
+                    def _fmt_mmr_int(v) -> str:
+                        if v is None:
+                            return "-"
+                        try:
+                            if v != v:  # NaN
+                                return "-"
+                        except Exception:
+                            pass
+                        try:
+                            return str(int(round(float(v))))
+                        except Exception:
+                            return _fmt(v)
+
+                    colors = HALO_COLORS.as_dict()
+
+                    def _outcome_style(label: str) -> str:
+                        v = str(label or "").strip().casefold()
+                        if v.startswith("victoire"):
+                            return f"color:{colors['green']}; font-weight:800"
+                        if v.startswith("défaite") or v.startswith("defaite"):
+                            return f"color:{colors['red']}; font-weight:800"
+                        if v.startswith("égalité") or v.startswith("egalite"):
+                            return f"color:{colors['violet']}; font-weight:800"
+                        if v.startswith("non"):
+                            return f"color:{colors['violet']}; font-weight:800"
+                        return "opacity:0.92"
+
+                    cols = [
+                        ("Match", "_app"),
+                        ("HaloWaypoint", "match_url"),
+                        ("Date", "start_time_fr"),
+                        ("Carte", "map_name"),
+                        ("Playlist", "playlist_fr"),
+                        ("Mode", "mode"),
+                        ("Résultat", "outcome_label"),
+                        ("Score", "score"),
+                        ("MMR équipe", "team_mmr"),
+                        ("MMR adverse", "enemy_mmr"),
+                        ("Écart MMR", "delta_mmr"),
                     ]
-                    friends_view = (
-                        friends_table.sort_values("start_time", ascending=False)[friends_show]
-                        .reset_index(drop=True)
-                    )
-                    friends_styled = (
-                        friends_view.style
-                        .map(_style_outcome_text, subset=["outcome_label"])
-                        .map(_style_score_label, subset=["score"])
-                        .map(_style_signed_number, subset=["delta_mmr"])
-                    )
-                    st.dataframe(
-                        friends_styled,
-                        width="stretch",
-                        hide_index=True,
-                        column_config={
-                            "match_url": st.column_config.LinkColumn("HaloWaypoint", display_text="Ouvrir"),
-                            "start_time_fr": st.column_config.TextColumn("Date"),
-                            "map_name": st.column_config.TextColumn("Carte"),
-                            "playlist_fr": st.column_config.TextColumn("Playlist"),
-                            "mode": st.column_config.TextColumn("Mode"),
-                            "outcome_label": st.column_config.TextColumn("Résultat"),
-                            "score": st.column_config.TextColumn("Score"),
-                            "team_mmr": st.column_config.NumberColumn("MMR d'équipe", format="%.1f"),
-                            "enemy_mmr": st.column_config.NumberColumn("MMR adverse", format="%.1f"),
-                            "delta_mmr": st.column_config.NumberColumn("Écart MMR", format="%+.1f"),
-                        },
+
+                    head = "".join(f"<th>{html.escape(h)}</th>" for h, _ in cols)
+                    body_rows: list[str] = []
+                    for _, r in view.iterrows():
+                        mid = str(r.get("match_id") or "").strip()
+                        app = _app_url("Match", match_id=mid)
+                        match_link = f"<a href='{html.escape(app)}' target='_self'>Ouvrir</a>" if mid else "-"
+                        hw = str(r.get("match_url") or "").strip()
+                        hw_link = f"<a href='{html.escape(hw)}' target='_blank' rel='noopener'>Ouvrir</a>" if hw else "-"
+
+                        tds: list[str] = []
+                        for _h, key in cols:
+                            if key == "_app":
+                                tds.append(f"<td>{match_link}</td>")
+                            elif key == "match_url":
+                                tds.append(f"<td>{hw_link}</td>")
+                            elif key == "outcome_label":
+                                val = _fmt(r.get(key))
+                                tds.append(f"<td style='{_outcome_style(val)}'>{html.escape(val)}</td>")
+                            elif key in ("team_mmr", "enemy_mmr", "delta_mmr"):
+                                val = _fmt_mmr_int(r.get(key))
+                                tds.append(f"<td>{html.escape(val)}</td>")
+                            else:
+                                val = _fmt(r.get(key))
+                                tds.append(f"<td>{html.escape(val)}</td>")
+                        body_rows.append("<tr>" + "".join(tds) + "</tr>")
+
+                    st.markdown(
+                        "<div class='os-table-wrap'><table class='os-table'><thead><tr>"
+                        + head
+                        + "</tr></thead><tbody>"
+                        + "".join(body_rows)
+                        + "</tbody></table></div>",
+                        unsafe_allow_html=True,
                     )
 
                 # Graphes : on les rendra tout en bas (idéalement juste avant les médailles).
@@ -3538,28 +3673,6 @@ def main() -> None:
     elif page == "Historique des parties":
         st.subheader("Historique des parties")
 
-        st.caption("Ouvre un match dans l'onglet Match (sans nouvel onglet navigateur).")
-        quick_open_df = dff.sort_values("start_time", ascending=False).head(300).copy()
-        quick_open_df["start_time_fr"] = quick_open_df["start_time"].apply(_format_datetime_fr_hm)
-        if "mode_ui" not in quick_open_df.columns:
-            quick_open_df["mode_ui"] = quick_open_df["pair_name"].apply(_normalize_mode_label)
-        quick_open_df["label"] = (
-            quick_open_df["start_time_fr"].astype(str)
-            + " — "
-            + quick_open_df["map_name"].astype(str)
-            + " — "
-            + quick_open_df["mode_ui"].astype(str)
-        )
-        open_opts = {r["label"]: str(r["match_id"]) for _, r in quick_open_df.iterrows()}
-        picked_open = st.selectbox(
-            "Sélection rapide",
-            options=["(aucun)"] + list(open_opts.keys()),
-            index=0,
-            key="history_open_match_label",
-        )
-        if st.button("Ouvrir ce match (dans l'app)", width="stretch") and picked_open != "(aucun)":
-            _request_open_match(open_opts[picked_open])
-
         dff_table = dff.copy()
         if "playlist_fr" not in dff_table.columns:
             dff_table["playlist_fr"] = dff_table["playlist_name"].apply(translate_playlist_name)
@@ -3601,6 +3714,105 @@ def main() -> None:
 
         dff_table["average_life_mmss"] = dff_table["average_life_seconds"].apply(lambda x: format_mmss(x))
 
+        # Table HTML: colonne "Match" ouvre dans l'onglet Match (même onglet navigateur).
+        view = dff_table.sort_values("start_time", ascending=False).head(250).reset_index(drop=True)
+
+        def _fmt(v) -> str:
+            if v is None:
+                return "-"
+            try:
+                if v != v:  # NaN
+                    return "-"
+            except Exception:
+                pass
+            s = str(v)
+            return s if s.strip() else "-"
+
+        def _fmt_mmr_int(v) -> str:
+            if v is None:
+                return "-"
+            try:
+                if v != v:  # NaN
+                    return "-"
+            except Exception:
+                pass
+            try:
+                return str(int(round(float(v))))
+            except Exception:
+                return _fmt(v)
+
+        colors = HALO_COLORS.as_dict()
+
+        def _outcome_style(label: str) -> str:
+            v = str(label or "").strip().casefold()
+            if v.startswith("victoire"):
+                return f"color:{colors['green']}; font-weight:800"
+            if v.startswith("défaite") or v.startswith("defaite"):
+                return f"color:{colors['red']}; font-weight:800"
+            if v.startswith("égalité") or v.startswith("egalite"):
+                return f"color:{colors['violet']}; font-weight:800"
+            if v.startswith("non"):
+                return f"color:{colors['violet']}; font-weight:800"
+            return "opacity:0.92"
+
+        cols = [
+            ("Match", "_app"),
+            ("HaloWaypoint", "match_url"),
+            ("Date de début", "start_time_fr"),
+            ("Carte", "map_name"),
+            ("Playlist", "playlist_fr"),
+            ("Mode", "mode_ui"),
+            ("Résultat", "outcome_label"),
+            ("Score", "score"),
+            ("MMR équipe", "team_mmr"),
+            ("MMR adverse", "enemy_mmr"),
+            ("Écart MMR", "delta_mmr"),
+            ("FDA", "kda"),
+            ("Frags", "kills"),
+            ("Morts", "deaths"),
+            ("Spree (max)", "max_killing_spree"),
+            ("Têtes", "headshot_kills"),
+            ("Durée vie", "average_life_mmss"),
+            ("Assists", "assists"),
+            ("Précision", "accuracy"),
+            ("Ratio", "ratio"),
+        ]
+
+        head = "".join(f"<th>{html.escape(h)}</th>" for h, _ in cols)
+        body_rows: list[str] = []
+        for _, r in view.iterrows():
+            mid = str(r.get("match_id") or "").strip()
+            app = _app_url("Match", match_id=mid)
+            match_link = f"<a href='{html.escape(app)}' target='_self'>Ouvrir</a>" if mid else "-"
+            hw = str(r.get("match_url") or "").strip()
+            hw_link = f"<a href='{html.escape(hw)}' target='_blank' rel='noopener'>Ouvrir</a>" if hw else "-"
+
+            tds: list[str] = []
+            for _h, key in cols:
+                if key == "_app":
+                    tds.append(f"<td>{match_link}</td>")
+                elif key == "match_url":
+                    tds.append(f"<td>{hw_link}</td>")
+                elif key == "outcome_label":
+                    val = _fmt(r.get(key))
+                    tds.append(f"<td style='{_outcome_style(val)}'>{html.escape(val)}</td>")
+                elif key in ("team_mmr", "enemy_mmr", "delta_mmr"):
+                    val = _fmt_mmr_int(r.get(key))
+                    tds.append(f"<td>{html.escape(val)}</td>")
+                else:
+                    val = _fmt(r.get(key))
+                    tds.append(f"<td>{html.escape(val)}</td>")
+            body_rows.append("<tr>" + "".join(tds) + "</tr>")
+
+        st.markdown(
+            "<div class='os-table-wrap'><table class='os-table'><thead><tr>"
+            + head
+            + "</tr></thead><tbody>"
+            + "".join(body_rows)
+            + "</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+
         show_cols = [
             "match_url", "start_time_fr", "map_name", "playlist_fr", "mode_ui", "outcome_label", "score",
             "team_mmr", "enemy_mmr", "delta_mmr",
@@ -3609,41 +3821,6 @@ def main() -> None:
         ]
         table = dff_table[show_cols + ["start_time"]].sort_values("start_time", ascending=False).reset_index(drop=True)
         table = table[show_cols]
-
-        styled = table.style
-        styled = _styler_map(styled, _style_outcome_text, subset=["outcome_label"])
-        styled = _styler_map(styled, _style_score_label, subset=["score"])
-        styled = _styler_map(styled, _style_signed_number, subset=["kda"])
-        styled = _styler_map(styled, _style_signed_number, subset=["delta_mmr"])
-
-        st.dataframe(
-            styled,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "match_url": st.column_config.LinkColumn(
-                    "HaloWaypoint",
-                    display_text="Ouvrir",
-                ),
-                "start_time_fr": st.column_config.TextColumn("Date de début"),
-                "map_name": st.column_config.TextColumn("Carte"),
-                "playlist_fr": st.column_config.TextColumn("Playlist"),
-                "mode_ui": st.column_config.TextColumn("Mode"),
-                "outcome_label": st.column_config.TextColumn("Résultat"),
-                "score": st.column_config.TextColumn("Score"),
-                "team_mmr": st.column_config.NumberColumn("MMR d'équipe", format="%.1f"),
-                "enemy_mmr": st.column_config.NumberColumn("MMR adverse", format="%.1f"),
-                "delta_mmr": st.column_config.NumberColumn("Écart MMR", format="%+.1f"),
-                "kda": st.column_config.NumberColumn("FDA", format="%.2f"),
-                "kills": st.column_config.NumberColumn("Frags"),
-                "deaths": st.column_config.NumberColumn("Morts"),
-                "max_killing_spree": st.column_config.NumberColumn("Folie meurtrière (max)", format="%d"),
-                "headshot_kills": st.column_config.NumberColumn("Tirs à la tête", format="%d"),
-                "average_life_mmss": st.column_config.TextColumn("Durée de vie moyenne"),
-                "assists": st.column_config.NumberColumn("Assistances"),
-                "accuracy": st.column_config.NumberColumn("Précision (%)", format="%.2f"),
-            },
-        )
 
         csv_table = table.rename(columns={"start_time_fr": "Date de début"})
         csv = csv_table.to_csv(index=False).encode("utf-8")
