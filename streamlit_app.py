@@ -1661,14 +1661,126 @@ def _render_match_view(
             avg_life_last = row.get("average_life_seconds")
             _os_card("Durée de vie moyenne", format_mmss(avg_life_last), "")
 
-    st.subheader("Médailles")
-    if not medals_last:
-        st.info("Médailles indisponibles pour ce match (ou aucune médaille).")
-    else:
-        md_df = pd.DataFrame(medals_last)
-        md_df["label"] = md_df["name_id"].apply(lambda x: medal_label(int(x)))
-        md_df = md_df.sort_values(["count", "label"], ascending=[False, True])
-        render_medals_grid(md_df[["name_id", "count"]].to_dict(orient="records"), cols_per_row=8)
+        # Graphe F / D / A (attendu vs réel) + ratios (match uniquement)
+        labels = ["F", "D", "A"]
+        actual_vals = [
+            float(row.get("kills") or 0.0),
+            float(row.get("deaths") or 0.0),
+            float(row.get("assists") or 0.0),
+        ]
+        exp_vals = [
+            perf_k.get("expected"),
+            perf_d.get("expected"),
+            perf_a.get("expected"),
+        ]
+
+        show_expected_ratio = all(v is not None for v in exp_vals)
+
+        real_ratio = row.get("ratio")
+        try:
+            real_ratio_f = float(real_ratio) if real_ratio == real_ratio else None
+        except Exception:
+            real_ratio_f = None
+        if real_ratio_f is None:
+            denom = max(1.0, float(row.get("deaths") or 0.0))
+            real_ratio_f = (float(row.get("kills") or 0.0) + float(row.get("assists") or 0.0)) / denom
+
+        exp_ratio_f = None
+        if show_expected_ratio:
+            denom_e = max(1e-9, float(exp_vals[1] or 0.0))
+            exp_ratio_f = (float(exp_vals[0] or 0.0) + float(exp_vals[2] or 0.0)) / denom_e
+
+        exp_fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+        bar_colors = [HALO_COLORS.green, HALO_COLORS.red, HALO_COLORS.cyan]
+        exp_fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=exp_vals,
+                name="Attendu",
+                marker=dict(
+                    color=bar_colors,
+                    pattern=dict(shape="/", fgcolor="rgba(255,255,255,0.75)", solidity=0.22),
+                ),
+                opacity=0.50,
+                hovertemplate="%{x} (attendu): %{y:.1f}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+        exp_fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=actual_vals,
+                name="Réel",
+                marker_color=bar_colors,
+                opacity=0.90,
+                hovertemplate="%{x} (réel): %{y:.0f}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+        exp_fig.add_trace(
+            go.Scatter(
+                x=labels,
+                y=[real_ratio_f] * len(labels),
+                mode="lines+markers",
+                name="Ratio réel",
+                line=dict(color=HALO_COLORS.amber, width=4),
+                marker=dict(size=7),
+                hovertemplate="ratio (réel): %{y:.2f}<extra></extra>",
+            ),
+            secondary_y=True,
+        )
+        if exp_ratio_f is not None:
+            exp_fig.add_trace(
+                go.Scatter(
+                    x=labels,
+                    y=[exp_ratio_f] * len(labels),
+                    mode="lines+markers",
+                    name="Ratio attendu",
+                    line=dict(color=HALO_COLORS.violet, width=3, dash="dot"),
+                    marker=dict(size=6),
+                    hovertemplate="ratio (attendu): %{y:.2f}<extra></extra>",
+                ),
+                secondary_y=True,
+            )
+        else:
+            st.caption("Ratio attendu indisponible (Assists attendues manquantes dans PlayerMatchStats).")
+
+        exp_fig.update_layout(
+            barmode="group",
+            height=360,
+            margin=dict(l=40, r=20, t=30, b=90),
+            legend=get_legend_horizontal_bottom(),
+        )
+        exp_fig.update_yaxes(title_text="F / D / A", rangemode="tozero", secondary_y=False)
+        exp_fig.update_yaxes(title_text="Ratio", secondary_y=True)
+        st.plotly_chart(exp_fig, width="stretch")
+
+        # Petit graphe: folie meurtrière (max) + tirs à la tête (match uniquement)
+        spree_v = pd.to_numeric(row.get("max_killing_spree"), errors="coerce")
+        headshots_v = pd.to_numeric(row.get("headshot_kills"), errors="coerce")
+        if (spree_v == spree_v) or (headshots_v == headshots_v):
+            st.subheader("Folie meurtrière / Tirs à la tête")
+            fig_sh = go.Figure()
+            fig_sh.add_trace(
+                go.Bar(
+                    x=["Folie meurtrière (max)", "Tirs à la tête"],
+                    y=[
+                        float(spree_v) if (spree_v == spree_v) else 0.0,
+                        float(headshots_v) if (headshots_v == headshots_v) else 0.0,
+                    ],
+                    marker_color=[HALO_COLORS.violet, HALO_COLORS.cyan],
+                    opacity=0.85,
+                    hovertemplate="%{x}: %{y:.0f}<extra></extra>",
+                )
+            )
+            fig_sh.update_layout(
+                height=260,
+                margin=dict(l=40, r=20, t=30, b=60),
+                showlegend=False,
+            )
+            fig_sh.update_yaxes(rangemode="tozero")
+            st.plotly_chart(apply_halo_plot_style(fig_sh, height=260), width="stretch")
 
     st.subheader("Némésis / Souffre-douleur")
     if not (match_id and match_id.strip() and has_table(db_path, "HighlightEvents")):
@@ -1819,6 +1931,15 @@ def _render_match_view(
                     sub_style="color: rgba(245, 248, 255, 0.92); font-weight: 800; font-size: 16px; line-height: 1.15;",
                     min_h=110,
                 )
+
+    st.subheader("Médailles")
+    if not medals_last:
+        st.info("Médailles indisponibles pour ce match (ou aucune médaille).")
+    else:
+        md_df = pd.DataFrame(medals_last)
+        md_df["label"] = md_df["name_id"].apply(lambda x: medal_label(int(x)))
+        md_df = md_df.sort_values(["count", "label"], ascending=[False, True])
+        render_medals_grid(md_df[["name_id", "count"]].to_dict(orient="records"), cols_per_row=8)
 
     _render_media_section(row=row, settings=settings)
 
@@ -2863,15 +2984,19 @@ def main() -> None:
                         return ""
                     return "color: #E0E0E0; font-weight: 700;"
 
-                out_styled = _styler_map(out_tbl.style, _style_pct, subset=["Win rate"])
-                st.dataframe(
-                    out_styled,
-                    width="stretch",
-                    hide_index=True,
-                    column_config={
-                        "Win rate": st.column_config.NumberColumn("Win rate", format="%.1f%%"),
-                    },
+                # Compat traductions: la colonne peut être "Taux de victoires" (FR) ou "Win rate" (ancien).
+                win_rate_col = next(
+                    (c for c in ("Taux de victoires", "Win rate", "Taux de victoire") if c in out_tbl.columns),
+                    None,
                 )
+                if win_rate_col:
+                    out_styled = _styler_map(out_tbl.style, _style_pct, subset=[win_rate_col])
+                    col_cfg = {win_rate_col: st.column_config.NumberColumn(win_rate_col, format="%.1f%%")}
+                else:
+                    out_styled = out_tbl.style
+                    col_cfg = {}
+
+                st.dataframe(out_styled, width="stretch", hide_index=True, column_config=col_cfg)
 
             st.divider()
             st.subheader("Ratio par cartes")
