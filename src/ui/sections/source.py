@@ -145,89 +145,11 @@ def render_source_section(
                     st.session_state["xuid_input"] = secret_player
             st.rerun()
 
-    with st.expander("Multi-DB (profils)", expanded=False):
-        prof_names = ["(aucun)"] + sorted(profiles.keys())
-        st.selectbox("Profil", options=prof_names, key="db_profile_selected")
-
-        cols_p = st.columns(2)
-        if cols_p[0].button("Appliquer", width="stretch"):
-            sel = st.session_state.get("db_profile_selected")
-            if isinstance(sel, str) and sel in profiles:
-                p = profiles[sel]
-                if p.get("db_path"):
-                    st.session_state["db_path"] = p["db_path"]
-                if p.get("xuid"):
-                    st.session_state["xuid_input"] = p["xuid"]
-                if p.get("waypoint_player"):
-                    st.session_state["waypoint_player"] = p["waypoint_player"]
-                st.rerun()
-
-        if cols_p[1].button("Enregistrer profil", width="stretch"):
-            name = st.session_state.get("db_profile_selected")
-            if not isinstance(name, str) or not name.strip() or name == "(aucun)":
-                st.warning("Choisis d'abord un nom de profil (via la liste), ou crée-en un ci-dessous.")
-            else:
-                profiles[name] = {
-                    "db_path": str(st.session_state.get("db_path", "")).strip(),
-                    "xuid": str(st.session_state.get("xuid_input", "")).strip(),
-                    "waypoint_player": str(st.session_state.get("waypoint_player", "")).strip(),
-                }
-                ok, err = save_profiles(profiles)
-                if ok:
-                    st.success("Profil enregistré.")
-                else:
-                    st.error(err)
-
-        with st.expander("Créer / supprimer", expanded=False):
-            new_name = st.text_input("Nom", value="")
-            c = st.columns(2)
-            if c[0].button("Créer/mettre à jour", width="stretch"):
-                nn = (new_name or "").strip()
-                if not nn:
-                    st.error("Nom vide.")
-                else:
-                    profiles[nn] = {
-                        "db_path": str(st.session_state.get("db_path", "")).strip(),
-                        "xuid": str(st.session_state.get("xuid_input", "")).strip(),
-                        "waypoint_player": str(st.session_state.get("waypoint_player", "")).strip(),
-                    }
-                    ok, err = save_profiles(profiles)
-                    if ok:
-                        st.success("Profil sauvegardé.")
-                        st.rerun()
-                    else:
-                        st.error(err)
-            if c[1].button("Supprimer", width="stretch"):
-                nn = (new_name or "").strip()
-                if not nn:
-                    st.error("Renseigne un nom.")
-                elif nn not in profiles:
-                    st.warning("Profil introuvable.")
-                else:
-                    del profiles[nn]
-                    ok, err = save_profiles(profiles)
-                    if ok:
-                        st.success("Profil supprimé.")
-                        st.rerun()
-                    else:
-                        st.error(err)
-
-        local_dbs = get_local_dbs()
-        if local_dbs:
-            opts = ["(garder actuelle)"] + [os.path.basename(p) for p in local_dbs]
-            pick = st.selectbox("DB détectées (OpenSpartan)", options=opts, index=0)
-            if st.button("Utiliser cette DB", width="stretch") and pick != "(garder actuelle)":
-                sel_path = next((p for p in local_dbs if os.path.basename(p) == pick), None)
-                if sel_path:
-                    st.session_state["db_path"] = sel_path
-                    guessed = guess_xuid_from_db_path(sel_path) or ""
-                    if guessed:
-                        st.session_state["xuid_input"] = guessed
-                    st.rerun()
-
-        if spnkr_candidates:
+    # UI simplifiée: on garde uniquement la sélection SPNKr (pratique pour basculer entre DB joueurs).
+    if spnkr_candidates:
+        with st.expander("DB détectées (SPNKr)", expanded=False):
             opts_s = ["(garder actuelle)"] + [p.name for p in spnkr_candidates]
-            pick_s = st.selectbox("DB détectées (SPNKr)", options=opts_s, index=0)
+            pick_s = st.selectbox("DB", options=opts_s, index=0)
             if st.button("Utiliser cette DB SPNKr", width="stretch") and pick_s != "(garder actuelle)":
                 sel_p = next((p for p in spnkr_candidates if p.name == pick_s), None)
                 if sel_p:
@@ -244,56 +166,34 @@ def render_source_section(
         help="Sélectionne un fichier SQLite (.db).",
         placeholder="Ex: C:\\Users\\Guillaume\\AppData\\Local\\OpenSpartan.Workshop\\data\\2533....db",
     )
-    cols_x = st.columns([2, 1])
-    with cols_x[0]:
-        xuid_input = st.text_input("XUID ou Gamertag", key="xuid_input")
-    with cols_x[1]:
-        def _on_resolve_xuid() -> None:
-            raw = str(st.session_state.get("xuid_input", "") or "").strip()
-            guessed = guess_xuid_from_db_path(str(st.session_state.get("db_path", "") or "")) or ""
-            resolved = resolve_xuid_from_db(str(st.session_state.get("db_path", "") or ""), raw) or ""
-            if not resolved and raw and not raw.isdigit():
-                # Fallback: certains exports SPNKr ne contiennent pas les gamertags en DB.
-                # Si l'entrée correspond au gamertag des secrets, on utilise le XUID des secrets.
-                try:
-                    player = st.secrets.get("player", {})
-                    if isinstance(player, Mapping):
-                        gt = str(player.get("gamertag") or "").strip()
-                        xu = str(player.get("xuid") or "").strip()
-                        if gt and xu and gt.casefold() == raw.casefold():
-                            resolved = xu
-                except Exception:
-                    pass
-            if resolved:
-                st.session_state["xuid_input"] = resolved
-            elif guessed:
-                st.session_state["xuid_input"] = guessed
-
-        st.button("Résoudre XUID", width="stretch", on_click=_on_resolve_xuid)
-
-    # Résolution douce pour l'affichage (sans modifier la valeur du widget)
-    xuid = resolve_xuid_from_db(str(db_path), str(xuid_input)) or str(xuid_input).strip()
-    if xuid and (not str(xuid).strip().isdigit()) and str(xuid_input).strip() and (not str(xuid_input).strip().isdigit()):
+    # Identité: UI masquée (on résout et affiche uniquement le XUID effectif)
+    raw_identity = str(st.session_state.get("xuid_input", "") or "").strip()
+    xuid = resolve_xuid_from_db(str(db_path), raw_identity) or raw_identity
+    if xuid and (not str(xuid).strip().isdigit()) and raw_identity and (not raw_identity.isdigit()):
         # Même fallback que le bouton: secrets → xuid
         try:
             player = st.secrets.get("player", {})
             if isinstance(player, Mapping):
                 gt = str(player.get("gamertag") or "").strip()
                 xu = str(player.get("xuid") or "").strip()
-                if gt and xu and gt.casefold() == str(xuid_input).strip().casefold():
+                if gt and xu and gt.casefold() == raw_identity.casefold():
                     xuid = xu
         except Exception:
             pass
-    if xuid and xuid != str(xuid_input).strip():
-        st.caption(f"XUID résolu: {xuid}")
+    # Affichage simplifié (copiable) + déduction du slug Waypoint via alias
+    st.text_input("XUID", value=str(xuid or "").strip(), disabled=True)
 
-    _ = display_name_from_xuid(xuid.strip())
+    name_guess = display_name_from_xuid(str(xuid or "").strip())
+    waypoint_player = str(st.session_state.get("waypoint_player", "") or "").strip()
+    if name_guess and name_guess != "-":
+        waypoint_player = str(name_guess).strip()
+        st.session_state["waypoint_player"] = waypoint_player
 
-    waypoint_player = st.text_input(
-        "HaloWaypoint player (slug)",
-        key="waypoint_player",
-        help="Ex: JGtm (sert à construire l'URL de match).",
-    )
+    # On garde une valeur non vide (fallback secrets)
+    if not waypoint_player:
+        _secret_player, secret_wp = _default_identity_from_secrets()
+        waypoint_player = secret_wp
+        st.session_state["waypoint_player"] = waypoint_player
 
     with st.expander("Alias (XUID → gamertag)", expanded=False):
         st.caption(

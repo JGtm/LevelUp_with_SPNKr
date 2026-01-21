@@ -385,7 +385,12 @@ def _ensure_h5g_commendations_repo() -> None:
         return
     st.session_state["_h5g_repo_ensured"] = True
 
-    repo_root = os.path.abspath(os.path.dirname(__file__))
+    try:
+        from src.config import get_repo_root
+
+        repo_root = get_repo_root(__file__)
+    except Exception:
+        repo_root = os.path.abspath(os.path.dirname(__file__))
     json_path = os.path.join(repo_root, "data", "wiki", "halo5_commendations_fr.json")
     html_path = os.path.join(repo_root, "data", "wiki", "halo5_citations_printable.html")
     script_path = os.path.join(repo_root, "scripts", "extract_h5g_commendations_fr.py")
@@ -403,8 +408,9 @@ def _ensure_h5g_commendations_repo() -> None:
                     script_path,
                     "--input-html",
                     html_path,
-                    "--download-images",
                     "--clean-output",
+                    "--exclude",
+                    os.path.join(repo_root, "data", "wiki", "halo5_commendations_exclude.json"),
                 ],
                 check=True,
                 cwd=repo_root,
@@ -1128,14 +1134,6 @@ def _render_settings_page(settings: AppSettings) -> AppSettings:
             get_local_dbs=cached_list_local_dbs,
             on_clear_caches=_clear_app_caches,
         )
-        st.caption("Valeurs par défaut: .streamlit/secrets.toml (ignoré par Git).")
-        st.code(
-            "[player]\n"
-            "gamertag=\"...\"\n"
-            "xuid=\"2533...\"\n"
-            "waypoint_player=\"...\"\n",
-            language="toml",
-        )
 
     with st.expander("Paramètres avancés", expanded=False):
         st.toggle(
@@ -1225,12 +1223,6 @@ def _render_settings_page(settings: AppSettings) -> AppSettings:
             help="Utile si la DB change en dehors de l'app (NAS / import externe).",
         )
 
-    with st.expander("Outils", expanded=False):
-        if os.name == "nt":
-            render_openspartan_tools()
-        else:
-            st.caption("Outils Windows masqués (environnement non-Windows/NAS).")
-
     with st.expander("Fichiers (avancé)", expanded=False):
         st.caption("Optionnel: sélectionne les fichiers JSON utilisés par l'app (sinon valeurs par défaut).")
         aliases_path = file_input(
@@ -1250,14 +1242,7 @@ def _render_settings_page(settings: AppSettings) -> AppSettings:
             placeholder="Ex: C:\\...\\db_profiles.json",
         )
 
-    with st.expander("NAS / Docker", expanded=False):
-        st.caption(
-            "Astuce: sur NAS/Docker, monte la DB en volume et définis OPENSPARTAN_DB (et éventuellement OPENSPARTAN_DB_READONLY=1)."
-        )
-        st.code(
-            "OPENSPARTAN_DB=...\nOPENSPARTAN_DB_READONLY=1\nOPENSPARTAN_PROFILES_PATH=...\nOPENSPARTAN_ALIASES_PATH=...\nOPENSPARTAN_SETTINGS_PATH=...",
-            language="text",
-        )
+
 
     cols = st.columns(2)
     if cols[0].button("Enregistrer", width="stretch"):
@@ -1491,7 +1476,7 @@ def _render_match_view(
     if wp and match_id and match_id.strip() and match_id.strip() != "-":
         match_url = f"https://www.halowaypoint.com/halo-infinite/players/{wp}/matches/{match_id.strip()}"
 
-    top_cols = st.columns([3, 4])
+    top_cols = st.columns(2)
     with top_cols[0]:
         st.metric("Date", format_date_fr(last_time))
     with top_cols[1]:
@@ -1549,9 +1534,7 @@ def _render_match_view(
                 delta_color="normal",
             )
 
-        if match_url:
-            with mmr_cols[2]:
-                st.link_button("Ouvrir sur HaloWaypoint", match_url, width="stretch")
+
 
         def _metric_expected_vs_actual(title: str, perf: dict, delta_color: str) -> None:
             count = perf.get("count")
@@ -1666,15 +1649,63 @@ def _render_match_view(
             nemesis_name = _clean_name(nemesis_name)
             bully_name = _clean_name(bully_name)
 
+            # Cross-counts pour affichage (m'a tué vs je l'ai tué)
+            def _count_kills(df_: pd.DataFrame, *, col: str, xuid_value: str) -> int | None:
+                if df_ is None or df_.empty:
+                    return None
+                if not xuid_value:
+                    return None
+                try:
+                    mask = df_[col].astype(str) == str(xuid_value)
+                    hit = df_.loc[mask]
+                    if hit.empty:
+                        return None
+                    return int(hit["count"].iloc[0])
+                except Exception:
+                    return None
+
+            nemesis_xu = ""
+            bully_xu = ""
+            if not killed_me.empty:
+                try:
+                    nemesis_xu = str(killed_me.sort_values(["count"], ascending=[False]).iloc[0].get("killer_xuid") or "").strip()
+                except Exception:
+                    nemesis_xu = ""
+            if not i_killed.empty:
+                try:
+                    bully_xu = str(i_killed.sort_values(["count"], ascending=[False]).iloc[0].get("victim_xuid") or "").strip()
+                except Exception:
+                    bully_xu = ""
+
+            nemesis_killed_me = nemesis_kills
+            me_killed_nemesis = _count_kills(i_killed, col="victim_xuid", xuid_value=nemesis_xu)
+
+            me_killed_bully = bully_kills
+            bully_killed_me = _count_kills(killed_me, col="killer_xuid", xuid_value=bully_xu)
+
+            def _fmt_pair(a: int | None, b: int | None, *, left: str, right: str) -> str | None:
+                if a is None and b is None:
+                    return None
+                la = "-" if a is None else str(int(a))
+                lb = "-" if b is None else str(int(b))
+                return f"{left}: {la} · {right}: {lb}"
+
             c = st.columns(2)
-            c[0].metric("Némésis (m'a le plus tué)", nemesis_name, f"{nemesis_kills} kills" if nemesis_kills is not None else None)
+            c[0].metric(
+                "Némésis",
+                nemesis_name,
+                _fmt_pair(nemesis_killed_me, me_killed_nemesis, left="m'a tué", right="je l'ai tué"),
+            )
             c[1].metric(
-                "Souffre-douleur (j'ai le plus tué)",
+                "Souffre-douleur",
                 bully_name,
-                f"{bully_kills} kills" if bully_kills is not None else None,
+                _fmt_pair(me_killed_bully, bully_killed_me, left="je l'ai tué", right="il m'a tué"),
             )
 
     _render_media_section(row=row, settings=settings)
+
+    if match_url:
+        st.link_button("Ouvrir sur HaloWaypoint", match_url, width="stretch")
 
 
 # =============================================================================
@@ -1796,7 +1827,10 @@ def main() -> None:
     with perf_section("css"):
         st.markdown(load_css(), unsafe_allow_html=True)
 
-    _ensure_h5g_commendations_repo()
+    # IMPORTANT: aucun accès réseau implicite.
+    # La génération du référentiel Citations doit être explicite (opt-in via env).
+    if str(os.environ.get("OPENSPARTAN_CITATIONS_AUTOGEN") or "").strip() in {"1", "true", "True"}:
+        _ensure_h5g_commendations_repo()
 
     # Paramètres (persistés)
     settings: AppSettings = load_settings()
@@ -2338,6 +2372,7 @@ def main() -> None:
     _render_kpi_cards(
         [
             ("Durée moyenne / match", avg_match_txt),
+            ("Durée totale", total_play_txt),
         ]
     )
 
@@ -2357,7 +2392,6 @@ def main() -> None:
             ("Morts / min", f"{stats.deaths_per_minute:.2f}" if stats.deaths_per_minute else "-"),
             ("Assistances / min", f"{stats.assists_per_minute:.2f}" if stats.assists_per_minute else "-"),
             ("Précision moyenne", f"{avg_acc:.2f}%" if avg_acc is not None else "-"),
-            ("Durée totale", total_play_txt),
             ("Durée de vie moyenne", format_mmss(avg_life)),
             ("Taux de victoire", f"{win_rate*100:.1f}%" if rates.total else "-"),
             ("Taux de défaite", f"{loss_rate*100:.1f}%" if rates.total else "-"),
@@ -2442,32 +2476,44 @@ def main() -> None:
             + quick_df["mode_ui"].astype(str)
         )
         opts = {r["label"]: str(r["match_id"]) for _, r in quick_df.iterrows()}
-        picked_label = st.selectbox("Sélection rapide (filtres actuels)", options=["(aucun)"] + list(opts.keys()), index=0)
-        if st.button("Utiliser ce match", width="stretch") and picked_label != "(aucun)":
-            st.session_state["match_id_input"] = opts[picked_label]
-            st.rerun()
+        st.selectbox(
+            "Sélection rapide (filtres actuels)",
+            options=["(aucun)"] + list(opts.keys()),
+            index=0,
+            key="match_quick_pick_label",
+        )
+
+        def _on_use_quick_match() -> None:
+            picked = st.session_state.get("match_quick_pick_label")
+            if isinstance(picked, str) and picked in opts:
+                st.session_state["match_id_input"] = opts[picked]
+
+        st.button("Utiliser ce match", width="stretch", on_click=_on_use_quick_match)
 
         # Recherche par date/heure
         with st.expander("Recherche par date/heure", expanded=False):
             dd = st.date_input("Date", value=date.today(), format="DD/MM/YYYY")
             tt = st.time_input("Heure", value=time(20, 0))
             tol_min = st.slider("Tolérance (minutes)", 0, 30, 10, 1)
-            if st.button("Rechercher", width="stretch"):
+
+            def _on_search_by_datetime() -> None:
                 target = datetime.combine(dd, tt)
                 all_df = df.copy()
                 all_df["_dt"] = pd.to_datetime(all_df["start_time"], errors="coerce")
                 all_df = all_df.dropna(subset=["_dt"]).copy()
                 if all_df.empty:
                     st.warning("Aucune date exploitable dans la DB.")
+                    return
+
+                all_df["_diff"] = (all_df["_dt"] - target).abs()
+                best = all_df.sort_values("_diff").iloc[0]
+                diff_min = float(best["_diff"].total_seconds() / 60.0)
+                if diff_min <= float(tol_min):
+                    st.session_state["match_id_input"] = str(best.get("match_id") or "").strip()
                 else:
-                    all_df["_diff"] = (all_df["_dt"] - target).abs()
-                    best = all_df.sort_values("_diff").iloc[0]
-                    diff_min = float(best["_diff"].total_seconds() / 60.0)
-                    if diff_min <= float(tol_min):
-                        st.session_state["match_id_input"] = str(best.get("match_id") or "").strip()
-                        st.rerun()
-                    else:
-                        st.warning(f"Aucun match trouvé dans ±{tol_min} min (le plus proche est à {diff_min:.1f} min).")
+                    st.warning(f"Aucun match trouvé dans ±{tol_min} min (le plus proche est à {diff_min:.1f} min).")
+
+            st.button("Rechercher", width="stretch", on_click=_on_search_by_datetime)
 
         mid = str(match_id_input or "").strip()
         if not mid:
@@ -2567,7 +2613,7 @@ def main() -> None:
             )
             st.plotly_chart(fig_out, width="stretch")
 
-            st.subheader("Tableau — par période")
+            st.subheader("Par période")
             d = dff.dropna(subset=["outcome"]).copy()
             if d.empty:
                 st.info("Aucune donnée pour construire le tableau.")
@@ -3173,12 +3219,26 @@ def main() -> None:
                     else:
                         friends_table["match_url"] = ""
 
-                    friends_table["app_match_url"] = friends_table["match_id"].astype(str).apply(
-                        lambda mid: _app_url("Match", match_id=str(mid))
+                    st.caption("Ouvre un match dans l'onglet Match (sans nouvel onglet navigateur).")
+                    friends_quick = friends_table.sort_values("start_time", ascending=False).head(200).copy()
+                    friends_quick["label"] = (
+                        friends_quick["start_time_fr"].astype(str)
+                        + " — "
+                        + friends_quick["map_name"].astype(str)
+                        + " — "
+                        + friends_quick["mode"].astype(str)
                     )
+                    friends_open_opts = {r["label"]: str(r["match_id"]) for _, r in friends_quick.iterrows()}
+                    picked_open = st.selectbox(
+                        "Sélection rapide",
+                        options=["(aucun)"] + list(friends_open_opts.keys()),
+                        index=0,
+                        key="friends_history_open_match_label",
+                    )
+                    if st.button("Ouvrir ce match (dans l'app)", width="stretch", key="friends_history_open_match_btn") and picked_open != "(aucun)":
+                        _request_open_match(friends_open_opts[picked_open])
 
                     friends_show = [
-                        "app_match_url",
                         "match_url",
                         "start_time_fr",
                         "map_name",
@@ -3205,7 +3265,6 @@ def main() -> None:
                         width="stretch",
                         hide_index=True,
                         column_config={
-                            "app_match_url": st.column_config.LinkColumn("Match", display_text="Ouvrir"),
                             "match_url": st.column_config.LinkColumn("HaloWaypoint", display_text="Ouvrir"),
                             "start_time_fr": st.column_config.TextColumn("Date"),
                             "map_name": st.column_config.TextColumn("Carte"),
@@ -3478,6 +3537,29 @@ def main() -> None:
     # --------------------------------------------------------------------------
     elif page == "Historique des parties":
         st.subheader("Historique des parties")
+
+        st.caption("Ouvre un match dans l'onglet Match (sans nouvel onglet navigateur).")
+        quick_open_df = dff.sort_values("start_time", ascending=False).head(300).copy()
+        quick_open_df["start_time_fr"] = quick_open_df["start_time"].apply(_format_datetime_fr_hm)
+        if "mode_ui" not in quick_open_df.columns:
+            quick_open_df["mode_ui"] = quick_open_df["pair_name"].apply(_normalize_mode_label)
+        quick_open_df["label"] = (
+            quick_open_df["start_time_fr"].astype(str)
+            + " — "
+            + quick_open_df["map_name"].astype(str)
+            + " — "
+            + quick_open_df["mode_ui"].astype(str)
+        )
+        open_opts = {r["label"]: str(r["match_id"]) for _, r in quick_open_df.iterrows()}
+        picked_open = st.selectbox(
+            "Sélection rapide",
+            options=["(aucun)"] + list(open_opts.keys()),
+            index=0,
+            key="history_open_match_label",
+        )
+        if st.button("Ouvrir ce match (dans l'app)", width="stretch") and picked_open != "(aucun)":
+            _request_open_match(open_opts[picked_open])
+
         dff_table = dff.copy()
         if "playlist_fr" not in dff_table.columns:
             dff_table["playlist_fr"] = dff_table["playlist_name"].apply(translate_playlist_name)
@@ -3495,10 +3577,6 @@ def main() -> None:
 
         dff_table["score"] = dff_table.apply(
             lambda r: _format_score_label(r.get("my_team_score"), r.get("enemy_team_score")), axis=1
-        )
-
-        dff_table["app_match_url"] = dff_table["match_id"].astype(str).apply(
-            lambda mid: _app_url("Match", match_id=str(mid))
         )
 
         # MMR équipe/adverse pour chaque match (source PlayerMatchStats).
@@ -3524,7 +3602,6 @@ def main() -> None:
         dff_table["average_life_mmss"] = dff_table["average_life_seconds"].apply(lambda x: format_mmss(x))
 
         show_cols = [
-            "app_match_url",
             "match_url", "start_time_fr", "map_name", "playlist_fr", "mode_ui", "outcome_label", "score",
             "team_mmr", "enemy_mmr", "delta_mmr",
             "kda", "kills", "deaths", "max_killing_spree", "headshot_kills",
@@ -3544,12 +3621,8 @@ def main() -> None:
             width="stretch",
             hide_index=True,
             column_config={
-                "app_match_url": st.column_config.LinkColumn(
-                    "Match",
-                    display_text="Ouvrir",
-                ),
                 "match_url": st.column_config.LinkColumn(
-                    "Consulter sur HaloWaypoint",
+                    "HaloWaypoint",
                     display_text="Ouvrir",
                 ),
                 "start_time_fr": st.column_config.TextColumn("Date de début"),
