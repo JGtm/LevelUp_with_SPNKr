@@ -14,6 +14,7 @@ import json
 import os
 import html
 import re
+import base64
 import unicodedata
 from typing import Any
 import streamlit as st
@@ -151,8 +152,11 @@ def _display_citation_desc(desc: str) -> str:
 def _compute_mastery_display(
     current_count: int,
     tiers: list[dict[str, Any]],
-) -> tuple[str, str, bool]:
-    """Retourne (label_niveau, label_compteur, is_master)."""
+) -> tuple[str, str, bool, float]:
+    """Retourne (label_niveau, label_compteur, is_master, progress_ratio).
+
+    progress_ratio représente l'avancement *dans le niveau actuel* (0..1).
+    """
 
     targets: list[int] = []
     for t in tiers or []:
@@ -173,11 +177,11 @@ def _compute_mastery_display(
         cur = 0
 
     if not targets:
-        return "—", "", False
+        return "—", "", False, 0.0
 
     master_target = targets[-1]
     if cur >= master_target:
-        return "Maître", f"{cur}/{master_target}", True
+        return "Maître", f"{cur}/{master_target}", True, 1.0
 
     # Niveau = palier actuel + 1 (en considérant qu'en dessous du palier 1 => niveau 1)
     completed = 0
@@ -188,8 +192,15 @@ def _compute_mastery_display(
             break
 
     next_target = targets[min(completed, len(targets) - 1)]
+    prev_target = 0 if completed <= 0 else targets[completed - 1]
+    denom = max(1, int(next_target - prev_target))
+    ratio = float(max(0, cur - prev_target)) / float(denom)
+    if ratio < 0.0:
+        ratio = 0.0
+    if ratio > 1.0:
+        ratio = 1.0
     level = completed + 1
-    return f"Niveau {level}", f"{cur}/{next_target}", False
+    return f"Niveau {level}", f"{cur}/{next_target}", False, ratio
 
 
 def _image_basename_from_item(item: dict[str, Any]) -> str | None:
@@ -325,6 +336,24 @@ def _img_src(item: dict[str, Any]) -> str | None:
         if os.path.exists(abs_p):
             return abs_p
     return None
+
+
+@st.cache_data(show_spinner=False)
+def _img_data_uri(abs_path: str, mtime: float | None = None) -> str | None:
+    _ = mtime
+    if not abs_path or not os.path.exists(abs_path):
+        return None
+    ext = os.path.splitext(abs_path)[1].lower()
+    mime = "image/png" if ext == ".png" else "image/jpeg" if ext in {".jpg", ".jpeg"} else "application/octet-stream"
+    try:
+        with open(abs_path, "rb") as f:
+            raw = f.read()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:{mime};base64,{b64}"
 
 
 @st.cache_data(show_spinner=False)
@@ -568,12 +597,26 @@ def render_h5g_commendations_section(
             except Exception:
                 current = 0
 
-        level_label, counter_label, is_master = _compute_mastery_display(current, tiers)
+        level_label, counter_label, is_master, progress_ratio = _compute_mastery_display(current, tiers)
 
         with col:
             st.markdown("<div class='os-citation-top-gap'></div>", unsafe_allow_html=True)
+            data_uri = None
             if img:
-                st.image(img, width="stretch")
+                try:
+                    mtime = os.path.getmtime(img)
+                except OSError:
+                    mtime = None
+                data_uri = _img_data_uri(img, mtime)
+
+            if data_uri:
+                ring_class = "os-citation-ring os-citation-ring--master" if is_master else "os-citation-ring"
+                ring_color = "#d6b35a" if is_master else "#41d6ff"
+                st.markdown(
+                    "<div class='" + ring_class + "' "
+                    + "style=\"--p:" + str(float(progress_ratio)) + ";--ring-color:" + ring_color + ";--img:url('" + data_uri + "')\"></div>",
+                    unsafe_allow_html=True,
+                )
             else:
                 st.markdown("<div class='os-medal-missing'>?</div>", unsafe_allow_html=True)
 

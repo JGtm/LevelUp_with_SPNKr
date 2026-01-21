@@ -665,6 +665,53 @@ div[data-testid="stNumberInput"] input:focus {
     height: 10px;
 }
 
+.os-citation-ring {
+    /* Taille responsive dans une colonne Streamlit */
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: 110px;
+    margin: 0 auto;
+    position: relative;
+    border-radius: 999px;
+
+    /* Personnalisables via style inline */
+    --p: 0.0;
+    --ring-color: #41d6ff;
+    --ring-track: rgba(255, 255, 255, 0.12);
+    --thickness: 8px;
+}
+
+.os-citation-ring::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: conic-gradient(var(--ring-color) calc(var(--p) * 1turn), var(--ring-track) 0);
+    /* Creuse l'intérieur (anneau épais) */
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(50% - var(--thickness)), #000 calc(50% - var(--thickness) + 1px));
+    mask: radial-gradient(farthest-side, transparent calc(50% - var(--thickness)), #000 calc(50% - var(--thickness) + 1px));
+}
+
+.os-citation-ring::after {
+    content: "";
+    position: absolute;
+    inset: var(--thickness);
+    border-radius: 999px;
+    /* Fond pour éviter que la transparence des PNG laisse voir l'anneau */
+    background-color: rgba(10, 14, 20, 0.85);
+    background-image: var(--img);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset;
+}
+
+.os-citation-ring--master {
+    --ring-color: #d6b35a;
+    --p: 1;
+}
+
 .os-citation-name {
     text-align: center;
     font-size: 0.78rem;
