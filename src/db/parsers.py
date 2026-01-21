@@ -11,6 +11,32 @@ from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_PLAYER_XUID, XUID_ALIASE
 from src.db.connection import get_connection
 
 
+def infer_spnkr_player_from_db_path(db_path: str) -> Optional[str]:
+    """Déduit le paramètre --player à utiliser pour une DB SPNKr.
+
+    Conventions supportées (aligné avec refresh_all_dbs.bat):
+    - spnkr_gt_<Gamertag>.db  -> <Gamertag>
+    - spnkr_xuid_<XUID>.db   -> <XUID>
+    - spnkr_<something>.db   -> <something> (souvent un gamertag)
+    """
+    base = os.path.basename(db_path or "")
+    stem, _ = os.path.splitext(base)
+    s = (stem or "").strip()
+    if not s:
+        return None
+    low = s.lower()
+    if low.startswith("spnkr_gt_"):
+        out = s[len("spnkr_gt_") :]
+    elif low.startswith("spnkr_xuid_"):
+        out = s[len("spnkr_xuid_") :]
+    elif low.startswith("spnkr_"):
+        out = s[len("spnkr_") :]
+    else:
+        return None
+    out = (out or "").strip().strip("_- ")
+    return out or None
+
+
 def guess_xuid_from_db_path(db_path: str) -> Optional[str]:
     """Devine le XUID à partir du nom du fichier .db.
     

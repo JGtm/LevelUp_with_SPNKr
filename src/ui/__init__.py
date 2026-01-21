@@ -20,6 +20,7 @@ from src.ui.medals import (
 from src.ui.formatting import format_date_fr, format_mmss
 
 from src.ui.settings import AppSettings, load_settings, save_settings
+from src.ui.path_picker import directory_input, file_input
 
 __all__ = [
     # aliases
@@ -48,4 +49,7 @@ __all__ = [
     "AppSettings",
     "load_settings",
     "save_settings",
+    # path picker
+    "directory_input",
+    "file_input",
 ]

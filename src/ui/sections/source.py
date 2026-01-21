@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Callable
 
 import pandas as pd
 import streamlit as st
 
 from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_WAYPOINT_PLAYER, get_aliases_file_path
-from src.db import guess_xuid_from_db_path, load_profiles, save_profiles, resolve_xuid_from_db
+from src.db import (
+    guess_xuid_from_db_path,
+    infer_spnkr_player_from_db_path,
+    load_profiles,
+    save_profiles,
+    resolve_xuid_from_db,
+)
 from src.ui.aliases import load_aliases_file, save_aliases_file, display_name_from_xuid
+from src.ui.path_picker import file_input
 
 
 def _default_identity_from_secrets() -> tuple[str, str]:
@@ -34,6 +42,7 @@ def _default_identity_from_secrets() -> tuple[str, str]:
     gt = gt or str(DEFAULT_PLAYER_GAMERTAG or "").strip()
     wp = wp or str(DEFAULT_WAYPOINT_PLAYER or "").strip() or gt
 
+    # UI: on préfère afficher le gamertag, tout en conservant xuid en fallback.
     xuid_or_gt = gt or xu
     return xuid_or_gt, wp
 
@@ -126,9 +135,14 @@ def render_source_section(
                     if resolved:
                         st.session_state["xuid_input"] = resolved
             else:
-                # Fallback local pour éviter un état "vide" qui bloque l'app.
-                secret_player, _secret_wp = _default_identity_from_secrets()
-                st.session_state["xuid_input"] = secret_player
+                # Par défaut: déduire le joueur depuis le nom de la DB SPNKr.
+                inferred = infer_spnkr_player_from_db_path(latest_spnkr_db_path) or ""
+                if inferred:
+                    st.session_state["xuid_input"] = inferred
+                else:
+                    # Fallback local pour éviter un état "vide" qui bloque l'app.
+                    secret_player, _secret_wp = _default_identity_from_secrets()
+                    st.session_state["xuid_input"] = secret_player
             st.rerun()
 
     with st.expander("Multi-DB (profils)", expanded=False):
@@ -218,9 +232,18 @@ def render_source_section(
                 sel_p = next((p for p in spnkr_candidates if p.name == pick_s), None)
                 if sel_p:
                     st.session_state["db_path"] = str(sel_p)
+                    inferred = infer_spnkr_player_from_db_path(str(sel_p)) or ""
+                    if inferred:
+                        st.session_state["xuid_input"] = inferred
                     st.rerun()
 
-    db_path = st.text_input("Chemin du .db", key="db_path")
+    db_path = file_input(
+        "Chemin du .db",
+        key="db_path",
+        exts=(".db",),
+        help="Sélectionne un fichier SQLite (.db).",
+        placeholder="Ex: C:\\Users\\Guillaume\\AppData\\Local\\OpenSpartan.Workshop\\data\\2533....db",
+    )
     cols_x = st.columns([2, 1])
     with cols_x[0]:
         xuid_input = st.text_input("XUID ou Gamertag", key="xuid_input")
@@ -229,6 +252,18 @@ def render_source_section(
             raw = str(st.session_state.get("xuid_input", "") or "").strip()
             guessed = guess_xuid_from_db_path(str(st.session_state.get("db_path", "") or "")) or ""
             resolved = resolve_xuid_from_db(str(st.session_state.get("db_path", "") or ""), raw) or ""
+            if not resolved and raw and not raw.isdigit():
+                # Fallback: certains exports SPNKr ne contiennent pas les gamertags en DB.
+                # Si l'entrée correspond au gamertag des secrets, on utilise le XUID des secrets.
+                try:
+                    player = st.secrets.get("player", {})
+                    if isinstance(player, Mapping):
+                        gt = str(player.get("gamertag") or "").strip()
+                        xu = str(player.get("xuid") or "").strip()
+                        if gt and xu and gt.casefold() == raw.casefold():
+                            resolved = xu
+                except Exception:
+                    pass
             if resolved:
                 st.session_state["xuid_input"] = resolved
             elif guessed:
@@ -238,6 +273,17 @@ def render_source_section(
 
     # Résolution douce pour l'affichage (sans modifier la valeur du widget)
     xuid = resolve_xuid_from_db(str(db_path), str(xuid_input)) or str(xuid_input).strip()
+    if xuid and (not str(xuid).strip().isdigit()) and str(xuid_input).strip() and (not str(xuid_input).strip().isdigit()):
+        # Même fallback que le bouton: secrets → xuid
+        try:
+            player = st.secrets.get("player", {})
+            if isinstance(player, Mapping):
+                gt = str(player.get("gamertag") or "").strip()
+                xu = str(player.get("xuid") or "").strip()
+                if gt and xu and gt.casefold() == str(xuid_input).strip().casefold():
+                    xuid = xu
+        except Exception:
+            pass
     if xuid and xuid != str(xuid_input).strip():
         st.caption(f"XUID résolu: {xuid}")
 

@@ -33,7 +33,7 @@ def _abs_from_repo(path: str) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def load_h5g_commendations_json(path: str = DEFAULT_H5G_JSON_PATH) -> dict[str, Any]:
+def load_h5g_commendations_json(path: str = DEFAULT_H5G_JSON_PATH, mtime: float | None = None) -> dict[str, Any]:
     abs_path = _abs_from_repo(path)
     if not os.path.exists(abs_path):
         return {"items": []}
@@ -57,12 +57,29 @@ def _img_src(item: dict[str, Any]) -> str | None:
 
 
 def render_h5g_commendations_section() -> None:
-    data = load_h5g_commendations_json()
+    abs_json = _abs_from_repo(DEFAULT_H5G_JSON_PATH)
+    json_mtime = None
+    try:
+        json_mtime = os.path.getmtime(abs_json)
+    except OSError:
+        json_mtime = None
+
+    data = load_h5g_commendations_json(DEFAULT_H5G_JSON_PATH, json_mtime)
     items: list[dict[str, Any]] = list(data.get("items") or [])
 
     st.subheader("Citations")
     if not items:
-        st.info("Référentiel indisponible (génération automatique impossible ou échouée).")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st.info(
+                "Référentiel indisponible. "
+                "Si le fichier JSON vient d'être créé/modifié, clique sur *Recharger* (cache Streamlit)."
+            )
+            st.caption(f"Chemin attendu: {abs_json}")
+        with c2:
+            if st.button("Recharger", width="stretch"):
+                load_h5g_commendations_json.clear()
+                st.rerun()
         return
 
     # Infos offline

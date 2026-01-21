@@ -9,8 +9,12 @@ import re
 import subprocess
 import sys
 import urllib.parse
-from datetime import date, datetime, time, timedelta
+from pathlib import Path
+import uuid
+from datetime import date, datetime, time, timedelta, timezone
+from collections.abc import Mapping
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -39,6 +43,7 @@ from src.db import (
     has_table,
 )
 from src.db.parsers import parse_xuid_input
+from src.db import infer_spnkr_player_from_db_path
 from src.analysis import (
     compute_aggregated_stats,
     compute_outcome_rates,
@@ -79,6 +84,8 @@ from src.ui import (
     AppSettings,
     load_settings,
     save_settings,
+    directory_input,
+    file_input,
 )
 from src.ui.medals import (
     load_medal_name_maps,
@@ -104,6 +111,50 @@ from src.ui.sections import render_openspartan_tools, render_source_section
 
 _LABEL_SUFFIX_RE = re.compile(r"^(.*?)(?:\s*[\-–—]\s*[0-9A-Za-z]{8,})$", re.IGNORECASE)
 _SCORE_LABEL_RE = re.compile(r"^\s*(-?\d+)\s*[-–—]\s*(-?\d+)\s*$")
+
+
+PARIS_TZ_NAME = "Europe/Paris"
+PARIS_TZ = ZoneInfo(PARIS_TZ_NAME)
+
+
+def _to_paris_naive(dt_value) -> datetime | None:
+    """Convertit une date en datetime naïf (sans tzinfo) en heure de Paris.
+
+    - tz-aware -> convertit en Europe/Paris puis enlève tzinfo
+    - naïf -> supposé déjà en heure de Paris
+    """
+    if dt_value is None:
+        return None
+    try:
+        ts = pd.to_datetime(dt_value, errors="coerce")
+        if pd.isna(ts):
+            return None
+
+        # pandas.Timestamp: ts.tz != None si tz-aware
+        try:
+            if getattr(ts, "tz", None) is not None:
+                ts = ts.tz_convert(PARIS_TZ_NAME).tz_localize(None)
+        except Exception:
+            pass
+
+        d = ts.to_pydatetime()
+        if getattr(d, "tzinfo", None) is not None:
+            d = d.astimezone(PARIS_TZ).replace(tzinfo=None)
+        return d
+    except Exception:
+        return None
+
+
+def _paris_epoch_seconds(dt_value) -> float | None:
+    """Retourne un timestamp Unix (UTC) pour une date exprimée en heure de Paris."""
+    d = _to_paris_naive(dt_value)
+    if d is None:
+        return None
+    try:
+        aware = d.replace(tzinfo=PARIS_TZ)
+        return float(aware.astimezone(timezone.utc).timestamp())
+    except Exception:
+        return None
 
 
 def _qp_first(value) -> str | None:
@@ -145,7 +196,7 @@ def _default_identity_from_secrets() -> tuple[str, str, str]:
     # Secrets Streamlit: .streamlit/secrets.toml
     try:
         player = st.secrets.get("player", {})
-        if isinstance(player, dict):
+        if isinstance(player, Mapping):
             gt = str(player.get("gamertag") or "").strip()
             xu = str(player.get("xuid") or "").strip()
             wp = str(player.get("waypoint_player") or "").strip()
@@ -164,18 +215,164 @@ def _default_identity_from_secrets() -> tuple[str, str, str]:
     xu = xu or str(DEFAULT_PLAYER_XUID or "").strip()
     wp = wp or str(DEFAULT_WAYPOINT_PLAYER or "").strip() or gt
 
+    # UI: on préfère afficher le gamertag, tout en conservant xuid en fallback.
     xuid_or_gt = gt or xu
     return xuid_or_gt, xu, wp
 
 
-def _init_source_state(default_db: str) -> None:
+def _pick_latest_spnkr_db_if_any() -> str:
+    try:
+        repo_root = Path(__file__).resolve().parent
+        data_dir = repo_root / "data"
+        if not data_dir.exists():
+            return ""
+        candidates = [p for p in data_dir.glob("spnkr*.db") if p.is_file()]
+        if not candidates:
+            return ""
+        # On évite de sélectionner une DB vide (0 octet), ce qui bloque l'app (aucune table).
+        non_empty = [p for p in candidates if p.exists() and p.stat().st_size > 0]
+        non_empty.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+        if non_empty:
+            return str(non_empty[0])
+        # Fallback: si tout est vide, retourne quand même la plus récente pour debug.
+        candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+        return str(candidates[0])
+    except Exception:
+        return ""
+
+
+def _is_spnkr_db_path(db_path: str) -> bool:
+    try:
+        p = Path(db_path)
+        return p.suffix.lower() == ".db" and p.name.lower().startswith("spnkr")
+    except Exception:
+        return False
+
+
+def _refresh_spnkr_db_via_api(
+    *,
+    db_path: str,
+    player: str,
+    match_type: str,
+    max_matches: int,
+    rps: int,
+    with_highlight_events: bool,
+    timeout_seconds: int = 180,
+) -> tuple[bool, str]:
+    """Rafraîchit une DB SPNKr en appelant scripts/spnkr_import_db.py.
+
+    Retourne (ok, message) pour affichage UI.
+    """
+    repo_root = Path(__file__).resolve().parent
+    importer = repo_root / "scripts" / "spnkr_import_db.py"
+    if not importer.exists():
+        return False, f"Script introuvable: {importer}"
+
+    p = (player or "").strip()
+    if not p:
+        return False, "Aucun joueur pour SPNKr (gamertag ou XUID)."
+
+    mt = (match_type or "matchmaking").strip().lower()
+    if mt not in {"all", "matchmaking", "custom", "local"}:
+        mt = "matchmaking"
+
+    target = str(db_path)
+    # IMPORTANT: on n'écrit jamais directement dans la DB cible.
+    # Si l'import crashe/timeout, SQLite peut laisser un fichier vide/corrompu.
+    tmp = f"{target}.tmp.{uuid.uuid4().hex}.db"
+
+    cmd = [
+        sys.executable,
+        str(importer),
+        "--out-db",
+        str(tmp),
+        "--player",
+        p,
+        "--match-type",
+        mt,
+        "--max-matches",
+        str(int(max_matches)),
+        "--requests-per-second",
+        str(int(rps)),
+        "--resume",
+    ]
+    if with_highlight_events:
+        cmd.append("--with-highlight-events")
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=int(timeout_seconds),
+        )
+    except subprocess.TimeoutExpired:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        return False, f"Timeout après {timeout_seconds}s (import SPNKr trop long)."
+    except Exception as e:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        return False, f"Erreur au lancement de l'import SPNKr: {e}"
+
+    if int(proc.returncode) != 0:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        tail = (proc.stderr or proc.stdout or "").strip()
+        if len(tail) > 1200:
+            tail = tail[-1200:]
+        return False, f"Import SPNKr en échec (code={proc.returncode}).\n{tail}".strip()
+
+    # Remplace la DB cible uniquement si le tmp semble valide (non vide).
+    try:
+        if not os.path.exists(tmp) or os.path.getsize(tmp) <= 0:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+            return False, "Import SPNKr terminé mais DB temporaire vide (annulé)."
+        os.makedirs(str(Path(target).resolve().parent), exist_ok=True)
+        os.replace(tmp, target)
+    except Exception as e:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        return False, f"Import SPNKr OK mais remplacement de la DB a échoué: {e}"
+
+    return True, "DB SPNKr rafraîchie."
+
+
+def _init_source_state(default_db: str, settings: AppSettings) -> None:
     if "db_path" not in st.session_state:
-        st.session_state["db_path"] = str(default_db or "")
+        chosen = str(default_db or "")
+        # Si l'utilisateur force une DB via env (OPENSPARTAN_DB_PATH/OPENSPARTAN_DB),
+        # on ne doit pas l'écraser par une auto-sélection SPNKr.
+        forced_env_db = str(os.environ.get("OPENSPARTAN_DB") or os.environ.get("OPENSPARTAN_DB_PATH") or "").strip()
+        if (not forced_env_db) and bool(getattr(settings, "prefer_spnkr_db_if_available", False)):
+            spnkr = _pick_latest_spnkr_db_if_any()
+            if spnkr and os.path.exists(spnkr) and os.path.getsize(spnkr) > 0:
+                chosen = spnkr
+        st.session_state["db_path"] = chosen
     if "xuid_input" not in st.session_state:
         legacy = str(st.session_state.get("xuid", "") or "").strip()
         guessed = guess_xuid_from_db_path(st.session_state.get("db_path", "") or "") or ""
         xuid_or_gt, _xuid_fallback, _wp = _default_identity_from_secrets()
-        st.session_state["xuid_input"] = legacy or guessed or xuid_or_gt
+        # Pour les DB SPNKr, on pré-remplit avec le joueur déduit du nom de DB (gamertag le plus souvent).
+        inferred = infer_spnkr_player_from_db_path(str(st.session_state.get("db_path", "") or "")) or ""
+        st.session_state["xuid_input"] = legacy or inferred or guessed or xuid_or_gt
     if "waypoint_player" not in st.session_state:
         _xuid_or_gt, _xuid_fallback, wp = _default_identity_from_secrets()
         st.session_state["waypoint_player"] = wp
@@ -351,15 +548,29 @@ def _style_score_label(v: str) -> str:
     return "color: #8E6CFF; font-weight: 800;"
 
 
+def _styler_map(styler, func, subset):
+    """Compat pandas: Styler.map n'existe pas sur certaines versions.
+
+    - pandas récents: .map(func, subset=...)
+    - pandas anciens: .applymap(func, subset=...)
+    """
+    try:
+        if hasattr(styler, "map"):
+            return styler.map(func, subset=subset)
+    except Exception:
+        pass
+    # Fallback
+    try:
+        return styler.applymap(func, subset=subset)
+    except Exception:
+        return styler
+
+
 def _format_datetime_fr_hm(dt_value) -> str:
     if dt_value is None:
         return "-"
-    try:
-        ts = pd.to_datetime(dt_value, errors="coerce")
-        if pd.isna(ts):
-            return "-"
-        d = ts.to_pydatetime()
-    except Exception:
+    d = _to_paris_naive(dt_value)
+    if d is None:
         return "-"
     return f"{format_date_fr(d)} {d:%H:%M}"
 
@@ -873,7 +1084,11 @@ def cached_friend_matches_df(
             for r in rows
         ]
     )
-    dfr["start_time"] = pd.to_datetime(dfr["start_time"], utc=True).dt.tz_convert(None)
+    dfr["start_time"] = (
+        pd.to_datetime(dfr["start_time"], utc=True)
+        .dt.tz_convert(PARIS_TZ_NAME)
+        .dt.tz_localize(None)
+    )
     return dfr.sort_values("start_time", ascending=False)
 
 
@@ -929,17 +1144,64 @@ def _render_settings_page(settings: AppSettings) -> AppSettings:
             help="Réduit les playlists/modes/cartes aux valeurs attendues (utile si la DB est hétérogène).",
         )
 
+    with st.expander("SPNKr (API → DB)", expanded=False):
+        st.caption("Optionnel: recharge les derniers matchs via l'API et met à jour la DB SPNKr.")
+        prefer_spnkr = st.toggle(
+            "Utiliser SPNKr par défaut (si disponible)",
+            value=bool(getattr(settings, "prefer_spnkr_db_if_available", True)),
+        )
+        spnkr_on_start = st.toggle(
+            "Rafraîchir la DB au démarrage (SPNKr)",
+            value=bool(getattr(settings, "spnkr_refresh_on_start", True)),
+        )
+        spnkr_on_refresh = st.toggle(
+            "Le bouton Actualiser rafraîchit aussi la DB (SPNKr)",
+            value=bool(getattr(settings, "spnkr_refresh_on_manual_refresh", True)),
+        )
+        mt = st.selectbox(
+            "Type de matchs",
+            options=["matchmaking", "all", "custom", "local"],
+            index=["matchmaking", "all", "custom", "local"].index(
+                str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking").strip().lower()
+                if str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking").strip().lower()
+                in {"matchmaking", "all", "custom", "local"}
+                else "matchmaking"
+            ),
+        )
+        max_matches = st.number_input(
+            "Max matchs (refresh)",
+            min_value=10,
+            max_value=5000,
+            value=int(getattr(settings, "spnkr_refresh_max_matches", 200) or 200),
+            step=10,
+        )
+        rps = st.number_input(
+            "Requêtes / seconde",
+            min_value=1,
+            max_value=20,
+            value=int(getattr(settings, "spnkr_refresh_rps", 3) or 3),
+            step=1,
+        )
+        with_he = st.toggle(
+            "Inclure highlight events (plus long)",
+            value=bool(getattr(settings, "spnkr_refresh_with_highlight_events", False)),
+        )
+
     with st.expander("Médias", expanded=True):
         media_enabled = st.toggle("Activer la section Médias", value=bool(settings.media_enabled))
-        media_screens_dir = st.text_input(
+        media_screens_dir = directory_input(
             "Dossier captures (images)",
             value=str(settings.media_screens_dir or ""),
+            key="settings_media_screens_dir",
             help="Chemin vers un dossier contenant des captures (png/jpg/webp).",
+            placeholder="Ex: C:\\Users\\Guillaume\\Pictures\\Halo",
         )
-        media_videos_dir = st.text_input(
+        media_videos_dir = directory_input(
             "Dossier vidéos",
             value=str(settings.media_videos_dir or ""),
+            key="settings_media_videos_dir",
             help="Chemin vers un dossier contenant des vidéos (mp4/webm/mkv).",
+            placeholder="Ex: C:\\Users\\Guillaume\\Videos",
         )
         media_tolerance_minutes = st.slider(
             "Tolérance (minutes) autour du match",
@@ -962,6 +1224,25 @@ def _render_settings_page(settings: AppSettings) -> AppSettings:
         else:
             st.caption("Outils Windows masqués (environnement non-Windows/NAS).")
 
+    with st.expander("Fichiers (avancé)", expanded=False):
+        st.caption("Optionnel: sélectionne les fichiers JSON utilisés par l'app (sinon valeurs par défaut).")
+        aliases_path = file_input(
+            "Fichier d'alias XUID (json)",
+            value=str(getattr(settings, "aliases_path", "") or ""),
+            key="settings_aliases_path",
+            exts=(".json",),
+            help="Override de OPENSPARTAN_ALIASES_PATH. Laisse vide pour utiliser xuid_aliases.json à la racine.",
+            placeholder="Ex: C:\\...\\xuid_aliases.json",
+        )
+        profiles_path = file_input(
+            "Fichier de profils DB (json)",
+            value=str(getattr(settings, "profiles_path", "") or ""),
+            key="settings_profiles_path",
+            exts=(".json",),
+            help="Override de OPENSPARTAN_PROFILES_PATH. Laisse vide pour utiliser db_profiles.json à la racine.",
+            placeholder="Ex: C:\\...\\db_profiles.json",
+        )
+
     with st.expander("NAS / Docker", expanded=False):
         st.caption(
             "Astuce: sur NAS/Docker, monte la DB en volume et définis OPENSPARTAN_DB (et éventuellement OPENSPARTAN_DB_READONLY=1)."
@@ -979,6 +1260,15 @@ def _render_settings_page(settings: AppSettings) -> AppSettings:
             media_videos_dir=str(media_videos_dir or "").strip(),
             media_tolerance_minutes=int(media_tolerance_minutes),
             refresh_clears_caches=bool(refresh_clears_caches),
+            prefer_spnkr_db_if_available=bool(prefer_spnkr),
+            spnkr_refresh_on_start=bool(spnkr_on_start),
+            spnkr_refresh_on_manual_refresh=bool(spnkr_on_refresh),
+            spnkr_refresh_match_type=str(mt),
+            spnkr_refresh_max_matches=int(max_matches),
+            spnkr_refresh_rps=int(rps),
+            spnkr_refresh_with_highlight_events=bool(with_he),
+            aliases_path=str(aliases_path or "").strip(),
+            profiles_path=str(profiles_path or "").strip(),
         )
         ok, err = save_settings(new_settings)
         if ok:
@@ -1009,13 +1299,7 @@ def _request_open_match(match_id: str) -> None:
 
 
 def _safe_dt(v) -> datetime | None:
-    try:
-        ts = pd.to_datetime(v, errors="coerce")
-        if pd.isna(ts):
-            return None
-        return ts.to_pydatetime()
-    except Exception:
-        return None
+    return _to_paris_naive(v)
 
 
 def _match_time_window(row: pd.Series, *, tolerance_minutes: int) -> tuple[datetime | None, datetime | None]:
@@ -1093,12 +1377,17 @@ def _render_media_section(*, row: pd.Series, settings: AppSettings) -> None:
     st.subheader("Médias")
     st.caption(f"Fenêtre de recherche: {_format_datetime_fr_hm(t0)} → {_format_datetime_fr_hm(t1)}")
 
+    t0_epoch = _paris_epoch_seconds(t0)
+    t1_epoch = _paris_epoch_seconds(t1)
+    if t0_epoch is None or t1_epoch is None:
+        return
+
     found_any = False
 
     if screens_dir and os.path.isdir(screens_dir):
         img_df = _index_media_dir(screens_dir, ("png", "jpg", "jpeg", "webp"))
         if not img_df.empty:
-            mask = (img_df["mtime"] >= t0.timestamp()) & (img_df["mtime"] <= t1.timestamp())
+            mask = (img_df["mtime"] >= t0_epoch) & (img_df["mtime"] <= t1_epoch)
             hits = img_df.loc[mask].head(24)
             if not hits.empty:
                 found_any = True
@@ -1112,12 +1401,24 @@ def _render_media_section(*, row: pd.Series, settings: AppSettings) -> None:
     if videos_dir and os.path.isdir(videos_dir):
         vid_df = _index_media_dir(videos_dir, ("mp4", "webm", "mkv", "mov"))
         if not vid_df.empty:
-            mask = (vid_df["mtime"] >= t0.timestamp()) & (vid_df["mtime"] <= t1.timestamp())
+            mask = (vid_df["mtime"] >= t0_epoch) & (vid_df["mtime"] <= t1_epoch)
             hits = vid_df.loc[mask].head(10)
             if not hits.empty:
                 found_any = True
                 st.caption("Vidéos")
-                for p in hits["path"].tolist():
+                # UX/robustesse: embed d'une seule vidéo à la fois.
+                paths = [str(p) for p in hits["path"].tolist() if p]
+                if paths:
+                    labels = [os.path.basename(p) for p in paths]
+                    picked = st.selectbox(
+                        "Vidéo",
+                        options=list(range(len(paths))),
+                        format_func=lambda i: labels[i],
+                        index=0,
+                        key=f"media_video_pick_{row.get('match_id','')}",
+                        label_visibility="collapsed",
+                    )
+                    p = paths[int(picked)]
                     try:
                         st.video(p)
                         st.caption(str(p))
@@ -1297,28 +1598,45 @@ def _render_match_view(
             killed_me = kv_long[kv_long["victim_xuid"].astype(str) == me_xuid]
             i_killed = kv_long[kv_long["killer_xuid"].astype(str) == me_xuid]
 
+            def _display_name_from_kv(xuid_value, gamertag_value) -> str:
+                """Retourne un nom lisible pour l'UI.
+
+                Les highlight events SPNKr peuvent ne pas contenir de gamertag.
+                Dans ce cas, on retombe sur un alias local basé sur le XUID.
+                """
+                gt = str(gamertag_value or "").strip()
+                xu_raw = str(xuid_value or "").strip()
+                xu = parse_xuid_input(xu_raw) or xu_raw
+
+                # Si le gamertag ressemble à un XUID / placeholder, on l'ignore.
+                if (not gt) or gt == "?" or gt.isdigit() or gt.lower().startswith("xuid("):
+                    if xu:
+                        return display_name_from_xuid(str(xu).strip())
+                    return "-"
+                return gt
+
             nemesis_name = "-"
             nemesis_kills = None
             if not killed_me.empty:
                 top = (
-                    killed_me[["killer_gamertag", "count"]]
-                    .rename(columns={"killer_gamertag": "Joueur", "count": "Kills"})
-                    .sort_values(["Kills", "Joueur"], ascending=[False, True])
+                    killed_me[["killer_xuid", "killer_gamertag", "count"]]
+                    .rename(columns={"count": "Kills"})
+                    .sort_values(["Kills"], ascending=[False])
                     .iloc[0]
                 )
-                nemesis_name = str(top.get("Joueur") or "-")
+                nemesis_name = _display_name_from_kv(top.get("killer_xuid"), top.get("killer_gamertag"))
                 nemesis_kills = int(top.get("Kills")) if top.get("Kills") is not None else None
 
             bully_name = "-"
             bully_kills = None
             if not i_killed.empty:
                 top = (
-                    i_killed[["victim_gamertag", "count"]]
-                    .rename(columns={"victim_gamertag": "Joueur", "count": "Kills"})
-                    .sort_values(["Kills", "Joueur"], ascending=[False, True])
+                    i_killed[["victim_xuid", "victim_gamertag", "count"]]
+                    .rename(columns={"count": "Kills"})
+                    .sort_values(["Kills"], ascending=[False])
                     .iloc[0]
                 )
-                bully_name = str(top.get("Joueur") or "-")
+                bully_name = _display_name_from_kv(top.get("victim_xuid"), top.get("victim_gamertag"))
                 bully_kills = int(top.get("Kills")) if top.get("Kills") is not None else None
 
             def _clean_name(v: str) -> str:
@@ -1378,7 +1696,11 @@ def load_df(db_path: str, xuid: str, db_key: tuple[int, int] | None = None) -> p
         }
     )
     # Facilite les filtres date
-    df["start_time"] = pd.to_datetime(df["start_time"], utc=True).dt.tz_convert(None)
+    df["start_time"] = (
+        pd.to_datetime(df["start_time"], utc=True)
+        .dt.tz_convert(PARIS_TZ_NAME)
+        .dt.tz_localize(None)
+    )
     df["date"] = df["start_time"].dt.date
 
     # Stats par minute
@@ -1463,12 +1785,44 @@ def main() -> None:
     settings: AppSettings = load_settings()
     st.session_state["app_settings"] = settings
 
+    # Propage les defaults depuis secrets vers l'env.
+    # Utile notamment pour résoudre un XUID quand la DB SPNKr ne contient pas les gamertags.
+    try:
+        xuid_or_gt, xuid_fallback, wp = _default_identity_from_secrets()
+        if xuid_or_gt and not str(xuid_or_gt).strip().isdigit() and xuid_fallback:
+            if not str(os.environ.get("OPENSPARTAN_DEFAULT_GAMERTAG") or "").strip():
+                os.environ["OPENSPARTAN_DEFAULT_GAMERTAG"] = str(xuid_or_gt).strip()
+            if not str(os.environ.get("OPENSPARTAN_DEFAULT_XUID") or "").strip():
+                os.environ["OPENSPARTAN_DEFAULT_XUID"] = str(xuid_fallback).strip()
+        if wp and not str(os.environ.get("OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER") or "").strip():
+            os.environ["OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER"] = str(wp).strip()
+    except Exception:
+        pass
+
+    # Applique les overrides de chemins (avant que l'app lise les fichiers).
+    try:
+        aliases_override = str(getattr(settings, "aliases_path", "") or "").strip()
+        if aliases_override:
+            os.environ["OPENSPARTAN_ALIASES_PATH"] = aliases_override
+        else:
+            os.environ.pop("OPENSPARTAN_ALIASES_PATH", None)
+    except Exception:
+        pass
+    try:
+        profiles_override = str(getattr(settings, "profiles_path", "") or "").strip()
+        if profiles_override:
+            os.environ["OPENSPARTAN_PROFILES_PATH"] = profiles_override
+        else:
+            os.environ.pop("OPENSPARTAN_PROFILES_PATH", None)
+    except Exception:
+        pass
+
     # ==========================================================================
     # Source (persistée via session_state) — UI dans l'onglet Paramètres
     # ==========================================================================
 
     DEFAULT_DB = get_default_db_path()
-    _init_source_state(DEFAULT_DB)
+    _init_source_state(DEFAULT_DB, settings)
 
     # Support liens internes via query params (?page=...&match_id=...)
     try:
@@ -1517,18 +1871,53 @@ def main() -> None:
                     pass
             st.rerun()
 
-        st.caption("Source: onglet Paramètres")
-
     # Validation légère (non bloquante)
     from src.db import resolve_xuid_from_db
 
     if db_path and not os.path.exists(db_path):
         db_path = ""
 
+    # Si la DB existe mais est vide (0 octet), on tente un fallback automatique.
+    if db_path and os.path.exists(db_path):
+        try:
+            if os.path.getsize(db_path) <= 0:
+                st.warning("La base sélectionnée est vide (0 octet). Basculement automatique vers une DB valide si possible.")
+                fallback = ""
+                if _is_spnkr_db_path(db_path):
+                    fallback = _pick_latest_spnkr_db_if_any()
+                    if fallback and os.path.exists(fallback) and os.path.getsize(fallback) <= 0:
+                        fallback = ""
+                if not fallback:
+                    fallback = str(DEFAULT_DB or "").strip()
+                    if not (fallback and os.path.exists(fallback)):
+                        fallback = ""
+                if fallback and fallback != db_path:
+                    st.info(f"DB utilisée: {fallback}")
+                    st.session_state["db_path"] = fallback
+                    db_path = fallback
+                else:
+                    db_path = ""
+        except Exception:
+            pass
+
     xraw = (xuid or "").strip()
     xuid_resolved = parse_xuid_input(xraw) or ""
     if not xuid_resolved and xraw and not xraw.isdigit() and db_path:
         xuid_resolved = resolve_xuid_from_db(db_path, xraw) or ""
+        # Fallback: si la DB ne permet pas de résoudre (pas de gamertags),
+        # utilise les defaults secrets/env quand l'entrée correspond au gamertag par défaut.
+        if not xuid_resolved:
+            try:
+                xuid_or_gt, xuid_fallback, _wp = _default_identity_from_secrets()
+                if (
+                    xuid_or_gt
+                    and xuid_fallback
+                    and (not str(xuid_or_gt).strip().isdigit())
+                    and str(xuid_or_gt).strip().casefold() == str(xraw).strip().casefold()
+                ):
+                    xuid_resolved = str(xuid_fallback).strip()
+            except Exception:
+                pass
     if not xuid_resolved and not xraw and db_path:
         xuid_or_gt, xuid_fallback, _wp = _default_identity_from_secrets()
         if xuid_or_gt and not xuid_or_gt.isdigit():
@@ -2124,7 +2513,7 @@ def main() -> None:
                 st.info("FDA indisponible sur ce filtre.")
             else:
                 m = st.columns(1)
-                m[0].metric("", f"{valid['kda'].mean():.2f}")
+                m[0].metric("KDA moyen", f"{valid['kda'].mean():.2f}", label_visibility="collapsed")
                 st.plotly_chart(plot_kda_distribution(dff), width="stretch")
 
             st.subheader("Assistances")
@@ -2217,7 +2606,7 @@ def main() -> None:
                         return ""
                     return "color: #E0E0E0; font-weight: 700;"
 
-                out_styled = out_tbl.style.map(_style_pct, subset=["Win rate"])
+                out_styled = _styler_map(out_tbl.style, _style_pct, subset=["Win rate"])
                 st.dataframe(
                     out_styled,
                     width="stretch",
@@ -3127,13 +3516,11 @@ def main() -> None:
         table = dff_table[show_cols + ["start_time"]].sort_values("start_time", ascending=False).reset_index(drop=True)
         table = table[show_cols]
 
-        styled = (
-            table.style
-            .map(_style_outcome_text, subset=["outcome_label"])
-            .map(_style_score_label, subset=["score"])
-            .map(_style_signed_number, subset=["kda"])
-            .map(_style_signed_number, subset=["delta_mmr"])
-        )
+        styled = table.style
+        styled = _styler_map(styled, _style_outcome_text, subset=["outcome_label"])
+        styled = _styler_map(styled, _style_score_label, subset=["score"])
+        styled = _styler_map(styled, _style_signed_number, subset=["kda"])
+        styled = _styler_map(styled, _style_signed_number, subset=["delta_mmr"])
 
         st.dataframe(
             styled,

@@ -17,6 +17,7 @@ from src.db.parsers import (
     guess_xuid_from_db_path,
     parse_iso_utc,
     resolve_xuid_from_db,
+    infer_spnkr_player_from_db_path,
 )
 from src.db.profiles import (
     PROFILES_PATH,
@@ -44,6 +45,7 @@ __all__ = [
     "guess_xuid_from_db_path",
     "parse_iso_utc",
     "resolve_xuid_from_db",
+    "infer_spnkr_player_from_db_path",
     # profiles
     "PROFILES_PATH",
     "load_profiles",

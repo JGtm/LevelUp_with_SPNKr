@@ -7,6 +7,7 @@ import webbrowser
 import argparse
 import sqlite3
 import re
+import shutil
 
 
 def _pick_free_port() -> int:
@@ -73,11 +74,20 @@ def _maybe_refresh_spnkr_db(*, repo_root: str, args: argparse.Namespace) -> int:
         print(f"[SPNKr] Skip: script introuvable: {importer}")
         return 2
 
+    tmp_db = f"{out_db}.tmp.{int(time.time())}.{os.getpid()}.db"
+    # Copie la DB existante vers un fichier temporaire pour éviter les corruptions (0 octet) si import interrompu.
+    try:
+        if os.path.exists(out_db):
+            shutil.copy2(out_db, tmp_db)
+    except Exception:
+        # Si la copie échoue, on tente quand même de construire une DB tmp depuis zéro.
+        pass
+
     cmd = [
         sys.executable,
         importer,
         "--out-db",
-        out_db,
+        tmp_db,
         "--player",
         player,
         "--match-type",
@@ -92,6 +102,8 @@ def _maybe_refresh_spnkr_db(*, repo_root: str, args: argparse.Namespace) -> int:
         cmd.append("--no-assets")
     if args.refresh_no_skill:
         cmd.append("--no-skill")
+    if getattr(args, "refresh_with_highlight_events", False):
+        cmd.append("--with-highlight-events")
 
     if is_bootstrap:
         print("[SPNKr] Bootstrap DB (première construction)…")
@@ -105,13 +117,51 @@ def _maybe_refresh_spnkr_db(*, repo_root: str, args: argparse.Namespace) -> int:
         proc = subprocess.run(cmd, cwd=repo_root)
     except Exception as e:
         print("[SPNKr] Erreur au lancement de l'import:", e)
+        try:
+            if os.path.exists(tmp_db):
+                os.remove(tmp_db)
+        except Exception:
+            pass
         return 2
 
     if proc.returncode != 0:
         print(f"[SPNKr] Import en échec (code={proc.returncode}). Le dashboard va quand même se lancer.")
-    else:
-        print("[SPNKr] OK")
-    return int(proc.returncode)
+        try:
+            if os.path.exists(tmp_db):
+                os.remove(tmp_db)
+        except Exception:
+            pass
+        return int(proc.returncode)
+
+    # Validation minimale: MatchStats non vide
+    if _is_spnkr_db_empty(tmp_db):
+        print("[SPNKr] Import terminé mais DB temporaire vide/invalide. DB originale conservée.")
+        try:
+            if os.path.exists(tmp_db):
+                os.remove(tmp_db)
+        except Exception:
+            pass
+        return 0
+
+    try:
+        os.makedirs(os.path.dirname(out_db) or ".", exist_ok=True)
+        os.replace(tmp_db, out_db)
+    except Exception as e:
+        print("[SPNKr] Import OK mais remplacement DB a échoué:", e)
+        try:
+            if os.path.exists(tmp_db):
+                os.remove(tmp_db)
+        except Exception:
+            pass
+        return 2
+
+    print("[SPNKr] OK")
+    # IMPORTANT: force la DB utilisée par Streamlit à être celle qu'on vient de refresh.
+    try:
+        os.environ["OPENSPARTAN_DB_PATH"] = out_db
+    except Exception:
+        pass
+    return 0
 
 
 def main() -> int:
@@ -157,6 +207,11 @@ def main() -> int:
     ap.add_argument("--refresh-rps", type=int, default=2, help="Rate limit (requests/sec) (défaut: 2)")
     ap.add_argument("--refresh-no-assets", action="store_true", help="Désactive l'import des assets UGC")
     ap.add_argument("--refresh-no-skill", action="store_true", help="Désactive l'import du skill (PlayerMatchStats)")
+    ap.add_argument(
+        "--refresh-with-highlight-events",
+        action="store_true",
+        help="Importe aussi les highlight events (film) par match (plus lent)",
+    )
     args, _unknown = ap.parse_known_args()
     app_path = os.path.join(here, "streamlit_app.py")
     if not os.path.exists(app_path):
@@ -164,6 +219,14 @@ def main() -> int:
         return 2
 
     _maybe_refresh_spnkr_db(repo_root=here, args=args)
+
+    # Si l'utilisateur a fourni explicitement une DB, on force aussi OPENSPARTAN_DB_PATH
+    # pour garantir que l'app pointe vers la bonne DB (et éviter un refresh "pour rien").
+    if getattr(args, "refresh_out_db", None):
+        try:
+            os.environ["OPENSPARTAN_DB_PATH"] = str(args.refresh_out_db)
+        except Exception:
+            pass
 
     port = _pick_free_port()
     url = f"http://localhost:{port}"

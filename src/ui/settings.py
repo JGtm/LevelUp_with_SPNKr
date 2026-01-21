@@ -34,6 +34,21 @@ class AppSettings:
     # UX
     refresh_clears_caches: bool = False
 
+    # Source
+    prefer_spnkr_db_if_available: bool = True
+
+    # SPNKr (API → DB) : rafraîchissement automatique
+    spnkr_refresh_on_start: bool = True
+    spnkr_refresh_on_manual_refresh: bool = True
+    spnkr_refresh_match_type: str = "matchmaking"  # all|matchmaking|custom|local
+    spnkr_refresh_max_matches: int = 200
+    spnkr_refresh_rps: int = 3
+    spnkr_refresh_with_highlight_events: bool = False
+
+    # Fichiers (overrides optionnels)
+    aliases_path: str = ""
+    profiles_path: str = ""
+
 
 def _coerce_bool(v: Any, default: bool) -> bool:
     if isinstance(v, bool):
@@ -78,6 +93,25 @@ def load_settings() -> AppSettings:
     s.media_videos_dir = str(obj.get("media_videos_dir") or "").strip()
     s.media_tolerance_minutes = max(0, _coerce_int(obj.get("media_tolerance_minutes"), s.media_tolerance_minutes))
     s.refresh_clears_caches = _coerce_bool(obj.get("refresh_clears_caches"), s.refresh_clears_caches)
+    s.prefer_spnkr_db_if_available = _coerce_bool(
+        obj.get("prefer_spnkr_db_if_available"), s.prefer_spnkr_db_if_available
+    )
+
+    s.spnkr_refresh_on_start = _coerce_bool(obj.get("spnkr_refresh_on_start"), s.spnkr_refresh_on_start)
+    s.spnkr_refresh_on_manual_refresh = _coerce_bool(
+        obj.get("spnkr_refresh_on_manual_refresh"), s.spnkr_refresh_on_manual_refresh
+    )
+    mt = str(obj.get("spnkr_refresh_match_type") or s.spnkr_refresh_match_type).strip().lower()
+    if mt in {"all", "matchmaking", "custom", "local"}:
+        s.spnkr_refresh_match_type = mt
+    s.spnkr_refresh_max_matches = max(1, _coerce_int(obj.get("spnkr_refresh_max_matches"), s.spnkr_refresh_max_matches))
+    s.spnkr_refresh_rps = max(1, _coerce_int(obj.get("spnkr_refresh_rps"), s.spnkr_refresh_rps))
+    s.spnkr_refresh_with_highlight_events = _coerce_bool(
+        obj.get("spnkr_refresh_with_highlight_events"), s.spnkr_refresh_with_highlight_events
+    )
+
+    s.aliases_path = str(obj.get("aliases_path") or "").strip()
+    s.profiles_path = str(obj.get("profiles_path") or "").strip()
     return s
 
 

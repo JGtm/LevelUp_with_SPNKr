@@ -84,8 +84,16 @@ for %%F in ("%ROOT%data\spnkr*.db") do (
     echo [PLAYER] !PLAYER!
     echo --------------------------------------------------
 
+    set "TMP=!DB!.tmp.!RANDOM!!RANDOM!.db"
+    rem Copie la DB actuelle vers TMP pour éviter toute corruption si l'import est interrompu.
+    if exist "!DB!" (
+      copy /Y "!DB!" "!TMP!" >nul
+    ) else (
+      if exist "!TMP!" del /Q "!TMP!" >nul 2>nul
+    )
+
     "%PY%" scripts\spnkr_import_db.py ^
-      --out-db "!DB!" ^
+      --out-db "!TMP!" ^
       --player "!PLAYER!" ^
       --match-type "%MATCH_TYPE%" ^
       --max-matches %MAX_MATCHES% ^
@@ -94,10 +102,19 @@ for %%F in ("%ROOT%data\spnkr*.db") do (
       --with-highlight-events
 
     if errorlevel 1 (
-        echo [ERREUR] Refresh en échec pour %%~nxF (code=!errorlevel!^).
-      echo         Je continue avec la DB suivante...
+      echo [ERREUR] Refresh en échec pour %%~nxF (code=!errorlevel!^).
+      echo         DB originale conservée. Je continue...
+      if exist "!TMP!" del /Q "!TMP!" >nul 2>nul
     ) else (
-      echo [OK] %%~nxF
+      for %%S in ("!TMP!") do set "SIZE=%%~zS"
+      if "!SIZE!"=="" set "SIZE=0"
+      if !SIZE! LEQ 0 (
+        echo [ERREUR] Import OK mais DB temporaire vide. DB originale conservée.
+        if exist "!TMP!" del /Q "!TMP!" >nul 2>nul
+      ) else (
+        move /Y "!TMP!" "!DB!" >nul
+        echo [OK] %%~nxF
+      )
     )
   )
 )

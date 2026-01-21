@@ -13,6 +13,8 @@ build/
 dist/
 *.spec
 app_settings.json
+xuid_aliases.json
+GT-XUID.txt
 data/wiki/*.html
 data/spnkr.db
 data/spnkr.db-journal
