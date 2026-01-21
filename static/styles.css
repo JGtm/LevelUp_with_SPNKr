@@ -661,6 +661,10 @@ div[data-testid="stNumberInput"] input:focus {
 }
 
 /* Citations (Halo 5) */
+.os-citation-top-gap {
+    height: 10px;
+}
+
 .os-citation-name {
     text-align: center;
     font-size: 0.78rem;
@@ -668,6 +672,41 @@ div[data-testid="stNumberInput"] input:focus {
     font-weight: 800;
     opacity: 0.92;
     margin-top: 6px;
+
+    /* Aligner toutes les vignettes: nom sur 2 lignes max */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: calc(2 * 1.05rem);
+}
+
+.os-citation-level {
+    text-align: center;
+    font-size: 0.80rem;
+    line-height: 1.05rem;
+    margin-top: 2px;
+    opacity: 0.92;
+    min-height: 1.05rem;
+
+    /* Niveau (non maître) */
+    font-weight: 800;
+    color: #41d6ff;
+}
+
+.os-citation-counter {
+    text-align: center;
+    font-size: 0.78rem;
+    line-height: 1.0rem;
+    margin-top: 2px;
+    opacity: 0.85;
+    min-height: 1.0rem;
+}
+
+.os-citation-level--master {
+    font-weight: 900;
+    color: #d6b35a;
+    text-shadow: 0 0 10px rgba(214, 179, 90, 0.18);
 }
 
 /* --- Medals grid (Streamlit columns) --- */

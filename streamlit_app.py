@@ -2642,8 +2642,29 @@ def main() -> None:
     # Page: Citations (ex Médailles)
     # --------------------------------------------------------------------------
     elif page == "Citations":
+        # Agrège les médailles une seule fois (utilisé pour l'UI Citations + la grille Médailles).
+        counts_by_medal: dict[int, int] = {}
+        stats_totals: dict[str, int] = {}
+        if not dff.empty and str(xuid or "").strip():
+            match_ids = [str(x) for x in dff["match_id"].dropna().astype(str).tolist()]
+            with st.spinner("Agrégation des médailles…"):
+                top_all = _top_medals(db_path, xuid.strip(), match_ids, top_n=None, db_key=db_key)
+            try:
+                counts_by_medal = {int(nid): int(cnt) for nid, cnt in (top_all or [])}
+            except Exception:
+                counts_by_medal = {}
+
+            # Stats agrégées (utilisées par certaines citations suivies via candidates.type=stat).
+            for col in ("kills", "deaths", "assists", "headshot_kills"):
+                if col not in dff.columns:
+                    continue
+                try:
+                    stats_totals[col] = int(pd.to_numeric(dff[col], errors="coerce").fillna(0).sum())
+                except Exception:
+                    stats_totals[col] = 0
+
         # 1) Commendations Halo 5 (référentiel offline)
-        render_h5g_commendations_section()
+        render_h5g_commendations_section(counts_by_medal=counts_by_medal, stats_totals=stats_totals)
         st.divider()
 
         # 2) Médailles (Halo Infinite) sur la sélection/filtres actuels
@@ -2654,9 +2675,9 @@ def main() -> None:
             show_all = st.toggle("Afficher toutes les médailles (peut être lent)", value=False)
             top_n = None if show_all else int(st.slider("Nombre de médailles", 25, 500, 100, 25))
 
-            match_ids = [str(x) for x in dff["match_id"].dropna().astype(str).tolist()]
-            with st.spinner("Agrégation des médailles…"):
-                top = _top_medals(db_path, xuid.strip(), match_ids, top_n=top_n, db_key=db_key)
+            top = sorted(counts_by_medal.items(), key=lambda kv: kv[1], reverse=True)
+            if top_n is not None:
+                top = top[:top_n]
 
             if not top:
                 st.info("Aucune médaille trouvée (ou payload médailles absent).")
