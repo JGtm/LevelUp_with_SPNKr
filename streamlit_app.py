@@ -27,6 +27,7 @@ import streamlit as st
 from src.config import (
     get_default_db_path,
     get_default_workshop_exe_path,
+    get_repo_root,
     DEFAULT_WAYPOINT_PLAYER,
     HALO_COLORS,
     SESSION_CONFIG,
@@ -1478,6 +1479,61 @@ def _render_match_view(
     if wp and match_id and match_id.strip() and match_id.strip() != "-":
         match_url = f"https://www.halowaypoint.com/halo-infinite/players/{wp}/matches/{match_id.strip()}"
 
+    def _waypoint_map_url(map_id: str | None) -> str | None:
+        mid = str(map_id or "").strip()
+        if not mid or mid == "-":
+            return None
+        # SPNKr expose généralement MapVariant.AssetId (GUID). Sur Waypoint, ces assets
+        # sont consultables via la section UGC.
+        return f"https://www.halowaypoint.com/halo-infinite/ugc/maps/{mid}"
+
+    def _map_thumb_path(map_id: str | None) -> str | None:
+        def _safe_stem_from_name(name: str | None) -> str:
+            s = str(name or "").strip()
+            if not s:
+                return ""
+            # Windows: <>:"/\\|?* interdits dans un nom de fichier.
+            s = re.sub(r'[<>:"/\\|?*]', " ", s)
+            s = re.sub(r"[\x00-\x1f]", " ", s)
+            s = re.sub(r"\s+", " ", s).strip()
+            # Evite un stem vide ou trop étrange.
+            return s
+
+        repo = Path(get_repo_root(__file__))
+        # Supporte 2 emplacements:
+        # - static/maps/thumbs (prévu)
+        # - thumbs/ à la racine (pratique si tu as tout téléchargé dans ce dossier)
+        base_dirs = [repo / "static" / "maps" / "thumbs", repo / "thumbs"]
+
+        candidates: list[str] = []
+        mid = str(map_id or "").strip()
+        if mid and mid != "-":
+            candidates.append(mid)
+
+        # Fallback: certains utilisateurs préfèrent nommer la miniature avec le nom de carte.
+        # Exemple: "TFF | Night Of The Undead" -> "TFF Night Of The Undead".
+        safe_name = _safe_stem_from_name(row.get("map_name"))
+        if safe_name:
+            candidates.append(safe_name)
+            candidates.append(safe_name.replace(" ", "_"))
+
+        # Dédup en conservant l'ordre.
+        uniq: list[str] = []
+        seen: set[str] = set()
+        for c in candidates:
+            if c and c not in seen:
+                uniq.append(c)
+                seen.add(c)
+
+        # On préfère JPG/PNG avant WEBP: selon la build Pillow, WEBP peut ne pas être supporté.
+        for base in base_dirs:
+            for stem in uniq:
+                for ext in (".jpg", ".jpeg", ".png", ".webp"):
+                    p = base / f"{stem}{ext}"
+                    if p.exists():
+                        return str(p)
+        return None
+
     def _os_card(
         title: str,
         kpi: str,
@@ -1519,17 +1575,30 @@ def _render_match_view(
 
     last_mode_ui = row.get("mode_ui") or _normalize_mode_label(str(last_pair) if last_pair else None)
     row_cols = st.columns(3)
-    row_cols[0].metric("Carte", str(last_map) if last_map else "-")
+    # Demande UX: pas de "titre" visible, juste les valeurs, et garder la taille/présentation Streamlit.
+    row_cols[0].metric(" ", str(last_map) if last_map else "-")
     row_cols[1].metric(
-        "Playlist",
+        " ",
         str(last_playlist_fr or last_playlist) if (last_playlist_fr or last_playlist) else "-",
     )
     row_cols[2].metric(
-        "Mode",
+        " ",
         str(last_mode_ui or last_pair_fr or last_pair or last_mode)
         if (last_mode_ui or last_pair_fr or last_pair or last_mode)
         else "-",
     )
+
+    # Miniature de la carte (si disponible), 400px de large, sous la ligne des 3 cases.
+    map_id = row.get("map_id")
+    thumb = _map_thumb_path(str(map_id) if map_id else None)
+    if thumb:
+        c = st.columns([1, 2, 1])
+        with c[1]:
+            try:
+                st.image(thumb, width=400)
+            except Exception:
+                # Ne jamais bloquer l'onglet si une miniature est illisible (corrompue / format non supporté).
+                pass
 
     with st.spinner("Lecture des stats détaillées (attendu vs réel, médailles)…"):
         pm = cached_load_player_match_result(db_path, match_id, xuid.strip(), db_key=db_key)
