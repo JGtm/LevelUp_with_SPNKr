@@ -6,37 +6,91 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-FF4B4B.svg)](https://streamlit.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+---
+
+## 📑 Table des matières
+
+- [Fonctionnalités](#-fonctionnalités)
+- [Nouveautés v2.0](#-nouveautés-v20---delta-sync-pipeline)
+- [Prérequis](#-prérequis)
+- [Installation](#-installation)
+- [Utilisation](#-utilisation)
+  - [Dashboard](#dashboard-recommandé)
+  - [Sync incrémental (Delta)](#-sync-incrémental-delta)
+  - [Rafraîchir la DB](#rafraîchir-la-db-au-lancement-spnkr)
+  - [Réparer les gamertags](#réparer-les-gamertags-aliases-via-film-roster)
+- [Configuration](#️-configuration)
+- [Architecture](#-architecture)
+- [Tests](#-tests)
+- [Docker](#-docker)
+- [Contribution](#-contribution)
+
+---
+
 ## ✨ Fonctionnalités
 
+### Core
 - 📊 **Dashboard interactif** — Visualisez vos stats en temps réel avec Streamlit
 - 📈 **Graphiques détaillés** — Évolution frags/morts/assistances, précision, durée de vie moyenne, séries de frags
 - 🗺️ **Analyse par carte** — Performance détaillée sur chaque map
 - 👥 **Analyse des coéquipiers** — Statistiques avec vos amis (même équipe ou adversaires)
 - 🎯 **Sessions de jeu** — Détection automatique des sessions avec métriques
+
+### Export & Personnalisation
 - 🖼️ **Export PNG** — Générez des graphiques statiques via CLI
 - 🎨 **Thème Halo** — Interface inspirée de Halo Waypoint
+- 🌍 **Traductions FR** — Interface et modes de jeu traduits en français (313+ modes)
+
+---
+
+## 🆕 Nouveautés v2.0 - Delta Sync Pipeline
+
+### ⚡ Sync incrémental (Delta Mode)
+
+Plus besoin de tout resynchroniser ! Le mode delta ne récupère que les **nouveaux matchs** :
+
+```bash
+# Sync rapide (delta) - seulement les nouveaux matchs
+python openspartan_launcher.py refresh --player MonGamertag --delta
+
+# Sync complet (si besoin)
+python openspartan_launcher.py refresh --player MonGamertag
+```
+
+### 📋 Tables de métadonnées
+
+| Table | Description |
+|-------|-------------|
+| `SyncMeta` | Suivi des synchronisations (dernière sync, compteurs) |
+| `XuidAliases` | Mapping XUID → Gamertag (auto-peuplé depuis les matchs) |
+| `HighlightEvents` | Événements marquants (frags, morts, médailles) |
+
+### 🎯 Highlight Events par défaut
+
+Les highlight events sont maintenant extraits automatiquement lors de l'import, permettant d'afficher :
+- Les kills/deaths remarquables
+- Les médailles obtenues
+- Les séquences de frags
+
+### 🔄 Indicateur de sync dans la sidebar
+
+La sidebar affiche maintenant :
+- ⏱️ Date de dernière synchronisation
+- 📊 Nombre de matchs synchronisés
+- 🔘 Boutons **Sync** (delta) et **Full** (complet)
+
+---
 
 ## 📋 Prérequis
 
-- **Windows 10/11**
+- **Windows 10/11** (ou Linux/macOS via Docker)
 - **Python 3.10+** (recommandé: 3.11 ou 3.12)
-- **[OpenSpartan Workshop](https://github.com/OpenSpartan/openspartan-workshop)** installé et synchronisé
+- **[OpenSpartan Workshop](https://github.com/OpenSpartan/openspartan-workshop)** installé et synchronisé (optionnel)
+- **Compte Azure AD** pour l'API Halo (si vous utilisez SPNKr)
 
-## 📦 Assets offline (icônes)
+---
 
-### Icônes de médailles (Halo Infinite)
-
-Par défaut, l'app lit les icônes de médailles depuis le cache OpenSpartan.Workshop (dans ton profil Windows).
-Pour rendre le projet autonome/offline, copie les PNG du cache vers le repo :
-
-```bash
-python scripts/sync_medal_icons.py
-```
-
-- Destination : `static/medals/icons/<NameId>.png`
-- Ensuite, l'UI utilisera automatiquement ces icônes locales (fallback vers le cache OpenSpartan si besoin).
-
-## 🚀 Installation
+## 📦 Installation
 
 ### Installation rapide
 
@@ -48,8 +102,11 @@ cd openspartan-graph
 # Créer l'environnement virtuel
 python -m venv .venv
 
-# Activer l'environnement
+# Activer l'environnement (Windows)
 .venv\Scripts\activate
+
+# Activer l'environnement (Linux/macOS)
+source .venv/bin/activate
 
 # Installer les dépendances
 pip install -e .
@@ -68,218 +125,184 @@ pip install -e ".[cli]"
 pip install -e ".[all]"
 ```
 
-## 🎮 Utilisation
+### Configuration SPNKr (API Halo)
 
-### Dashboard (recommandé)
+1. Copier `.env.example` → `.env.local`
+2. Configurer vos tokens Azure :
 
-Le mode de lancement recommandé est désormais un **lanceur Python unique**.
-
-Mode interactif (max 2 questions) :
-
-```bash
-python openspartan_launcher.py
-```
-
-Mode CLI (options claires + `--help` indispensable) :
-
-```bash
-python openspartan_launcher.py --help
-
-# Lancer le dashboard
-python openspartan_launcher.py run
-```
-
-Note : les fichiers `.bat` restent présents pour compatibilité mais sont considérés *deprecated* et délèguent vers `openspartan_launcher.py`.
-
-Alternative (si tu veux rester sur les anciens points d’entrée) :
-
-```bash
-# Ancien launcher (conservé)
-python run_dashboard.py
-
-# Direct Streamlit
-streamlit run streamlit_app.py
-```
-
-Le dashboard s'ouvre automatiquement dans votre navigateur.
-
-### Rafraîchir la DB au lancement (SPNKr)
-
-Si vous utilisez l'import SPNKr ([scripts/spnkr_import_db.py](scripts/spnkr_import_db.py)), vous pouvez rafraîchir la base avant d'ouvrir Streamlit.
-
-- Pré-requis: avoir l'auth SPNKr configurée (ex: `SPNKR_OAUTH_REFRESH_TOKEN` dans `.env.local`) et un joueur cible.
-- Définissez le joueur via `SPNKR_PLAYER` (env) ou `--refresh-player`.
-
-Exemple (recommandé, mode minimal fiable):
-
-```bash
-python openspartan_launcher.py run+refresh --player <GamertagOuXUID> --no-assets
-```
-
-Au premier lancement (si `data/spnkr.db` n'existe pas ou est vide), le launcher fait automatiquement une **construction complète** (bootstrap) avec un `--max-matches` élevé et `--match-type all`.
-Ensuite, les lancements suivants font un refresh plus léger.
-
-Options utiles (voir `--help`):
-
-- `--refresh-max-matches 50` (défaut: 50)
-- `--refresh-bootstrap-max-matches 2000` (défaut: 2000)
-- `--refresh-match-type matchmaking` (défaut: matchmaking)
-- `--refresh-bootstrap-match-type all` (défaut: all)
-- `--refresh-out-db data/spnkr.db` (défaut: data/spnkr.db)
-
-### Réparer les gamertags (aliases) via film roster
-
-Quand les `HighlightEvents.gamertag` sont corrompus, la stratégie la plus robuste est de compléter `xuid_aliases.json`
-en re-dérivant le roster depuis les film chunks (XUID -> Gamertag).
-
-Via le lanceur (recommandé) :
-
-```bash
-# Répare le match le plus récent de la DB
-python openspartan_launcher.py repair-aliases --db data/spnkr_gt_JGtm.db --latest
-
-# Répare tous les matchs (plus long)
-python openspartan_launcher.py repair-aliases --db data/spnkr_gt_JGtm.db --all-matches
-```
-
-Note: nécessite une auth SPNKr valide (ex: `.env.local` avec Azure refresh token).
-
-### Changer le joueur par défaut (Gamertag / XUID)
-
-Le projet est configuré avec des valeurs par défaut pour simplifier l'usage en local.
-
-- **Dans le code (valeurs en dur)**: modifie `DEFAULT_PLAYER_GAMERTAG` et `DEFAULT_PLAYER_XUID` dans [src/config.py](src/config.py).
-- **Dans le launcher (conseillé)**: passe `--player` à `openspartan_launcher.py` ou définis `SPNKR_PLAYER`.
-- **Au lancement (sans toucher au code)**:
-  - `SPNKR_PLAYER` (env) permet d'override le joueur ciblé par le refresh SPNKr.
-  - Le chemin DB utilisé par le dashboard peut être forcé via `OPENSPARTAN_DB_PATH` (ou `OPENSPARTAN_DB`).
-
-Sous Windows, les `.bat` sont maintenant *deprecated* : ils délèguent vers `openspartan_launcher.py`.
-
-### CLI (génération PNG)
-
-```bash
-python openspartan_graph.py --db "%LOCALAPPDATA%\OpenSpartan.Workshop\data\<votre_xuid>.db" --last 80 --out "out\stats.png"
-```
-
-Options disponibles :
-
-| Option | Description |
-|--------|-------------|
-| `--db` | Chemin vers la base de données SQLite |
-| `--last N` | Limiter aux N derniers matchs |
-| `--out` | Chemin du fichier PNG de sortie |
-
-## 🗄️ Base de données
-
-Par défaut, l'application détecte automatiquement la DB la plus récente dans :
-
-```
-%LOCALAPPDATA%\OpenSpartan.Workshop\data\*.db
-```
-
-Vous pouvez aussi spécifier un chemin personnalisé dans la sidebar du dashboard.
-
-### Import alternatif (SPNKr)
-
-Si OpenSpartan Workshop est instable, vous pouvez générer une DB compatible via SPNKr (wrapper API Halo Infinite) :
-
-```bash
-pip install "spnkr @ git+https://github.com/acurtis166/SPNKr.git"
-
-# Tokens (option simple)
-# 1) Copie `.env.example` -> `.env` (ou `.env.local.example` -> `.env.local`)
-# 2) Remplis SPNKR_SPARTAN_TOKEN et SPNKR_CLEARANCE_TOKEN
-#    (le script charge automatiquement `.env.local` puis `.env` si présents)
-
-python scripts/spnkr_import_db.py --out-db data\spnkr.db --player <xuid_ou_gamertag> --max-matches 200 --resume
-
-Astuce (import minimal, plus robuste) :
-
-```bash
-python scripts/spnkr_import_db.py --out-db data\spnkr.db --player <xuid_ou_gamertag> --max-matches 50 --resume --no-assets
-```
-```
-
-#### Option Azure (recommandée)
-
-La doc officielle SPNKr propose un flow Azure AD qui évite de récupérer `343-clearance` à la main.
-
-1) Dans Azure AD, crée une App Registration, ajoute `https://localhost` en Redirect URI (type Web), puis génère un client secret.
-
-Guide anti-galère (portail Azure) :
-- Va sur `portal.azure.com`
-- Dans la barre de recherche du haut, tape **App registrations** (ou **Inscriptions d’applications**)
-- Clique **New registration**
-- **Supported account types** : choisis l’option qui inclut **personal Microsoft accounts**
-- **Redirect URI** : Type **Web**, URL `https://localhost`
-- Ensuite: **Gérer** → **Certificates & secrets** → **New client secret** → copie la **Value** (pas l’ID)
-
-Sécurité :
-- Ne commit jamais `SPNKR_AZURE_CLIENT_SECRET` ni `SPNKR_OAUTH_REFRESH_TOKEN`.
-- Utilise `.env.local` (ignoré par git) pour stocker ces valeurs.
-
-2) Mets ces valeurs dans `.env.local` :
-
-```text
-SPNKR_AZURE_CLIENT_ID=...
-SPNKR_AZURE_CLIENT_SECRET=...
+```env
+SPNKR_AZURE_CLIENT_ID=votre_client_id
+SPNKR_AZURE_CLIENT_SECRET=votre_secret
 SPNKR_AZURE_REDIRECT_URI=https://localhost
+SPNKR_OAUTH_REFRESH_TOKEN=votre_refresh_token
 ```
 
-3) Récupère une fois ton refresh token :
+3. Récupérer le refresh token :
 
 ```bash
 python scripts/spnkr_get_refresh_token.py
 ```
 
-Le script affiche une URL `login.live.com`. Ouvre-la, connecte-toi, puis à la fin copie l'URL `https://localhost/?code=...` depuis la barre d'adresse.
-Note: la page `https://localhost` affiche souvent une erreur (pas de serveur local). C'est normal : ce qui compte c'est l'URL et le paramètre `code=`.
+---
 
-Ensuite relance :
+## 🎮 Utilisation
 
-```bash
-python scripts/spnkr_get_refresh_token.py --auth-code "https://localhost/?code=..."
-```
+### Dashboard (recommandé)
 
-Le script écrit automatiquement `SPNKR_OAUTH_REFRESH_TOKEN` dans `.env.local` (tu peux désactiver avec `--no-write-env-local`).
-
-Ensuite, relance l’import normalement (le script utilisera Azure automatiquement si ces variables sont présentes).
-
-FAQ (Azure)
-- `error=unauthorized_client` / "client does not have a secret configured" : tu n'as pas créé de **Client secret** (ou tu as copié le mauvais champ). Va dans **Certificates & secrets** → **New client secret** puis copie la **Value** (pas le Secret ID) dans `SPNKR_AZURE_CLIENT_SECRET`.
-- `unauthorized_client` / "not enabled for consumers" : ton App Registration n'autorise pas les comptes Microsoft personnels. Dans **App registrations** → (ton app) → **Supported account types**, choisis une option incluant **personal Microsoft accounts** (ou modifie le manifest `signInAudience` vers `AzureADandPersonalMicrosoftAccount`).
-- `invalid_client` / "client_secret is not valid" : le secret ne correspond pas au client id (souvent 2 apps différentes) ou le secret a expiré. Regénère un secret (copie la **Value**) et regénère un nouveau `code=` (un code OAuth est à usage unique et peut expirer vite). Le helper tente un fallback via endpoint OAuth v2 (consumers) si `login.live.com` refuse le secret.
-- Si tu ne vois jamais `code=` dans l'URL de `https://localhost` : vérifie que le redirect URI configuré dans Azure est exactement `https://localhost` (type Web), et qu'il correspond à `SPNKR_AZURE_REDIRECT_URI`.
-
-Ensuite, pointez la sidebar du dashboard sur `data\spnkr.db`.
-
-### Précharger le profil (appearance + images)
-
-Si tu veux **pré-télécharger** les images du header (emblem/backdrop/nameplate) sans ouvrir Streamlit,
-tu peux utiliser :
+Le mode de lancement recommandé est le **lanceur Python unique** :
 
 ```bash
-python scripts/prefetch_profile_assets.py <Gamertag>
+# Mode interactif (questions automatiques)
+python openspartan_launcher.py
 
-# Force le refresh API + re-download des images
-python scripts/prefetch_profile_assets.py <Gamertag> --force
+# Lancer directement le dashboard
+python openspartan_launcher.py run
 
-# Mode offline: n'utilise que les caches existants
-python scripts/prefetch_profile_assets.py <Gamertag> --offline
+# Afficher l'aide complète
+python openspartan_launcher.py --help
 ```
 
-Le script alimente les caches suivants :
-- `data/cache/profile_api/` (JSON d'apparence)
-- `data/cache/player_assets/` (images)
+### ⚡ Sync incrémental (Delta)
 
-## ⚡ Performance (démarrage / rerun)
+```bash
+# Sync rapide (delta) - récupère uniquement les nouveaux matchs
+python openspartan_launcher.py refresh --player MonGamertag --delta
 
-Streamlit relance le script à chaque interaction (rerun). Pour diagnostiquer un démarrage un peu long :
+# Sync complet avec highlight events
+python openspartan_launcher.py refresh --player MonGamertag --patch-highlight-events
 
-- Active **Mode perf** dans la sidebar pour afficher les timings par section (CSS, sidebar, chargement DB, etc.).
-- Utilise **Vider caches** si la DB a changé en dehors de l'app et que tu veux forcer un rechargement.
-- Le scan des DB locales est volontairement mis sous cache (TTL court) pour éviter des accès disque trop fréquents.
+# Sync + lancer le dashboard
+python openspartan_launcher.py run+refresh --player MonGamertag --delta
+```
+
+#### Options de synchronisation
+
+| Option | Description | Défaut |
+|--------|-------------|--------|
+| `--delta` | Mode incrémental (nouveaux matchs seulement) | Non |
+| `--max-matches N` | Limite de matchs à récupérer | 50 |
+| `--match-type` | Type de matchs (`all`, `matchmaking`, `custom`) | matchmaking |
+| `--patch-highlight-events` | Extraire les highlight events | Non |
+| `--no-assets` | Ne pas télécharger les assets (plus rapide) | Non |
+
+### Rafraîchir la DB au lancement (SPNKr)
+
+```bash
+# Premier lancement (bootstrap complet)
+python openspartan_launcher.py run+refresh --player MonGamertag
+
+# Lancements suivants (delta)
+python openspartan_launcher.py run+refresh --player MonGamertag --delta
+```
+
+### Réparer les gamertags (aliases) via film roster
+
+Quand les gamertags dans `HighlightEvents` sont corrompus :
+
+```bash
+# Répare le match le plus récent
+python openspartan_launcher.py repair-aliases --db data/spnkr_gt_MonGamertag.db --latest
+
+# Répare tous les matchs
+python openspartan_launcher.py repair-aliases --db data/spnkr_gt_MonGamertag.db --all-matches
+```
+
+### CLI (génération PNG)
+
+```bash
+python openspartan_graph.py --db "data/spnkr_gt_MonGamertag.db" --last 80 --out "out/stats.png"
+```
+
+---
+
+## ⚙️ Configuration
+
+### Filtres (sidebar)
+
+| Option | Description | Défaut |
+|--------|-------------|--------|
+| **Inclure Firefight** | Afficher les parties Firefight (PvE) | ❌ |
+| **Restreindre playlists** | Limiter à Quick Play, Ranked, BTB | ❌ |
+
+### Playlists supportées
+
+Toutes les playlists sont maintenant affichées par défaut, incluant :
+- Quick Play, Ranked Arena, Ranked Slayer
+- **Big Team Battle** (toutes variantes)
+- Firefight, Super Fiesta, Team Snipers
+- Modes communautaires, événements spéciaux
+
+### Variables d'environnement
+
+| Variable | Description |
+|----------|-------------|
+| `OPENSPARTAN_DB_PATH` | Chemin vers la base de données |
+| `OPENSPARTAN_DB_READONLY` | Mode lecture seule (Docker) |
+| `SPNKR_PLAYER` | Joueur par défaut pour le refresh |
+
+---
+
+## 🏗️ Architecture
+
+```
+openspartan-graph/
+├── src/                        # Code source modulaire
+│   ├── config.py              # Configuration centralisée
+│   ├── models.py              # Modèles de données (dataclasses)
+│   ├── db/                    # Accès base de données
+│   │   ├── connection.py      # Gestion connexions SQLite
+│   │   ├── loaders.py         # Chargement des données + SyncMeta
+│   │   ├── parsers.py         # Parsing JSON des matchs
+│   │   ├── profiles.py        # Gestion profils joueurs
+│   │   └── queries.py         # Requêtes SQL
+│   ├── analysis/              # Fonctions d'analyse
+│   │   ├── filters.py         # Filtres playlists (Big Team Battle inclus)
+│   │   ├── killer_victim.py   # Analyse confrontations
+│   │   ├── maps.py            # Stats par carte
+│   │   ├── sessions.py        # Détection sessions
+│   │   └── stats.py           # Calculs statistiques
+│   ├── ui/                    # Helpers interface utilisateur
+│   │   ├── aliases.py         # Gestion des alias joueurs
+│   │   ├── translations.py    # Traductions FR (313+ modes)
+│   │   ├── medals.py          # Affichage médailles
+│   │   └── settings.py        # Paramètres utilisateur
+│   └── visualization/         # Génération des graphiques
+│       ├── distributions.py   # Histogrammes, box plots
+│       ├── maps.py            # Heatmaps cartes
+│       ├── theme.py           # Thème Halo
+│       └── timeseries.py      # Graphiques temporels
+├── scripts/                    # Scripts utilitaires
+│   ├── spnkr_import_db.py     # Import SPNKr avec delta
+│   ├── spnkr_get_refresh_token.py  # Auth Azure
+│   └── prefetch_profile_assets.py  # Préchargement assets
+├── static/                     # Fichiers statiques
+│   ├── styles.css             # Thème CSS Halo Waypoint
+│   └── medals/                # Icônes médailles
+├── tests/                      # Suite de tests pytest
+│   ├── test_delta_sync.py     # Tests sync delta
+│   ├── test_analysis.py       # Tests analyse
+│   └── test_models.py         # Tests modèles
+├── data/                       # Données locales (gitignored)
+│   ├── cache/                 # Cache API et assets
+│   └── spnkr_gt_*.db          # Bases de données joueurs
+├── streamlit_app.py           # Point d'entrée dashboard
+├── openspartan_launcher.py    # Lanceur CLI unifié
+└── pyproject.toml             # Configuration projet
+```
+
+### Tables de base de données
+
+| Table | Description |
+|-------|-------------|
+| `MatchStats` | Statistiques des matchs (JSON compressé) |
+| `HighlightEvents` | Événements marquants extraits |
+| `XuidAliases` | Mapping XUID → Gamertag |
+| `SyncMeta` | Métadonnées de synchronisation |
+| `Playlists` | Informations playlists |
+| `PlaylistMapModePairs` | Modes de jeu |
+| `Maps`, `GameVariants` | Assets de jeu |
+
+---
 
 ## 🧪 Tests
 
@@ -291,86 +314,93 @@ pytest
 pytest --cov=src --cov-report=html
 
 # Tests spécifiques
-pytest tests/test_models.py -v
+pytest tests/test_delta_sync.py -v
+pytest tests/test_analysis.py -v
+
+# Tests rapides (sans couverture)
+pytest -x --tb=short
 ```
+
+### Couverture actuelle
+
+| Module | Couverture |
+|--------|------------|
+| `src/ui/translations.py` | 100% |
+| `src/analysis/filters.py` | 95% |
+| `src/db/loaders.py` | 85% |
+
+---
 
 ## 🐳 Docker
 
-Le container ne peut pas « découvrir » automatiquement la DB Windows (pas de `LOCALAPPDATA`).
-Monte donc ton fichier `.db` en volume et fournis son chemin via `OPENSPARTAN_DB`.
-
-Astuce : tu peux monter la DB en lecture seule (`:ro`). L'app détecte ça et bascule en SQLite read-only
-automatiquement, ou via `OPENSPARTAN_DB_READONLY=1`.
-
 ### Docker Compose (recommandé)
 
-1) Place ta DB dans `./data/openspartan.db` (ou adapte le chemin)
-
-2) (Optionnel) Pour persister profils/alias Streamlit entre redémarrages, crée un dossier `./appdata`.
-
-3) Lance :
-
 ```bash
+# Démarrer
 docker compose up --build
+
+# Accéder au dashboard
+open http://localhost:8501
 ```
 
-Puis ouvre `http://localhost:8501`.
+### Configuration Docker
 
-### Docker (sans compose)
-
-```bash
-docker build -t openspartan-graph .
-
-docker run --rm -p 8501:8501 \
-	-e OPENSPARTAN_DB=/data/openspartan.db \
-	-e OPENSPARTAN_DB_READONLY=1 \
-	-e OPENSPARTAN_PROFILES_PATH=/appdata/db_profiles.json \
-	-e OPENSPARTAN_ALIASES_PATH=/appdata/xuid_aliases.json \
-	-v "%CD%\data:/data:ro" \
-	-v "%CD%\appdata:/appdata" \
-	openspartan-graph
+```yaml
+# docker-compose.yml
+services:
+  openspartan:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/data:ro
+      - ./appdata:/appdata
+    environment:
+      - OPENSPARTAN_DB=/data/spnkr_gt_MonGamertag.db
+      - OPENSPARTAN_DB_READONLY=1
 ```
 
-## 📁 Structure du projet
+---
 
-```
-openspartan-graph/
-├── src/                    # Code source modulaire
-│   ├── config.py          # Configuration centralisée
-│   ├── models.py          # Modèles de données (dataclasses)
-│   ├── db/                # Accès base de données
-│   ├── analysis/          # Fonctions d'analyse
-│   ├── visualization/     # Génération des graphiques
-│   └── ui/                # Helpers interface utilisateur
-├── static/
-│   └── styles.css         # Thème CSS Halo Waypoint
-├── tests/                  # Suite de tests pytest
-├── streamlit_app.py       # Point d'entrée dashboard
-├── openspartan_graph.py   # Point d'entrée CLI
-├── run_dashboard.py       # Launcher avec port auto
-├── run_dashboard.bat      # Script Windows
-└── pyproject.toml         # Configuration projet
-```
+## 📝 Changelog
 
-## ⚙️ Configuration
+### v2.0.0 (2026-01-22)
 
-### Filtres par défaut
+#### ✨ Nouvelles fonctionnalités
+- **Delta Sync** : Mode `--delta` pour synchronisation incrémentale
+- **Tables SyncMeta/XuidAliases** : Suivi des syncs et mapping gamertags
+- **Highlight Events par défaut** : Extraction automatique à l'import
+- **Indicateur sync sidebar** : Affichage dernière sync + boutons Sync/Full
+- **Traductions complètes** : 313 modes de jeu traduits en français
 
-- **Playlists** : Quick Play, Ranked Slayer, Ranked Arena
-- **Firefight** : Exclu par défaut (configurable)
-- **Sessions** : Détection avec seuil de 30 minutes d'inactivité
+#### 🔧 Améliorations UX
+- Filtres déplacés dans la sidebar (plus accessible)
+- Big Team Battle ajouté aux playlists autorisées
+- `restrict_playlists=False` par défaut (tous les matchs affichés)
 
-Ces options sont modifiables dans la sidebar du dashboard.
+#### 🐛 Corrections
+- Fix affichage 281/955 matchs (filtres trop restrictifs)
+- Fix gamertags corrompus via repair-aliases
 
-## 📝 Notes
-
-- Certaines stats (temps joué, précision) peuvent être absentes sur d'anciens matchs
-- Les métriques "par minute" ignorent automatiquement les matchs sans durée valide
-- Le système d'alias permet de renommer les joueurs (stocké dans `aliases.json`)
+---
 
 ## 🤝 Contribution
 
-Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou une PR.
+Les contributions sont les bienvenues !
+
+1. Fork le projet
+2. Créer une branche (`git checkout -b feature/ma-feature`)
+3. Commit (`git commit -m 'feat: ajout ma feature'`)
+4. Push (`git push origin feature/ma-feature`)
+5. Ouvrir une Pull Request
+
+### Conventions
+
+- **Commits** : Format [Conventional Commits](https://www.conventionalcommits.org/)
+- **Code** : Black + isort + ruff
+- **Tests** : pytest avec couverture > 80%
+
+---
 
 ## 📄 Licence
 

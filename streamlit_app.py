@@ -2812,7 +2812,7 @@ def main() -> None:
             help="Inclut les parties Firefight (mode PvE) dans les statistiques.",
         )
         st.toggle(
-            "Restreindre aux playlists standard",
+            "Restreindre aux playlists classiques",
             key="restrict_playlists",
             help="Limite aux playlists Quick Play, Ranked Arena/Slayer, Big Team Battle.",
         )

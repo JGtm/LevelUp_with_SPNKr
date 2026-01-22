@@ -4,33 +4,91 @@ Ici on centralise les mappings de libellés (playlist, mode/pair) afin de:
 - réduire la liste de valeurs distinctes dans l'UI
 - afficher des labels en français quand on les connaît
 
-Ce fichier n'a pas vocation à être exhaustif; on garde des fallbacks sûrs.
+Ce fichier est généré automatiquement depuis Playlist_modes_translations.json
+puis peut être ajusté manuellement si besoin.
 """
 
 from __future__ import annotations
 
 
 PLAYLIST_FR: dict[str, str] = {
+    "Big Team Battle": "Grande bataille en équipe",
+    "Big Team Battle: Refresh": "Grande bataille en équipe : Refresh",
+    "Big Team Social": "Grande bataille sociale",
+    "Firefight": "Firefight",
+    "Firefight: Heroic King of the Hill": "Firefight : Roi de la colline héroïque",
+    "Firefight: Legendary King of the Hill": "Firefight : Roi de la colline légendaire",
     "Quick Play": "Partie rapide",
     "Ranked Arena": "Arène classée",
     "Ranked Slayer": "Assassin classé",
+    "Rumble Pit": "Mêlée générale",
+    "SURVIVE THE UNDEAD": "Survivre aux morts-vivants",
+    "Squad Battle": "Combat d'escouade",
+    "Super Fiesta": "Super fiesta",
+    "Team Snipers": "Snipers en équipe",
 }
 
 
-# NOTE: ce mapping cible surtout MatchStats.PlaylistMapModePairs (pair_name)
+# NOTE: ce mapping cible MatchStats.PlaylistMapModePairs (pair_name)
 # Exemple: "Arena:CTF on Aquarius" -> "Arène : Capture du drapeau"
 PAIR_FR: dict[str, str] = {
-    # Variantes sans carte (ex: payloads partiels / UI)
+    # -------------------------------------------------------------------------
+    # Variantes sans carte (fallback génériques)
+    # -------------------------------------------------------------------------
     "Arena:CTF": "Arène : Capture du drapeau",
     "Arena:King of the Hill": "Arène : Roi de la colline",
     "Arena:Neutral Flag CTF": "Arène : Drapeau neutre",
     "Arena:Oddball": "Arène : Oddball",
+    "Arena:Slayer": "Arène : Assassin",
     "Arena:Team Slayer": "Arène : Assassin en équipe",
+    "Arena:Strongholds": "Arène : Bases",
+    "Arena:Attrition": "Arène : Attrition",
+    "Arena:One Flag CTF": "Arène : Un seul drapeau",
+    "Arena:Escalation Slayer": "Arène : Escalade",
+    "Arena:FFA Slayer": "Arène : Assassin FFA",
+    "Arena:Shotty Snipes Slayer": "Arène : Shotty Snipers",
+    "Arena:Team Snipers": "Arène : Snipers en équipe",
+    "BTB:CTF": "BTB : Capture du drapeau",
+    "BTB:Slayer": "BTB : Assassin",
+    "BTB:Total Control": "BTB : Contrôle total",
+    "BTB:Stockpile": "BTB : Stockage",
+    "BTB:Fiesta CTF": "BTB : Fiesta CDD",
+    "BTB:Fiesta Slayer": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Total Control": "BTB : Fiesta Contrôle total",
+    "BTB:One Flag CTF": "BTB : Un seul drapeau",
+    "BTB:Extraction": "BTB : Extraction",
+    "BTB:Escalation Slayer": "BTB : Escalade",
+    "BTB:Sentry Defense": "BTB : Défense sentinelle",
+    "BTB:Team Snipers": "BTB : Snipers en équipe",
+    "BTB Heavies:CTF": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:Slayer": "BTB Heavies : Assassin",
+    "BTB Heavies:Total Control": "BTB Heavies : Contrôle total",
+    "Ranked:CTF": "Classé : Capture du drapeau",
+    "Ranked:Slayer": "Classé : Assassin",
+    "Ranked:Oddball": "Classé : Oddball",
+    "Ranked:Strongholds": "Classé : Bases",
+    "Ranked:King of the Hill": "Classé : Roi de la colline",
+    "Tactical:Slayer": "Tactique : Assassin",
+    "Community:Slayer": "Communauté : Assassin",
+    "Community:Team Slayer": "Communauté : Assassin en équipe",
+    "Event:Escalation Slayer": "Événement : Escalade",
+    "Super Fiesta:Slayer": "Super fiesta : Assassin",
+    "Fiesta:FFA Slayer": "Fiesta : Assassin FFA",
+    "Firefight:Heroic King of the Hill": "Firefight : Roi de la colline héroïque",
+    "Firefight:Legendary King of the Hill": "Firefight : Roi de la colline légendaire",
+    "Gruntpocalypse:Heroic KOTH": "Gruntpocalypse : Roi de la colline héroïque",
+    "Husky Raid:CTF": "Husky Raid : CDD",
+    "Super Husky Raid:CTF": "Super Husky Raid : CDD",
+    "Assault:Neutral Bomb": "Arène : Bombe neutre",
+    "Assault:Neutral Bomb Squad": "Arène : Escouade bombe neutre",
 
-    "Arena:CTF on Absolution": "Arène : Capture du drapeau",
+    # -------------------------------------------------------------------------
+    # Arena
+    # -------------------------------------------------------------------------
+    "Arena:Attrition on Catalyst": "Arène : Attrition",
+    "Arena:Attrition on Empyrean": "Arène : Attrition",
     "Arena:CTF on Aquarius": "Arène : Capture du drapeau",
-    "Arena:CTF on Banished Narrows": "Arène : Capture du drapeau",
-    "Arena:CTF on Catalyst": "Arène : Capture du drapeau",
+    "Arena:CTF on Bazaar": "Arène : Capture du drapeau",
     "Arena:CTF on Chasm": "Arène : Capture du drapeau",
     "Arena:CTF on Cliffhanger": "Arène : Capture du drapeau",
     "Arena:CTF on Cliffside": "Arène : Capture du drapeau",
@@ -47,16 +105,27 @@ PAIR_FR: dict[str, str] = {
     "Arena:CTF on Isolation": "Arène : Capture du drapeau",
     "Arena:CTF on Nemesis": "Arène : Capture du drapeau",
     "Arena:CTF on Origin": "Arène : Capture du drapeau",
+    "Arena:CTF on Shiro": "Arène : Capture du drapeau",
     "Arena:CTF on Shirov": "Arène : Capture du drapeau",
     "Arena:CTF on Snowbound": "Arène : Capture du drapeau",
     "Arena:CTF on Starboard": "Arène : Capture du drapeau",
     "Arena:CTF on Takamanohara": "Arène : Capture du drapeau",
-
+    "Arena:CTF on Absolution": "Arène : Capture du drapeau",
+    "Arena:CTF on Banished Narrows": "Arène : Capture du drapeau",
+    "Arena:CTF on Catalyst": "Arène : Capture du drapeau",
+    "Arena:Escalation Slayer on Argyle": "Arène : Escalade",
+    "Arena:Escalation Slayer on Chasm": "Arène : Escalade",
+    "Arena:Escalation Slayer on Cliffhanger": "Arène : Escalade",
+    "Arena:Escalation Slayer on Detachment": "Arène : Escalade",
+    "Arena:Escalation Slayer on Empyrean": "Arène : Escalade",
+    "Arena:FFA Slayer on Forest - Forge": "Arène : Assassin FFA",
     "Arena:King of the Hill on Absolution": "Arène : Roi de la colline",
     "Arena:King of the Hill on Banished Narrows": "Arène : Roi de la colline",
     "Arena:King of the Hill on Behemoth": "Arène : Roi de la colline",
     "Arena:King of the Hill on Catalyst": "Arène : Roi de la colline",
     "Arena:King of the Hill on Chasm": "Arène : Roi de la colline",
+    "Arena:King of the Hill on Cliffhanger": "Arène : Roi de la colline",
+    "Arena:King of the Hill on Curfew": "Arène : Roi de la colline",
     "Arena:King of the Hill on Ecotone": "Arène : Roi de la colline",
     "Arena:King of the Hill on Elevation": "Arène : Roi de la colline",
     "Arena:King of the Hill on Empyrean": "Arène : Roi de la colline",
@@ -70,7 +139,6 @@ PAIR_FR: dict[str, str] = {
     "Arena:King of the Hill on Shogun": "Arène : Roi de la colline",
     "Arena:King of the Hill on Snowbound": "Arène : Roi de la colline",
     "Arena:King of the Hill on Vagabond": "Arène : Roi de la colline",
-
     "Arena:Neutral Flag CTF on Aquarius": "Arène : Drapeau neutre",
     "Arena:Neutral Flag CTF on Bazaar": "Arène : Drapeau neutre",
     "Arena:Neutral Flag CTF on Behemoth": "Arène : Drapeau neutre",
@@ -78,13 +146,25 @@ PAIR_FR: dict[str, str] = {
     "Arena:Neutral Flag CTF on Forest": "Arène : Drapeau neutre",
     "Arena:Neutral Flag CTF on Fortress": "Arène : Drapeau neutre",
     "Arena:Neutral Flag CTF on Isolation": "Arène : Drapeau neutre",
+    "Arena:Neutral Flag CTF on Recharge": "Arène : Drapeau neutre",
     "Arena:Neutral Flag CTF on The Pit": "Arène : Drapeau neutre",
-
+    "Arena:Oddball on Empyrean": "Arène : Oddball",
+    "Arena:Oddball on Live Fire": "Arène : Oddball",
+    "Arena:Oddball on Recharge": "Arène : Oddball",
+    "Arena:Oddball on Starboard": "Arène : Oddball",
+    "Arena:Oddball on Streets": "Arène : Oddball",
+    "Arena:One Flag CTF on Cliffhanger": "Arène : Un seul drapeau",
+    "Arena:One Flag CTF on Salvation": "Arène : Un seul drapeau",
+    "Arena:Shotty Snipes Slayer on Detachment": "Arène : Shotty Snipers",
+    "Arena:Slayer on Aquarius": "Arène : Assassin",
     "Arena:Slayer on Aquarius - Forge": "Arène : Assassin",
     "Arena:Slayer on Argyle": "Arène : Assassin",
     "Arena:Slayer on Bazaar - Forge": "Arène : Assassin",
+    "Arena:Slayer on Behemoth": "Arène : Assassin",
     "Arena:Slayer on Behemoth - Forge": "Arène : Assassin",
+    "Arena:Slayer on Chasm": "Arène : Assassin",
     "Arena:Slayer on Chasm - Forge": "Arène : Assassin",
+    "Arena:Slayer on Cliffhanger": "Arène : Assassin",
     "Arena:Slayer on Cliffhanger - Forge": "Arène : Assassin",
     "Arena:Slayer on Detachment": "Arène : Assassin",
     "Arena:Slayer on Dredge": "Arène : Assassin",
@@ -93,30 +173,35 @@ PAIR_FR: dict[str, str] = {
     "Arena:Slayer on Forbidden - Forge": "Arène : Assassin",
     "Arena:Slayer on Forest - Forge": "Arène : Assassin",
     "Arena:Slayer on Illusion - Forge": "Arène : Assassin",
+    "Arena:Slayer on Live Fire": "Arène : Assassin",
     "Arena:Slayer on Live Fire - Forge": "Arène : Assassin",
     "Arena:Slayer on Nemesis": "Arène : Assassin",
     "Arena:Slayer on Origin": "Arène : Assassin",
     "Arena:Slayer on Prism - Forge": "Arène : Assassin",
+    "Arena:Slayer on Recharge": "Arène : Assassin",
     "Arena:Slayer on Recharge - Forge": "Arène : Assassin",
     "Arena:Slayer on Solitude": "Arène : Assassin",
     "Arena:Slayer on Streets - Forge": "Arène : Assassin",
-
+    "Arena:Strongholds on Chasm": "Arène : Bases",
+    "Arena:Strongholds on Cliffhanger": "Arène : Bases",
     "Arena:Strongholds on Cliffside": "Arène : Bases",
     "Arena:Strongholds on Curfew": "Arène : Bases",
+    "Arena:Strongholds on Detachment": "Arène : Bases",
     "Arena:Strongholds on Domicile": "Arène : Bases",
     "Arena:Strongholds on Forest": "Arène : Bases",
     "Arena:Strongholds on Fortress": "Arène : Bases",
     "Arena:Strongholds on Houseki": "Arène : Bases",
     "Arena:Strongholds on Illusion": "Arène : Bases",
+    "Arena:Strongholds on Live Fire": "Arène : Bases",
     "Arena:Strongholds on Opulence": "Arène : Bases",
     "Arena:Strongholds on Origin": "Arène : Bases",
     "Arena:Strongholds on Perilous": "Arène : Bases",
+    "Arena:Strongholds on Prism": "Arène : Bases",
     "Arena:Strongholds on Recharge": "Arène : Bases",
     "Arena:Strongholds on Snowbound": "Arène : Bases",
     "Arena:Strongholds on Solution": "Arène : Bases",
     "Arena:Strongholds on Streets": "Arène : Bases",
     "Arena:Strongholds on Vagabond": "Arène : Bases",
-
     "Arena:Team Slayer on Aquarius - Forge": "Arène : Assassin en équipe",
     "Arena:Team Slayer on Argyle": "Arène : Assassin en équipe",
     "Arena:Team Slayer on Behemoth - Forge": "Arène : Assassin en équipe",
@@ -135,107 +220,277 @@ PAIR_FR: dict[str, str] = {
     "Arena:Team Slayer on Recharge - Forge": "Arène : Assassin en équipe",
     "Arena:Team Slayer on Solitude": "Arène : Assassin en équipe",
     "Arena:Team Slayer on Streets - Forge": "Arène : Assassin en équipe",
-
+    "Arena:Team Snipers on Argyle": "Arène : Snipers en équipe",
+    "Arena:Team Snipers on Bazaar": "Arène : Snipers en équipe",
+    "Arena:Team Snipers on Catalyst": "Arène : Snipers en équipe",
+    "Arena:Team Snipers on Chasm": "Arène : Snipers en équipe",
+    "Arena:Team Snipers on Empyrean": "Arène : Snipers en équipe",
     "Arena:Team Snipers on High Ground": "Arène : Snipers en équipe",
     "Arena:Team Snipers on Isolation": "Arène : Snipers en équipe",
     "Arena:Team Snipers on Takamanohara": "Arène : Snipers en équipe",
-
     "Arena:VIP on Catalyst": "Arène : VIP",
 
+    # -------------------------------------------------------------------------
+    # Assault
+    # -------------------------------------------------------------------------
+    "Assault:Neutral Bomb Squad on Rat's Nest": "Arène : Escouade bombe neutre",
     "Assault:Neutral Bomb on Absolution": "Arène : Bombe neutre",
     "Assault:Neutral Bomb on Origin": "Arène : Bombe neutre",
     "Assault:One Bomb on Curfew": "Arène : Bombe neutre",
 
+    # -------------------------------------------------------------------------
+    # BTB (Big Team Battle)
+    # -------------------------------------------------------------------------
+    "BTB:CTF on Breaker": "BTB : Capture du drapeau",
+    "BTB:CTF on Command": "BTB : Capture du drapeau",
+    "BTB:CTF on Credence": "BTB : Capture du drapeau",
+    "BTB:CTF on Deadlock": "BTB : Capture du drapeau",
+    "BTB:CTF on Flood Gulch": "BTB : Capture du drapeau",
+    "BTB:CTF on Fortitude": "BTB : Capture du drapeau",
+    "BTB:CTF on Fragmentation": "BTB : Capture du drapeau",
+    "BTB:CTF on Highpower": "BTB : Capture du drapeau",
+    "BTB:CTF on Insolence": "BTB : Capture du drapeau",
+    "BTB:CTF on Oasis": "BTB : Capture du drapeau",
+    "BTB:CTF on Obituary": "BTB : Capture du drapeau",
+    "BTB:CTF on Scarr": "BTB : Capture du drapeau",
+    "BTB:CTF on Threshold": "BTB : Capture du drapeau",
+    "BTB:Escalation Slayer on Insolence": "BTB : Escalade",
+    "BTB:Extraction on FG": "BTB : Extraction",
+    "BTB:Extraction on Refuge": "BTB : Extraction",
+    "BTB:Fiesta CTF on Breaker": "BTB : Fiesta CDD",
+    "BTB:Fiesta CTF on Command": "BTB : Fiesta CDD",
+    "BTB:Fiesta CTF on Flood Gulch": "BTB : Fiesta CDD",
+    "BTB:Fiesta CTF on Fragmentation": "BTB : Fiesta CDD",
+    "BTB:Fiesta CTF on Highpower": "BTB : Fiesta CDD",
+    "BTB:Fiesta CTF on Obituary": "BTB : Fiesta CDD",
+    "BTB:Fiesta CTF on Threshold": "BTB : Fiesta CDD",
+    "BTB:Fiesta Slayer on Breaker": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Command": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Dawnbreaker": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Deadlock": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Flood Gulch": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Fortitude": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Fragmentation": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Insolence": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Obituary": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Refuge": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Scarr": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Threshold": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Slayer on Thunderhead": "BTB : Fiesta Assassin",
+    "BTB:Fiesta Total Control on Command": "BTB : Fiesta Contrôle total",
+    "BTB:Fiesta Total Control on Fortitude": "BTB : Fiesta Contrôle total",
+    "BTB:Fiesta Total Control on Refuge": "BTB : Fiesta Contrôle total",
+    "BTB:One Flag CTF on Refuge": "BTB : Un seul drapeau",
+    "BTB:Sentry Defense on Highpower Sentry Defense": "BTB : Défense sentinelle",
+    "BTB:Sentry Defense on Oasis Sentry Defense": "BTB : Défense sentinelle",
+    "BTB:Slayer on Breaker": "BTB : Assassin",
+    "BTB:Slayer on Command": "BTB : Assassin",
+    "BTB:Slayer on Credence": "BTB : Assassin",
+    "BTB:Slayer on Deadlock": "BTB : Assassin",
+    "BTB:Slayer on Fragmentation": "BTB : Assassin",
+    "BTB:Slayer on Highpower": "BTB : Assassin",
+    "BTB:Slayer on Oasis": "BTB : Assassin",
+    "BTB:Slayer on Obituary": "BTB : Assassin",
+    "BTB:Slayer on Refuge": "BTB : Assassin",
+    "BTB:Slayer on Scarr": "BTB : Assassin",
+    "BTB:Slayer on Threshold": "BTB : Assassin",
+    "BTB:Slayer on Thunderhead": "BTB : Assassin",
+    "BTB:Stockpile on Deadlock": "BTB : Stockage",
+    "BTB:Stockpile on Fragmentation": "BTB : Stockage",
+    "BTB:Stockpile on Highpower": "BTB : Stockage",
+    "BTB:Team Snipers on Obituary": "BTB : Snipers en équipe",
+    "BTB:Team Snipers on Refuge": "BTB : Snipers en équipe",
+    "BTB:Total Control on Breaker": "BTB : Contrôle total",
+    "BTB:Total Control on Command": "BTB : Contrôle total",
+    "BTB:Total Control on Deadlock": "BTB : Contrôle total",
+    "BTB:Total Control on Fragmentation": "BTB : Contrôle total",
+    "BTB:Total Control on Highpower": "BTB : Contrôle total",
+    "BTB:Total Control on Oasis": "BTB : Contrôle total",
+    "BTB:Total Control on Obituary": "BTB : Contrôle total",
+    "BTB:Total Control on Scarr": "BTB : Contrôle total",
+    "BTB:Total Control on Thunderhead": "BTB : Contrôle total",
+
+    # -------------------------------------------------------------------------
+    # BTB Heavies
+    # -------------------------------------------------------------------------
+    "BTB Heavies:CTF on Breaker Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:CTF on Fortitude Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:CTF on Fragmentation Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:CTF on Highpower Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:CTF on Insolence Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:CTF on Oasis Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:CTF on Obituary Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:CTF on Thunderhead Heavies": "BTB Heavies : Capture du drapeau",
+    "BTB Heavies:Slayer on Breaker Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Slayer on Deadlock Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Slayer on Fortitude Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Slayer on Fragmentation Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Slayer on Oasis Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Slayer on Obituary Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Slayer on Refuge Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Slayer on Thunderhead Heavies": "BTB Heavies : Assassin",
+    "BTB Heavies:Total Control on Breaker Heavies": "BTB Heavies : Contrôle total",
+    "BTB Heavies:Total Control on Fragmentation Heavies": "BTB Heavies : Contrôle total",
+    "BTB Heavies:Total Control on Highpower Heavies": "BTB Heavies : Contrôle total",
+    "BTB Heavies:Total Control on Oasis Heavies": "BTB Heavies : Contrôle total",
+
+    # -------------------------------------------------------------------------
+    # Community
+    # -------------------------------------------------------------------------
     "Community:Fiesta Slayer on High Ground": "Fiesta",
     "Community:Fiesta Slayer on Snowbound": "Fiesta",
+    "Community:Shotty Snipe Slayer FFA on Dynasty": "Communauté : Shotty Snipers FFA",
+    "Community:Slayer on Absolution": "Communauté : Assassin",
+    "Community:Slayer on Cliffside": "Communauté : Assassin",
+    "Community:Slayer on Critical Dewpoint": "Communauté : Assassin",
+    "Community:Slayer on Curfew": "Communauté : Assassin",
+    "Community:Slayer on Domicile": "Communauté : Assassin",
+    "Community:Slayer on Dynasty": "Communauté : Assassin",
+    "Community:Slayer on Fortress": "Communauté : Assassin",
+    "Community:Slayer on Goliath": "Communauté : Assassin",
+    "Community:Slayer on Isolation": "Communauté : Assassin",
+    "Community:Slayer on Kaiketsu": "Communauté : Assassin",
+    "Community:Slayer on Salvation": "Communauté : Assassin",
+    "Community:Slayer on Shiro": "Communauté : Assassin",
+    "Community:Slayer on Smallhalla": "Communauté : Assassin",
+    "Community:Slayer on Snowbound": "Communauté : Assassin",
+    "Community:Slayer on Sylvanus": "Communauté : Assassin",
+    "Community:Slayer on Takamanohara": "Communauté : Assassin",
+    "Community:Slayer on The Pit": "Communauté : Assassin",
+    "Community:Slayer on Vagabond": "Communauté : Assassin",
+    "Community:Team Slayer on Absolution": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Banished Narrows": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Cliffside": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Curfew": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Domicile": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Dynasty": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Fortress": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Goliath": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on High Ground": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Houseki": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Kaiketsu": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Kiken'na": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Opulence": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Perilous": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Shiro": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Shogun": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Snowbound": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Solution": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Starboard": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Sylvanus": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Takamanohara": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on The Pit": "Communauté : Assassin en équipe",
+    "Community:Team Slayer on Vagabond": "Communauté : Assassin en équipe",
+
+    # -------------------------------------------------------------------------
+    # Event
+    # -------------------------------------------------------------------------
+    "Event:Escalation Slayer on Chasm": "Événement : Escalade",
+    "Event:Escalation Slayer on Cliffhanger": "Événement : Escalade",
+    "Event:Escalation Slayer on Streets": "Événement : Escalade",
+
+    # -------------------------------------------------------------------------
+    # Fiesta
+    # -------------------------------------------------------------------------
+    "Fiesta:FFA Slayer on Forest": "Fiesta : Assassin FFA",
     "Fiesta:Slayer on Behemoth - Forge": "Fiesta",
     "Fiesta:Slayer on Catalyst - Forge": "Fiesta",
 
-    "Community:Slayer on Absolution": "Assassin",
-    "Community:Slayer on Cliffside": "Assassin",
-    "Community:Slayer on Critical Dewpoint": "Assassin",
-    "Community:Slayer on Curfew": "Assassin",
-    "Community:Slayer on Domicile": "Assassin",
-    "Community:Slayer on Dynasty": "Assassin",
-    "Community:Slayer on Fortress": "Assassin",
-    "Community:Slayer on Goliath": "Assassin",
-    "Community:Slayer on Isolation": "Assassin",
-    "Community:Slayer on Kaiketsu": "Assassin",
-    "Community:Slayer on Salvation": "Assassin",
-    "Community:Slayer on Shiro": "Assassin",
-    "Community:Slayer on Smallhalla": "Assassin",
-    "Community:Slayer on Snowbound": "Assassin",
-    "Community:Slayer on Sylvanus": "Assassin",
-    "Community:Slayer on Takamanohara": "Assassin",
-    "Community:Slayer on The Pit": "Assassin",
-    "Community:Slayer on Vagabond": "Assassin",
+    # -------------------------------------------------------------------------
+    # Firefight / Gruntpocalypse
+    # -------------------------------------------------------------------------
+    "Firefight:Heroic King of the Hill on Oasis": "Firefight : Roi de la colline héroïque",
+    "Firefight:Legendary King of the Hill on Oasis": "Firefight : Roi de la colline légendaire",
+    "Gruntpocalypse:Heroic KOTH on Vallaheim Firefight": "Gruntpocalypse : Roi de la colline héroïque",
+    "ght:Heroic King of the Hill on Vallaheim Firefight": "Firefight : Roi de la colline héroïque",
 
-    "Community:Team Slayer on Absolution": "Assassin en équipe",
-    "Community:Team Slayer on Banished Narrows": "Assassin en équipe",
-    "Community:Team Slayer on Cliffside": "Assassin en équipe",
-    "Community:Team Slayer on Curfew": "Assassin en équipe",
-    "Community:Team Slayer on Domicile": "Assassin en équipe",
-    "Community:Team Slayer on Dynasty": "Assassin en équipe",
-    "Community:Team Slayer on Fortress": "Assassin en équipe",
-    "Community:Team Slayer on Goliath": "Assassin en équipe",
-    "Community:Team Slayer on High Ground": "Assassin en équipe",
-    "Community:Team Slayer on Houseki": "Assassin en équipe",
-    "Community:Team Slayer on Kaiketsu": "Assassin en équipe",
-    "Community:Team Slayer on Kiken'na": "Assassin en équipe",
-    "Community:Team Slayer on Opulence": "Assassin en équipe",
-    "Community:Team Slayer on Perilous": "Assassin en équipe",
-    "Community:Team Slayer on Shiro": "Assassin en équipe",
-    "Community:Team Slayer on Shogun": "Assassin en équipe",
-    "Community:Team Slayer on Snowbound": "Assassin en équipe",
-    "Community:Team Slayer on Solution": "Assassin en équipe",
-    "Community:Team Slayer on Sylvanus": "Assassin en équipe",
-    "Community:Team Slayer on Takamanohara": "Assassin en équipe",
-    "Community:Team Slayer on The Pit": "Assassin en équipe",
-    "Community:Team Slayer on Vagabond": "Assassin en équipe",
-
+    # -------------------------------------------------------------------------
+    # Husky Raid / Super Husky Raid
+    # -------------------------------------------------------------------------
     "Husky Raid:Assault on Urban Raid": "Husky Raid",
-    "Husky Raid:CTF on Corpo": "Husky Raid CDD",
-    "Husky Raid:CTF on Pharaoh": "Husky Raid CDD",
+    "Husky Raid:CTF on Corpo": "Husky Raid : CDD",
+    "Husky Raid:CTF on Merchant's Square": "Husky Raid : CDD",
+    "Husky Raid:CTF on Pharaoh": "Husky Raid : CDD",
+    "Super Husky Raid:CTF on Corpo": "Super Husky Raid : CDD",
+    "Super Husky Raid:CTF on Disciple": "Super Husky Raid : CDD",
+    "Super Husky Raid:CTF on Merchant's Square": "Super Husky Raid : CDD",
+    "Super Husky Raid:CTF on Outlook": "Super Husky Raid : CDD",
+    "Super Husky Raid:CTF on Pharaoh": "Super Husky Raid : CDD",
+    "Super Husky Raid:CTF on Ronin": "Super Husky Raid : CDD",
+    "Super Husky Raid:CTF on Warehouse": "Super Husky Raid : CDD",
 
-    "Ranked:Oddball on Lattice - Ranked": "Oddball classé",
-    "Ranked:Oddball on Recharge": "Oddball classé",
-    "Ranked:Slayer on Origin - Ranked": "Assassin classé",
-    "Ranked:Slayer on Solitude - Ranked": "Assassin classé",
-    "Ranked:Slayer on Streets - Ranked": "Assassin classé",
+    # -------------------------------------------------------------------------
+    # Ranked
+    # -------------------------------------------------------------------------
+    "Ranked:CTF 3 Captures on Argyle": "Classé : CDD 3 captures",
+    "Ranked:CTF on Aquarius": "Classé : Capture du drapeau",
+    "Ranked:CTF on Empyrean": "Classé : Capture du drapeau",
+    "Ranked:King of the Hill on Live Fire": "Classé : Roi de la colline",
+    "Ranked:King of the Hill on Recharge": "Classé : Roi de la colline",
+    "Ranked:King of the Hill on Solitude": "Classé : Roi de la colline",
+    "Ranked:Oddball on Lattice - Ranked": "Classé : Oddball",
+    "Ranked:Oddball on Live Fire": "Classé : Oddball",
+    "Ranked:Oddball on Recharge": "Classé : Oddball",
+    "Ranked:Oddball on Streets": "Classé : Oddball",
+    "Ranked:Slayer on Aquarius": "Classé : Assassin",
+    "Ranked:Slayer on Empyrean": "Classé : Assassin",
+    "Ranked:Slayer on Forest - Ranked": "Classé : Assassin",
+    "Ranked:Slayer on Live Fire": "Classé : Assassin",
+    "Ranked:Slayer on Origin - Ranked": "Classé : Assassin",
+    "Ranked:Slayer on Solitude - Ranked": "Classé : Assassin",
+    "Ranked:Slayer on Streets - Ranked": "Classé : Assassin",
+    "Ranked:Strongholds on Live Fire": "Classé : Bases",
+    "Ranked:Strongholds on Streets": "Classé : Bases",
 
-    "Super Fiesta:Slayer on Behemoth - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Catalyst - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Chasm - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Cliffhanger - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Forbidden - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Forest - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Illusion - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Live Fire - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Prism - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Recharge - Forge": "Super fiesta",
-    "Super Fiesta:Slayer on Streets - Forge": "Super fiesta",
+    # -------------------------------------------------------------------------
+    # Super Fiesta
+    # -------------------------------------------------------------------------
+    "Super Fiesta:Slayer on Argyle": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Behemoth - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Catalyst - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Chasm - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Cliffhanger - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Dynasty": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Empyrean": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Forbidden - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Forest": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Forest - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Houseki": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Illusion - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Live Fire - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Opulence": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Prism - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Recharge - Forge": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Shiro": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Shogun": "Super fiesta : Assassin",
+    "Super Fiesta:Slayer on Streets - Forge": "Super fiesta : Assassin",
 
-    "Super Husky Raid:CTF on Corpo": "Super husky Raid CDD",
-    "Super Husky Raid:CTF on Disciple": "Super husky Raid CDD",
-    "Super Husky Raid:CTF on Pharaoh": "Super husky Raid CDD",
-    "Super Husky Raid:CTF on Ronin": "Super husky Raid CDD",
+    # -------------------------------------------------------------------------
+    # Tactical
+    # -------------------------------------------------------------------------
+    "Tactical:Slayer on Aquarius - Forge": "Tactique : Assassin",
+    "Tactical:Slayer on Bazaar - Forge": "Tactique : Assassin",
+    "Tactical:Slayer on Cliffhanger - Forge": "Tactique : Assassin",
+    "Tactical:Slayer on Cliffside": "Tactique : Assassin",
+    "Tactical:Slayer on Detachment": "Tactique : Assassin",
+    "Tactical:Slayer on Dredge": "Tactique : Assassin",
+    "Tactical:Slayer on Illusion - Forge": "Tactique : Assassin",
+    "Tactical:Slayer on Recharge": "Tactique : Assassin",
+    "Tactical:Slayer on Salvation": "Tactique : Assassin",
+    "Tactical:Slayer on Solitude": "Tactique : Assassin",
+    "Tactical:Slayer on Starboard": "Tactique : Assassin",
+    "Tactical:Slayer on Takamanohara": "Tactique : Assassin",
+    "Tactical:Slayer on The Pit": "Tactique : Assassin",
 
-    "Tactical:Slayer on Aquarius - Forge": "Assassin tactique",
-    "Tactical:Slayer on Bazaar - Forge": "Assassin tactique",
-    "Tactical:Slayer on Cliffhanger - Forge": "Assassin tactique",
-    "Tactical:Slayer on Cliffside": "Assassin tactique",
-    "Tactical:Slayer on Detachment": "Assassin tactique",
-    "Tactical:Slayer on Dredge": "Assassin tactique",
-    "Tactical:Slayer on Illusion - Forge": "Assassin tactique",
-    "Tactical:Slayer on Salvation": "Assassin tactique",
-    "Tactical:Slayer on Solitude": "Assassin tactique",
-    "Tactical:Slayer on Starboard": "Assassin tactique",
-    "Tactical:Slayer on Takamanohara": "Assassin tactique",
-    "Tactical:Slayer on The Pit": "Assassin tactique",
+    # -------------------------------------------------------------------------
+    # Autres / Events spéciaux
+    # -------------------------------------------------------------------------
+    "urvive The Undead 3.0 on TFF | Night Of The Undead": "Survivre aux morts-vivants 3.0",
 }
 
 
 def translate_playlist_name(name: str | None) -> str | None:
+    """Traduit un nom de playlist en français."""
     if name is None:
         return None
     s = str(name).strip()
@@ -243,6 +498,14 @@ def translate_playlist_name(name: str | None) -> str | None:
 
 
 def translate_pair_name(name: str | None) -> str | None:
+    """Traduit un nom de mode/pair en français.
+
+    Stratégie de fallback:
+    1. Match exact dans PAIR_FR
+    2. Normalisation de la casse et retry
+    3. Match par préfixe (mode sans carte)
+    4. Fallback générique pour modes Arena
+    """
     if name is None:
         return None
     s = str(name).strip()
@@ -260,7 +523,13 @@ def translate_pair_name(name: str | None) -> str | None:
         prefix = prefix.strip()
         rest = rest.strip()
         if prefix:
-            prefix = prefix[:1].upper() + prefix[1:].lower()
+            # BTB Heavies: garder "BTB Heavies" intact
+            if prefix.lower() == "btb heavies":
+                prefix = "BTB Heavies"
+            elif prefix.lower() == "btb":
+                prefix = "BTB"
+            else:
+                prefix = prefix[:1].upper() + prefix[1:].lower()
         # Si la partie mode est totalement en minuscules, on la TitleCase ("oddball" -> "Oddball").
         if rest and rest == rest.lower():
             rest = " ".join(w[:1].upper() + w[1:] for w in rest.split())
@@ -278,18 +547,31 @@ def translate_pair_name(name: str | None) -> str | None:
             if k.startswith(prefix_key):
                 return v
 
-        # 4) Fallback générique pour éviter des labels techniques (ex: "arena:oddball").
-        if base.startswith("Arena:"):
-            rest = base.split(":", 1)[1].strip()
-            arena_mode_fr = {
-                "Slayer": "Assassin",
-                "Team Slayer": "Assassin en équipe",
-                "Oddball": "Oddball",
-                "CTF": "Capture du drapeau",
-                "Neutral Flag CTF": "Drapeau neutre",
-                "King of the Hill": "Roi de la colline",
-                "Strongholds": "Bases",
-            }
-            return f"Arène : {arena_mode_fr.get(rest, rest)}"
+        # Chercher le préfixe exact dans les fallbacks génériques
+        if base in PAIR_FR:
+            return PAIR_FR[base]
+
+    # 4) Fallback générique pour modes Arena
+    if base.startswith("Arena:"):
+        rest = base.split(":", 1)[1].strip()
+        if " on " in rest:
+            rest = rest.split(" on ")[0].strip()
+        arena_mode_fr = {
+            "Slayer": "Assassin",
+            "Team Slayer": "Assassin en équipe",
+            "FFA Slayer": "Assassin FFA",
+            "Oddball": "Oddball",
+            "CTF": "Capture du drapeau",
+            "Neutral Flag CTF": "Drapeau neutre",
+            "One Flag CTF": "Un seul drapeau",
+            "King of the Hill": "Roi de la colline",
+            "Strongholds": "Bases",
+            "Attrition": "Attrition",
+            "Escalation Slayer": "Escalade",
+            "Team Snipers": "Snipers en équipe",
+            "Shotty Snipes Slayer": "Shotty Snipers",
+            "VIP": "VIP",
+        }
+        return f"Arène : {arena_mode_fr.get(rest, rest)}"
 
     return s
