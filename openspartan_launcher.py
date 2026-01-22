@@ -132,6 +132,7 @@ class RefreshOptions:
     no_skill: bool
     with_highlight_events: bool  # True = activer (défaut), False = désactiver
     with_aliases: bool = True    # True = activer (défaut), False = désactiver
+    delta: bool = False          # True = arrêt dès match connu (sync rapide)
 
 
 def _run_spnkr_import(opts: RefreshOptions) -> int:
@@ -174,6 +175,9 @@ def _run_spnkr_import(opts: RefreshOptions) -> int:
     # Aliases: activés par défaut, désactivables via --no-aliases
     if not opts.with_aliases:
         cmd.append("--no-aliases")
+    # Mode delta: s'arrête dès qu'un match connu est rencontré
+    if opts.delta:
+        cmd.append("--delta")
 
     print("[SPNKr] Import…")
     print("- player:", opts.player)
@@ -183,6 +187,7 @@ def _run_spnkr_import(opts: RefreshOptions) -> int:
     print("- rps:", opts.rps)
     print("- highlight_events:", "ON" if opts.with_highlight_events else "OFF")
     print("- aliases:", "ON" if opts.with_aliases else "OFF")
+    print("- delta:", "ON" if opts.delta else "OFF")
 
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT))
     if proc.returncode != 0:
@@ -486,6 +491,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
         no_skill=bool(args.no_skill),
         with_highlight_events=not bool(getattr(args, "no_highlight_events", False)),
         with_aliases=not bool(getattr(args, "no_aliases", False)),
+        delta=bool(getattr(args, "delta", False)),
     )
     return _run_spnkr_import(opts)
 
@@ -514,6 +520,7 @@ def _cmd_refresh_all(args: argparse.Namespace) -> int:
             no_skill=bool(args.no_skill),
             with_highlight_events=not bool(getattr(args, "no_highlight_events", False)),
             with_aliases=not bool(getattr(args, "no_aliases", False)),
+            delta=bool(getattr(args, "delta", False)),
         )
         rc = _run_spnkr_import(opts)
         if rc != 0:
@@ -826,6 +833,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Désactive le refresh des aliases (XUID → Gamertag)",
     )
+    p_ref.add_argument(
+        "--delta",
+        action="store_true",
+        help="Mode delta: s'arrête dès qu'un match déjà connu est rencontré (sync rapide)",
+    )
     p_ref.set_defaults(func=_cmd_refresh)
 
     p_ra = sub.add_parser("refresh-all", help="Refresh toutes les DB data/spnkr*.db")
@@ -849,6 +861,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-aliases",
         action="store_true",
         help="Désactive le refresh des aliases (XUID → Gamertag)",
+    )
+    p_ra.add_argument(
+        "--delta",
+        action="store_true",
+        help="Mode delta: s'arrête dès qu'un match déjà connu est rencontré (sync rapide)",
     )
     p_ra.set_defaults(func=_cmd_refresh_all)
 

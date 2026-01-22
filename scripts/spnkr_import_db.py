@@ -788,6 +788,13 @@ async def main_async(argv: list[str]) -> int:
     ap.add_argument("--no-skill", action="store_true", help="N'importe pas PlayerMatchStats (skill)")
     ap.add_argument("--no-assets", action="store_true", help="N'importe pas les assets UGC (Maps/Playlists/etc.)")
 
+    # Mode delta: s'arrête dès qu'on rencontre un match déjà connu
+    ap.add_argument(
+        "--delta",
+        action="store_true",
+        help="Mode delta: s'arrête dès qu'on rencontre un match déjà en DB (plus rapide pour les syncs régulières).",
+    )
+
     # Highlight events: activés par défaut, désactivables via --no-highlight-events
     ap.add_argument(
         "--no-highlight-events",
@@ -824,6 +831,8 @@ async def main_async(argv: list[str]) -> int:
     fetch_highlight_events = not args.no_highlight_events
     # Aliases: ON par défaut, OFF si --no-aliases
     fetch_aliases = not args.no_aliases
+    # Mode delta: OFF par défaut (comportement legacy)
+    delta_mode = bool(args.delta)
 
     out_db = str(args.out_db)
     _ensure_parent_dir(out_db)
@@ -903,6 +912,14 @@ async def main_async(argv: list[str]) -> int:
                     if remaining <= 0:
                         break
                     if mid in existing_match_ids:
+                        # Mode DELTA: dès qu'on rencontre un match connu, on s'arrête.
+                        # Puisque l'historique est trié du plus récent au plus ancien, 
+                        # tout ce qui suit est forcément déjà en DB.
+                        if delta_mode:
+                            print(f"[DELTA] Match {mid} déjà connu — arrêt (delta mode).")
+                            remaining = 0
+                            break
+
                         # Backfill: PlayerMatchStats (skill) manquant sur une DB existante.
                         # Cas typique: première import avec --no-skill, puis refresh sans --no-skill.
                         if not args.no_skill:
