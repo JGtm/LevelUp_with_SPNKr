@@ -10,10 +10,8 @@ import html
 import re
 import subprocess
 import sys
-import time as time_module
 import urllib.parse
 from pathlib import Path
-import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from collections.abc import Mapping
 from typing import Optional
@@ -69,6 +67,8 @@ from src.visualization import (
     plot_map_comparison,
     plot_map_ratio_with_winloss,
     plot_trio_metric,
+    plot_metric_bars_by_match,
+    plot_multi_metric_bars_by_match,
 )
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 from src.ui import (
@@ -133,8 +133,14 @@ from src.ui.pages import (
     render_citations_page,
     render_settings_page,
     render_match_view,
+    render_last_match_page,
+    render_match_search_page,
 )
-from src.ui.components import compute_session_performance_score
+from src.ui.components import (
+    compute_session_performance_score,
+    render_kpi_cards,
+    render_top_summary,
+)
 from src.ui.cache import (
     load_df,
     db_cache_key,
@@ -154,26 +160,16 @@ from src.ui.cache import (
     cached_list_other_xuids,
     cached_list_top_teammates,
 )
+from src.ui.sync import (
+    pick_latest_spnkr_db_if_any,
+    is_spnkr_db_path,
+    cleanup_orphan_tmp_dbs,
+    render_sync_indicator,
+    refresh_spnkr_db_via_api,
+)
 
 
 _LABEL_SUFFIX_RE = re.compile(r"^(.*?)(?:\s*[\-–—]\s*[0-9A-Za-z]{8,})$", re.IGNORECASE)
-
-
-# Alias pour compatibilité (fonctions déplacées vers src.ui.formatting)
-_to_paris_naive = to_paris_naive
-_paris_epoch_seconds = paris_epoch_seconds
-_format_duration_hms = format_duration_hms
-_format_duration_dhm = format_duration_dhm
-_format_datetime_fr_hm = format_datetime_fr_hm
-_format_score_label = format_score_label
-_score_css_color = score_css_color
-_style_outcome_text = style_outcome_text
-_style_signed_number = style_signed_number
-_style_score_label = style_score_label
-_parse_date_fr_input = parse_date_fr_input
-_coerce_int = coerce_int
-
-# PARIS_TZ importés depuis src.ui.formatting
 
 
 def _qp_first(value) -> str | None:
@@ -239,265 +235,6 @@ def _default_identity_from_secrets() -> tuple[str, str, str]:
     return xuid_or_gt, xu, wp
 
 
-def _pick_latest_spnkr_db_if_any() -> str:
-    try:
-        repo_root = Path(__file__).resolve().parent
-        data_dir = repo_root / "data"
-        if not data_dir.exists():
-            return ""
-        candidates = [p for p in data_dir.glob("spnkr*.db") if p.is_file()]
-        if not candidates:
-            return ""
-        # On évite de sélectionner une DB vide (0 octet), ce qui bloque l'app (aucune table).
-        non_empty = [p for p in candidates if p.exists() and p.stat().st_size > 0]
-        non_empty.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
-        if non_empty:
-            return str(non_empty[0])
-        # Fallback: si tout est vide, retourne quand même la plus récente pour debug.
-        candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
-        return str(candidates[0])
-    except Exception:
-        return ""
-
-
-def _is_spnkr_db_path(db_path: str) -> bool:
-    try:
-        p = Path(db_path)
-        return p.suffix.lower() == ".db" and p.name.lower().startswith("spnkr")
-    except Exception:
-        return False
-
-
-def _cleanup_orphan_tmp_dbs() -> None:
-    """Nettoie les fichiers .tmp.*.db orphelins dans le dossier data/.
-    
-    Ces fichiers peuvent rester si un import SPNKr a été interrompu
-    (crash, timeout, fermeture de l'app). On supprime ceux de plus de 1h.
-    """
-    if st.session_state.get("_tmp_db_cleanup_done"):
-        return
-    st.session_state["_tmp_db_cleanup_done"] = True
-    
-    try:
-        repo_root = Path(__file__).resolve().parent
-        data_dir = repo_root / "data"
-        if not data_dir.exists():
-            return
-        
-        now = time_module.time()
-        one_hour_ago = now - 3600  # 1 heure
-        
-        # Pattern: *.tmp.*.db (ex: spnkr_gt_Madina.db.tmp.1234567890.12345.db)
-        for tmp_file in data_dir.glob("*.tmp.*.db"):
-            try:
-                if tmp_file.stat().st_mtime < one_hour_ago:
-                    tmp_file.unlink()
-            except Exception:
-                pass
-        
-        # Pattern alternatif: *.db.tmp.* sans extension finale
-        for tmp_file in data_dir.glob("*.db.tmp.*"):
-            try:
-                if tmp_file.stat().st_mtime < one_hour_ago:
-                    tmp_file.unlink()
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-
-def _render_sync_indicator(db_path: str) -> None:
-    """Affiche l'indicateur de dernière synchronisation dans la sidebar.
-    
-    Couleurs:
-    - 🟢 Vert: sync < 1h
-    - 🟡 Jaune: sync < 24h  
-    - 🔴 Rouge: sync > 24h ou jamais
-    """
-    if not db_path or not os.path.exists(db_path):
-        return
-    
-    meta = get_sync_metadata(db_path)
-    last_sync = meta.get("last_sync_at")
-    total_matches = meta.get("total_matches", 0)
-    
-    now = datetime.now(timezone.utc)
-    
-    if last_sync:
-        delta = now - last_sync
-        hours = delta.total_seconds() / 3600
-        
-        if hours < 1:
-            minutes = int(delta.total_seconds() / 60)
-            indicator = "🟢"
-            time_str = f"il y a {minutes} min" if minutes > 0 else "à l'instant"
-        elif hours < 24:
-            indicator = "🟡"
-            h = int(hours)
-            time_str = f"il y a {h}h"
-        else:
-            indicator = "🔴"
-            days = int(hours / 24)
-            if days == 1:
-                time_str = "il y a 1 jour"
-            else:
-                time_str = f"il y a {days} jours"
-        
-        sync_text = f"{indicator} Sync {time_str}"
-    else:
-        # Pas de métadonnées de sync, on utilise la date de modification du fichier
-        try:
-            mtime = os.path.getmtime(db_path)
-            mtime_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
-            delta = now - mtime_dt
-            hours = delta.total_seconds() / 3600
-            
-            if hours < 1:
-                indicator = "🟢"
-                minutes = int(delta.total_seconds() / 60)
-                time_str = f"il y a {minutes} min" if minutes > 0 else "à l'instant"
-            elif hours < 24:
-                indicator = "🟡"
-                h = int(hours)
-                time_str = f"il y a {h}h"
-            else:
-                indicator = "🔴"
-                days = int(hours / 24)
-                time_str = f"il y a {days} jour{'s' if days > 1 else ''}"
-            
-            sync_text = f"{indicator} Modifié {time_str}"
-        except Exception:
-            sync_text = "🔴 Sync inconnue"
-    
-    # Affichage compact
-    match_info = f"({total_matches} matchs)" if total_matches > 0 else ""
-    st.markdown(
-        f"<div style='font-size: 0.85em; color: #888; margin: 4px 0 8px 0;'>"
-        f"{sync_text} {match_info}</div>",
-        unsafe_allow_html=True,
-    )
-
-
-def _refresh_spnkr_db_via_api(
-    *,
-    db_path: str,
-    player: str,
-    match_type: str,
-    max_matches: int,
-    rps: int,
-    with_highlight_events: bool = True,
-    with_aliases: bool = True,
-    delta: bool = False,
-    timeout_seconds: int = 180,
-) -> tuple[bool, str]:
-    """Rafraîchit une DB SPNKr en appelant scripts/spnkr_import_db.py.
-
-    Retourne (ok, message) pour affichage UI.
-    
-    Args:
-        with_highlight_events: Activer les highlight events (défaut: True)
-        with_aliases: Activer le refresh des aliases (défaut: True)
-        delta: Mode delta - s'arrête dès qu'un match connu est rencontré (défaut: False)
-    """
-    repo_root = Path(__file__).resolve().parent
-    importer = repo_root / "scripts" / "spnkr_import_db.py"
-    if not importer.exists():
-        return False, f"Script introuvable: {importer}"
-
-    p = (player or "").strip()
-    if not p:
-        return False, "Aucun joueur pour SPNKr (gamertag ou XUID)."
-
-    mt = (match_type or "matchmaking").strip().lower()
-    if mt not in {"all", "matchmaking", "custom", "local"}:
-        mt = "matchmaking"
-
-    target = str(db_path)
-    # IMPORTANT: on n'écrit jamais directement dans la DB cible.
-    # Si l'import crashe/timeout, SQLite peut laisser un fichier vide/corrompu.
-    tmp = f"{target}.tmp.{uuid.uuid4().hex}.db"
-
-    cmd = [
-        sys.executable,
-        str(importer),
-        "--out-db",
-        str(tmp),
-        "--player",
-        p,
-        "--match-type",
-        mt,
-        "--max-matches",
-        str(int(max_matches)),
-        "--requests-per-second",
-        str(int(rps)),
-        "--resume",
-    ]
-    # Highlight events et aliases sont activés par défaut côté import
-    # On n'ajoute les flags --no-* que si explicitement désactivés
-    if not with_highlight_events:
-        cmd.append("--no-highlight-events")
-    if not with_aliases:
-        cmd.append("--no-aliases")
-    # Mode delta: arrêt dès match connu (sync rapide)
-    if delta:
-        cmd.append("--delta")
-
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            timeout=int(timeout_seconds),
-        )
-    except subprocess.TimeoutExpired:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
-        return False, f"Timeout après {timeout_seconds}s (import SPNKr trop long)."
-    except Exception as e:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
-        return False, f"Erreur au lancement de l'import SPNKr: {e}"
-
-    if int(proc.returncode) != 0:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
-        tail = (proc.stderr or proc.stdout or "").strip()
-        if len(tail) > 1200:
-            tail = tail[-1200:]
-        return False, f"Import SPNKr en échec (code={proc.returncode}).\n{tail}".strip()
-
-    # Remplace la DB cible uniquement si le tmp semble valide (non vide).
-    try:
-        if not os.path.exists(tmp) or os.path.getsize(tmp) <= 0:
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except Exception:
-                pass
-            return False, "Import SPNKr terminé mais DB temporaire vide (annulé)."
-        os.makedirs(str(Path(target).resolve().parent), exist_ok=True)
-        os.replace(tmp, target)
-    except Exception as e:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
-        return False, f"Import SPNKr OK mais remplacement de la DB a échoué: {e}"
-
-    return True, "DB SPNKr rafraîchie."
-
-
 def _init_source_state(default_db: str, settings: AppSettings) -> None:
     if "db_path" not in st.session_state:
         chosen = str(default_db or "")
@@ -505,7 +242,7 @@ def _init_source_state(default_db: str, settings: AppSettings) -> None:
         # on ne doit pas l'écraser par une auto-sélection SPNKr.
         forced_env_db = str(os.environ.get("OPENSPARTAN_DB") or os.environ.get("OPENSPARTAN_DB_PATH") or "").strip()
         if (not forced_env_db) and bool(getattr(settings, "prefer_spnkr_db_if_available", False)):
-            spnkr = _pick_latest_spnkr_db_if_any()
+            spnkr = pick_latest_spnkr_db_if_any()
             if spnkr and os.path.exists(spnkr) and os.path.getsize(spnkr) > 0:
                 chosen = spnkr
         st.session_state["db_path"] = chosen
@@ -596,13 +333,6 @@ def _normalize_mode_label(pair_name: str | None) -> str | None:
     s = re.sub(r"\s*-\s*Ranked\b", "", s, flags=re.IGNORECASE).strip()
     return s or None
 
-# Note: _format_duration_hms, _coerce_int, _format_score_label, _score_css_color,
-# _style_outcome_text, _style_signed_number, _style_score_label sont maintenant
-# des alias vers les fonctions de src.ui.formatting (voir imports).
-
-# Regex pour _style_score_label (utilisé par l'alias)
-_SCORE_LABEL_RE = re.compile(r"^\s*(-?\d+)\s*[-–—]\s*(-?\d+)\s*$")
-
 
 def _styler_map(styler, func, subset):
     """Compat pandas: Styler.map n'existe pas sur certaines versions.
@@ -620,186 +350,6 @@ def _styler_map(styler, func, subset):
         return styler.applymap(func, subset=subset)
     except Exception:
         return styler
-
-
-# Note: _format_datetime_fr_hm, _parse_date_fr_input sont maintenant des alias (voir imports).
-
-def _plot_metric_bars_by_match(
-    df_: pd.DataFrame,
-    *,
-    metric_col: str,
-    title: str,
-    y_axis_title: str,
-    hover_label: str,
-    bar_color: str,
-    smooth_color: str,
-    smooth_window: int = 10,
-) -> go.Figure | None:
-    if df_ is None or df_.empty:
-        return None
-    if metric_col not in df_.columns or "start_time" not in df_.columns:
-        return None
-
-    d = df_[["start_time", metric_col]].copy()
-    d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
-    d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
-    if d.empty:
-        return None
-
-    y = pd.to_numeric(d[metric_col], errors="coerce")
-    x_idx = list(range(len(d)))
-    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
-    step = max(1, len(labels) // 10) if labels else 1
-
-    w = int(smooth_window) if smooth_window else 0
-    smooth = y.rolling(window=max(1, w), min_periods=1).mean() if w and w > 1 else y
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Bar(
-            x=x_idx,
-            y=y,
-            name=y_axis_title,
-            marker_color=bar_color,
-            opacity=0.70,
-            hovertemplate=f"{hover_label}=%{{y}}<extra></extra>",
-        )
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx,
-            y=smooth,
-            mode="lines",
-            name="Moyenne (lissée)",
-            line=dict(width=3, color=smooth_color),
-            hovertemplate="moyenne=%{y:.2f}<extra></extra>",
-        )
-    )
-    fig.update_layout(
-        title=title,
-        margin=dict(l=40, r=20, t=40, b=90),
-        hovermode="x unified",
-        legend=get_legend_horizontal_bottom(),
-    )
-    fig.update_yaxes(title_text=y_axis_title, rangemode="tozero")
-    fig.update_xaxes(
-        title_text="Match (chronologique)",
-        tickmode="array",
-        tickvals=x_idx[::step],
-        ticktext=labels[::step],
-        type="category",
-    )
-
-    return apply_halo_plot_style(fig, height=320)
-
-
-def _plot_multi_metric_bars_by_match(
-    series: list[tuple[str, pd.DataFrame]],
-    *,
-    metric_col: str,
-    title: str,
-    y_axis_title: str,
-    hover_label: str,
-    colors: dict[str, str] | list[str] | None,
-    smooth_window: int = 10,
-    show_smooth_lines: bool = True,
-) -> go.Figure | None:
-    if not series:
-        return None
-
-    prepared: list[tuple[str, pd.DataFrame]] = []
-    all_times: list[pd.Timestamp] = []
-    for name, df_ in series:
-        if df_ is None or df_.empty:
-            continue
-        if metric_col not in df_.columns or "start_time" not in df_.columns:
-            continue
-        d = df_[["start_time", metric_col]].copy()
-        d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
-        d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
-        if d.empty:
-            continue
-        prepared.append((str(name), d))
-        all_times.extend(d["start_time"].tolist())
-
-    if not prepared or not all_times:
-        return None
-
-    # Axe X commun (timeline de tous les joueurs)
-    uniq = pd.Series(all_times).dropna().drop_duplicates().sort_values()
-    times = uniq.tolist()
-    idx_map = {t: i for i, t in enumerate(times)}
-    labels = [pd.to_datetime(t).strftime("%d/%m %H:%M") for t in times]
-    step = max(1, len(labels) // 10) if labels else 1
-
-    fig = go.Figure()
-    w = int(smooth_window) if smooth_window else 0
-    for i, (name, d) in enumerate(prepared):
-        if isinstance(colors, dict):
-            color = colors.get(name) or "#35D0FF"
-        elif isinstance(colors, list) and colors:
-            color = colors[i % len(colors)]
-        else:
-            color = "#35D0FF"
-        y = pd.to_numeric(d[metric_col], errors="coerce")
-        mask = y.notna()
-        d2 = d.loc[mask].copy()
-        if d2.empty:
-            continue
-        y2 = pd.to_numeric(d2[metric_col], errors="coerce")
-        x = [idx_map.get(t) for t in d2["start_time"].tolist()]
-        x = [xi for xi in x if xi is not None]
-        if not x:
-            continue
-
-        fig.add_trace(
-            go.Bar(
-                x=x,
-                y=y2,
-                name=name,
-                marker_color=color,
-                opacity=0.70,
-                hovertemplate=f"{name}<br>{hover_label}=%{{y}}<extra></extra>",
-                legendgroup=name,
-            )
-        )
-
-        if bool(show_smooth_lines):
-            smooth = y2.rolling(window=max(1, w), min_periods=1).mean() if w and w > 1 else y2
-            fig.add_trace(
-                go.Scatter(
-                    x=x,
-                    y=smooth,
-                    mode="lines",
-                    name=f"{name} — moyenne lissée",
-                    line=dict(width=3, color=color),
-                    opacity=0.95,
-                    hovertemplate=f"{name}<br>moyenne=%{{y:.2f}}<extra></extra>",
-                    legendgroup=name,
-                )
-            )
-
-    if not fig.data:
-        return None
-
-    fig.update_layout(
-        title=title,
-        margin=dict(l=40, r=20, t=40, b=90),
-        hovermode="x unified",
-        legend=get_legend_horizontal_bottom(),
-        barmode="group",
-    )
-    fig.update_yaxes(title_text=y_axis_title, rangemode="tozero")
-    fig.update_xaxes(
-        title_text="Match (chronologique)",
-        tickmode="array",
-        tickvals=list(range(len(labels)))[::step],
-        ticktext=labels[::step],
-        type="category",
-    )
-
-    return apply_halo_plot_style(fig, height=320)
 
 
 def _assign_player_colors(names: list[str]) -> dict[str, str]:
@@ -898,58 +448,12 @@ def _avg_match_duration_seconds(df_: pd.DataFrame) -> float | None:
     return float(s.mean())
 
 
-def _render_kpi_cards(cards: list[tuple[str, str]], *, dense: bool = True) -> None:
-    if not cards:
-        return
-    grid_class = "os-kpi-grid os-kpi-grid--dense" if dense else "os-kpi-grid"
-    items = "".join(
-        f"<div class='os-kpi'><div class='os-kpi__label'>{label}</div><div class='os-kpi__value'>{value}</div></div>"
-        for (label, value) in cards
-    )
-    st.markdown(f"<div class='{grid_class}'>{items}</div>", unsafe_allow_html=True)
-
-
-def _render_top_summary(total_matches: int, rates) -> None:
-    if total_matches <= 0:
-        st.markdown(
-            "<div class='os-top-summary'>"
-            "  <div class='os-top-summary__empty'>Aucun match sélectionné</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        return
-
-    wins = int(getattr(rates, "wins", 0) or 0)
-    losses = int(getattr(rates, "losses", 0) or 0)
-    ties = int(getattr(rates, "ties", 0) or 0)
-    no_finish = int(getattr(rates, "no_finish", 0) or 0)
-
-    st.markdown(
-        "<div class='os-top-summary'>"
-        "  <div class='os-top-summary__row'>"
-        "    <div class='os-top-summary__left'>"
-        "      <div class='os-top-summary__kicker'>Parties sélectionnées</div>"
-        f"      <div class='os-top-summary__count'>{total_matches}</div>"
-        "    </div>"
-        "    <div class='os-top-summary__chips'>"
-        f"      <div class='os-top-chip os-top-chip--win'><span class='os-top-chip__label'>Victoires</span><span class='os-top-chip__value'>{wins}</span></div>"
-        f"      <div class='os-top-chip os-top-chip--loss'><span class='os-top-chip__label'>Défaites</span><span class='os-top-chip__value'>{losses}</span></div>"
-        f"      <div class='os-top-chip os-top-chip--tie'><span class='os-top-chip__label'>Égalités</span><span class='os-top-chip__value'>{ties}</span></div>"
-        f"      <div class='os-top-chip os-top-chip--nf'><span class='os-top-chip__label'>Non terminés</span><span class='os-top-chip__value'>{no_finish}</span></div>"
-        "    </div>"
-        "  </div>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-
 def _normalize_map_label(map_name: str | None) -> str | None:
     base = _clean_asset_label(map_name)
     if base is None:
         return None
     s = re.sub(r"\s*-\s*Forge\b", "", base, flags=re.IGNORECASE).strip()
     return s or None
-
 
 def _clear_min_matches_maps_auto() -> None:
     st.session_state["_min_matches_maps_auto"] = False
@@ -1088,7 +592,7 @@ def main() -> None:
     perf_reset_run()
 
     # Nettoyage des fichiers temporaires orphelins (une fois par session)
-    _cleanup_orphan_tmp_dbs()
+    cleanup_orphan_tmp_dbs()
 
     with perf_section("css"):
         st.markdown(load_css(), unsafe_allow_html=True)
@@ -1176,10 +680,10 @@ def main() -> None:
 
         # Indicateur de dernière synchronisation
         if db_path and os.path.exists(db_path):
-            _render_sync_indicator(db_path)
+            render_sync_indicator(db_path)
 
         # Bouton Sync rapide pour les DB SPNKr
-        if db_path and _is_spnkr_db_path(db_path) and os.path.exists(db_path):
+        if db_path and is_spnkr_db_path(db_path) and os.path.exists(db_path):
             # Déduire le joueur depuis le nom de la DB
             spnkr_player = infer_spnkr_player_from_db_path(db_path) or ""
             
@@ -1202,7 +706,7 @@ def main() -> None:
                 
                 if sync_clicked or full_sync:
                     with st.spinner("Synchronisation en cours..." if sync_clicked else "Sync complète en cours..."):
-                        ok, msg = _refresh_spnkr_db_via_api(
+                        ok, msg = refresh_spnkr_db_via_api(
                             db_path=db_path,
                             player=spnkr_player,
                             match_type="matchmaking",
@@ -1246,8 +750,8 @@ def main() -> None:
             if os.path.getsize(db_path) <= 0:
                 st.warning("La base sélectionnée est vide (0 octet). Basculement automatique vers une DB valide si possible.")
                 fallback = ""
-                if _is_spnkr_db_path(db_path):
-                    fallback = _pick_latest_spnkr_db_if_any()
+                if is_spnkr_db_path(db_path):
+                    fallback = pick_latest_spnkr_db_if_any()
                     if fallback and os.path.exists(fallback) and os.path.getsize(fallback) <= 0:
                         fallback = ""
                 if not fallback:
@@ -1794,8 +1298,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     avg_match_seconds = _avg_match_duration_seconds(dff)
     total_play_seconds = _compute_total_play_seconds(dff)
-    avg_match_txt = _format_duration_hms(avg_match_seconds)
-    total_play_txt = _format_duration_dhm(total_play_seconds)
+    avg_match_txt = format_duration_hms(avg_match_seconds)
+    total_play_txt = format_duration_dhm(total_play_seconds)
 
     # Stats par minute / totaux
     stats = compute_aggregated_stats(dff)
@@ -1806,8 +1310,8 @@ def main() -> None:
     apg = dff["assists"].mean() if not dff.empty else None
 
     st.subheader("Parties")
-    _render_top_summary(len(dff), rates)
-    _render_kpi_cards(
+    render_top_summary(len(dff), rates)
+    render_kpi_cards(
         [
             ("Durée moyenne / match", avg_match_txt),
             ("Durée totale", total_play_txt),
@@ -1815,7 +1319,7 @@ def main() -> None:
     )
 
     st.subheader("Carrière")
-    _render_kpi_cards(
+    render_kpi_cards(
         [
             ("Durée moyenne / match", avg_match_txt),
             ("Frags par partie", f"{kpg:.2f}" if (kpg is not None and pd.notna(kpg)) else "-"),
@@ -1824,7 +1328,7 @@ def main() -> None:
         ],
         dense=False,
     )
-    _render_kpi_cards(
+    render_kpi_cards(
         [
             ("Frags / min", f"{stats.kills_per_minute:.2f}" if stats.kills_per_minute else "-"),
             ("Morts / min", f"{stats.deaths_per_minute:.2f}" if stats.deaths_per_minute else "-"),
@@ -1846,7 +1350,7 @@ def main() -> None:
 
     pages = [
         "Séries temporelles",
-        "Comparaison sessions",
+        "Comparaison de sessions",
         "Dernier match",
         "Match",
         "Citations",
@@ -1873,125 +1377,37 @@ def main() -> None:
         label_visibility="collapsed",
     )
 
+    # Paramètres communs pour les pages de match
+    _match_view_params = dict(
+        db_path=db_path,
+        xuid=xuid,
+        waypoint_player=waypoint_player,
+        db_key=db_key,
+        settings=settings,
+        render_match_view_fn=render_match_view,
+        normalize_mode_label_fn=_normalize_mode_label,
+        format_score_label_fn=format_score_label,
+        score_css_color_fn=score_css_color,
+        format_datetime_fn=format_datetime_fr_hm,
+        load_player_match_result_fn=cached_load_player_match_result,
+        load_match_medals_fn=cached_load_match_medals_for_player,
+        load_highlight_events_fn=cached_load_highlight_events_for_match,
+        load_match_gamertags_fn=cached_load_match_player_gamertags,
+        load_match_rosters_fn=cached_load_match_rosters,
+        paris_tz=PARIS_TZ,
+    )
+
     # --------------------------------------------------------------------------
     # Page: Dernier match
     # --------------------------------------------------------------------------
     if page == "Dernier match":
-        st.caption("Dernière partie selon la sélection/filtres actuels.")
-        if dff.empty:
-            st.info("Aucun match disponible avec les filtres actuels.")
-        else:
-            last_row = dff.sort_values("start_time").iloc[-1]
-            last_match_id = str(last_row.get("match_id", "")).strip()
-            render_match_view(
-                row=last_row,
-                match_id=last_match_id,
-                db_path=db_path,
-                xuid=xuid,
-                waypoint_player=waypoint_player,
-                db_key=db_key,
-                settings=settings,
-                normalize_mode_label_fn=_normalize_mode_label,
-                format_score_label_fn=_format_score_label,
-                score_css_color_fn=_score_css_color,
-                format_datetime_fn=_format_datetime_fr_hm,
-                load_player_match_result_fn=cached_load_player_match_result,
-                load_match_medals_fn=cached_load_match_medals_for_player,
-                load_highlight_events_fn=cached_load_highlight_events_for_match,
-                load_match_gamertags_fn=cached_load_match_player_gamertags,
-                load_match_rosters_fn=cached_load_match_rosters,
-                paris_tz=PARIS_TZ,
-            )
+        render_last_match_page(dff=dff, **_match_view_params)
 
     # --------------------------------------------------------------------------
     # Page: Match (recherche)
     # --------------------------------------------------------------------------
     elif page == "Match":
-        st.caption("Afficher un match précis via un MatchId, une date/heure, ou une sélection.")
-
-        # Entrée MatchId
-        match_id_input = st.text_input("MatchId", key="match_id_input")
-
-        # Sélection rapide (sur les filtres actuels, triés du plus récent au plus ancien)
-        quick_df = dff.sort_values("start_time", ascending=False).head(200).copy()
-        quick_df["start_time_fr"] = quick_df["start_time"].apply(_format_datetime_fr_hm)
-        if "mode_ui" not in quick_df.columns:
-            quick_df["mode_ui"] = quick_df["pair_name"].apply(_normalize_mode_label)
-        quick_df["label"] = (
-            quick_df["start_time_fr"].astype(str)
-            + " — "
-            + quick_df["map_name"].astype(str)
-            + " — "
-            + quick_df["mode_ui"].astype(str)
-        )
-        opts = {r["label"]: str(r["match_id"]) for _, r in quick_df.iterrows()}
-        st.selectbox(
-            "Sélection rapide (filtres actuels)",
-            options=["(aucun)"] + list(opts.keys()),
-            index=0,
-            key="match_quick_pick_label",
-        )
-
-        def _on_use_quick_match() -> None:
-            picked = st.session_state.get("match_quick_pick_label")
-            if isinstance(picked, str) and picked in opts:
-                st.session_state["match_id_input"] = opts[picked]
-
-        st.button("Utiliser ce match", width="stretch", on_click=_on_use_quick_match)
-
-        # Recherche par date/heure
-        with st.expander("Recherche par date/heure", expanded=False):
-            dd = st.date_input("Date", value=date.today(), format="DD/MM/YYYY")
-            tt = st.time_input("Heure", value=time(20, 0))
-            tol_min = st.slider("Tolérance (minutes)", 0, 30, 10, 1)
-
-            def _on_search_by_datetime() -> None:
-                target = datetime.combine(dd, tt)
-                all_df = df.copy()
-                all_df["_dt"] = pd.to_datetime(all_df["start_time"], errors="coerce")
-                all_df = all_df.dropna(subset=["_dt"]).copy()
-                if all_df.empty:
-                    st.warning("Aucune date exploitable dans la DB.")
-                    return
-
-                all_df["_diff"] = (all_df["_dt"] - target).abs()
-                best = all_df.sort_values("_diff").iloc[0]
-                diff_min = float(best["_diff"].total_seconds() / 60.0)
-                if diff_min <= float(tol_min):
-                    st.session_state["match_id_input"] = str(best.get("match_id") or "").strip()
-                else:
-                    st.warning(f"Aucun match trouvé dans ±{tol_min} min (le plus proche est à {diff_min:.1f} min).")
-
-            st.button("Rechercher", width="stretch", on_click=_on_search_by_datetime)
-
-        mid = str(match_id_input or "").strip()
-        if not mid:
-            st.info("Renseigne un MatchId ou utilise la sélection/recherche ci-dessus.")
-        else:
-            rows = df.loc[df["match_id"].astype(str) == mid]
-            if rows.empty:
-                st.warning("MatchId introuvable dans la DB actuelle.")
-            else:
-                match_row = rows.sort_values("start_time").iloc[-1]
-                render_match_view(
-                    row=match_row,
-                    match_id=mid,
-                    db_path=db_path,
-                    xuid=xuid,
-                    waypoint_player=waypoint_player,
-                    db_key=db_key,
-                    settings=settings,
-                    normalize_mode_label_fn=_normalize_mode_label,
-                    format_score_label_fn=_format_score_label,
-                    score_css_color_fn=_score_css_color,
-                    format_datetime_fn=_format_datetime_fr_hm,
-                    load_player_match_result_fn=cached_load_player_match_result,
-                    load_match_medals_fn=cached_load_match_medals_for_player,
-                    load_highlight_events_fn=cached_load_highlight_events_for_match,
-                    load_match_gamertags_fn=cached_load_match_player_gamertags,
-                    load_match_rosters_fn=cached_load_match_rosters,
-                    paris_tz=PARIS_TZ,
-                )
+        render_match_search_page(df=df, dff=dff, **_match_view_params)
 
     # --------------------------------------------------------------------------
     # Page: Citations (ex Médailles)
@@ -2006,9 +1422,9 @@ def main() -> None:
         )
 
     # --------------------------------------------------------------------------
-    # Page: Comparaison sessions
+    # Page: Comparaison de sessions
     # --------------------------------------------------------------------------
-    elif page == "Comparaison sessions":
+    elif page == "Comparaison de sessions":
         all_sessions_df = cached_compute_sessions_db(
             db_path, xuid.strip(), db_key, include_firefight, gap_minutes
         )
@@ -2052,7 +1468,7 @@ def main() -> None:
             waypoint_player=waypoint_player,
             build_friends_opts_map_fn=_build_friends_opts_map,
             assign_player_colors_fn=_assign_player_colors,
-            plot_multi_metric_bars_fn=_plot_multi_metric_bars_by_match,
+            plot_multi_metric_bars_fn=plot_multi_metric_bars_by_match,
             top_medals_fn=_top_medals,
         )
 

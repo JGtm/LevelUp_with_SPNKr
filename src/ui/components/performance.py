@@ -6,6 +6,8 @@ des scores de performance pour les sessions de jeu.
 
 from __future__ import annotations
 
+from typing import Callable
+
 import pandas as pd
 import streamlit as st
 
@@ -29,9 +31,11 @@ def compute_session_performance_score(df_session: pd.DataFrame) -> dict:
         return {
             "score": None,
             "kd_ratio": None,
+            "kda": None,
             "win_rate": None,
             "accuracy": None,
             "avg_score": None,
+            "avg_life_seconds": None,
             "matches": 0,
             "kills": 0,
             "deaths": 0,
@@ -52,18 +56,31 @@ def compute_session_performance_score(df_session: pd.DataFrame) -> dict:
     # Normalisation: K/D 0.5 = 25pts, K/D 1.0 = 50pts, K/D 2.0 = 100pts
     kd_score = min(100, max(0, kd_ratio * 50))
     
+    # FDA (KDA) = (kills + assists) / deaths
+    kda = (total_kills + total_assists) / total_deaths if total_deaths > 0 else float(total_kills + total_assists)
+    
     # Win rate
     wins = len(df_session[df_session["outcome"] == 2]) if "outcome" in df_session.columns else 0
     win_rate = wins / n_matches if n_matches > 0 else 0
     win_score = win_rate * 100
     
     # Précision moyenne
-    if "shots_accuracy" in df_session.columns:
+    if "accuracy" in df_session.columns:
+        acc_values = pd.to_numeric(df_session["accuracy"], errors="coerce").dropna()
+        accuracy = float(acc_values.mean()) if not acc_values.empty else None
+    elif "shots_accuracy" in df_session.columns:
         acc_values = pd.to_numeric(df_session["shots_accuracy"], errors="coerce").dropna()
         accuracy = float(acc_values.mean()) if not acc_values.empty else None
     else:
         accuracy = None
     acc_score = accuracy if accuracy is not None else 50  # Neutre si pas de données
+    
+    # Durée de vie moyenne (secondes)
+    if "average_life_seconds" in df_session.columns:
+        life_values = pd.to_numeric(df_session["average_life_seconds"], errors="coerce").dropna()
+        avg_life_seconds = float(life_values.mean()) if not life_values.empty else None
+    else:
+        avg_life_seconds = None
     
     # Score moyen par partie
     if "match_score" in df_session.columns:
@@ -93,9 +110,11 @@ def compute_session_performance_score(df_session: pd.DataFrame) -> dict:
     return {
         "score": round(final_score, 1),
         "kd_ratio": round(kd_ratio, 2),
+        "kda": round(kda, 2),
         "win_rate": round(win_rate * 100, 1),
         "accuracy": round(accuracy, 1) if accuracy is not None else None,
         "avg_score": round(avg_score, 1) if avg_score is not None else None,
+        "avg_life_seconds": round(avg_life_seconds, 1) if avg_life_seconds is not None else None,
         "matches": n_matches,
         "kills": total_kills,
         "deaths": total_deaths,
@@ -191,7 +210,7 @@ def render_metric_comparison_row(
     label: str,
     val_a,
     val_b,
-    fmt: str = "{}",
+    fmt: str | Callable = "{}",
     higher_is_better: bool = True,
 ) -> None:
     """Affiche une ligne de métrique avec comparaison colorée.
@@ -200,7 +219,7 @@ def render_metric_comparison_row(
         label: Nom de la métrique.
         val_a: Valeur pour la session A.
         val_b: Valeur pour la session B.
-        fmt: Format string pour l'affichage.
+        fmt: Format string pour l'affichage OU une fonction callable.
         higher_is_better: Si True, la valeur la plus haute est verte.
     """
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -219,16 +238,24 @@ def render_metric_comparison_row(
             elif val_b < val_a:
                 color_b = "#4CAF50"
     
+    # Fonction de formatage
+    def _format_value(val):
+        if val is None:
+            return "—"
+        if callable(fmt):
+            return fmt(val)
+        return fmt.format(val)
+    
     with col1:
         st.markdown(f"**{label}**")
     with col2:
-        display_a = fmt.format(val_a) if val_a is not None else "—"
+        display_a = _format_value(val_a)
         st.markdown(
             f"<span style='color: {color_a}; font-weight: 600;'>{display_a}</span>",
             unsafe_allow_html=True,
         )
     with col3:
-        display_b = fmt.format(val_b) if val_b is not None else "—"
+        display_b = _format_value(val_b)
         st.markdown(
             f"<span style='color: {color_b}; font-weight: 600;'>{display_b}</span>",
             unsafe_allow_html=True,

@@ -6,12 +6,15 @@ avec des graphiques radar, des barres comparatives, et un tableau historique.
 
 from __future__ import annotations
 
+import locale
 from typing import TYPE_CHECKING, Callable
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.config import HALO_COLORS
+from src.ui import translate_pair_name
 from src.ui.components.performance import (
     compute_session_performance_score,
     render_performance_score_card,
@@ -20,6 +23,48 @@ from src.ui.components.performance import (
 
 if TYPE_CHECKING:
     pass
+
+
+def _format_seconds_to_mmss(seconds) -> str:
+    """Formate des secondes en mm:ss ou retourne la valeur formatée."""
+    if seconds is None:
+        return "—"
+    try:
+        total = int(round(float(seconds)))
+        if total < 0:
+            return "—"
+        m, s = divmod(total, 60)
+        return f"{m}:{s:02d}"
+    except Exception:
+        return "—"
+
+
+def _format_date_with_weekday(dt) -> str:
+    """Formate une date avec jour de la semaine abrégé : lun. 12/01/26 14:30."""
+    if dt is None or pd.isna(dt):
+        return "-"
+    try:
+        # Jours en français
+        weekdays_fr = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
+        wd = weekdays_fr[dt.weekday()]
+        return f"{wd} {dt.strftime('%d/%m/%y %H:%M')}"
+    except Exception:
+        return "-"
+
+
+def _outcome_style(label: str) -> str:
+    """Retourne le style CSS pour un résultat."""
+    colors = HALO_COLORS.as_dict()
+    v = str(label or "").strip().casefold()
+    if v.startswith("victoire"):
+        return f"color:{colors['green']}; font-weight:800"
+    if v.startswith("défaite") or v.startswith("defaite"):
+        return f"color:{colors['red']}; font-weight:800"
+    if v.startswith("égalité") or v.startswith("egalite"):
+        return f"color:{colors['violet']}; font-weight:800"
+    if v.startswith("non"):
+        return f"color:{colors['violet']}; font-weight:800"
+    return "opacity:0.92"
 
 
 def render_session_history_table(df_sess: pd.DataFrame, session_name: str) -> None:
@@ -36,22 +81,26 @@ def render_session_history_table(df_sess: pd.DataFrame, session_name: str) -> No
     # Copie pour éviter les warnings pandas
     df_sess = df_sess.copy()
     
+    # Traduire le mode si non traduit
+    if "pair_fr" not in df_sess.columns and "pair_name" in df_sess.columns:
+        df_sess["pair_fr"] = df_sess["pair_name"].apply(translate_pair_name)
+    
     # Préparer les colonnes à afficher
     display_cols = []
     col_map = {}
     
     if "start_time" in df_sess.columns:
-        df_sess["Heure"] = df_sess["start_time"].apply(
-            lambda x: x.strftime("%H:%M") if pd.notna(x) else "-"
-        )
+        df_sess["Heure"] = df_sess["start_time"].apply(_format_date_with_weekday)
         display_cols.append("Heure")
     
     if "pair_fr" in df_sess.columns:
         col_map["pair_fr"] = "Mode"
         display_cols.append("pair_fr")
     elif "pair_name" in df_sess.columns:
-        col_map["pair_name"] = "Mode"
-        display_cols.append("pair_name")
+        # Traduire à la volée si pair_fr n'existe pas
+        df_sess["mode_traduit"] = df_sess["pair_name"].apply(translate_pair_name)
+        col_map["mode_traduit"] = "Mode"
+        display_cols.append("mode_traduit")
     
     if "map_ui" in df_sess.columns:
         col_map["map_ui"] = "Carte"
@@ -62,11 +111,11 @@ def render_session_history_table(df_sess: pd.DataFrame, session_name: str) -> No
     
     for c in ["kills", "deaths", "assists"]:
         if c in df_sess.columns:
-            col_map[c] = c.capitalize()
+            col_map[c] = {"kills": "Frags", "deaths": "Morts", "assists": "Assists"}[c]
             display_cols.append(c)
     
     if "outcome" in df_sess.columns:
-        outcome_map = {2: "✅", 3: "❌", 1: "🟰", 4: "⏹️"}
+        outcome_map = {2: "Victoire", 3: "Défaite", 1: "Égalité", 4: "Non terminé"}
         df_sess["Résultat"] = df_sess["outcome"].map(outcome_map).fillna("-")
         display_cols.append("Résultat")
     
@@ -86,11 +135,38 @@ def render_session_history_table(df_sess: pd.DataFrame, session_name: str) -> No
     df_display = df_sess[display_cols].copy()
     df_display = df_display.rename(columns=col_map)
     
-    # Trier par heure
-    if "Heure" in df_display.columns:
-        df_display = df_display.sort_values("Heure", ascending=True)
+    # Trier par heure (conserver l'ordre chronologique via start_time)
+    if "start_time" in df_sess.columns:
+        df_display = df_display.iloc[df_sess["start_time"].argsort().values]
     
-    st.dataframe(df_display, use_container_width=True, hide_index=True)
+    # Affichage HTML pour styliser les résultats
+    import html as html_lib
+    html_rows = []
+    for _, row in df_display.iterrows():
+        cells = []
+        for col in df_display.columns:
+            val = row[col]
+            if col == "Résultat":
+                style = _outcome_style(str(val))
+                cells.append(f"<td style='{style}'>{html_lib.escape(str(val))}</td>")
+            else:
+                cells.append(f"<td>{html_lib.escape(str(val) if val is not None else '-')}</td>")
+        html_rows.append("<tr>" + "".join(cells) + "</tr>")
+    
+    header_cells = "".join(f"<th>{html_lib.escape(c)}</th>" for c in df_display.columns)
+    html_table = f"""
+    <style>
+    .session-history-table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; }}
+    .session-history-table th {{ background: #1a1a2e; padding: 8px; text-align: left; border-bottom: 2px solid #35D0FF; }}
+    .session-history-table td {{ padding: 6px 8px; border-bottom: 1px solid #333; }}
+    .session-history-table tr:hover {{ background: rgba(53, 208, 255, 0.1); }}
+    </style>
+    <table class="session-history-table">
+    <thead><tr>{header_cells}</tr></thead>
+    <tbody>{''.join(html_rows)}</tbody>
+    </table>
+    """
+    st.markdown(html_table, unsafe_allow_html=True)
 
 
 def render_comparison_radar_chart(perf_a: dict, perf_b: dict) -> None:
@@ -100,20 +176,19 @@ def render_comparison_radar_chart(perf_a: dict, perf_b: dict) -> None:
         perf_a: Métriques de la session A.
         perf_b: Métriques de la session B.
     """
-    categories = ["K/D", "Win%", "Précision", "Score/match"]
+    categories = ["K/D", "Victoire %", "Précision"]
     
-    def _normalize_for_radar(kd, wr, acc, score):
+    def _normalize_for_radar(kd, wr, acc):
         kd_norm = min(100, (kd or 0) * 50)  # K/D 2.0 = 100
         wr_norm = wr or 0  # Déjà en %
-        acc_norm = acc or 50  # Déjà en %
-        score_norm = min(100, (score or 10) * 5)  # Score 20 = 100
-        return [kd_norm, wr_norm, acc_norm, score_norm]
+        acc_norm = acc if acc is not None else 50  # Déjà en %
+        return [kd_norm, wr_norm, acc_norm]
     
     values_a = _normalize_for_radar(
-        perf_a["kd_ratio"], perf_a["win_rate"], perf_a["accuracy"], perf_a["avg_score"]
+        perf_a["kd_ratio"], perf_a["win_rate"], perf_a["accuracy"]
     )
     values_b = _normalize_for_radar(
-        perf_b["kd_ratio"], perf_b["win_rate"], perf_b["accuracy"], perf_b["avg_score"]
+        perf_b["kd_ratio"], perf_b["win_rate"], perf_b["accuracy"]
     )
     
     fig_radar = go.Figure()
@@ -158,18 +233,14 @@ def render_comparison_bar_chart(perf_a: dict, perf_b: dict) -> None:
         perf_a: Métriques de la session A.
         perf_b: Métriques de la session B.
     """
-    metrics_labels = ["K/D Ratio", "Win Rate (%)", "Précision (%)", "Score/match"]
+    metrics_labels = ["K/D Ratio", "Victoire (%)"]
     values_a_bar = [
         perf_a["kd_ratio"] or 0,
         perf_a["win_rate"] or 0,
-        perf_a["accuracy"] or 0,
-        perf_a["avg_score"] or 0,
     ]
     values_b_bar = [
         perf_b["kd_ratio"] or 0,
         perf_b["win_rate"] or 0,
-        perf_b["accuracy"] or 0,
-        perf_b["avg_score"] or 0,
     ]
     
     fig_bar = go.Figure()
@@ -208,6 +279,18 @@ def render_session_comparison_page(
         all_sessions_df: DataFrame avec toutes les sessions (colonnes session_id, session_label).
     """
     st.caption("Compare les performances entre deux sessions de jeu.")
+    
+    # Note explicative sur le score de performance
+    with st.expander("ℹ️ À propos du score de performance", expanded=False):
+        st.markdown("""
+        Le **score de performance** (0-100) est calculé à partir de :
+        - **K/D Ratio** (30%) : Ratio frags/morts. 1.0 = 50 pts, 2.0 = 100 pts
+        - **Taux de victoire** (25%) : Pourcentage de parties gagnées
+        - **Précision** (25%) : Précision moyenne des tirs
+        - **Score moyen** (20%) : Score moyen par partie
+        
+        Un score ≥75 est **excellent**, ≥60 est **bon**, ≥45 est **moyen**.
+        """)
     
     if all_sessions_df.empty:
         st.info("Aucune session disponible.")
@@ -297,18 +380,17 @@ def render_session_comparison_page(
     st.markdown("---")
     
     render_metric_comparison_row("Nombre de parties", perf_a["matches"], perf_b["matches"], "{}")
-    render_metric_comparison_row("K/D Ratio", perf_a["kd_ratio"], perf_b["kd_ratio"], "{:.2f}")
+    render_metric_comparison_row("FDA (Frags-Décès-Assists)", perf_a["kda"], perf_b["kda"], "{:.2f}")
     render_metric_comparison_row("Taux de victoire", perf_a["win_rate"], perf_b["win_rate"], "{:.1f}%")
-    render_metric_comparison_row("Précision moyenne", perf_a["accuracy"], perf_b["accuracy"], "{:.1f}%")
-    render_metric_comparison_row("Score moyen/partie", perf_a["avg_score"], perf_b["avg_score"], "{:.1f}")
+    render_metric_comparison_row("Durée de vie moyenne", perf_a["avg_life_seconds"], perf_b["avg_life_seconds"], _format_seconds_to_mmss)
     
     st.markdown("---")
     
-    render_metric_comparison_row("Total Kills", perf_a["kills"], perf_b["kills"], "{}")
+    render_metric_comparison_row("Total des frags", perf_a["kills"], perf_b["kills"], "{}")
     render_metric_comparison_row(
-        "Total Deaths", perf_a["deaths"], perf_b["deaths"], "{}", higher_is_better=False
+        "Total des morts", perf_a["deaths"], perf_b["deaths"], "{}", higher_is_better=False
     )
-    render_metric_comparison_row("Total Assists", perf_a["assists"], perf_b["assists"], "{}")
+    render_metric_comparison_row("Total des assistances", perf_a["assists"], perf_b["assists"], "{}")
     
     # ══════════════════════════════════════════════════════════════════════════
     # Comparaison MMR
@@ -339,15 +421,20 @@ def render_session_comparison_page(
     )
     
     # ══════════════════════════════════════════════════════════════════════════
-    # Graphiques comparatifs
+    # Graphiques comparatifs (côte à côte)
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.markdown("### 📈 Graphiques comparatifs")
     
-    render_comparison_radar_chart(perf_a, perf_b)
+    col_radar, col_bars = st.columns(2)
     
-    st.markdown("#### Comparaison par métrique")
-    render_comparison_bar_chart(perf_a, perf_b)
+    with col_radar:
+        st.markdown("#### Vue radar")
+        render_comparison_radar_chart(perf_a, perf_b)
+    
+    with col_bars:
+        st.markdown("#### Comparaison par métrique")
+        render_comparison_bar_chart(perf_a, perf_b)
     
     # ══════════════════════════════════════════════════════════════════════════
     # Tableau historique des parties
