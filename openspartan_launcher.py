@@ -602,6 +602,58 @@ def _cmd_refresh_all(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_refresh_all_with_aliases(args: argparse.Namespace) -> int:
+    """Refresh toutes les DB SPNKr avec highlight events, aliases film et profil."""
+    data_dir = Path(args.data_dir).expanduser().resolve() if args.data_dir else DEFAULT_DATA_DIR
+    dbs = _iter_spnkr_dbs(data_dir)
+    if not dbs:
+        print(f"[INFO] Aucune DB trouvée: {data_dir / 'spnkr*.db'}")
+        return 0
+
+    failures = 0
+    for db in dbs:
+        player = _infer_player_from_db_filename(db)
+        if not player:
+            print(f"[SKIP] {db.name} (impossible de déduire --player depuis le nom)")
+            continue
+
+        print(f"\n{'='*60}")
+        print(f"[DB] {db.name} (player={player})")
+        print(f"{'='*60}")
+
+        # Créer un namespace avec les bons paramètres pour ce joueur
+        sub_args = argparse.Namespace(
+            player=str(player),
+            out_db=str(db),
+            match_type=str(args.match_type),
+            max_matches=int(args.max_matches),
+            rps=int(args.rps),
+            no_assets=bool(getattr(args, "no_assets", False)),
+            no_skill=bool(getattr(args, "no_skill", False)),
+            no_highlight_events=bool(getattr(args, "no_highlight_events", False)),
+            no_aliases=bool(getattr(args, "no_aliases", False)),
+            delta=bool(getattr(args, "delta", False)),
+            with_highlight_events=not bool(getattr(args, "no_highlight_events", False)),
+            aliases_last=int(getattr(args, "aliases_last", 50)),
+            patch_highlight_events=bool(getattr(args, "patch_highlight_events", False)),
+            include_type2=bool(getattr(args, "include_type2", False)),
+            max_type2_chunks=int(getattr(args, "max_type2_chunks", 0)),
+            max_total_chunks=getattr(args, "max_total_chunks", None),
+            print_limit=int(getattr(args, "print_limit", 10)),
+            no_fetch_profile=bool(getattr(args, "no_fetch_profile", False)),
+        )
+
+        rc = _cmd_refresh_with_aliases(sub_args)
+        if rc != 0:
+            failures += 1
+
+    if failures:
+        print(f"\nTerminé avec {failures} échec(s).")
+        return 2
+    print("\nTerminé.")
+    return 0
+
+
 def _cmd_run_with_refresh(args: argparse.Namespace) -> int:
     # Par défaut, run+refresh est utilisé quand on veut un dashboard complet.
     # Highlight events et aliases sont activés par défaut.
@@ -749,116 +801,143 @@ def _cmd_repair_aliases(args: argparse.Namespace) -> int:
 
 
 def _interactive(argv0: str) -> int:
-    print("OpenSpartan Graphs — Lanceur")
-    print("(Astuce: ajoute --help pour les options CLI)")
-    print("\nChoisis un mode:")
-    print("  1) Lancer le dashboard")
-    print("  2) Lancer le dashboard + refresh SPNKr")
-    print("  3) Refresh SPNKr (une DB)")
-    print("  4) Refresh SPNKr (toutes les DB data/spnkr*.db)")
-    print("  5) Réparer les aliases (film -> xuid_aliases.json)")
-    print("  6) Refresh SPNKr + aliases + dashboard (recommandé)")
+    print("=" * 66)
+    print("           OpenSpartan Graphs - Lanceur interactif")
+    print("=" * 66)
+    print("\n(Astuce: utilise --help pour les options CLI avancees)")
+    print("\nChoisis un mode:\n")
+    print("  1) Dashboard seul (sans refresh)")
+    print()
+    print("  -- Sync delta (rapide, nouveaux matchs uniquement) -------------")
+    print("  2) Sync complete + dashboard                          [recommande]")
+    print("     -> Delta + highlights + aliases film + profil, puis dashboard")
+    print()
+    print("  3) Sync complete (sans dashboard)")
+    print("     -> Delta + highlights + aliases film + profil")
+    print()
+    print("  4) Sync complete (toutes les DB data/spnkr*.db)")
+    print("     -> Delta + highlights + aliases film + profil pour chaque DB")
+    print()
+    print("  -- Refresh total (depuis zero) ---------------------------------")
+    print("  5) Refresh total (recharge tous les matchs, sans delta)")
+    print("     -> 1000 matchs + highlights + aliases film + profil")
+    print()
     print("  Q) Quitter")
+    print()
 
-    choice = input("\nTon choix (1/2/3/4/5/6/Q): ").strip().lower()
+    choice = input("Ton choix (1/2/3/4/5/Q): ").strip().lower()
     if choice in {"q", "quit", "exit"}:
         return 0
 
-    # Question 2 max: demander le joueur uniquement si nécessaire.
+    # Mode 1: Dashboard seul
+    if choice == "1":
+        db_p = _prompt_db_choice(purpose="à utiliser", default_db=_guess_default_spnkr_db(), allow_none=True)
+        return _launch_streamlit(db_path=db_p, port=None, no_browser=False)
+
+    # Modes 2-5: nécessitent un joueur (sauf mode 4 qui déduit depuis les DB)
     player: str | None = None
-    if choice in {"2", "3"}:
+    if choice in {"2", "3", "5"}:
         player = _prompt_player_choice(default_player=os.environ.get("SPNKR_PLAYER"))
         if not player:
             print("Aucun joueur fourni.")
             return 2
 
-    if choice == "5":
-        default_db = _guess_default_spnkr_db()
-        db_p = _prompt_db_choice(purpose="à réparer", default_db=default_db)
-        if db_p is None:
-            print("Aucune DB fournie.")
-            return 2
-        args = argparse.Namespace(
-            db=str(db_p),
-            latest=True,
-            match_id=None,
-            all_matches=False,
-            db_source_table="HighlightEvents",
-            include_type2=False,
-            max_type2_chunks=0,
-            max_total_chunks=None,
-            print_limit=20,
-            patch_highlight_events=False,
-            aliases=None,
-        )
-        return _cmd_repair_aliases(args)
-
-    if choice == "1":
-        db_p = _prompt_db_choice(purpose="à utiliser", default_db=_guess_default_spnkr_db(), allow_none=True)
-        return _launch_streamlit(db_path=db_p, port=None, no_browser=False)
-
+    # Mode 2: Sync delta + aliases + profil + dashboard
     if choice == "2":
         args = argparse.Namespace(
             player=player,
             out_db=None,
             match_type="matchmaking",
-            max_matches=500,
+            max_matches=100,  # Delta s'arrêtera avant si matchs connus
             rps=2,
             no_assets=False,
             no_skill=False,
-            with_highlight_events=True,
-            port=None,
-            no_browser=False,
-            db=None,
-        )
-        return _cmd_run_with_refresh(args)
-
-    if choice == "6":
-        args = argparse.Namespace(
-            player=player,
-            out_db=None,
-            match_type="matchmaking",
-            max_matches=50,
-            rps=2,
-            no_assets=False,
-            no_skill=False,
+            no_highlight_events=False,
+            no_aliases=False,
+            delta=True,  # Mode delta activé
             with_highlight_events=True,
             aliases_last=50,
-            patch_highlight_events=False,
+            patch_highlight_events=True,
             include_type2=False,
             max_type2_chunks=0,
             max_total_chunks=None,
             print_limit=20,
+            no_fetch_profile=False,
             port=None,
             no_browser=False,
             db=None,
         )
         return _cmd_run_with_refresh_and_aliases(args)
 
+    # Mode 3: Sync delta + aliases + profil (sans dashboard)
     if choice == "3":
         args = argparse.Namespace(
             player=player,
             out_db=None,
             match_type="matchmaking",
-            max_matches=500,
+            max_matches=100,
             rps=2,
             no_assets=False,
             no_skill=False,
+            no_highlight_events=False,
+            no_aliases=False,
+            delta=True,  # Mode delta activé
             with_highlight_events=True,
+            aliases_last=50,
+            patch_highlight_events=True,
+            include_type2=False,
+            max_type2_chunks=0,
+            max_total_chunks=None,
+            print_limit=20,
+            no_fetch_profile=False,
         )
-        return _cmd_refresh(args)
+        return _cmd_refresh_with_aliases(args)
 
+    # Mode 4: Sync delta toutes les DB
     if choice == "4":
-        args = argparse.Namespace(
+        return _cmd_refresh_all_with_aliases(argparse.Namespace(
             data_dir=str(DEFAULT_DATA_DIR),
             match_type="matchmaking",
-            max_matches=200,
-            rps=5,
+            max_matches=100,
+            rps=3,
             no_assets=False,
             no_skill=False,
+            no_highlight_events=False,
+            no_aliases=False,
+            delta=True,  # Mode delta activé
             with_highlight_events=True,
+            aliases_last=50,
+            patch_highlight_events=True,
+            include_type2=False,
+            max_type2_chunks=0,
+            max_total_chunks=None,
+            print_limit=10,
+            no_fetch_profile=False,
+        ))
+
+    # Mode 5: Refresh total (sans delta, depuis zéro)
+    if choice == "5":
+        args = argparse.Namespace(
+            player=player,
+            out_db=None,
+            match_type="matchmaking",
+            max_matches=1000,  # Beaucoup plus de matchs
+            rps=2,
+            no_assets=False,
+            no_skill=False,
+            no_highlight_events=False,
+            no_aliases=False,
+            delta=False,  # PAS de delta = refresh complet
+            with_highlight_events=True,
+            aliases_last=100,
+            patch_highlight_events=True,
+            include_type2=False,
+            max_type2_chunks=0,
+            max_total_chunks=None,
+            print_limit=20,
+            no_fetch_profile=False,
         )
-        return _cmd_refresh_all(args)
+        return _cmd_refresh_with_aliases(args)
 
     print("Choix invalide.")
     print(f"Usage CLI: {argv0} --help")
@@ -986,6 +1065,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_refa.add_argument("--no-assets", action="store_true", help="Désactive l'import des assets")
     p_refa.add_argument("--no-skill", action="store_true", help="Désactive l'import du skill")
     p_refa.add_argument(
+        "--delta",
+        action="store_true",
+        help="Mode delta: s'arrête dès qu'un match déjà connu est rencontré (sync rapide)",
+    )
+    p_refa.add_argument(
         "--aliases-last",
         type=int,
         default=0,
@@ -1023,6 +1107,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_runrefa.add_argument("--rps", type=int, default=2, help="Requests/sec (défaut: 2)")
     p_runrefa.add_argument("--no-assets", action="store_true", help="Désactive l'import des assets")
     p_runrefa.add_argument("--no-skill", action="store_true", help="Désactive l'import du skill")
+    p_runrefa.add_argument(
+        "--delta",
+        action="store_true",
+        help="Mode delta: s'arrête dès qu'un match déjà connu est rencontré (sync rapide)",
+    )
     p_runrefa.add_argument(
         "--aliases-last",
         type=int,
