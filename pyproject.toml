@@ -45,15 +45,8 @@ dev = [
     "pyright>=1.1.0",
     "pandas-stubs>=2.0.0",
 ]
-cli = [
-    "matplotlib>=3.7.0",
-]
-all = [
-    "openspartan-graph[dev,cli]",
-]
 
 [project.scripts]
-openspartan-graph = "openspartan_graph:main"
 openspartan = "openspartan_launcher:main"
 
 [project.urls]

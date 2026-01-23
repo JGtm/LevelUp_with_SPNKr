@@ -1,6 +1,6 @@
 # 🎮 OpenSpartan Graph
 
-> **Dashboard interactif et CLI pour analyser vos statistiques Halo Infinite**
+> **Dashboard interactif pour analyser vos statistiques Halo Infinite**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-FF4B4B.svg)](https://streamlit.io/)
@@ -36,8 +36,7 @@
 - 👥 **Analyse des coéquipiers** — Statistiques avec vos amis (même équipe ou adversaires)
 - 🎯 **Sessions de jeu** — Détection automatique des sessions avec métriques
 
-### Export & Personnalisation
-- 🖼️ **Export PNG** — Générez des graphiques statiques via CLI
+### Personnalisation
 - 🎨 **Thème Halo** — Interface inspirée de Halo Waypoint
 - 🌍 **Traductions FR** — Interface et modes de jeu traduits en français (313+ modes)
 
@@ -117,12 +116,6 @@ pip install -e .
 ```bash
 # Avec les outils de dev (tests, linting, typing)
 pip install -e ".[dev]"
-
-# Avec le CLI matplotlib
-pip install -e ".[cli]"
-
-# Tout installer
-pip install -e ".[all]"
 ```
 
 ### Configuration SPNKr (API Halo)
@@ -205,12 +198,6 @@ python openspartan_launcher.py repair-aliases --db data/spnkr_gt_MonGamertag.db 
 
 # Répare tous les matchs
 python openspartan_launcher.py repair-aliases --db data/spnkr_gt_MonGamertag.db --all-matches
-```
-
-### CLI (génération PNG)
-
-```bash
-python openspartan_graph.py --db "data/spnkr_gt_MonGamertag.db" --last 80 --out "out/stats.png"
 ```
 
 ---
