@@ -300,6 +300,12 @@ openspartan-graph/
 └── pyproject.toml             # Configuration projet
 ```
 
+## 📈 Score de performance (sessions)
+
+Le dashboard affiche un **score de performance (0–100)** dans la page *Comparaison de session*.
+
+- Documentation : [docs/PERFORMANCE_SCORE.md](docs/PERFORMANCE_SCORE.md)
+
 ### Tables de base de données
 
 | Table | Description |

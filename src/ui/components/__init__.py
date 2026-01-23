@@ -2,6 +2,7 @@
 
 from src.ui.components.performance import (
     compute_session_performance_score,
+    compute_session_performance_score_v2_ui,
     get_score_color,
     get_score_label,
     render_performance_score_card,
@@ -14,6 +15,7 @@ from src.ui.components.kpi import (
 
 __all__ = [
     "compute_session_performance_score",
+    "compute_session_performance_score_v2_ui",
     "get_score_color",
     "get_score_label",
     "render_performance_score_card",

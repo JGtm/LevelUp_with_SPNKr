@@ -11,6 +11,11 @@ from typing import Callable
 import pandas as pd
 import streamlit as st
 
+from src.analysis.performance_score import (
+    compute_session_performance_score_v1,
+    compute_session_performance_score_v2,
+)
+
 
 def compute_session_performance_score(df_session: pd.DataFrame) -> dict:
     """Calcule un score de performance (0-100) pour une session.
@@ -27,102 +32,22 @@ def compute_session_performance_score(df_session: pd.DataFrame) -> dict:
     Returns:
         Dict avec score global et composantes détaillées.
     """
-    if df_session is None or df_session.empty:
-        return {
-            "score": None,
-            "kd_ratio": None,
-            "kda": None,
-            "win_rate": None,
-            "accuracy": None,
-            "avg_score": None,
-            "avg_life_seconds": None,
-            "matches": 0,
-            "kills": 0,
-            "deaths": 0,
-            "assists": 0,
-            "team_mmr_avg": None,
-            "enemy_mmr_avg": None,
-            "delta_mmr_avg": None,
-        }
-    
-    # Métriques de base
-    total_kills = int(df_session["kills"].sum())
-    total_deaths = int(df_session["deaths"].sum())
-    total_assists = int(df_session["assists"].sum())
-    n_matches = len(df_session)
-    
-    # K/D ratio
-    kd_ratio = total_kills / total_deaths if total_deaths > 0 else float(total_kills)
-    # Normalisation: K/D 0.5 = 25pts, K/D 1.0 = 50pts, K/D 2.0 = 100pts
-    kd_score = min(100, max(0, kd_ratio * 50))
-    
-    # FDA (KDA) = (kills + assists) / deaths
-    kda = (total_kills + total_assists) / total_deaths if total_deaths > 0 else float(total_kills + total_assists)
-    
-    # Win rate
-    wins = len(df_session[df_session["outcome"] == 2]) if "outcome" in df_session.columns else 0
-    win_rate = wins / n_matches if n_matches > 0 else 0
-    win_score = win_rate * 100
-    
-    # Précision moyenne
-    if "accuracy" in df_session.columns:
-        acc_values = pd.to_numeric(df_session["accuracy"], errors="coerce").dropna()
-        accuracy = float(acc_values.mean()) if not acc_values.empty else None
-    elif "shots_accuracy" in df_session.columns:
-        acc_values = pd.to_numeric(df_session["shots_accuracy"], errors="coerce").dropna()
-        accuracy = float(acc_values.mean()) if not acc_values.empty else None
-    else:
-        accuracy = None
-    acc_score = accuracy if accuracy is not None else 50  # Neutre si pas de données
-    
-    # Durée de vie moyenne (secondes)
-    if "average_life_seconds" in df_session.columns:
-        life_values = pd.to_numeric(df_session["average_life_seconds"], errors="coerce").dropna()
-        avg_life_seconds = float(life_values.mean()) if not life_values.empty else None
-    else:
-        avg_life_seconds = None
-    
-    # Score moyen par partie
-    if "match_score" in df_session.columns:
-        score_values = pd.to_numeric(df_session["match_score"], errors="coerce").dropna()
-        avg_score = float(score_values.mean()) if not score_values.empty else None
-    else:
-        avg_score = None
-    # Normalisation: score 10 = 50pts, score 20 = 100pts
-    score_pts = min(100, max(0, (avg_score or 10) * 5)) if avg_score is not None else 50
-    
-    # MMR moyens
-    team_mmr_avg = None
-    enemy_mmr_avg = None
-    delta_mmr_avg = None
-    if "team_mmr" in df_session.columns:
-        team_vals = pd.to_numeric(df_session["team_mmr"], errors="coerce").dropna()
-        team_mmr_avg = float(team_vals.mean()) if not team_vals.empty else None
-    if "enemy_mmr" in df_session.columns:
-        enemy_vals = pd.to_numeric(df_session["enemy_mmr"], errors="coerce").dropna()
-        enemy_mmr_avg = float(enemy_vals.mean()) if not enemy_vals.empty else None
-    if team_mmr_avg is not None and enemy_mmr_avg is not None:
-        delta_mmr_avg = team_mmr_avg - enemy_mmr_avg
-    
-    # Score global pondéré
-    final_score = (kd_score * 0.30) + (win_score * 0.25) + (acc_score * 0.25) + (score_pts * 0.20)
-    
-    return {
-        "score": round(final_score, 1),
-        "kd_ratio": round(kd_ratio, 2),
-        "kda": round(kda, 2),
-        "win_rate": round(win_rate * 100, 1),
-        "accuracy": round(accuracy, 1) if accuracy is not None else None,
-        "avg_score": round(avg_score, 1) if avg_score is not None else None,
-        "avg_life_seconds": round(avg_life_seconds, 1) if avg_life_seconds is not None else None,
-        "matches": n_matches,
-        "kills": total_kills,
-        "deaths": total_deaths,
-        "assists": total_assists,
-        "team_mmr_avg": round(team_mmr_avg, 1) if team_mmr_avg is not None else None,
-        "enemy_mmr_avg": round(enemy_mmr_avg, 1) if enemy_mmr_avg is not None else None,
-        "delta_mmr_avg": round(delta_mmr_avg, 1) if delta_mmr_avg is not None else None,
-    }
+    return compute_session_performance_score_v1(df_session)
+
+
+def compute_session_performance_score_v2_ui(
+    df_session: pd.DataFrame,
+    *,
+    include_mmr_adjustment: bool = True,
+) -> dict:
+    """Calcule un score de performance v2 (0–100) pour une session.
+
+    Version pensée pour être réutilisée ailleurs que dans la page de comparaison.
+    """
+    return compute_session_performance_score_v2(
+        df_session,
+        include_mmr_adjustment=include_mmr_adjustment,
+    )
 
 
 def get_score_color(score: float | None) -> str:

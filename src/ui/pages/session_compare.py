@@ -17,6 +17,7 @@ from src.config import HALO_COLORS
 from src.ui import translate_pair_name
 from src.ui.components.performance import (
     compute_session_performance_score,
+    compute_session_performance_score_v2_ui,
     render_performance_score_card,
     render_metric_comparison_row,
 )
@@ -283,13 +284,14 @@ def render_session_comparison_page(
     # Note explicative sur le score de performance
     with st.expander("ℹ️ À propos du score de performance", expanded=False):
         st.markdown("""
-        Le **score de performance** (0-100) est calculé à partir de :
-        - **K/D Ratio** (30%) : Ratio frags/morts. 1.0 = 50 pts, 2.0 = 100 pts
-        - **Taux de victoire** (25%) : Pourcentage de parties gagnées
-        - **Précision** (25%) : Précision moyenne des tirs
-        - **Score moyen** (20%) : Score moyen par partie
+        Le **score de performance** (0-100) est calculé avec une formule **modulaire** :
+        - composantes (K/D, victoires, précision, kills/min, survie)
+        - + une composante **objectif** si des stats existent (CTF/Strongholds/Oddball/KOTH…)
+        - si une composante manque, les poids sont **renormalisés**
+        - ajustement léger possible selon l’**écart MMR** (si dispo)
         
         Un score ≥75 est **excellent**, ≥60 est **bon**, ≥45 est **moyen**.
+        Détails : voir docs/PERFORMANCE_SCORE.md
         """)
     
     if all_sessions_df.empty:
@@ -333,9 +335,9 @@ def render_session_comparison_page(
     df_session_a = all_sessions_df[all_sessions_df["session_label"] == session_a_label].copy()
     df_session_b = all_sessions_df[all_sessions_df["session_label"] == session_b_label].copy()
     
-    # Calculer les scores de performance
-    perf_a = compute_session_performance_score(df_session_a)
-    perf_b = compute_session_performance_score(df_session_b)
+    # Calculer les scores de performance (v2)
+    perf_a = compute_session_performance_score_v2_ui(df_session_a)
+    perf_b = compute_session_performance_score_v2_ui(df_session_b)
     
     # Déterminer qui est meilleur
     score_a = perf_a.get("score")
