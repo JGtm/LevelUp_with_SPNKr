@@ -234,9 +234,9 @@ def render_win_loss_page(
 
             view = breakdown.head(20).iloc[::-1]
             if key == "ratio_global":
-                fig = plot_map_ratio_with_winloss(view, title=title)
+                fig = plot_map_ratio_with_winloss(view, title=label)
             else:
-                fig = plot_map_comparison(view, key, title=title)
+                fig = plot_map_comparison(view, key, title=label)
 
             if key in ("win_rate",):
                 fig.update_xaxes(tickformat=".0%")
