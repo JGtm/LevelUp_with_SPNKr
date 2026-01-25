@@ -31,14 +31,83 @@ import argparse
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sqlite3
 import sys
+import threading
 import time
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+
+
+# --- Gestion propre du Ctrl+C (SIGINT) ---
+_shutdown_event = threading.Event()
+_active_process: subprocess.Popen | None = None
+_shutdown_lock = threading.Lock()
+_ctrl_c_count = 0
+
+
+def _subprocess_creation_flags() -> int:
+    """Retourne les flags pour créer un sous-processus isolé du groupe.
+    
+    Sur Windows, CREATE_NEW_PROCESS_GROUP empêche le sous-processus de recevoir
+    le Ctrl+C directement, permettant au launcher de gérer l'interruption proprement.
+    """
+    if sys.platform == "win32":
+        return subprocess.CREATE_NEW_PROCESS_GROUP
+    return 0
+
+
+def _kill_active_process() -> None:
+    """Termine le processus enfant actif de manière forcée."""
+    proc = _active_process
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
+def _signal_handler(signum: int, frame) -> None:
+    """Handler pour Ctrl+C : affiche un message propre et force l'arrêt."""
+    global _ctrl_c_count
+    
+    with _shutdown_lock:
+        _ctrl_c_count += 1
+        count = _ctrl_c_count
+        
+        if not _shutdown_event.is_set():
+            _shutdown_event.set()
+            print("\n⏹ Arrêt en cours...", flush=True)
+    
+    # Terminer le processus enfant
+    _kill_active_process()
+    
+    # Si l'utilisateur appuie plusieurs fois, forcer l'arrêt brutal
+    if count >= 2:
+        print("⚠ Arrêt forcé.", flush=True)
+        os._exit(1)
+
+
+def _install_signal_handler() -> None:
+    """Installe le handler de signal pour un arrêt propre."""
+    signal.signal(signal.SIGINT, _signal_handler)
+    # Sur Windows, SIGBREAK est aussi utile (Ctrl+Break)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _signal_handler)
+
+
+def _check_shutdown() -> bool:
+    """Vérifie si un arrêt a été demandé. Retourne True si on doit s'arrêter."""
+    return _shutdown_event.is_set()
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -189,8 +258,41 @@ def _run_spnkr_import(opts: RefreshOptions) -> int:
     print("- aliases:", "ON" if opts.with_aliases else "OFF")
     print("- delta:", "ON" if opts.delta else "OFF")
 
-    proc = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    global _active_process
+    proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
+    _active_process = proc
+    
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        # Arrêt propre demandé
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        # Nettoyage du fichier tmp
+        try:
+            if tmp_db.exists():
+                tmp_db.unlink()
+        except Exception:
+            pass
+        return 0
+    finally:
+        _active_process = None
+    
     if proc.returncode != 0:
+        # Ne pas afficher d'erreur si c'est un arrêt volontaire (Ctrl+C)
+        if _shutdown_event.is_set():
+            try:
+                if tmp_db.exists():
+                    tmp_db.unlink()
+            except Exception:
+                pass
+            return 0
         print(f"[SPNKr] Échec import (code={proc.returncode}). DB originale conservée.")
         try:
             if tmp_db.exists():
@@ -315,7 +417,10 @@ def _launch_streamlit(*, db_path: Path | None, port: int | None, no_browser: boo
 
     print("Lancement du dashboard…")
     print("URL:", url)
-    proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT))
+    
+    global _active_process
+    proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
+    _active_process = proc
 
     if not no_browser:
         time.sleep(1.2)
@@ -327,7 +432,19 @@ def _launch_streamlit(*, db_path: Path | None, port: int | None, no_browser: boo
     try:
         return int(proc.wait())
     except KeyboardInterrupt:
-        return 130
+        return 0
+    finally:
+        _active_process = None
+        # Nettoyage si le processus est encore actif
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
 
 
 def _iter_spnkr_dbs(data_dir: Path) -> list[Path]:
@@ -589,6 +706,8 @@ def _cmd_refresh_all(args: argparse.Namespace) -> int:
 
     failures = 0
     for db in dbs:
+        if _check_shutdown():
+            return 0
         player = _infer_player_from_db_filename(db)
         if not player:
             print(f"[SKIP] {db.name} (impossible de déduire --player depuis le nom)")
@@ -607,6 +726,8 @@ def _cmd_refresh_all(args: argparse.Namespace) -> int:
             delta=bool(getattr(args, "delta", False)),
         )
         rc = _run_spnkr_import(opts)
+        if _check_shutdown():
+            return 0
         if rc != 0:
             failures += 1
 
@@ -627,6 +748,8 @@ def _cmd_refresh_all_with_aliases(args: argparse.Namespace) -> int:
 
     failures = 0
     for db in dbs:
+        if _check_shutdown():
+            return 0
         player = _infer_player_from_db_filename(db)
         if not player:
             print(f"[SKIP] {db.name} (impossible de déduire --player depuis le nom)")
@@ -659,6 +782,8 @@ def _cmd_refresh_all_with_aliases(args: argparse.Namespace) -> int:
         )
 
         rc = _cmd_refresh_with_aliases(sub_args)
+        if _check_shutdown():
+            return 0
         if rc != 0:
             failures += 1
 
@@ -678,6 +803,8 @@ def _cmd_run_with_refresh(args: argparse.Namespace) -> int:
     except Exception:
         pass
     rc = _cmd_refresh(args)
+    if _check_shutdown():
+        return 0
     if rc not in (0, 2):
         # 2 = erreur de paramétrage, on ne lance pas.
         print("[WARN] Refresh en échec, lancement du dashboard quand même…")
@@ -706,8 +833,8 @@ def _cmd_refresh_with_aliases(args: argparse.Namespace) -> int:
     is_delta = bool(getattr(args, "delta", False))
 
     rc = _cmd_refresh(args)
-    if rc == 2:
-        return 2
+    if rc == 2 or _check_shutdown():
+        return 0 if _check_shutdown() else 2
 
     # Compter les matchs APRÈS le refresh
     matches_after = _count_matches_in_db(out_db)
@@ -744,6 +871,10 @@ def _cmd_refresh_with_aliases(args: argparse.Namespace) -> int:
     print("- matches:", len(match_ids))
 
     for i, mid in enumerate(match_ids, start=1):
+        # Vérifier si arrêt demandé
+        if _check_shutdown():
+            return 0
+            
         cmd = [sys.executable, str(DEFAULT_FILM_ROSTER_REFETCH), "--db", str(out_db), "--write-aliases", "--match-id", str(mid)]
         if getattr(args, "patch_highlight_events", False):
             cmd.append("--patch-highlight-events")
@@ -757,9 +888,12 @@ def _cmd_refresh_with_aliases(args: argparse.Namespace) -> int:
             cmd += ["--print-limit", str(int(args.print_limit))]
 
         print(f"[Aliases] {i}/{len(match_ids)} match_id={mid}")
-        proc = subprocess.run(cmd, cwd=str(REPO_ROOT))
-        if proc.returncode != 0:
-            print(f"[WARN] Repair aliases échoué sur {mid} (code={proc.returncode})")
+        try:
+            proc = subprocess.run(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
+            if proc.returncode != 0 and not _shutdown_event.is_set():
+                print(f"[WARN] Repair aliases échoué sur {mid} (code={proc.returncode})")
+        except KeyboardInterrupt:
+            return 0
 
     # Fetch des assets profil (emblem, backdrop, nameplate)
     if not getattr(args, "no_fetch_profile", False):
@@ -770,8 +904,8 @@ def _cmd_refresh_with_aliases(args: argparse.Namespace) -> int:
 
 def _cmd_run_with_refresh_and_aliases(args: argparse.Namespace) -> int:
     rc = _cmd_refresh_with_aliases(args)
-    if rc == 2:
-        return 2
+    if rc == 2 or _check_shutdown():
+        return 0 if _check_shutdown() else 2
     db = Path(args.out_db).expanduser().resolve() if getattr(args, "out_db", None) else None
     return _launch_streamlit(db_path=db, port=args.port, no_browser=args.no_browser)
 
@@ -834,8 +968,13 @@ def _cmd_repair_aliases(args: argparse.Namespace) -> int:
     else:
         print("- match_id:", match_id)
 
-    proc = subprocess.run(cmd, cwd=str(REPO_ROOT))
-    return int(proc.returncode)
+    try:
+        proc = subprocess.run(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
+        if _shutdown_event.is_set():
+            return 0
+        return int(proc.returncode)
+    except KeyboardInterrupt:
+        return 0
 
 
 def _interactive(argv0: str) -> int:
@@ -1223,22 +1362,36 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Installer le handler de signal pour un arrêt propre
+    _install_signal_handler()
+    
     argv = list(sys.argv[1:] if argv is None else argv)
 
     _maybe_reexec_into_venv(argv)
 
-    if not argv:
-        return _interactive(argv0=f"{Path(sys.argv[0]).name}")
+    try:
+        if not argv:
+            return _interactive(argv0=f"{Path(sys.argv[0]).name}")
 
-    ap = _build_parser()
-    args = ap.parse_args(argv)
+        ap = _build_parser()
+        args = ap.parse_args(argv)
 
-    if not getattr(args, "cmd", None):
-        ap.print_help()
-        return 2
+        if not getattr(args, "cmd", None):
+            ap.print_help()
+            return 2
 
-    return int(args.func(args))
+        return int(args.func(args))
+    
+    except KeyboardInterrupt:
+        # Message déjà affiché par le handler de signal
+        if not _shutdown_event.is_set():
+            print("\n⏹ Arrêt en cours...", flush=True)
+        return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Supprimer les warnings/erreurs lors de l'arrêt brutal
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        sys.exit(0)
