@@ -194,10 +194,20 @@ THEME_COLORS = ThemeColors()
 
 @dataclass
 class SessionConfig:
-    """Configuration pour la détection des sessions de jeu."""
+    """Configuration pour la détection des sessions de jeu.
+    
+    Deux modes de calcul :
+    - Legacy (default_gap_minutes) : Basé uniquement sur le gap temporel
+    - Avancé (advanced_gap_minutes) : Gap + coéquipiers + heure de coupure
+    """
+    # Mode legacy (rétrocompatibilité)
     default_gap_minutes: int = 35
     min_gap_minutes: int = 15
     max_gap_minutes: int = 240
+    
+    # Mode avancé (utilisé par MatchCache)
+    advanced_gap_minutes: int = 120  # 2 heures
+    cutoff_hour: int = 8  # Sessions avant 8h = session de la veille
 
     # Seuils pour le bucketing temporel (en jours)
     bucket_threshold_hourly: float = 1.0

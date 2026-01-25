@@ -16,6 +16,16 @@ from src.db.loaders import (
     list_top_teammates,
     get_sync_metadata,
 )
+from src.db.loaders_cached import (
+    load_matches_cached,
+    load_sessions_cached,
+    load_session_matches_cached,
+    load_top_teammates_cached,
+    load_friends,
+    has_cache_tables,
+    get_cache_stats,
+    get_match_session_info,
+)
 from src.db.parsers import (
     guess_xuid_from_db_path,
     parse_iso_utc,
@@ -33,7 +43,7 @@ __all__ = [
     # connection
     "get_connection",
     "DatabaseConnection",
-    # loaders
+    # loaders (original - JSON parsing)
     "load_matches",
     "load_asset_name_map",
     "load_player_match_result",
@@ -47,6 +57,15 @@ __all__ = [
     "list_other_player_xuids",
     "list_top_teammates",
     "get_sync_metadata",
+    # loaders_cached (optimized - from cache tables)
+    "load_matches_cached",
+    "load_sessions_cached",
+    "load_session_matches_cached",
+    "load_top_teammates_cached",
+    "load_friends",
+    "has_cache_tables",
+    "get_cache_stats",
+    "get_match_session_info",
     # parsers
     "guess_xuid_from_db_path",
     "parse_iso_utc",

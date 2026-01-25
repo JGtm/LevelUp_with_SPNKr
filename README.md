@@ -300,15 +300,48 @@ Le dashboard affiche un **score de performance (0–100)** dans la page *Compara
 
 ### Tables de base de données
 
+#### Tables source (données brutes)
+
 | Table | Description |
 |-------|-------------|
 | `MatchStats` | Statistiques des matchs (JSON compressé) |
+| `PlayerMatchStats` | Détails par joueur/match |
 | `HighlightEvents` | Événements marquants extraits |
 | `XuidAliases` | Mapping XUID → Gamertag |
 | `SyncMeta` | Métadonnées de synchronisation |
 | `Playlists` | Informations playlists |
 | `PlaylistMapModePairs` | Modes de jeu |
 | `Maps`, `GameVariants` | Assets de jeu |
+
+#### Tables de cache (optimisation, v3.0+)
+
+| Table | Description |
+|-------|-------------|
+| `MatchCache` | Données de match pré-parsées (évite le parsing JSON) |
+| `Friends` | Liste des amis (manuelle) |
+| `PerformanceScores` | Scores de performance pré-calculés |
+| `TeammatesAggregate` | Stats coéquipiers agrégées |
+| `MedalsAggregate` | Totaux de médailles pré-calculés |
+| `CacheMeta` | Version du schéma de cache |
+
+### Migration vers les tables de cache
+
+Pour bénéficier des optimisations de performance :
+
+```bash
+# Exécuter la migration (remplacez XUID par le vôtre)
+python scripts/migrate_to_cache.py --xuid 2533274823110022
+
+# Options
+--db PATH     # Chemin vers la DB (auto-détecté sinon)
+--force       # Réinitialise les tables de cache
+--dry-run     # Affiche ce qui serait fait sans modifier la DB
+```
+
+**Gains de performance attendus :**
+- `load_matches()` : ~200-500ms → ~20-50ms (10x plus rapide)
+- Sessions : Pré-calculées, accès instantané
+- Coéquipiers : Pré-agrégés, accès instantané
 
 ---
 
@@ -324,6 +357,7 @@ pytest --cov=src --cov-report=html
 # Tests spécifiques
 pytest tests/test_delta_sync.py -v
 pytest tests/test_analysis.py -v
+pytest tests/test_cache_optimization.py -v
 
 # Tests rapides (sans couverture)
 pytest -x --tb=short
@@ -336,6 +370,7 @@ pytest -x --tb=short
 | `src/ui/translations.py` | 100% |
 | `src/analysis/filters.py` | 95% |
 | `src/db/loaders.py` | 85% |
+| `src/db/loaders_cached.py` | 90% |
 
 ---
 

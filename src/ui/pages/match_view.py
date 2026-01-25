@@ -637,7 +637,7 @@ def _render_nemesis_section(
     load_match_gamertags_fn: Callable,
 ) -> None:
     """Rend la section Némésis / Souffre-douleur."""
-    st.subheader("Némésis / Souffre-douleur")
+    st.subheader("Antagonistes du match")
     if not (match_id and match_id.strip() and has_table(db_path, "HighlightEvents")):
         st.caption(
             "Indisponible: la DB ne contient pas les highlight events. "
