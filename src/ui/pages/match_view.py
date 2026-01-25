@@ -381,10 +381,14 @@ def render_match_view(
     with top_cols[0]:
         _os_card("Date", format_date_fr(last_time))
     with top_cols[1]:
+        # Utiliser des classes CSS pour le résultat
+        outcome_class = "text-win" if "victoire" in str(outcome_label).lower() else (
+            "text-loss" if "défaite" in str(outcome_label).lower() else "text-tie"
+        )
         _os_card(
             "Résultats",
             str(outcome_label),
-            f"<span style='color:{score_color}; font-weight:800'>{html.escape(str(score_label))}</span>",
+            f"<span class='{outcome_class} fw-bold'>{html.escape(str(score_label))}</span>",
             accent=str(outcome_color),
             kpi_color=str(outcome_color),
         )
@@ -484,7 +488,8 @@ def _render_expected_vs_actual(row: pd.Series, pm: dict, colors: dict) -> None:
             _os_card("Écart MMR", "-")
         else:
             dm = float(delta_mmr)
-            col = colors["green"] if dm > 0 else (colors["red"] if dm < 0 else colors["violet"])
+            # Utiliser les variables CSS pour les couleurs
+            col = "var(--color-win)" if dm > 0 else ("var(--color-loss)" if dm < 0 else "var(--color-tie)")
             _os_card("Écart MMR", f"{dm:+.1f}", "équipe - adverse", accent=col, kpi_color=col)
 
     def _ev_card(title: str, perf: dict, *, mode: str) -> None:
@@ -496,15 +501,15 @@ def _render_expected_vs_actual(row: pd.Series, pm: dict, colors: dict) -> None:
 
         delta = float(count) - float(expected)
         if delta == 0:
-            col = colors["violet"]
+            delta_class = "text-neutral"
         else:
             good = delta > 0
             if mode == "inverse":
                 good = not good
-            col = colors["green"] if good else colors["red"]
+            delta_class = "text-positive" if good else "text-negative"
 
         arrow = "↑" if delta > 0 else ("↓" if delta < 0 else "→")
-        sub = f"<span style='color:{col}; font-weight:900; font-size:14px'>{arrow} {delta:+.1f}</span>"
+        sub = f"<span class='{delta_class} fw-bold'>{arrow} {delta:+.1f}</span>"
         _os_card(title, f"{float(count):.0f} vs {float(expected):.1f}", sub)
 
     perf_k = pm.get("kills") or {}

@@ -11,7 +11,6 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
-from src.config import HALO_COLORS
 from src.analysis.stats import format_mmss
 from src.ui.cache import cached_load_player_match_result
 from src.ui.translations import translate_playlist_name
@@ -154,19 +153,19 @@ def render_match_history_page(
 
 def _render_history_table(dff_table: pd.DataFrame) -> None:
     """Génère et affiche le tableau HTML de l'historique."""
-    colors = HALO_COLORS.as_dict()
 
-    def _outcome_style(label: str) -> str:
+    def _outcome_class(label: str) -> str:
+        """Retourne la classe CSS pour un résultat."""
         v = str(label or "").strip().casefold()
         if v.startswith("victoire"):
-            return f"color:{colors['green']}; font-weight:800"
+            return "text-win"
         if v.startswith("défaite") or v.startswith("defaite"):
-            return f"color:{colors['red']}; font-weight:800"
+            return "text-loss"
         if v.startswith("égalité") or v.startswith("egalite"):
-            return f"color:{colors['violet']}; font-weight:800"
+            return "text-tie"
         if v.startswith("non"):
-            return f"color:{colors['violet']}; font-weight:800"
-        return "opacity:0.92"
+            return "text-nf"
+        return ""
 
     cols = [
         ("Match", "_app"),
@@ -210,7 +209,8 @@ def _render_history_table(dff_table: pd.DataFrame) -> None:
                 tds.append(f"<td>{hw_link}</td>")
             elif key == "outcome_label":
                 val = _fmt(r.get(key))
-                tds.append(f"<td style='{_outcome_style(val)}'>{html_lib.escape(val)}</td>")
+                css_class = _outcome_class(val)
+                tds.append(f"<td class='{css_class}'>{html_lib.escape(val)}</td>")
             elif key in ("team_mmr", "enemy_mmr", "delta_mmr"):
                 val = _fmt_mmr_int(r.get(key))
                 tds.append(f"<td>{html_lib.escape(val)}</td>")

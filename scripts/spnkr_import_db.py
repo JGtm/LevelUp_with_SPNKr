@@ -850,8 +850,15 @@ async def main_async(argv: list[str]) -> int:
                 cur = con.cursor()
                 cur.execute("SELECT MatchId FROM MatchStats WHERE MatchId IS NOT NULL")
                 existing_match_ids = {str(r[0]) for r in cur.fetchall() if r and r[0]}
-            except Exception:
+                print(f"[RESUME] {len(existing_match_ids)} matchs existants chargés depuis la DB.")
+            except Exception as e:
                 existing_match_ids = set()
+                print(f"[RESUME] Impossible de charger les matchs existants: {e}")
+        
+        if delta_mode:
+            print(f"[DELTA] Mode delta activé. Arrêt au premier match connu.")
+            if not existing_match_ids:
+                print(f"[DELTA] ⚠️  ATTENTION: aucun match existant, le delta ne pourra pas s'arrêter!")
 
         tokens = await _get_tokens_from_env_or_args(args)
 

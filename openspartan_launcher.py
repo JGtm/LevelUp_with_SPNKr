@@ -458,6 +458,21 @@ def _prompt_player_choice(*, default_player: str | None) -> str | None:
     return raw
 
 
+def _count_matches_in_db(db_path: Path) -> int:
+    """Compte le nombre total de matchs dans la DB."""
+    if not db_path.exists():
+        return 0
+    try:
+        con = sqlite3.connect(str(db_path))
+        cur = con.cursor()
+        cur.execute("SELECT COUNT(*) FROM MatchStats")
+        row = cur.fetchone()
+        con.close()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
 def _latest_match_id_from_db(db_path: Path) -> str | None:
     """Retourne le MatchId le plus récent selon MatchStats.MatchInfo.StartTime."""
     try:
@@ -686,14 +701,37 @@ def _cmd_refresh_with_aliases(args: argparse.Namespace) -> int:
     except Exception:
         pass
 
+    # Compter les matchs AVANT le refresh pour détecter les nouveaux
+    matches_before = _count_matches_in_db(out_db)
+    is_delta = bool(getattr(args, "delta", False))
+
     rc = _cmd_refresh(args)
     if rc == 2:
         return 2
 
-    # Réparation aliases (sur les N derniers matchs)
-    aliases_last = int(getattr(args, "aliases_last", 0) or 0)
-    if aliases_last <= 0:
+    # Compter les matchs APRÈS le refresh
+    matches_after = _count_matches_in_db(out_db)
+    new_matches = max(0, matches_after - matches_before)
+
+    # Réparation aliases: optimisé en mode delta
+    aliases_last_arg = int(getattr(args, "aliases_last", 0) or 0)
+    
+    if is_delta and new_matches == 0:
+        # Mode delta sans nouveaux matchs: traiter seulement les 5 derniers
+        # (au cas où des aliases manqueraient sur les matchs récents)
+        aliases_last = 5
+        print(f"[Aliases] Mode delta: 0 nouveau match → vérification des {aliases_last} derniers uniquement")
+    elif is_delta and new_matches > 0:
+        # Mode delta avec nouveaux matchs: traiter les nouveaux + quelques anciens
+        aliases_last = min(new_matches + 5, 50)
+        print(f"[Aliases] Mode delta: {new_matches} nouveau(x) match(s) → traitement de {aliases_last} matchs")
+    elif aliases_last_arg > 0:
+        # Valeur explicite fournie
+        aliases_last = aliases_last_arg
+    else:
+        # Mode refresh complet sans valeur explicite
         aliases_last = int(getattr(args, "max_matches", 10) or 10)
+    
     aliases_last = max(1, min(aliases_last, 200))
 
     match_ids = _latest_match_ids_from_db(out_db, limit=aliases_last)

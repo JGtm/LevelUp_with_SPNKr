@@ -2,8 +2,11 @@
    LevelUp - Thème sombre personnalisé (Style Halo Waypoint)
    ============================================================================= */
 
-/* Google Fonts - Bebas Neue (titres) + Roboto Condensed (corps) + Material Symbols (icônes Streamlit) */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto+Condensed:wght@300;400;500;600;700;800;900&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+/* Google Fonts - Bebas Neue (titres) + Roboto Condensed (corps) + Material Icons (icônes Streamlit) */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto+Condensed:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons+Outlined');
+@import url('https://fonts.googleapis.com/icon?family=Material+Symbols+Rounded');
 
 :root {
     /* Palette "dark Halo" - Style Waypoint */
@@ -37,6 +40,188 @@
     --corner-size: 12px;
     --corner-size-sm: 8px;
     --corner-size-lg: 16px;
+    
+    /* Couleurs sémantiques (victoire/défaite/score) */
+    --color-win: #4CAF50;
+    --color-loss: #F44336;
+    --color-tie: #9E9E9E;
+    --color-positive: #1B5E20;
+    --color-negative: #B71C1C;
+    --color-neutral: #9E9E9E;
+    --color-excellent: #1B5E20;
+    --color-good: #4CAF50;
+    --color-average: #FF9800;
+    --color-poor: #F44336;
+    --color-bad: #B71C1C;
+}
+
+/* =============================================================================
+   Classes utilitaires - Couleurs texte
+   ============================================================================= */
+
+/* Résultats de match */
+.text-win { color: var(--color-win) !important; font-weight: 800; }
+.text-loss { color: var(--color-loss) !important; font-weight: 800; }
+.text-tie { color: var(--color-tie) !important; font-weight: 800; }
+.text-nf { color: var(--color-tie) !important; font-weight: 800; }  /* Non terminé */
+
+/* Indicateurs positif/négatif (scores, deltas) */
+.text-positive { color: var(--color-positive) !important; }
+.text-negative { color: var(--color-negative) !important; }
+.text-neutral { color: var(--color-neutral) !important; }
+
+/* Niveaux de performance */
+.text-excellent { color: var(--color-excellent) !important; }
+.text-good { color: var(--color-good) !important; }
+.text-average { color: var(--color-average) !important; }
+.text-poor { color: var(--color-poor) !important; }
+.text-bad { color: var(--color-bad) !important; }
+
+/* Poids de police */
+.fw-bold { font-weight: 800 !important; }
+.fw-semibold { font-weight: 600 !important; }
+.fw-normal { font-weight: 400 !important; }
+
+/* Tailles de texte */
+.text-sm { font-size: 0.85rem !important; }
+.text-md { font-size: 1rem !important; }
+.text-lg { font-size: 1.2rem !important; }
+.text-xl { font-size: 1.5rem !important; }
+.text-2xl { font-size: 2rem !important; }
+.text-4xl { font-size: 4rem !important; }
+
+/* Indicateurs flèches */
+.indicator-up::before { content: "▲"; margin-right: 4px; }
+.indicator-down::before { content: "▼"; margin-right: 4px; }
+
+/* =============================================================================
+   Tableaux (Style Waypoint)
+   ============================================================================= */
+
+.os-table-wrap {
+    overflow-x: auto;
+    margin: 12px 0;
+}
+
+.os-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+}
+
+.os-table th {
+    background: transparent;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgba(245, 248, 255, 0.75);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.os-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(245, 248, 255, 0.92);
+}
+
+.os-table tr:hover {
+    background: rgba(51, 214, 255, 0.06);
+}
+
+.os-table a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.os-table a:hover {
+    text-decoration: underline;
+}
+
+/* Session history table (variante) */
+.session-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+}
+
+.session-history-table th {
+    background: transparent;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 700;
+    color: rgba(245, 248, 255, 0.75);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.session-history-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.session-history-table tr:hover {
+    background: rgba(51, 214, 255, 0.06);
+}
+
+/* =============================================================================
+   Cards de performance (Style Waypoint)
+   ============================================================================= */
+
+.os-perf-card {
+    position: relative;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 24px;
+    text-align: center;
+}
+
+.os-perf-card:hover {
+    border-color: rgba(255, 255, 255, 0.65);
+}
+
+.os-perf-card__label {
+    color: var(--color-neutral);
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
+
+.os-perf-card__score {
+    font-size: 4rem;
+    font-weight: 800;
+    line-height: 1;
+    font-family: var(--font-display);
+}
+
+.os-perf-card__status {
+    font-size: 1.1rem;
+    margin-top: 8px;
+    font-weight: 600;
+}
+
+.os-perf-card__meta {
+    color: #757575;
+    font-size: 0.85rem;
+    margin-top: 12px;
+}
+
+/* Metric comparison row */
+.os-metric-value {
+    font-weight: 600;
+}
+
+.os-metric-value--better {
+    color: var(--color-good);
+}
+
+.os-metric-value--worse {
+    color: var(--color-loss);
+}
+
+.os-metric-value--neutral {
+    color: #E0E0E0;
 }
 
 /* =============================================================================
@@ -211,37 +396,35 @@ section.main:after {
     border-color: rgba(255, 255, 255, 0.12);
 }
 
-/* Sidebar : masquer le texte ".arrow" parasite dans les expanders */
-[data-testid="stSidebar"] [data-testid="stExpander"] .arrow,
-[data-testid="stExpander"] summary span.arrow {
+/* =============================================================================
+   Expanders - Style Waypoint
+   ============================================================================= */
+
+/* Forcer la police Material Icons sur les icônes Streamlit */
+[data-testid="stIconMaterial"] {
+    font-family: 'Material Icons', 'Material Symbols Rounded', sans-serif !important;
+}
+
+/* Masquer l'icône toggle (flèche) des expanders */
+[data-testid="stExpander"] [data-testid="stExpanderToggleIcon"] {
     display: none !important;
 }
 
-/* Masquer les icônes Material cassées (_arrow_light, etc.) dans les expanders */
-[data-testid="stExpander"] summary {
-    font-family: var(--font-body) !important;
-}
-
-[data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] p {
-    font-family: var(--font-body) !important;
-}
-
-/* Cacher le texte d'icône Material non rendu */
-[data-testid="stExpander"] summary span[class*="icon"],
-[data-testid="stExpander"] summary .material-symbols-rounded {
-    font-size: 0 !important;
-    visibility: hidden !important;
-}
-
-/* Style des expanders sidebar */
+/* Style des expanders sidebar - angles droits */
 [data-testid="stSidebar"] [data-testid="stExpander"] {
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 0;
-    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stExpander"] > details {
+    border: none !important;
+    border-radius: 0 !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stExpander"] summary {
-    padding: 8px 12px;
+    padding: 8px 12px !important;
+    font-family: var(--font-body) !important;
 }
 
 /* =============================================================================
@@ -326,20 +509,13 @@ section.main:after {
     margin-bottom: 1rem;
     padding: 16px 20px;
     background: transparent;
-    /* Angles droits (rectangle simple) */
+    /* Pas de bordure */
 }
 
-.spartan-id-wrapper::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    z-index: -1;
-}
+/* Supprimé: pseudo-élément ::before avec bordure */
 
-.spartan-id-wrapper:hover::before {
-    border-color: rgba(255, 255, 255, 0.65);
+.spartan-id-wrapper:hover {
+    /* Effet subtil au hover si besoin */
 }
 
 /* =============================================================================
@@ -351,14 +527,13 @@ section.main:after {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-width: 90px;
-    gap: 6px;
+    min-width: 120px;
+    gap: 8px;
 }
 
 .career-rank__icon {
-    /* Taille originale de l'image */
-    max-width: 120px;
-    max-height: 120px;
+    width: 100px;
+    height: 100px;
     object-fit: contain;
     filter: drop-shadow(0 4px 12px rgba(51, 214, 255, 0.25));
 }
@@ -400,36 +575,41 @@ section.main:after {
 .spartan-id {
     position: relative;
     width: 360px;
-    height: 80px;
+    height: 100px;
+    overflow: visible;  /* Permet au backdrop de dépasser */
     /* Pas de bordure additionnelle, le wrapper gère le style */
 }
 
-/* Backdrop : 2/3 de la largeur (240px), centré, en arrière-plan */
+/* Backdrop : affiché complètement, visible derrière */
 .spartan-id__backdrop {
     position: absolute;
-    width: 240px;
-    height: 100%;
-    left: 50%;
+    width: 100%;
+    height: auto;
+    left: 0;
     top: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateY(-50%);
     z-index: 1;
-    overflow: hidden;
+    overflow: visible;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .spartan-id__backdrop img {
     width: 100%;
-    height: 100%;
+    height: auto;
     object-fit: contain;
-    opacity: 0.85;
+    opacity: 1;
 }
 
-/* Nameplate : 360px, au-dessus du backdrop */
+/* Nameplate : centré verticalement, au-dessus du backdrop */
 .spartan-id__nameplate {
     position: absolute;
     width: 100%;
-    height: 100%;
+    height: 72px;  /* Plus petite que le conteneur pour voir le backdrop dépasser */
     left: 0;
-    top: 0;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 2;
 }
 
@@ -630,28 +810,33 @@ section.main:after {
    ============================================================================= */
 
 div[data-testid="stMetric"] {
-    position: relative;
-    background: transparent;
-    padding: 16px 16px;
-    min-height: 100px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    /* Angles droits */
+    position: relative !important;
+    background: transparent !important;
+    padding: 16px 16px !important;
+    min-height: 100px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    /* FORCE angles droits - pas de clip-path */
+    clip-path: none !important;
+    border-radius: 0 !important;
 }
 
 /* Bordure fine blanche */
 div[data-testid="stMetric"]::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    z-index: -1;
-    pointer-events: none;
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    z-index: -1 !important;
+    pointer-events: none !important;
+    /* FORCE pas de clip-path */
+    clip-path: none !important;
+    background: transparent !important;
 }
 
 div[data-testid="stMetric"]:hover::before {
-    border-color: rgba(255, 255, 255, 0.65);
+    border-color: rgba(255, 255, 255, 0.65) !important;
 }
 
 div[data-testid="stMetric"] label {
@@ -889,12 +1074,13 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
 
 .os-kpi {
     padding: 14px 16px;
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background:
-        radial-gradient(900px 420px at 8% 0%, rgba(51, 214, 255, 0.18) 0%, transparent 58%),
-        linear-gradient(135deg, rgba(18, 26, 36, 0.86), rgba(8, 10, 14, 0.92));
-    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.30);
+    border-radius: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: transparent;
+}
+
+.os-kpi:hover {
+    border-color: rgba(255, 255, 255, 0.65);
 }
 
 .os-kpi__label {

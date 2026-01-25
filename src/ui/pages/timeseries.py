@@ -18,15 +18,14 @@ from src.visualization.timeseries import (
 from src.visualization.distributions import plot_kda_distribution
 
 
-def render_timeseries_page(dff: pd.DataFrame, me_name: str) -> None:
+def render_timeseries_page(dff: pd.DataFrame) -> None:
     """Affiche la page Séries temporelles.
 
     Args:
         dff: DataFrame filtré des matchs.
-        me_name: Nom affiché du joueur.
     """
     with st.spinner("Génération des graphes…"):
-        fig = plot_timeseries(dff, title=f"{me_name}")
+        fig = plot_timeseries(dff)
         st.plotly_chart(fig, width="stretch")
 
         st.subheader("FDA")
@@ -39,11 +38,11 @@ def render_timeseries_page(dff: pd.DataFrame, me_name: str) -> None:
             st.plotly_chart(plot_kda_distribution(dff), width="stretch")
 
         st.subheader("Assistances")
-        st.plotly_chart(plot_assists_timeseries(dff, title=f"{me_name} — Assistances"), width="stretch")
+        st.plotly_chart(plot_assists_timeseries(dff), width="stretch")
 
         st.subheader("Stats par minute")
         st.plotly_chart(
-            plot_per_minute_timeseries(dff, title=f"{me_name} — Frags/Morts/Assistances par minute"),
+            plot_per_minute_timeseries(dff),
             width="stretch",
         )
 

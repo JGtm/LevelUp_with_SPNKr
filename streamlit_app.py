@@ -700,7 +700,7 @@ def main() -> None:
                     )
                 with sync_col2:
                     full_sync = st.button(
-                        "📥 Full",
+                        "📥 Complète",
                         key="full_sync_button", 
                         help="Synchronisation complète (parcourt tout l'historique).",
                         width="stretch",
@@ -1420,7 +1420,7 @@ def main() -> None:
     # Page: Séries temporelles
     # --------------------------------------------------------------------------
     elif page == "Séries temporelles":
-        render_timeseries_page(dff, me_name)
+        render_timeseries_page(dff)
 
     # --------------------------------------------------------------------------
     # Page: Victoires/Défaites

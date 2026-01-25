@@ -13,7 +13,7 @@ def _rolling_mean(series: pd.Series, window: int = 10) -> pd.Series:
     return series.rolling(window=w, min_periods=1).mean()
 
 
-def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
+def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> go.Figure:
     """Graphique principal: Kills/Deaths/Ratio dans le temps.
     
     Args:
@@ -118,7 +118,7 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
 
 
-def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
+def plot_assists_timeseries(df: pd.DataFrame, title: str = "Assistances") -> go.Figure:
     """Graphique des assistances dans le temps.
     
     Args:
@@ -195,7 +195,7 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
-def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
+def plot_per_minute_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Assistances par minute") -> go.Figure:
     """Graphique des stats par minute.
     
     Args:

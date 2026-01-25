@@ -232,6 +232,15 @@ def refresh_spnkr_db_via_api(
     # IMPORTANT: on n'écrit jamais directement dans la DB cible.
     # Si l'import crashe/timeout, SQLite peut laisser un fichier vide/corrompu.
     tmp = f"{target}.tmp.{uuid.uuid4().hex}.db"
+    
+    # Pour le mode delta: copier la DB existante vers tmp pour que --resume
+    # trouve les matchs déjà connus (sinon existing_match_ids serait vide)
+    if delta and os.path.exists(target):
+        import shutil
+        try:
+            shutil.copy2(target, tmp)
+        except Exception as e:
+            return False, f"Impossible de copier la DB pour mode delta: {e}"
 
     cmd = [
         sys.executable,

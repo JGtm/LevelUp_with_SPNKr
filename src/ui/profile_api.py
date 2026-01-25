@@ -605,9 +605,6 @@ def fetch_appearance_via_spnkr(
                         if ct_in:
                             headers["343-Clearance"] = ct_in
                         
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        
                         career_progress = None
                         response_format = None  # Pour adapter le parsing selon le format
                         
@@ -615,15 +612,18 @@ def fetch_appearance_via_spnkr(
                         # Réponse directe: { "CurrentProgress": { "Rank": N, "PartialProgress": XP }}
                         try:
                             career_url = f"{economy_host}/hi/players/xuid({xu})/rewardtracks/careerranks/careerrank1"
-                            logger.info(f"Career Rank API attempt 1 (den.dev format): {career_url}")
+                            print(f"[Career] API attempt 1: GET {career_url}")
                             async with session.get(career_url, headers=headers) as resp:
-                                logger.info(f"Career Rank API response status: {resp.status}")
+                                print(f"[Career] Response status: {resp.status}")
                                 if resp.status == 200:
                                     career_progress = await resp.json()
                                     response_format = "direct"  # CurrentProgress au premier niveau
-                                    logger.info(f"Career Rank API success (format 1)")
+                                    print(f"[Career] Success (format 1): {list(career_progress.keys())}")
+                                else:
+                                    body = await resp.text()
+                                    print(f"[Career] Error body: {body[:200]}")
                         except Exception as e:
-                            logger.warning(f"Career Rank GET (den.dev) failed: {e}")
+                            print(f"[Career] GET failed: {e}")
                         
                         # Format 2 (fallback Grunt): POST /hi/rewardtracks/careerRank1 avec body
                         # Réponse encapsulée: { "RewardTracks": [{ "Result": { "CurrentProgress": {...}}}]}
@@ -631,15 +631,18 @@ def fetch_appearance_via_spnkr(
                             try:
                                 career_url = f"{economy_host}/hi/rewardtracks/careerRank1"
                                 body = {"Users": [f"xuid({xu})"]}
-                                logger.info(f"Career Rank API attempt 2 (Grunt format POST): {career_url}")
+                                print(f"[Career] API attempt 2: POST {career_url}")
                                 async with session.post(career_url, headers=headers, json=body) as resp:
-                                    logger.info(f"Career Rank API response status: {resp.status}")
+                                    print(f"[Career] Response status: {resp.status}")
                                     if resp.status == 200:
                                         career_progress = await resp.json()
                                         response_format = "wrapped"  # RewardTracks[0].Result.CurrentProgress
-                                        logger.info(f"Career Rank API success (format 2)")
+                                        print(f"[Career] Success (format 2)")
+                                    else:
+                                        err_body = await resp.text()
+                                        print(f"[Career] Error body: {err_body[:200]}")
                             except Exception as e:
-                                logger.warning(f"Career Rank POST (Grunt) failed: {e}")
+                                print(f"[Career] POST failed: {e}")
                         
                         if career_progress is None:
                             return None, None, None

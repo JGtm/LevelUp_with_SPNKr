@@ -13,7 +13,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.config import HALO_COLORS
 from src.ui import translate_pair_name
 from src.ui.components.performance import (
     compute_session_performance_score,
@@ -53,19 +52,18 @@ def _format_date_with_weekday(dt) -> str:
         return "-"
 
 
-def _outcome_style(label: str) -> str:
-    """Retourne le style CSS pour un résultat."""
-    colors = HALO_COLORS.as_dict()
+def _outcome_class(label: str) -> str:
+    """Retourne la classe CSS pour un résultat."""
     v = str(label or "").strip().casefold()
     if v.startswith("victoire"):
-        return f"color:{colors['green']}; font-weight:800"
+        return "text-win"
     if v.startswith("défaite") or v.startswith("defaite"):
-        return f"color:{colors['red']}; font-weight:800"
+        return "text-loss"
     if v.startswith("égalité") or v.startswith("egalite"):
-        return f"color:{colors['violet']}; font-weight:800"
+        return "text-tie"
     if v.startswith("non"):
-        return f"color:{colors['violet']}; font-weight:800"
-    return "opacity:0.92"
+        return "text-nf"
+    return ""
 
 
 def render_session_history_table(df_sess: pd.DataFrame, session_name: str) -> None:
@@ -148,20 +146,14 @@ def render_session_history_table(df_sess: pd.DataFrame, session_name: str) -> No
         for col in df_display.columns:
             val = row[col]
             if col == "Résultat":
-                style = _outcome_style(str(val))
-                cells.append(f"<td style='{style}'>{html_lib.escape(str(val))}</td>")
+                css_class = _outcome_class(str(val))
+                cells.append(f"<td class='{css_class}'>{html_lib.escape(str(val))}</td>")
             else:
                 cells.append(f"<td>{html_lib.escape(str(val) if val is not None else '-')}</td>")
         html_rows.append("<tr>" + "".join(cells) + "</tr>")
     
     header_cells = "".join(f"<th>{html_lib.escape(c)}</th>" for c in df_display.columns)
     html_table = f"""
-    <style>
-    .session-history-table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; }}
-    .session-history-table th {{ background: #1a1a2e; padding: 8px; text-align: left; border-bottom: 2px solid #35D0FF; }}
-    .session-history-table td {{ padding: 6px 8px; border-bottom: 1px solid #333; }}
-    .session-history-table tr:hover {{ background: rgba(53, 208, 255, 0.1); }}
-    </style>
     <table class="session-history-table">
     <thead><tr>{header_cells}</tr></thead>
     <tbody>{''.join(html_rows)}</tbody>
