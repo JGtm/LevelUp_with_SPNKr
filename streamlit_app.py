@@ -144,6 +144,7 @@ from src.ui.components import (
     render_hierarchical_checkbox_filter,
     get_firefight_playlists,
 )
+from src.analysis.performance_config import PERFORMANCE_SCORE_FULL_DESC
 from src.ui.cache import (
     load_df,
     db_cache_key,
@@ -1341,6 +1342,12 @@ def main() -> None:
     )
 
     # (Résumé déplacé en haut du site)
+
+    # ==========================================================================
+    # Explication du score de performance
+    # ==========================================================================
+    with st.expander("ℹ️ À propos du score de performance", expanded=False):
+        st.markdown(PERFORMANCE_SCORE_FULL_DESC)
 
     # ==========================================================================
     # Pages (navigation)

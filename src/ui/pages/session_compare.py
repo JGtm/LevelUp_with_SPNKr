@@ -22,7 +22,6 @@ from src.ui.components.performance import (
     get_score_class,
 )
 from src.analysis.performance_score import compute_performance_series
-from src.analysis.performance_config import PERFORMANCE_SCORE_SHORT_DESC
 
 if TYPE_CHECKING:
     pass
@@ -550,10 +549,6 @@ def render_session_comparison_page(
         df_full: DataFrame complet pour le calcul du score relatif.
     """
     st.caption("Compare les performances entre deux sessions de jeu.")
-    
-    # Note explicative sur le score de performance
-    with st.expander("ℹ️ À propos du score de performance", expanded=False):
-        st.markdown(PERFORMANCE_SCORE_SHORT_DESC)
     
     if all_sessions_df.empty:
         st.info("Aucune session disponible.")
