@@ -61,9 +61,11 @@ _ctrl_c_count = 0
 
 
 def _subprocess_creation_flags() -> int:
-    """Retourne les flags pour isoler le sous-processus."""
-    if sys.platform == "win32":
-        return subprocess.CREATE_NEW_PROCESS_GROUP
+    """Retourne les flags pour le sous-processus.
+    
+    Note: On n'utilise PAS CREATE_NEW_PROCESS_GROUP pour que Ctrl+C
+    soit propagé au processus enfant.
+    """
     return 0
 
 
@@ -72,6 +74,18 @@ def _kill_active_process() -> None:
     proc = _active_process
     if proc is None:
         return
+    
+    # Sur Windows, utiliser taskkill pour tuer l'arbre de processus
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+    
     try:
         proc.terminate()
     except Exception:
@@ -90,15 +104,14 @@ def _signal_handler(signum: int, frame) -> None:
         _ctrl_c_count += 1
         count = _ctrl_c_count
         
-        if not _shutdown_event.is_set():
+        if count == 1:
             _shutdown_event.set()
-            print("\n⏹ Arrêt en cours...", flush=True)
-    
-    _kill_active_process()
-    
-    if count >= 2:
-        print("⚠ Arrêt forcé.", flush=True)
-        os._exit(1)
+            print("\n⏹ Arrêt en cours (Ctrl+C à nouveau pour forcer)...", flush=True)
+            _kill_active_process()
+        elif count >= 2:
+            print("\n⚠ Arrêt forcé.", flush=True)
+            _kill_active_process()
+            os._exit(1)
 
 
 def _install_signal_handler() -> None:

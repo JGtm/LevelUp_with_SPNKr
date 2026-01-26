@@ -101,6 +101,32 @@ def _sanitize_gamertag(value: Any) -> Any:
     return s or value
 
 
+def get_players_from_db(db_path: str) -> list[dict[str, Any]]:
+    """Récupère la liste des joueurs depuis la table Players (DB fusionnée).
+    
+    Returns:
+        Liste de dicts avec xuid, gamertag, label, match_count.
+        Liste vide si la table n'existe pas ou DB vide.
+    """
+    if not db_path or not has_table(db_path, "Players"):
+        return []
+    try:
+        with get_connection(db_path) as con:
+            cur = con.cursor()
+            cur.execute("""
+                SELECT xuid, gamertag, label, total_matches
+                FROM Players
+                ORDER BY total_matches DESC
+            """)
+            rows = cur.fetchall()
+            return [
+                {"xuid": r[0], "gamertag": r[1], "label": r[2], "match_count": r[3] or 0}
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
 def has_table(db_path: str, table_name: str) -> bool:
     if not db_path or not table_name:
         return False

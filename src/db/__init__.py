@@ -15,6 +15,7 @@ from src.db.loaders import (
     list_other_player_xuids,
     list_top_teammates,
     get_sync_metadata,
+    get_players_from_db,
 )
 from src.db.loaders_cached import (
     load_matches_cached,
@@ -57,6 +58,7 @@ __all__ = [
     "list_other_player_xuids",
     "list_top_teammates",
     "get_sync_metadata",
+    "get_players_from_db",
     # loaders_cached (optimized - from cache tables)
     "load_matches_cached",
     "load_sessions_cached",

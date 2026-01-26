@@ -194,7 +194,7 @@ def _render_history_table(dff_table: pd.DataFrame) -> None:
         ("FDA", "kda"),
         ("Frags", "kills"),
         ("Morts", "deaths"),
-        ("Spree (max)", "max_killing_spree"),
+        ("Tuerie (max)", "max_killing_spree"),
         ("Têtes", "headshot_kills"),
         ("Durée vie", "average_life_mmss"),
         ("Assists", "assists"),

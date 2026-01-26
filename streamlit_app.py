@@ -169,6 +169,7 @@ from src.ui.sync import (
     cleanup_orphan_tmp_dbs,
     render_sync_indicator,
     refresh_spnkr_db_via_api,
+    sync_all_players,
 )
 from src.ui.multiplayer import (
     is_multi_player_db,
@@ -456,10 +457,19 @@ def _avg_match_duration_seconds(df_: pd.DataFrame) -> float | None:
     return float(s.mean())
 
 
+def _is_uuid_like(s: str) -> bool:
+    """Vérifie si une chaîne ressemble à un UUID (ex: a446725e-b281-414c-a21e)."""
+    import re
+    return bool(re.match(r'^[a-f0-9]{8}(-[a-f0-9]{4}){0,3}(-[a-f0-9]{1,12})?$', s.lower()))
+
+
 def _normalize_map_label(map_name: str | None) -> str | None:
     base = _clean_asset_label(map_name)
     if base is None:
         return None
+    # Masquer les UUIDs non résolus
+    if _is_uuid_like(base):
+        return "Carte inconnue"
     s = re.sub(r"\s*-\s*Forge\b", "", base, flags=re.IGNORECASE).strip()
     return s or None
 
@@ -695,63 +705,38 @@ def main() -> None:
             if new_xuid:
                 st.session_state["xuid_input"] = new_xuid
                 xuid = new_xuid
+                # Reset des filtres au changement de joueur
+                # (les valeurs de l'ancien joueur peuvent ne pas exister pour le nouveau)
+                for filter_key in ["filter_playlists", "filter_modes", "filter_maps"]:
+                    if filter_key in st.session_state:
+                        del st.session_state[filter_key]
                 st.rerun()
 
-        # Bouton Sync rapide pour les DB SPNKr
+        # Bouton Sync pour toutes les DB SPNKr (multi-joueurs si DB fusionnée)
         if db_path and is_spnkr_db_path(db_path) and os.path.exists(db_path):
-            # Déduire le joueur depuis le nom de la DB
-            spnkr_player = infer_spnkr_player_from_db_path(db_path) or ""
-            
-            if spnkr_player:
-                sync_col1, sync_col2 = st.columns([1, 1])
-                with sync_col1:
-                    sync_clicked = st.button(
-                        "🔄 Sync",
-                        key="quick_sync_button",
-                        help="Synchronise les nouveaux matchs (mode delta: arrêt dès match connu).",
-                        width="stretch",
+            if st.button(
+                "🔄 Synchroniser",
+                key="sidebar_sync_button",
+                help="Synchronise tous les joueurs (nouveaux matchs, highlights, aliases).",
+                use_container_width=True,
+            ):
+                with st.spinner("Synchronisation en cours..."):
+                    ok, msg = sync_all_players(
+                        db_path=db_path,
+                        match_type=str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking"),
+                        max_matches=int(getattr(settings, "spnkr_refresh_max_matches", 200) or 200),
+                        rps=int(getattr(settings, "spnkr_refresh_rps", 5) or 5),
+                        with_highlight_events=True,
+                        with_aliases=True,
+                        delta=True,
+                        timeout_seconds=180,
                     )
-                with sync_col2:
-                    full_sync = st.button(
-                        "📥 Complète",
-                        key="full_sync_button", 
-                        help="Synchronisation complète (parcourt tout l'historique).",
-                        width="stretch",
-                    )
-                
-                if sync_clicked or full_sync:
-                    with st.spinner("Synchronisation en cours..." if sync_clicked else "Sync complète en cours..."):
-                        ok, msg = refresh_spnkr_db_via_api(
-                            db_path=db_path,
-                            player=spnkr_player,
-                            match_type="matchmaking",
-                            max_matches=200 if sync_clicked else 500,
-                            rps=5,
-                            with_highlight_events=True,
-                            with_aliases=True,
-                            delta=sync_clicked,  # Mode delta pour sync rapide
-                            timeout_seconds=120 if sync_clicked else 300,
-                        )
-                    if ok:
-                        st.success(msg)
-                        _clear_app_caches()
-                        st.rerun()
-                    else:
-                        st.error(msg)
-
-        # Toujours visible
-        if st.button(
-            "Actualiser",
-            width="stretch",
-            help="Relance l'app (optionnellement en vidant les caches selon Paramètres).",
-        ):
-            if bool(getattr(settings, "refresh_clears_caches", False)):
-                _clear_app_caches()
-                try:
-                    getattr(cached_list_local_dbs, "clear")()
-                except Exception:
-                    pass
-            st.rerun()
+                if ok:
+                    st.success(msg)
+                    _clear_app_caches()
+                    st.rerun()
+                else:
+                    st.error(msg)
 
     # Validation légère (non bloquante)
     from src.db import resolve_xuid_from_db

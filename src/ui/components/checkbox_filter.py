@@ -17,11 +17,21 @@ import streamlit as st
 def _set_filter_all(session_key: str, options: list[str]) -> None:
     """Callback pour sélectionner toutes les options."""
     st.session_state[session_key] = set(options)
+    # Supprimer les clés individuelles des checkboxes pour forcer leur reset
+    prefixes = (f"{session_key}_cb_", f"{session_key}_cat_", f"{session_key}_mode_")
+    keys_to_delete = [k for k in list(st.session_state.keys()) if k.startswith(prefixes)]
+    for k in keys_to_delete:
+        del st.session_state[k]
 
 
 def _set_filter_none(session_key: str) -> None:
     """Callback pour désélectionner toutes les options."""
     st.session_state[session_key] = set()
+    # Supprimer les clés individuelles des checkboxes pour forcer leur reset
+    prefixes = (f"{session_key}_cb_", f"{session_key}_cat_", f"{session_key}_mode_")
+    keys_to_delete = [k for k in list(st.session_state.keys()) if k.startswith(prefixes)]
+    for k in keys_to_delete:
+        del st.session_state[k]
 
 
 # Cache pour les catégories de modes

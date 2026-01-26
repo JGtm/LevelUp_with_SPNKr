@@ -100,11 +100,11 @@ def render_source_section(
     )
 
     c_top = st.columns(2)
-    if c_top[0].button("Vider caches", width="stretch"):
+    if c_top[0].button("Vider caches", use_container_width=True):
         on_clear_caches()
         st.success("Caches vidés.")
         st.rerun()
-    if c_top[1].button("Rafraîchir DB", width="stretch"):
+    if c_top[1].button("Rafraîchir", use_container_width=True):
         # Le get_local_dbs est censé être caché côté app (ttl) ; on le force via clear/closure.
         try:
             getattr(get_local_dbs, "clear")()  # st.cache_data wrapper
@@ -112,34 +112,14 @@ def render_source_section(
             pass
         st.rerun()
 
-    # UI simplifiée: sélection directe parmi les DB SPNKr détectées.
-    if spnkr_candidates:
-        with st.expander("DB détectées", expanded=True):
-            # Déterminer l'index actuel
-            current_name = Path(current_db_path).name if current_db_path else ""
-            db_names = [p.name for p in spnkr_candidates]
-            try:
-                current_idx = db_names.index(current_name)
-            except ValueError:
-                current_idx = 0
-
-            def _on_db_change():
-                pick = st.session_state.get("_spnkr_db_picker", "")
-                sel_p = next((p for p in spnkr_candidates if p.name == pick), None)
-                if sel_p:
-                    st.session_state["db_path"] = str(sel_p)
-                    inferred = infer_spnkr_player_from_db_path(str(sel_p)) or ""
-                    if inferred:
-                        st.session_state["xuid_input"] = inferred
-                    on_clear_caches()
-
-            st.selectbox(
-                "DB",
-                options=db_names,
-                index=current_idx,
-                key="_spnkr_db_picker",
-                on_change=_on_db_change,
-            )
+    # Section DB détectées masquée - sélection automatique depuis session_state
+    # (La DB est sélectionnée via openspartan_launcher ou directement dans session_state)
+    if spnkr_candidates and not current_db_path:
+        # Auto-sélection de la première DB si aucune n'est définie
+        st.session_state["db_path"] = str(spnkr_candidates[0])
+        inferred = infer_spnkr_player_from_db_path(str(spnkr_candidates[0])) or ""
+        if inferred:
+            st.session_state["xuid_input"] = inferred
 
     # Récupérer le db_path depuis session_state (pas d'UI manuelle)
     db_path = str(st.session_state.get("db_path", "") or "").strip()

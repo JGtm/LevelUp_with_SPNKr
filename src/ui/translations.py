@@ -492,11 +492,23 @@ PAIR_FR: dict[str, str] = {
 }
 
 
+def _is_uuid_like(s: str) -> bool:
+    """Vérifie si une chaîne ressemble à un UUID (ex: a446725e-b281-414c-a21e)."""
+    import re
+    # UUID complet ou partiel (au moins 8 caractères hex avec tirets)
+    return bool(re.match(r'^[a-f0-9]{8}(-[a-f0-9]{4}){0,3}(-[a-f0-9]{1,12})?$', s.lower()))
+
+
 def translate_playlist_name(name: str | None) -> str | None:
     """Traduit un nom de playlist en français."""
     if name is None:
         return None
     s = str(name).strip()
+    if not s:
+        return None
+    # Détection des UUIDs non résolus
+    if _is_uuid_like(s):
+        return "Playlist inconnue"
     return PLAYLIST_FR.get(s, s)
 
 
@@ -508,12 +520,17 @@ def translate_pair_name(name: str | None) -> str | None:
     2. Normalisation de la casse et retry
     3. Match par préfixe (mode sans carte)
     4. Fallback générique pour modes Arena
+    5. Si UUID non résolu -> "Mode inconnu"
     """
     if name is None:
         return None
     s = str(name).strip()
     if not s:
         return None
+    
+    # Détection précoce des UUIDs non résolus
+    if _is_uuid_like(s):
+        return "Mode inconnu"
 
     # 1) Match exact
     if s in PAIR_FR:

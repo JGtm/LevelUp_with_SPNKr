@@ -57,10 +57,18 @@ def pick_latest_spnkr_db_if_any(repo_root: Path | None = None) -> str:
 
 
 def is_spnkr_db_path(db_path: str) -> bool:
-    """Vérifie si un chemin correspond à une base SPNKr."""
+    """Vérifie si un chemin correspond à une base SPNKr ou fusionnée multi-joueurs."""
     try:
         p = Path(db_path)
-        return p.suffix.lower() == ".db" and p.name.lower().startswith("spnkr")
+        if p.suffix.lower() != ".db":
+            return False
+        # DB SPNKr classique (spnkr_*.db)
+        if p.name.lower().startswith("spnkr"):
+            return True
+        # DB fusionnée (halo_*.db ou autre avec table Players)
+        if p.name.lower().startswith("halo"):
+            return True
+        return False
     except Exception:
         return False
 
@@ -197,7 +205,7 @@ def refresh_spnkr_db_via_api(
 ) -> tuple[bool, str]:
     """Rafraîchit une DB SPNKr en appelant scripts/spnkr_import_db.py.
 
-    Retourne (ok, message) pour affichage UI.
+    Écrit directement dans la DB cible avec --resume (pas de copie temporaire).
     
     Args:
         db_path: Chemin vers la DB cible.
@@ -229,24 +237,14 @@ def refresh_spnkr_db_via_api(
         mt = "matchmaking"
 
     target = str(db_path)
-    # IMPORTANT: on n'écrit jamais directement dans la DB cible.
-    # Si l'import crashe/timeout, SQLite peut laisser un fichier vide/corrompu.
-    tmp = f"{target}.tmp.{uuid.uuid4().hex}.db"
     
-    # Pour le mode delta: copier la DB existante vers tmp pour que --resume
-    # trouve les matchs déjà connus (sinon existing_match_ids serait vide)
-    if delta and os.path.exists(target):
-        import shutil
-        try:
-            shutil.copy2(target, tmp)
-        except Exception as e:
-            return False, f"Impossible de copier la DB pour mode delta: {e}"
-
+    # Écriture directe dans la DB avec --resume (pas de copie temporaire)
+    # Le script gère déjà l'ajout incrémental sans supprimer les données existantes
     cmd = [
         sys.executable,
         str(importer),
         "--out-db",
-        str(tmp),
+        target,
         "--player",
         p,
         "--match-type",
@@ -255,7 +253,7 @@ def refresh_spnkr_db_via_api(
         str(int(max_matches)),
         "--requests-per-second",
         str(int(rps)),
-        "--resume",
+        "--resume",  # Crucial: ne pas supprimer les données existantes
     ]
     # Highlight events et aliases sont activés par défaut côté import
     # On n'ajoute les flags --no-* que si explicitement désactivés
@@ -276,48 +274,85 @@ def refresh_spnkr_db_via_api(
             timeout=int(timeout_seconds),
         )
     except subprocess.TimeoutExpired:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
         return False, f"Timeout après {timeout_seconds}s (import SPNKr trop long)."
     except Exception as e:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
         return False, f"Erreur au lancement de l'import SPNKr: {e}"
 
     if int(proc.returncode) != 0:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
         tail = (proc.stderr or proc.stdout or "").strip()
         if len(tail) > 1200:
             tail = tail[-1200:]
         return False, f"Import SPNKr en échec (code={proc.returncode}).\n{tail}".strip()
 
-    # Remplace la DB cible uniquement si le tmp semble valide (non vide).
-    try:
-        if not os.path.exists(tmp) or os.path.getsize(tmp) <= 0:
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except Exception:
-                pass
-            return False, "Import SPNKr terminé mais DB temporaire vide (annulé)."
-        os.makedirs(str(Path(target).resolve().parent), exist_ok=True)
-        os.replace(tmp, target)
-    except Exception as e:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
-        return False, f"Import SPNKr OK mais remplacement de la DB a échoué: {e}"
+    # Extraire le nombre de matchs importés depuis la sortie
+    output = (proc.stdout or "").strip()
+    return True, f"Sync OK pour {p}"
 
-    return True, "DB SPNKr rafraîchie."
+
+def sync_all_players(
+    *,
+    db_path: str,
+    match_type: str = "matchmaking",
+    max_matches: int = 200,
+    rps: int = 5,
+    with_highlight_events: bool = True,
+    with_aliases: bool = True,
+    delta: bool = True,
+    timeout_seconds: int = 120,
+) -> tuple[bool, str]:
+    """Synchronise tous les joueurs d'une DB fusionnée (table Players).
+    
+    Si la DB n'a pas de table Players, tente de déduire le joueur depuis le nom.
+    
+    Returns:
+        Tuple (succès_global, message_résumé).
+    """
+    from src.db import get_players_from_db, infer_spnkr_player_from_db_path
+    
+    players = get_players_from_db(db_path)
+    
+    if not players:
+        # Fallback: DB mono-joueur, on déduit depuis le nom
+        single_player = infer_spnkr_player_from_db_path(db_path) or ""
+        if not single_player:
+            return False, "Aucun joueur trouvé dans la DB."
+        players = [{"xuid": "", "gamertag": single_player, "label": single_player}]
+    
+    results: list[tuple[str, bool, str]] = []
+    
+    for p in players:
+        # Utiliser XUID si disponible, sinon gamertag
+        player_id = str(p.get("xuid") or p.get("gamertag") or "").strip()
+        player_label = str(p.get("label") or p.get("gamertag") or player_id).strip()
+        
+        if not player_id:
+            continue
+        
+        ok, msg = refresh_spnkr_db_via_api(
+            db_path=db_path,
+            player=player_id,
+            match_type=match_type,
+            max_matches=max_matches,
+            rps=rps,
+            with_highlight_events=with_highlight_events,
+            with_aliases=with_aliases,
+            delta=delta,
+            timeout_seconds=timeout_seconds,
+        )
+        results.append((player_label, ok, msg))
+    
+    if not results:
+        return False, "Aucun joueur à synchroniser."
+    
+    # Résumé
+    success_count = sum(1 for _, ok, _ in results if ok)
+    total = len(results)
+    
+    if success_count == total:
+        return True, f"✅ {total} joueur{'s' if total > 1 else ''} synchronisé{'s' if total > 1 else ''}."
+    elif success_count > 0:
+        failed = [label for label, ok, _ in results if not ok]
+        return True, f"⚠️ {success_count}/{total} OK. Échec: {', '.join(failed)}"
+    else:
+        errors = [f"{label}: {msg}" for label, ok, msg in results if not ok]
+        return False, f"❌ Échec pour tous les joueurs.\n" + "\n".join(errors[:3])
