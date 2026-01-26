@@ -13,7 +13,7 @@ from __future__ import annotations
 
 PLAYLIST_FR: dict[str, str] = {
     "Big Team Battle": "Grande bataille en équipe",
-    "Big Team Battle: Refresh": "Grande bataille en équipe : Refresh",
+    "Big Team Battle: Refresh": "Grande bataille en équipe",
     "Big Team Social": "Grande bataille sociale",
     "Firefight": "Baptême du feu",
     "Firefight: Heroic King of the Hill": "Baptême du feu : Roi de la colline héroïque",
@@ -49,7 +49,7 @@ PAIR_FR: dict[str, str] = {
     "Arena:One Flag CTF": "Arène : Drapeau neutre",
     "Arena:Escalation Slayer": "Arène : Escalade",
     "Arena:FFA Slayer": "Arène : Assassin FFA",
-    "Arena:Shotty Snipes Slayer": "Arène : Shotty Snipers",
+    "Arena:Shotty Snipes Slayer": "Fusils snipers à grenaille",
     "Arena:Team Snipers": "Arène : Snipers en équipe",
     "BTB:CTF": "BTB : Capture du drapeau",
     "BTB:Slayer": "BTB : Assassin",
@@ -158,7 +158,7 @@ PAIR_FR: dict[str, str] = {
     "Arena:Oddball on Streets": "Arène : Oddball",
     "Arena:One Flag CTF on Cliffhanger": "Arène : Drapeau neutre",
     "Arena:One Flag CTF on Salvation": "Arène : Drapeau neutre",
-    "Arena:Shotty Snipes Slayer on Detachment": "Arène : Shotty Snipers",
+    "Arena:Shotty Snipes Slayer on Detachment": "Fusils snipers à grenaille",
     "Arena:Slayer on Aquarius": "Arène : Assassin",
     "Arena:Slayer on Aquarius - Forge": "Arène : Assassin",
     "Arena:Slayer on Argyle": "Arène : Assassin",
@@ -342,7 +342,7 @@ PAIR_FR: dict[str, str] = {
     # -------------------------------------------------------------------------
     "Community:Fiesta Slayer on High Ground": "Fiesta",
     "Community:Fiesta Slayer on Snowbound": "Fiesta",
-    "Community:Shotty Snipe Slayer FFA on Dynasty": "Communauté : Shotty Snipers FFA",
+    "Community:Shotty Snipe Slayer FFA on Dynasty": "Fusils snipers à grenaille",
     "Community:Slayer on Absolution": "Communauté : Assassin",
     "Community:Slayer on Cliffside": "Communauté : Assassin",
     "Community:Slayer on Critical Dewpoint": "Communauté : Assassin",
@@ -508,7 +508,7 @@ def translate_playlist_name(name: str | None) -> str | None:
         return None
     # Détection des UUIDs non résolus
     if _is_uuid_like(s):
-        return "Playlist inconnue"
+        return "Inconnue"
     return PLAYLIST_FR.get(s, s)
 
 
@@ -579,8 +579,8 @@ def translate_pair_name(name: str | None) -> str | None:
     generic_mode_translations = {
         "Slayer": "Assassin",
         "Team Slayer": "Assassin en équipe",
-        "FFA Slayer": "Assassin FFA",
-        "Fiesta Slayer": "Fiesta Assassin",
+        "FFA Slayer": "Chacun pour soi",
+        "Fiesta Slayer": "Fiesta",
         "Oddball": "Oddball",
         "CTF": "Capture du drapeau",
         "Neutral Flag CTF": "Drapeau neutre",
@@ -590,18 +590,18 @@ def translate_pair_name(name: str | None) -> str | None:
         "Attrition": "Attrition",
         "Escalation Slayer": "Escalade",
         "Team Snipers": "Snipers en équipe",
-        "Shotty Snipes Slayer": "Shotty Snipers",
+        "Shotty Snipes Slayer": "Fusils snipers à grenaille",
         "Total Control": "Contrôle total",
         "Stockpile": "Stockage",
         "Extraction": "Extraction",
-        "Land Grab": "Land Grab",
+        "Land Grab": "Bases",
         "VIP": "VIP",
     }
     
     prefix_translations = {
         "Arena": "Arène",
-        "BTB": "BTB",
-        "BTB Heavies": "BTB Heavies",
+        "BTB": "Grande bataille en équipe",
+        "BTB Heavies": "Grande bataille en équipe Heavies",
         "Ranked": "Classé",
         "Tactical": "Tactique",
         "Community": "Communauté",
