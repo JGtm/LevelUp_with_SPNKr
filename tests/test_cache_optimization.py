@@ -264,23 +264,95 @@ class TestSessionCalculation:
             MatchForSession,
             compute_sessions_with_teammates,
         )
+        import scripts.migrate_to_cache as migrate_module
         
         now = datetime.now(timezone.utc)
         
-        matches = [
-            MatchForSession("m1", now - timedelta(hours=3), "alice,bob"),
-            MatchForSession("m2", now - timedelta(hours=2, minutes=50), "alice,bob"),
-            MatchForSession("m3", now - timedelta(hours=2, minutes=40), "alice"),  # bob parti
-            MatchForSession("m4", now - timedelta(hours=2, minutes=30), "alice"),
-        ]
+        # Patcher FRIENDS_XUIDS pour le test avec nos XUIDs de test
+        original_friends = migrate_module.FRIENDS_XUIDS
+        migrate_module.FRIENDS_XUIDS = {"alice", "bob"}
         
-        sessions = compute_sessions_with_teammates(matches, gap_minutes=120)
+        try:
+            matches = [
+                MatchForSession("m1", now - timedelta(hours=3), "alice,bob"),
+                MatchForSession("m2", now - timedelta(hours=2, minutes=50), "alice,bob"),
+                MatchForSession("m3", now - timedelta(hours=2, minutes=40), "alice"),  # bob parti
+                MatchForSession("m4", now - timedelta(hours=2, minutes=30), "alice"),
+            ]
+            
+            sessions = compute_sessions_with_teammates(matches, gap_minutes=120)
+            
+            # Selon la règle actuelle: un ami qui part ne crée PAS de nouvelle session
+            # (sauf si on passe à "sans amis")
+            # m3 a encore "alice" donc on reste dans la même session
+            assert sessions["m1"][0] == 0
+            assert sessions["m2"][0] == 0
+            assert sessions["m3"][0] == 0  # alice est toujours là, même session
+            assert sessions["m4"][0] == 0
+        finally:
+            migrate_module.FRIENDS_XUIDS = original_friends
+    
+    def test_friend_joining_creates_new_session(self):
+        """Un ami qui rejoint doit créer une nouvelle session."""
+        from scripts.migrate_to_cache import (
+            MatchForSession,
+            compute_sessions_with_teammates,
+        )
+        import scripts.migrate_to_cache as migrate_module
         
-        # Même si le gap est court, le changement de coéquipiers crée une nouvelle session
-        assert sessions["m1"][0] == 0
-        assert sessions["m2"][0] == 0
-        assert sessions["m3"][0] == 1  # Nouvelle session car coéquipiers différents
-        assert sessions["m4"][0] == 1
+        now = datetime.now(timezone.utc)
+        
+        original_friends = migrate_module.FRIENDS_XUIDS
+        migrate_module.FRIENDS_XUIDS = {"alice", "bob"}
+        
+        try:
+            matches = [
+                MatchForSession("m1", now - timedelta(hours=3), "alice"),
+                MatchForSession("m2", now - timedelta(hours=2, minutes=50), "alice"),
+                MatchForSession("m3", now - timedelta(hours=2, minutes=40), "alice,bob"),  # bob rejoint
+                MatchForSession("m4", now - timedelta(hours=2, minutes=30), "alice,bob"),
+            ]
+            
+            sessions = compute_sessions_with_teammates(matches, gap_minutes=120)
+            
+            # Un ami qui rejoint crée une nouvelle session
+            assert sessions["m1"][0] == 0
+            assert sessions["m2"][0] == 0
+            assert sessions["m3"][0] == 1  # Nouvelle session car bob rejoint
+            assert sessions["m4"][0] == 1
+        finally:
+            migrate_module.FRIENDS_XUIDS = original_friends
+    
+    def test_going_solo_creates_new_session(self):
+        """Passer de 'avec amis' à solo doit créer une nouvelle session."""
+        from scripts.migrate_to_cache import (
+            MatchForSession,
+            compute_sessions_with_teammates,
+        )
+        import scripts.migrate_to_cache as migrate_module
+        
+        now = datetime.now(timezone.utc)
+        
+        original_friends = migrate_module.FRIENDS_XUIDS
+        migrate_module.FRIENDS_XUIDS = {"alice", "bob"}
+        
+        try:
+            matches = [
+                MatchForSession("m1", now - timedelta(hours=3), "alice,bob"),
+                MatchForSession("m2", now - timedelta(hours=2, minutes=50), "alice,bob"),
+                MatchForSession("m3", now - timedelta(hours=2, minutes=40), ""),  # Passage à solo
+                MatchForSession("m4", now - timedelta(hours=2, minutes=30), ""),
+            ]
+            
+            sessions = compute_sessions_with_teammates(matches, gap_minutes=120)
+            
+            # Passage à solo (sans amis) crée une nouvelle session
+            assert sessions["m1"][0] == 0
+            assert sessions["m2"][0] == 0
+            assert sessions["m3"][0] == 1  # Nouvelle session car passage à solo
+            assert sessions["m4"][0] == 1
+        finally:
+            migrate_module.FRIENDS_XUIDS = original_friends
     
     def test_solo_play_is_single_session(self):
         """Jouer seul pendant plusieurs heures = une seule session (si gap < 2h)."""

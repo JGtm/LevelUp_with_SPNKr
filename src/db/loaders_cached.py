@@ -78,7 +78,7 @@ def load_matches_cached(
                 average_life_seconds, time_played_seconds, kills, deaths, assists,
                 accuracy, my_team_score, enemy_team_score, team_mmr, enemy_mmr,
                 session_id, session_label, performance_score, is_firefight, teammates_signature,
-                known_teammates_count, is_with_friends
+                known_teammates_count, is_with_friends, friends_xuids
             FROM MatchCache
             WHERE xuid = ?
         """

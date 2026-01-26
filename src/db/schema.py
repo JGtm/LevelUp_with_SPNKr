@@ -18,7 +18,7 @@ from __future__ import annotations
 
 CREATE_MATCH_CACHE = """
 CREATE TABLE IF NOT EXISTS MatchCache (
-    match_id TEXT PRIMARY KEY,
+    match_id TEXT NOT NULL,
     xuid TEXT NOT NULL,
     start_time TEXT NOT NULL,
     playlist_id TEXT,
@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS MatchCache (
     friends_xuids TEXT DEFAULT '',
     -- Métadonnées
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    -- Clé primaire composite (un match par joueur)
+    PRIMARY KEY (match_id, xuid)
 )
 """
 
@@ -69,6 +71,30 @@ CREATE_MATCH_CACHE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_MatchCache_map ON MatchCache(xuid, map_id)",
     "CREATE INDEX IF NOT EXISTS idx_MatchCache_teammates ON MatchCache(xuid, teammates_signature)",
     "CREATE INDEX IF NOT EXISTS idx_MatchCache_friends ON MatchCache(xuid, is_with_friends)",
+    # Index composites pour les filtres fréquents (Phase 1 optimisation)
+    "CREATE INDEX IF NOT EXISTS idx_MatchCache_filters ON MatchCache(xuid, playlist_id, map_id, start_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_MatchCache_outcome ON MatchCache(xuid, outcome, start_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_MatchCache_perf ON MatchCache(xuid, performance_score DESC) WHERE performance_score IS NOT NULL",
+]
+
+
+# =============================================================================
+# Index pour tables sources (MatchStats, PlayerMatchStats)
+# =============================================================================
+
+CREATE_SOURCE_TABLE_INDEXES = [
+    # Index sur MatchStats pour accélérer les requêtes fréquentes
+    "CREATE INDEX IF NOT EXISTS idx_MatchStats_MatchId ON MatchStats(MatchId)",
+    "CREATE INDEX IF NOT EXISTS idx_MatchStats_StartTime ON MatchStats(json_extract(ResponseBody, '$.MatchInfo.StartTime'))",
+    # Index composite pour recherche par joueur + date
+    "CREATE INDEX IF NOT EXISTS idx_MatchStats_PlayerDate ON MatchStats(json_extract(ResponseBody, '$.MatchInfo.StartTime') DESC)",
+    # Index pour PlayerMatchStats
+    "CREATE INDEX IF NOT EXISTS idx_PlayerMatchStats_MatchId ON PlayerMatchStats(MatchId)",
+    # Index pour HighlightEvents
+    "CREATE INDEX IF NOT EXISTS idx_HighlightEvents_MatchId ON HighlightEvents(MatchId)",
+    "CREATE INDEX IF NOT EXISTS idx_HighlightEvents_Xuid ON HighlightEvents(Xuid)",
+    # Index pour XuidAliases
+    "CREATE INDEX IF NOT EXISTS idx_XuidAliases_Gamertag ON XuidAliases(Gamertag COLLATE NOCASE)",
 ]
 
 
@@ -205,6 +231,11 @@ def get_all_cache_table_ddl() -> list[str]:
     ddl.extend(CREATE_TEAMMATES_AGGREGATE_INDEXES)
     ddl.extend(CREATE_MEDALS_AGGREGATE_INDEXES)
     return ddl
+
+
+def get_source_table_indexes() -> list[str]:
+    """Retourne les instructions DDL pour les index des tables sources."""
+    return CREATE_SOURCE_TABLE_INDEXES
 
 
 def get_cache_table_names() -> list[str]:
