@@ -76,7 +76,7 @@ def format_career_rank_label_fr(*, tier: str | None, title: str | None, grade: s
         grade: Sous-grade ("1"/"2"/"3") ou None
 
     Returns:
-        Libellé FR (ex: "Argent Soldat 2", "Or Lieutenant-colonel 1", "Héros").
+        Libellé FR (ex: "Soldat - Argent II", "Lieutenant-colonel - Or I", "Héros").
     """
     raw_title = (title or "").strip()
     raw_tier = (tier or "").strip()
@@ -89,15 +89,15 @@ def format_career_rank_label_fr(*, tier: str | None, title: str | None, grade: s
     if title_fr in ("Recrue", "Héros"):
         return title_fr
 
-    parts: list[str] = []
-    if tier_fr:
-        parts.append(tier_fr)
-    if title_fr:
-        parts.append(title_fr)
-    if raw_grade:
+    # Format: "Titre - Tier Grade" (ex: "Général de brigade - Or III")
+    if title_fr and tier_fr and raw_grade:
         grade_roman = _GRADE_TO_ROMAN.get(raw_grade, raw_grade)
-        parts.append(grade_roman)
-    return " ".join(parts).strip()
+        return f"{title_fr} - {tier_fr} {grade_roman}"
+    elif title_fr and tier_fr:
+        return f"{title_fr} - {tier_fr}"
+    elif title_fr:
+        return title_fr
+    return ""
 
 
 @dataclass(frozen=True)

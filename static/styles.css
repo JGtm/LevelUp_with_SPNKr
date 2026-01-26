@@ -13,11 +13,11 @@
     /* IMPORTANT: Ces valeurs doivent correspondre à src/config.py THEME_COLORS */
     --bg-main: rgb(25, 36, 41);           /* Fond principal */
     --bg-plot: rgb(29, 35, 40);           /* Fond graphiques (Waypoint news) */
-    --bg-surface: rgb(28, 38, 50);        /* Surfaces (cards) */
+    --bg-surface: rgb(21, 50, 62);        /* Surfaces (cards) */
     --bg-dark: rgb(16, 22, 30);           /* Fond sombre (gradients) */
     
-    --surface: rgba(28, 38, 50, 0.95);
-    --surface-2: rgba(22, 32, 44, 0.78);
+    --surface: rgba(21, 50, 62, 0.95);
+    --surface-2: rgba(21, 50, 62, 0.78);
     --surface-3: rgba(16, 22, 30, 0.45);
     --border: rgba(255, 255, 255, 0.12);
     --border-strong: rgba(255, 255, 255, 0.18);
@@ -172,7 +172,7 @@
 
 .os-perf-card {
     position: relative;
-    background: transparent;
+    background: rgba(21, 50, 62, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.25);
     padding: 24px;
     text-align: center;
@@ -532,8 +532,8 @@ section.main:after {
 }
 
 .career-rank__icon {
-    width: 100px;
-    height: 100px;
+    width: 192px;
+    height: 192px;
     object-fit: contain;
     filter: drop-shadow(0 4px 12px rgba(51, 214, 255, 0.25));
 }
@@ -558,6 +558,7 @@ section.main:after {
 }
 
 .career-rank__subtitle {
+    display: none;  /* Masquer l'XP */
     font-family: var(--font-body);
     font-size: 10px;
     font-weight: 500;
@@ -811,7 +812,7 @@ section.main:after {
 
 div[data-testid="stMetric"] {
     position: relative !important;
-    background: transparent !important;
+    background: rgba(21, 50, 62, 0.7) !important;
     padding: 16px 16px !important;
     min-height: 100px !important;
     display: flex !important;
@@ -1076,7 +1077,7 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
     padding: 14px 16px;
     border-radius: 0;
     border: 1px solid rgba(255, 255, 255, 0.25);
-    background: transparent;
+    background: rgba(21, 50, 62, 0.7);
 }
 
 .os-kpi:hover {
@@ -1178,8 +1179,8 @@ div[data-testid="stNumberInput"] input:focus {
 .os-card {
     position: relative;
     padding: 16px 16px;
-    /* Fond transparent (même couleur que le background) */
-    background: transparent;
+    /* Fond semi-transparent */
+    background: rgba(21, 50, 62, 0.7);
     /* Coins coupés style Waypoint (haut-gauche et bas-droite) */
     clip-path: polygon(
         0 var(--corner-size),
