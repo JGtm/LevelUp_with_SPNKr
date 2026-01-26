@@ -1,0 +1,293 @@
+"""Helpers génériques pour la page Match View."""
+
+from __future__ import annotations
+
+import html
+import os
+import re
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Callable
+
+import pandas as pd
+import streamlit as st
+
+from src.config import get_repo_root
+from src.ui import AppSettings
+
+
+# =============================================================================
+# Utilitaires de conversion date/heure
+# =============================================================================
+
+
+def to_paris_naive_local(dt_value, paris_tz) -> datetime | None:
+    """Convertit une date en datetime naïf (sans tzinfo) en heure de Paris."""
+    if dt_value is None:
+        return None
+    try:
+        ts = pd.to_datetime(dt_value, errors="coerce")
+        if pd.isna(ts):
+            return None
+        if ts.tzinfo is None:
+            return ts.to_pydatetime()
+        return ts.tz_convert(paris_tz).tz_localize(None).to_pydatetime()
+    except Exception:
+        return None
+
+
+def safe_dt(v, paris_tz) -> datetime | None:
+    """Alias pour to_paris_naive_local."""
+    return to_paris_naive_local(v, paris_tz)
+
+
+def match_time_window(
+    row: pd.Series, *, tolerance_minutes: int, paris_tz
+) -> tuple[datetime | None, datetime | None]:
+    """Calcule la fenêtre temporelle d'un match avec tolérance."""
+    start = safe_dt(row.get("start_time"), paris_tz)
+    if start is None:
+        return None, None
+
+    dur_s = row.get("time_played_seconds")
+    try:
+        dur = float(dur_s) if dur_s == dur_s else None
+    except Exception:
+        dur = None
+    if dur is None or dur <= 0:
+        end = start + timedelta(minutes=30)
+    else:
+        end = start + timedelta(seconds=float(dur))
+
+    tol = max(0, int(tolerance_minutes))
+    return start - timedelta(minutes=tol), end + timedelta(minutes=tol)
+
+
+def paris_epoch_seconds_local(dt: datetime | None, paris_tz) -> float | None:
+    """Convertit un datetime naïf Paris en epoch seconds."""
+    if dt is None:
+        return None
+    try:
+        aware = paris_tz.localize(dt) if dt.tzinfo is None else dt
+        return aware.timestamp()
+    except Exception:
+        return None
+
+
+# =============================================================================
+# Indexation des médias
+# =============================================================================
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def index_media_dir(dir_path: str, exts: tuple[str, ...]) -> pd.DataFrame:
+    """Indexe un répertoire de médias par extension et date de modification."""
+    rows: list[dict[str, object]] = []
+    p = str(dir_path or "").strip()
+    if not p or not os.path.isdir(p):
+        return pd.DataFrame(columns=["path", "mtime", "ext"])
+
+    wanted = {e.lower().lstrip(".") for e in (exts or tuple()) if isinstance(e, str) and e.strip()}
+    if not wanted:
+        return pd.DataFrame(columns=["path", "mtime", "ext"])
+
+    max_files = 12000
+    try:
+        for root, _dirs, files in os.walk(p):
+            for fn in files:
+                if len(rows) >= max_files:
+                    break
+                ext = os.path.splitext(fn)[1].lower().lstrip(".")
+                if ext not in wanted:
+                    continue
+                full = os.path.join(root, fn)
+                try:
+                    st_ = os.stat(full)
+                    mtime = float(st_.st_mtime)
+                except Exception:
+                    continue
+                rows.append({"path": full, "mtime": mtime, "ext": ext})
+            if len(rows) >= max_files:
+                break
+    except Exception:
+        return pd.DataFrame(columns=["path", "mtime", "ext"])
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.sort_values("mtime", ascending=False).reset_index(drop=True)
+
+
+# =============================================================================
+# Rendu de la section médias
+# =============================================================================
+
+
+def render_media_section(
+    *,
+    row: pd.Series,
+    settings: AppSettings,
+    format_datetime_fn: Callable[[datetime | None], str],
+    paris_tz,
+) -> None:
+    """Rend la section médias (captures/vidéos) pour un match."""
+    if not bool(getattr(settings, "media_enabled", True)):
+        return
+
+    tol = int(getattr(settings, "media_tolerance_minutes", 0) or 0)
+    t0, t1 = match_time_window(row, tolerance_minutes=tol, paris_tz=paris_tz)
+    if t0 is None or t1 is None:
+        return
+
+    screens_dir = str(getattr(settings, "media_screens_dir", "") or "").strip()
+    videos_dir = str(getattr(settings, "media_videos_dir", "") or "").strip()
+
+    if not screens_dir and not videos_dir:
+        return
+
+    st.subheader("Médias")
+    st.caption(f"Fenêtre de recherche: {format_datetime_fn(t0)} → {format_datetime_fn(t1)}")
+
+    try:
+        t0_epoch = t0.timestamp() if t0 else None
+        t1_epoch = t1.timestamp() if t1 else None
+    except Exception:
+        t0_epoch = t1_epoch = None
+
+    if t0_epoch is None or t1_epoch is None:
+        return
+
+    found_any = False
+
+    if screens_dir and os.path.isdir(screens_dir):
+        img_df = index_media_dir(screens_dir, ("png", "jpg", "jpeg", "webp"))
+        if not img_df.empty:
+            mask = (img_df["mtime"] >= t0_epoch) & (img_df["mtime"] <= t1_epoch)
+            hits = img_df.loc[mask].head(24)
+            if not hits.empty:
+                found_any = True
+                st.caption("Captures")
+                for p in hits["path"].tolist():
+                    try:
+                        st.image(p, caption=str(p))
+                    except Exception:
+                        st.write(str(p))
+
+    if videos_dir and os.path.isdir(videos_dir):
+        vid_df = index_media_dir(videos_dir, ("mp4", "webm", "mkv", "mov"))
+        if not vid_df.empty:
+            mask = (vid_df["mtime"] >= t0_epoch) & (vid_df["mtime"] <= t1_epoch)
+            hits = vid_df.loc[mask].head(10)
+            if not hits.empty:
+                found_any = True
+                st.caption("Vidéos")
+                paths = [str(p) for p in hits["path"].tolist() if p]
+                if paths:
+                    labels = [os.path.basename(p) for p in paths]
+                    picked = st.selectbox(
+                        "Vidéo",
+                        options=list(range(len(paths))),
+                        format_func=lambda i: labels[i],
+                        index=0,
+                        key=f"media_video_pick_{row.get('match_id','')}",
+                        label_visibility="collapsed",
+                    )
+                    p = paths[int(picked)]
+                    try:
+                        st.video(p)
+                        st.caption(str(p))
+                    except Exception:
+                        st.write(str(p))
+
+    if not found_any:
+        st.info("Aucun média trouvé pour ce match.")
+
+
+# =============================================================================
+# Composants UI
+# =============================================================================
+
+
+def os_card(
+    title: str,
+    kpi: str,
+    sub_html: str | None = None,
+    *,
+    accent: str | None = None,
+    kpi_color: str | None = None,
+    sub_style: str | None = None,
+    min_h: int = 112,
+) -> None:
+    """Rend une carte KPI avec style OpenSpartan."""
+    t = html.escape(str(title or ""))
+    k = html.escape(str(kpi or "-"))
+    s = "" if not sub_html else str(sub_html)
+    style = "min-height:" + str(int(min_h)) + "px; margin-bottom:10px;"
+    if accent and str(accent).startswith("#"):
+        style += f"border-color:{accent}66;"
+    kpi_style = "" if not (kpi_color and str(kpi_color).startswith("#")) else f" style='color:{kpi_color}'"
+    sub_style_attr = "" if not sub_style else " style=\"" + html.escape(str(sub_style), quote=True) + "\""
+    st.markdown(
+        "<div class='os-card' style='" + style + "'>"
+        f"<div class='os-card-title'>{t}</div>"
+        f"<div class='os-card-kpi'{kpi_style}>{k}</div>"
+        + ("" if not s else f"<div class='os-card-sub'{sub_style_attr}>{s}</div>")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def map_thumb_path(row: pd.Series, map_id: str | None) -> str | None:
+    """Trouve le chemin vers la miniature de la carte."""
+    def _safe_stem_from_name(name: str | None) -> str:
+        s = str(name or "").strip()
+        if not s:
+            return ""
+        s = re.sub(r'[<>:"/\\|?*]', " ", s)
+        s = re.sub(r"[\x00-\x1f]", " ", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    repo = Path(get_repo_root(__file__))
+    base_dirs = [repo / "static" / "maps" / "thumbs", repo / "thumbs"]
+
+    candidates: list[str] = []
+    mid = str(map_id or "").strip()
+    if mid and mid != "-":
+        candidates.append(mid)
+
+    safe_name = _safe_stem_from_name(row.get("map_name"))
+    if safe_name:
+        candidates.append(safe_name)
+        candidates.append(safe_name.replace(" ", "_"))
+
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for c in candidates:
+        if c and c not in seen:
+            uniq.append(c)
+            seen.add(c)
+
+    for base in base_dirs:
+        for stem in uniq:
+            for ext in (".jpg", ".jpeg", ".png", ".webp"):
+                p = base / f"{stem}{ext}"
+                if p.exists():
+                    return str(p)
+    return None
+
+
+# =============================================================================
+# Exports publics
+# =============================================================================
+
+__all__ = [
+    "to_paris_naive_local",
+    "safe_dt",
+    "match_time_window",
+    "paris_epoch_seconds_local",
+    "index_media_dir",
+    "render_media_section",
+    "os_card",
+    "map_thumb_path",
+]
