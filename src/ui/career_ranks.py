@@ -138,15 +138,8 @@ class CareerRankInfo:
 
     @property
     def display_label_fr(self) -> str:
-        """Retourne un label compact en français (ex: 'Caporal suppléant Bronze I')."""
-        title_fr = _CAREER_RANK_TITLE_FR.get(self.title, self.title)
-        tier_fr = _CAREER_RANK_TIER_FR.get(self.subtitle or "", self.subtitle or "")
-        if tier_fr and self.tier:
-            grade_roman = _GRADE_TO_ROMAN.get(self.tier, self.tier)
-            return f"{title_fr} {tier_fr} {grade_roman}".strip()
-        if tier_fr:
-            return f"{title_fr} {tier_fr}".strip()
-        return title_fr.strip()
+        """Retourne un label compact en français (ex: 'Caporal suppléant - Bronze I')."""
+        return format_career_rank_label_fr(tier=self.subtitle, title=self.title, grade=self.tier)
 
 
 def _repo_root() -> Path:
