@@ -14,6 +14,11 @@
       "db_path": "data/spnkr_gt_Chocoboflor.db",
       "xuid": "2535469190789936",
       "waypoint_player": "Chocoboflor"
+    },
+    "XxDaemonGamerxX": {
+      "db_path": "data/spnkr_gt_XxDaemonGamerxX.db",
+      "xuid": "2533274833178266",
+      "waypoint_player": "XxDaemonGamerxX"
     }
   }
 }
