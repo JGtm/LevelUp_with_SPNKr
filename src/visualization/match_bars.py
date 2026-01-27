@@ -131,33 +131,63 @@ def plot_multi_metric_bars_by_match(
     if not series:
         return None
 
+    # Vérifier si match_id est disponible dans tous les DataFrames non-vides
+    has_match_id = True
+    for _, df_ in series:
+        if df_ is not None and not df_.empty:
+            if "match_id" not in df_.columns:
+                has_match_id = False
+                break
+
     prepared: list[tuple[str, pd.DataFrame]] = []
-    all_times: list[pd.Timestamp] = []
+    all_match_data: list[pd.DataFrame] = []  # Pour construire l'axe X commun
+    
     for name, df_ in series:
         if df_ is None or df_.empty:
             continue
         if metric_col not in df_.columns or "start_time" not in df_.columns:
             continue
-        d = df_[["start_time", metric_col]].copy()
+        
+        cols_to_use = ["start_time", metric_col]
+        if has_match_id:
+            cols_to_use.append("match_id")
+        
+        d = df_[cols_to_use].copy()
         d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
         d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
         if d.empty:
             continue
+        
         prepared.append((str(name), d))
-        all_times.extend(d["start_time"].tolist())
+        
+        # Collecter les données pour l'axe X commun (vectorisé)
+        if has_match_id:
+            match_df = d[["match_id", "start_time"]].copy()
+            match_df["match_id"] = match_df["match_id"].astype(str)
+        else:
+            match_df = d[["start_time"]].copy()
+            match_df["match_id"] = match_df["start_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+        all_match_data.append(match_df)
 
-    if not prepared or not all_times:
+    if not prepared or not all_match_data:
         return None
 
-    # Axe X commun (timeline de tous les joueurs)
-    uniq = pd.Series(all_times).dropna().drop_duplicates().sort_values()
-    times = uniq.tolist()
-    idx_map = {t: i for i, t in enumerate(times)}
-    labels = [pd.to_datetime(t).strftime("%d/%m %H:%M") for t in times]
+    # Construire l'axe X commun (vectorisé)
+    combined = pd.concat(all_match_data, ignore_index=True)
+    # Garder le premier start_time par match_id (le plus ancien)
+    match_times = combined.groupby("match_id")["start_time"].min().reset_index()
+    match_times = match_times.sort_values("start_time").reset_index(drop=True)
+    
+    match_ids_ordered = match_times["match_id"].tolist()
+    idx_map = {mid: i for i, mid in enumerate(match_ids_ordered)}
+    
+    # Labels pour l'axe X (dates)
+    labels = match_times["start_time"].dt.strftime("%d/%m %H:%M").tolist()
     step = max(1, len(labels) // 10) if labels else 1
 
     fig = go.Figure()
     w = int(smooth_window) if smooth_window else 0
+    
     for i, (name, d) in enumerate(prepared):
         if isinstance(colors, dict):
             color = colors.get(name) or "#35D0FF"
@@ -165,14 +195,27 @@ def plot_multi_metric_bars_by_match(
             color = colors[i % len(colors)]
         else:
             color = "#35D0FF"
+        
         y = pd.to_numeric(d[metric_col], errors="coerce")
         mask = y.notna()
         d2 = d.loc[mask].copy()
         if d2.empty:
             continue
+        
         y2 = pd.to_numeric(d2[metric_col], errors="coerce")
-        x = [idx_map.get(t) for t in d2["start_time"].tolist()]
-        x = [xi for xi in x if xi is not None]
+        
+        # Mapper vers l'axe X commun via match_id (vectorisé)
+        if has_match_id:
+            d2["_match_key"] = d2["match_id"].astype(str)
+        else:
+            d2["_match_key"] = d2["start_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+        
+        d2["_x"] = d2["_match_key"].map(idx_map)
+        valid_mask = d2["_x"].notna()
+        d2 = d2.loc[valid_mask].copy()
+        y2 = y2.loc[valid_mask].reset_index(drop=True)
+        x = d2["_x"].astype(int).tolist()
+        
         if not x:
             continue
 
