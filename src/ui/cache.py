@@ -326,7 +326,18 @@ def cached_list_other_xuids(
 def cached_list_top_teammates(
     db_path: str, self_xuid: str, db_key: tuple[int, int] | None = None, limit: int = 20
 ) -> list[tuple[str, int]]:
-    """Version cachée de list_top_teammates."""
+    """Version cachée de list_top_teammates.
+    
+    Utilise TeammatesAggregate (cache DB) si disponible, sinon fallback
+    sur la requête JSON lente (list_top_teammates).
+    """
+    # Essayer d'abord le cache optimisé (TeammatesAggregate)
+    cached_results = load_top_teammates_cached(db_path, self_xuid, limit)
+    if cached_results:
+        # Convertir le format (xuid, gamertag, matches, wins, losses) -> (xuid, matches)
+        return [(row[0], row[2]) for row in cached_results]
+    
+    # Fallback sur la requête JSON (lente mais complète)
     return list_top_teammates(db_path, self_xuid, limit)
 
 

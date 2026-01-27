@@ -76,6 +76,59 @@ def _get_sync_meta(con: sqlite3.Connection, key: str) -> str | None:
         return None
 
 
+def _normalize_player_key(s: str) -> str:
+    """Normalise un identifiant joueur pour comparaison."""
+    return (s or "").strip().lower()
+
+
+def _resolve_player_in_db(db_path: str, player_query: str) -> tuple[str, str | None, str | None]:
+    """Résout un joueur (xuid/gamertag/label) en identifiant utilisable par SPNKr.
+
+    Args:
+        db_path: Chemin de la base (souvent la DB unifiée).
+        player_query: XUID (digits) ou nom (gamertag/label).
+
+    Returns:
+        (player_id, resolved_xuid, display_label)
+
+        - player_id: identifiant à passer à SPNKr (xuid si dispo, sinon gamertag).
+        - resolved_xuid: xuid si trouvé dans la table Players.
+        - display_label: label humain pour logs.
+    """
+    q = _normalize_player_key(player_query)
+    if not q:
+        return "", None, None
+
+    # Si l'utilisateur donne directement un XUID, on n'a pas besoin de lookup.
+    if q.isdigit():
+        cleaned = player_query.strip()
+        return cleaned, cleaned, cleaned
+
+    try:
+        from src.db.loaders import get_players_from_db
+
+        players = get_players_from_db(db_path)
+        if players:
+            for p in players:
+                xuid = str(p.get("xuid") or "").strip()
+                gamertag = str(p.get("gamertag") or "").strip()
+                label = str(p.get("label") or "").strip()
+
+                if q in {
+                    _normalize_player_key(xuid),
+                    _normalize_player_key(gamertag),
+                    _normalize_player_key(label),
+                }:
+                    player_id = xuid if xuid else gamertag
+                    display = label or gamertag or xuid
+                    return player_id, (xuid or None), (display or None)
+    except Exception:
+        pass
+
+    # Fallback: considérer la query comme un gamertag (ou autre identifiant SPNKr).
+    return player_query.strip(), None, player_query.strip()
+
+
 def _has_table(con: sqlite3.Connection, table_name: str) -> bool:
     """Vérifie si une table existe."""
     cur = con.cursor()
@@ -202,6 +255,44 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
     Returns:
         Tuple (success, message).
     """
+    import math
+    
+    def _safe_float(v) -> float | None:
+        """Convertit une valeur en float, gérant NaN et None."""
+        if v is None:
+            return None
+        try:
+            f = float(v)
+            if math.isnan(f):
+                return None
+            return f
+        except (TypeError, ValueError):
+            return None
+    
+    def _safe_int(v) -> int | None:
+        """Convertit une valeur en int, gérant NaN et None."""
+        if v is None:
+            return None
+        try:
+            f = float(v)
+            if math.isnan(f):
+                return None
+            return int(f)
+        except (TypeError, ValueError):
+            return None
+    
+    def _safe_str(v) -> str:
+        """Convertit une valeur en str, gérant None."""
+        if v is None:
+            return ""
+        try:
+            s = str(v)
+            if s == "nan" or s == "None":
+                return ""
+            return s
+        except Exception:
+            return ""
+    
     logger.info(f"Reconstruction du cache MatchCache{f' pour {xuid}' if xuid else ''}...")
     
     try:
@@ -307,34 +398,34 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
                                 updated_at
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                             (
-                                str(row.get("match_id") or ""),
+                                _safe_str(row.get("match_id")),
                                 str(player_xuid),
-                                str(row.get("start_time") or ""),
-                                str(row.get("playlist_id") or ""),
-                                str(row.get("playlist_name") or ""),
-                                str(row.get("map_id") or ""),
-                                str(row.get("map_name") or ""),
-                                str(row.get("pair_id") or ""),
-                                str(row.get("pair_name") or ""),
-                                str(row.get("game_variant_id") or ""),
-                                str(row.get("game_variant_name") or ""),
-                                int(row.get("outcome") or 0) if row.get("outcome") == row.get("outcome") else None,
-                                int(row.get("last_team_id") or 0) if row.get("last_team_id") == row.get("last_team_id") else None,
-                                int(row.get("kills") or 0),
-                                int(row.get("deaths") or 0),
-                                int(row.get("assists") or 0),
-                                float(row.get("accuracy") or 0.0) if row.get("accuracy") == row.get("accuracy") else None,
-                                float(row.get("kda") or 0.0) if row.get("kda") == row.get("kda") else None,
-                                float(row.get("time_played_seconds") or 0.0) if row.get("time_played_seconds") == row.get("time_played_seconds") else None,
-                                float(row.get("average_life_seconds") or 0.0) if row.get("average_life_seconds") == row.get("average_life_seconds") else None,
-                                int(row.get("max_killing_spree") or 0) if row.get("max_killing_spree") == row.get("max_killing_spree") else None,
-                                int(row.get("headshot_kills") or 0) if row.get("headshot_kills") == row.get("headshot_kills") else None,
-                                int(row.get("my_team_score") or 0) if row.get("my_team_score") == row.get("my_team_score") else None,
-                                int(row.get("enemy_team_score") or 0) if row.get("enemy_team_score") == row.get("enemy_team_score") else None,
-                                float(row.get("team_mmr") or 0.0) if row.get("team_mmr") == row.get("team_mmr") else None,
-                                float(row.get("enemy_mmr") or 0.0) if row.get("enemy_mmr") == row.get("enemy_mmr") else None,
-                                int(row.get("session_id") or 0) if row.get("session_id") == row.get("session_id") else None,
-                                str(row.get("session_label") or ""),
+                                _safe_str(row.get("start_time")),
+                                _safe_str(row.get("playlist_id")),
+                                _safe_str(row.get("playlist_name")),
+                                _safe_str(row.get("map_id")),
+                                _safe_str(row.get("map_name")),
+                                _safe_str(row.get("pair_id")),
+                                _safe_str(row.get("pair_name")),
+                                _safe_str(row.get("game_variant_id")),
+                                _safe_str(row.get("game_variant_name")),
+                                _safe_int(row.get("outcome")),
+                                _safe_int(row.get("last_team_id")),
+                                _safe_int(row.get("kills")) or 0,
+                                _safe_int(row.get("deaths")) or 0,
+                                _safe_int(row.get("assists")) or 0,
+                                _safe_float(row.get("accuracy")),
+                                _safe_float(row.get("kda")),
+                                _safe_float(row.get("time_played_seconds")),
+                                _safe_float(row.get("average_life_seconds")),
+                                _safe_int(row.get("max_killing_spree")),
+                                _safe_int(row.get("headshot_kills")),
+                                _safe_int(row.get("my_team_score")),
+                                _safe_int(row.get("enemy_team_score")),
+                                _safe_float(row.get("team_mmr")),
+                                _safe_float(row.get("enemy_mmr")),
+                                _safe_int(row.get("session_id")),
+                                _safe_str(row.get("session_label")),
                                 1 if row.get("is_firefight") else 0,
                                 _get_iso_now(),
                             ),
@@ -348,6 +439,17 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
             
             con.commit()
             
+            # Mettre à jour Players.total_matches depuis MatchCache
+            logger.info("Mise à jour de Players.total_matches...")
+            cur.execute("""
+                UPDATE Players 
+                SET total_matches = (
+                    SELECT COUNT(*) FROM MatchCache WHERE MatchCache.xuid = Players.xuid
+                ),
+                updated_at = ?
+            """, (_get_iso_now(),))
+            con.commit()
+            
             # Mettre à jour les métadonnées
             cur.execute(
                 """INSERT OR REPLACE INTO CacheMeta (key, value, updated_at)
@@ -358,6 +460,14 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
             
             msg = f"Cache reconstruit: {total_inserted} matchs total"
             logger.info(msg)
+            
+            # Reconstruire TeammatesAggregate
+            logger.info("Reconstruction de TeammatesAggregate...")
+            teammates_ok, teammates_msg = rebuild_teammates_aggregate(db_path)
+            if teammates_ok:
+                logger.info(teammates_msg)
+            else:
+                logger.warning(teammates_msg)
             
             # Reconstruire MedalsAggregate
             logger.info("Reconstruction de MedalsAggregate...")
@@ -373,6 +483,168 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
         msg = f"Erreur lors de la reconstruction du cache: {e}"
         logger.error(msg)
         return False, msg
+
+
+def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
+    """Reconstruit la table TeammatesAggregate depuis MatchStats.
+    
+    Analyse tous les matchs pour extraire les coéquipiers et leurs stats.
+    
+    Args:
+        db_path: Chemin vers la base de données.
+        
+    Returns:
+        Tuple (success, message).
+    """
+    import json
+    import re
+    
+    try:
+        from src.db.loaders import get_players_from_db
+        
+        with get_connection(db_path) as con:
+            cur = con.cursor()
+            
+            # Vider la table
+            cur.execute("DELETE FROM TeammatesAggregate")
+            
+            # Récupérer tous les joueurs
+            players = get_players_from_db(db_path)
+            if not players:
+                return True, "Aucun joueur trouvé"
+            
+            total_teammates = 0
+            
+            for player in players:
+                xuid = player["xuid"]
+                logger.info(f"  Analyse des coéquipiers pour {xuid}...")
+                
+                # Récupérer les matchs depuis MatchStats (source de vérité)
+                cur.execute("SELECT ResponseBody FROM MatchStats")
+                
+                # Agréger par coéquipier
+                teammate_stats: dict[str, dict] = {}
+                gamertag_map: dict[str, str] = {}  # xuid -> gamertag
+                
+                for (body,) in cur.fetchall():
+                    try:
+                        obj = json.loads(body)
+                    except Exception:
+                        continue
+                    
+                    players_list = obj.get("Players", [])
+                    if not players_list:
+                        continue
+                    
+                    # Trouver le joueur principal et son équipe
+                    me = None
+                    my_team_id = None
+                    target_ids = {xuid, f"xuid({xuid})"}
+                    
+                    for p in players_list:
+                        if not isinstance(p, dict):
+                            continue
+                        pid = p.get("PlayerId")
+                        pid_str = str(pid) if pid else ""
+                        if pid_str in target_ids or pid_str.lower() in {t.lower() for t in target_ids}:
+                            me = p
+                            my_team_id = p.get("LastTeamId")
+                            break
+                    
+                    if me is None or my_team_id is None:
+                        continue
+                    
+                    outcome = me.get("Outcome")
+                    match_info = obj.get("MatchInfo", {})
+                    start_time = match_info.get("StartTime", "")
+                    
+                    # Trouver les coéquipiers (même équipe)
+                    for p in players_list:
+                        if not isinstance(p, dict):
+                            continue
+                        
+                        p_team_id = p.get("LastTeamId")
+                        if p_team_id != my_team_id:
+                            continue
+                        
+                        pid = p.get("PlayerId")
+                        pid_str = str(pid) if pid else ""
+                        
+                        # Extraire le XUID
+                        tm_xuid = None
+                        if pid_str.isdigit():
+                            tm_xuid = pid_str
+                        else:
+                            m = re.match(r"xuid\((\d+)\)", pid_str, re.IGNORECASE)
+                            if m:
+                                tm_xuid = m.group(1)
+                        
+                        if not tm_xuid or tm_xuid == xuid:
+                            continue
+                        
+                        # Ignorer les bots
+                        if tm_xuid.startswith("bid(") or "bid(" in pid_str.lower():
+                            continue
+                        
+                        # Extraire le gamertag si disponible
+                        gt = None
+                        if isinstance(pid, dict):
+                            gt = pid.get("Gamertag") or pid.get("gamertag")
+                        if gt and isinstance(gt, str) and gt.strip():
+                            gamertag_map[tm_xuid] = gt.strip()
+                        
+                        if tm_xuid not in teammate_stats:
+                            teammate_stats[tm_xuid] = {
+                                "matches_together": 0,
+                                "same_team_count": 0,
+                                "wins_together": 0,
+                                "losses_together": 0,
+                                "first_played": start_time,
+                                "last_played": start_time,
+                            }
+                        
+                        stats = teammate_stats[tm_xuid]
+                        stats["matches_together"] += 1
+                        stats["same_team_count"] += 1
+                        if start_time:
+                            stats["last_played"] = start_time
+                        
+                        if outcome == 2:  # Win
+                            stats["wins_together"] += 1
+                        elif outcome == 3:  # Loss
+                            stats["losses_together"] += 1
+                
+                # Insérer dans TeammatesAggregate
+                for tm_xuid, stats in teammate_stats.items():
+                    gamertag = gamertag_map.get(tm_xuid)
+                    cur.execute(
+                        """INSERT OR REPLACE INTO TeammatesAggregate (
+                            xuid, teammate_xuid, teammate_gamertag,
+                            matches_together, same_team_count, opposite_team_count,
+                            wins_together, losses_together, first_played, last_played, computed_at
+                        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
+                        (
+                            xuid,
+                            tm_xuid,
+                            gamertag,
+                            stats["matches_together"],
+                            stats["same_team_count"],
+                            stats["wins_together"],
+                            stats["losses_together"],
+                            stats["first_played"],
+                            stats["last_played"],
+                            _get_iso_now(),
+                        ),
+                    )
+                    total_teammates += 1
+                
+                logger.info(f"    {len(teammate_stats)} coéquipiers trouvés")
+            
+            con.commit()
+            return True, f"TeammatesAggregate reconstruit: {total_teammates} entrées"
+            
+    except Exception as e:
+        return False, f"Erreur TeammatesAggregate: {e}"
 
 
 def rebuild_medals_aggregate(db_path: str) -> tuple[bool, str]:
@@ -436,6 +708,7 @@ def rebuild_medals_aggregate(db_path: str) -> tuple[bool, str]:
 def sync_delta(
     db_path: str,
     *,
+    player: str | None = None,
     match_type: str = "matchmaking",
     max_matches: int = 200,
     with_highlight_events: bool = True,
@@ -456,22 +729,40 @@ def sync_delta(
     logger.info("Synchronisation incrémentale (delta)...")
     
     try:
-        from src.ui.sync import sync_all_players
-        
-        ok, msg = sync_all_players(
-            db_path=db_path,
-            match_type=match_type,
-            max_matches=max_matches,
-            with_highlight_events=with_highlight_events,
-            with_aliases=with_aliases,
-            delta=True,
-            timeout_seconds=300,
-        )
+        from src.ui.sync import refresh_spnkr_db_via_api, sync_all_players
+
+        resolved_xuid: str | None = None
+        if player:
+            player_id, resolved_xuid, display_label = _resolve_player_in_db(db_path, player)
+            if not player_id:
+                return False, "Aucun joueur fourni via --player."
+            logger.info(f"Sync delta pour: {display_label or player_id}")
+            ok, msg = refresh_spnkr_db_via_api(
+                db_path=db_path,
+                player=player_id,
+                match_type=match_type,
+                max_matches=max_matches,
+                rps=5,
+                with_highlight_events=with_highlight_events,
+                with_aliases=with_aliases,
+                delta=True,
+                timeout_seconds=300,
+            )
+        else:
+            ok, msg = sync_all_players(
+                db_path=db_path,
+                match_type=match_type,
+                max_matches=max_matches,
+                with_highlight_events=with_highlight_events,
+                with_aliases=with_aliases,
+                delta=True,
+                timeout_seconds=300,
+            )
         
         if ok:
             logger.info(msg)
             # Rebuild cache avec les nouvelles données
-            cache_ok, cache_msg = rebuild_match_cache(db_path)
+            cache_ok, cache_msg = rebuild_match_cache(db_path, xuid=resolved_xuid)
             if cache_ok:
                 logger.info(f"Cache mis à jour: {cache_msg}")
             else:
@@ -494,6 +785,7 @@ def sync_delta(
 def sync_full(
     db_path: str,
     *,
+    player: str | None = None,
     match_type: str = "matchmaking",
     max_matches: int = 1000,
     with_highlight_events: bool = True,
@@ -514,22 +806,40 @@ def sync_full(
     logger.info("Synchronisation complète...")
     
     try:
-        from src.ui.sync import sync_all_players
-        
-        ok, msg = sync_all_players(
-            db_path=db_path,
-            match_type=match_type,
-            max_matches=max_matches,
-            with_highlight_events=with_highlight_events,
-            with_aliases=with_aliases,
-            delta=False,
-            timeout_seconds=600,
-        )
+        from src.ui.sync import refresh_spnkr_db_via_api, sync_all_players
+
+        resolved_xuid: str | None = None
+        if player:
+            player_id, resolved_xuid, display_label = _resolve_player_in_db(db_path, player)
+            if not player_id:
+                return False, "Aucun joueur fourni via --player."
+            logger.info(f"Sync full pour: {display_label or player_id}")
+            ok, msg = refresh_spnkr_db_via_api(
+                db_path=db_path,
+                player=player_id,
+                match_type=match_type,
+                max_matches=max_matches,
+                rps=5,
+                with_highlight_events=with_highlight_events,
+                with_aliases=with_aliases,
+                delta=False,
+                timeout_seconds=600,
+            )
+        else:
+            ok, msg = sync_all_players(
+                db_path=db_path,
+                match_type=match_type,
+                max_matches=max_matches,
+                with_highlight_events=with_highlight_events,
+                with_aliases=with_aliases,
+                delta=False,
+                timeout_seconds=600,
+            )
         
         if ok:
             logger.info(msg)
             # Rebuild cache avec les nouvelles données
-            cache_ok, cache_msg = rebuild_match_cache(db_path)
+            cache_ok, cache_msg = rebuild_match_cache(db_path, xuid=resolved_xuid)
             if cache_ok:
                 logger.info(f"Cache mis à jour: {cache_msg}")
             else:
@@ -622,7 +932,9 @@ def main() -> int:
         epilog="""
 Exemples:
   python scripts/sync.py --delta                    # Sync incrémentale
+    python scripts/sync.py --delta --player Chocoboflor # Sync delta d'un seul joueur
   python scripts/sync.py --full --max-matches 500   # Sync complète (500 matchs)
+    python scripts/sync.py --full --player Madina97294 # Sync full d'un seul joueur
   python scripts/sync.py --rebuild-cache            # Reconstruit le cache
   python scripts/sync.py --apply-indexes            # Applique les index
   python scripts/sync.py --delta --with-assets      # Sync + téléchargement assets
@@ -636,6 +948,13 @@ Exemples:
         type=str,
         default=None,
         help="Chemin vers la base de données (défaut: auto-détection)",
+    )
+
+    parser.add_argument(
+        "--player",
+        type=str,
+        default=None,
+        help="Sync d'un seul joueur (XUID, gamertag ou label de la table Players)",
     )
     
     # Modes de synchronisation
@@ -750,6 +1069,7 @@ Exemples:
     if args.delta:
         ok, msg = sync_delta(
             db_path,
+            player=args.player,
             match_type=args.match_type,
             max_matches=args.max_matches,
             with_highlight_events=not args.no_highlight_events,
@@ -761,6 +1081,7 @@ Exemples:
     elif args.full:
         ok, msg = sync_full(
             db_path,
+            player=args.player,
             match_type=args.match_type,
             max_matches=args.max_matches,
             with_highlight_events=not args.no_highlight_events,
@@ -771,7 +1092,12 @@ Exemples:
     
     # Reconstruction du cache
     if args.rebuild_cache:
-        ok, msg = rebuild_match_cache(db_path)
+        resolved_xuid = None
+        if args.player:
+            _, resolved_xuid, display_label = _resolve_player_in_db(db_path, args.player)
+            if resolved_xuid:
+                logger.info(f"Rebuild cache ciblé pour: {display_label or resolved_xuid}")
+        ok, msg = rebuild_match_cache(db_path, xuid=resolved_xuid)
         if not ok:
             success = False
     

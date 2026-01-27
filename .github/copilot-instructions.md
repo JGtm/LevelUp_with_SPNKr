@@ -66,6 +66,21 @@ Tu veux que je procède ?
 
 ---
 
+## 🗄️ Base de données (important)
+
+Pour ce projet, **la base canonique utilisée au quotidien est la DB unifiée du repo** :
+
+- **DB par défaut (dev)** : `data/halo_unified.db`
+- **Override** : via `OPENSPARTAN_DB` / `OPENSPARTAN_DB_PATH` ou l'argument CLI `--db`
+- **Règle d'or** : après une sync/import/merge, **reconstruire le cache** (MatchCache / agrégats)
+    - Commande recommandée : `python scripts/sync.py --db data/halo_unified.db --rebuild-cache`
+    - Une sync `--delta`/`--full` via `scripts/sync.py` reconstruit déjà le cache automatiquement.
+
+⚠️ Note merge : `scripts/merge_databases.py` **recrée** `data/halo_unified.db` (backup puis overwrite).
+Ne pas supposer une fusion incrémentale “dans la DB existante”.
+
+---
+
 ## 📁 Architecture
 
 ```
@@ -195,6 +210,18 @@ Le mode `--delta` ne récupère que les nouveaux matchs depuis la dernière sync
 
 - **Table `SyncMeta`** : Stocke `last_sync`, `last_match_id`, `total_matches`
 - **Table `XuidAliases`** : Mapping XUID → Gamertag (auto-peuplé)
+
+### Workflow recommandé (anti "double DB")
+
+Objectif: éviter le ping-pong "DB par joueur" → merge → rebuild cache.
+
+- Utiliser **uniquement** la DB unifiée `data/halo_unified.db` au quotidien.
+- Synchroniser via `scripts/sync.py`.
+- Pour un seul joueur, utiliser `--player` (XUID/gamertag/label Players).
+
+Exemples:
+- Sync complète Chocoboflor dans la DB unifiée : `python scripts/sync.py --db data/halo_unified.db --full --player Chocoboflor`
+- Sync delta Madina : `python scripts/sync.py --db data/halo_unified.db --delta --player Madina97294`
 
 ### Ajouter une métadonnée de sync
 

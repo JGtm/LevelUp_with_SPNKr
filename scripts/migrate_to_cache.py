@@ -42,7 +42,7 @@ from src.db.schema import (
     get_cache_table_names,
     CACHE_SCHEMA_VERSION,
 )
-from src.db.parsers import coerce_number as _coerce_number_base, parse_iso_utc
+from src.db.parsers import coerce_duration_seconds, coerce_number as _coerce_number_base, parse_iso_utc
 
 
 def coerce_number(v: Any, type_: type = float, default: Any = None) -> Any:
@@ -297,7 +297,8 @@ def _extract_core_stats(me: dict) -> dict[str, Any]:
     stats["kda"] = coerce_number(core.get("KDA"), float, None)
     stats["max_killing_spree"] = coerce_number(core.get("MaxKillingSpree"), int, None)
     stats["headshot_kills"] = coerce_number(core.get("HeadshotKills"), int, None)
-    stats["average_life_seconds"] = coerce_number(core.get("AverageLifeDuration"), float, None)
+    # Durées (formats observés: ISO 8601 "PT44.5S", dict {Seconds: ...}, nombres)
+    stats["average_life_seconds"] = coerce_duration_seconds(core.get("AverageLifeDuration"))
     
     # Accuracy
     shots = s.get("ShotStats", {})
@@ -305,34 +306,10 @@ def _extract_core_stats(me: dict) -> dict[str, Any]:
     if accuracy is not None:
         stats["accuracy"] = coerce_number(accuracy, float, None)
     
-    # Time played
-    time_played = core.get("TimePlayed")
-    if isinstance(time_played, str) and time_played.startswith("PT"):
-        # Format ISO 8601 duration: PT12M34S
-        try:
-            total_seconds = 0.0
-            time_str = time_played[2:]  # Remove 'PT'
-            
-            # Hours
-            if "H" in time_str:
-                h_idx = time_str.index("H")
-                total_seconds += float(time_str[:h_idx]) * 3600
-                time_str = time_str[h_idx + 1:]
-            
-            # Minutes
-            if "M" in time_str:
-                m_idx = time_str.index("M")
-                total_seconds += float(time_str[:m_idx]) * 60
-                time_str = time_str[m_idx + 1:]
-            
-            # Seconds
-            if "S" in time_str:
-                s_idx = time_str.index("S")
-                total_seconds += float(time_str[:s_idx])
-            
-            stats["time_played_seconds"] = total_seconds
-        except Exception:
-            pass
+    # Time played - chercher dans ParticipationInfo (pas CoreStats)
+    participation = me.get("ParticipationInfo", {})
+    time_played = participation.get("TimePlayed") if isinstance(participation, dict) else None
+    stats["time_played_seconds"] = coerce_duration_seconds(time_played)
     
     return stats
 
