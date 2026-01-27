@@ -17,6 +17,7 @@ import re
 import base64
 import unicodedata
 from typing import Any
+import pandas as pd
 import streamlit as st
 
 from src.config import get_repo_root
@@ -27,6 +28,179 @@ DEFAULT_H5G_EXCLUDE_PATH = os.path.join("data", "wiki", "halo5_commendations_exc
 # Référentiel “suivi” (curation manuelle) : définit comment calculer la progression.
 DEFAULT_H5G_TRACKING_ASSUMED_PATH = os.path.join("out", "commendations_mapping_assumed_old.json")
 DEFAULT_H5G_TRACKING_UNMATCHED_PATH = os.path.join("out", "commendations_mapping_unmatched_old.json")
+
+
+# =============================================================================
+# Règles de calcul personnalisées pour les citations
+# =============================================================================
+# Format: {normalized_name: {"type": "custom", "calc": str, ...}}
+# Types de calcul:
+# - "medal": utilise counts_by_medal[medal_id]
+# - "stat": utilise stats_totals[stat_name]
+# - "wins_mode": compte les victoires dans un mode spécifique (game_variant_name)
+# - "matches_mode_kd": compte les parties dans un mode avec KD > seuil
+#
+# Les patterns sont des regex sur game_variant_name (insensible à la casse).
+# =============================================================================
+
+CUSTOM_CITATION_RULES: dict[str, dict[str, Any]] = {
+    # Pilote - Médaille ID 3169118333
+    "pilote": {
+        "type": "medal",
+        "medal_id": 3169118333,
+    },
+    # Écrasement - Médaille ID 221693153
+    "ecrasement": {
+        "type": "medal",
+        "medal_id": 221693153,
+    },
+    # Assistant - Compter les assistances
+    "assistant": {
+        "type": "stat",
+        "stat": "assists",
+    },
+    # Bulldozer - Parties Assassin avec FDA > 8 (exclure firefight et BTB)
+    "bulldozer": {
+        "type": "matches_mode_kd",
+        "mode_pattern": r"slayer|assassin",
+        "exclude_playlist_pattern": r"firefight|baptême|btb|big team|grande bataille",
+        "kd_threshold": 8.0,
+    },
+    # Victoire au drapeau - Victoires en CTF (normal ou neutre)
+    "victoire au drapeau": {
+        "type": "wins_mode",
+        "mode_pattern": r"ctf|capture.*drapeau|drapeau.*neutre|neutral.*flag",
+    },
+    # Seul contre tous (Player vs Everything) - Victoires en Firefight/Baptême du feu
+    "seul contre tous": {
+        "type": "wins_mode",
+        "mode_pattern": r"firefight|baptême|bapteme",
+    },
+    # Victoire en Assassin - Victoires en mode Slayer/Assassin
+    "victoire en assassin": {
+        "type": "wins_mode",
+        "mode_pattern": r"slayer|assassin",
+    },
+    # Victoire en Bases - Victoires en mode Strongholds/Bases
+    "victoire en bases": {
+        "type": "wins_mode",
+        "mode_pattern": r"stronghold|bases",
+    },
+}
+
+
+def _compute_custom_citation_value(
+    rule: dict[str, Any],
+    df: pd.DataFrame | None,
+    counts_by_medal: dict[int, int],
+    stats_totals: dict[str, int],
+) -> int:
+    """Calcule la valeur d'une citation selon sa règle personnalisée.
+    
+    Args:
+        rule: Règle de calcul (type, paramètres).
+        df: DataFrame des matchs (peut être None).
+        counts_by_medal: Compteurs de médailles.
+        stats_totals: Totaux des stats.
+        
+    Returns:
+        Valeur calculée pour la citation.
+    """
+    calc_type = rule.get("type", "")
+    
+    if calc_type == "medal":
+        medal_id = rule.get("medal_id")
+        if medal_id is not None:
+            return counts_by_medal.get(int(medal_id), 0)
+        return 0
+    
+    if calc_type == "stat":
+        stat_name = rule.get("stat", "")
+        if stat_name:
+            return stats_totals.get(stat_name, 0)
+        return 0
+    
+    if df is None or df.empty:
+        return 0
+    
+    if calc_type == "wins_mode":
+        # Compter les victoires dans un mode spécifique
+        mode_pattern = rule.get("mode_pattern", "")
+        if not mode_pattern:
+            return 0
+        
+        # outcome == 2 signifie victoire
+        wins_df = df[df["outcome"] == 2].copy()
+        if wins_df.empty:
+            return 0
+        
+        # Filtrer par mode (game_variant_name ou pair_name)
+        pattern = re.compile(mode_pattern, re.IGNORECASE)
+        
+        def _matches_mode(row: pd.Series) -> bool:
+            gv = str(row.get("game_variant_name") or "")
+            pair = str(row.get("map_mode_pair_name") or row.get("pair_name") or "")
+            return bool(pattern.search(gv) or pattern.search(pair))
+        
+        matching = wins_df.apply(_matches_mode, axis=1)
+        return int(matching.sum())
+    
+    if calc_type == "matches_mode_kd":
+        # Compter les parties dans un mode avec KD > seuil
+        mode_pattern = rule.get("mode_pattern", "")
+        exclude_pattern = rule.get("exclude_playlist_pattern", "")
+        kd_threshold = float(rule.get("kd_threshold", 0))
+        
+        if not mode_pattern:
+            return 0
+        
+        work_df = df.copy()
+        
+        # Filtrer par mode
+        mode_re = re.compile(mode_pattern, re.IGNORECASE)
+        
+        def _matches_mode(row: pd.Series) -> bool:
+            gv = str(row.get("game_variant_name") or "")
+            pair = str(row.get("map_mode_pair_name") or row.get("pair_name") or "")
+            return bool(mode_re.search(gv) or mode_re.search(pair))
+        
+        work_df = work_df[work_df.apply(_matches_mode, axis=1)]
+        
+        if work_df.empty:
+            return 0
+        
+        # Exclure certaines playlists
+        if exclude_pattern:
+            excl_re = re.compile(exclude_pattern, re.IGNORECASE)
+            
+            def _not_excluded(row: pd.Series) -> bool:
+                pl = str(row.get("playlist_name") or "")
+                pair = str(row.get("map_mode_pair_name") or row.get("pair_name") or "")
+                return not (excl_re.search(pl) or excl_re.search(pair))
+            
+            work_df = work_df[work_df.apply(_not_excluded, axis=1)]
+        
+        if work_df.empty:
+            return 0
+        
+        # Calculer FDA (kills / deaths) et filtrer
+        def _kd_above_threshold(row: pd.Series) -> bool:
+            kills = row.get("kills", 0)
+            deaths = row.get("deaths", 0)
+            try:
+                kills = float(kills) if kills is not None else 0
+                deaths = float(deaths) if deaths is not None else 0
+            except (TypeError, ValueError):
+                return False
+            if deaths <= 0:
+                # Si 0 morts, on considère que c'est au-dessus du seuil si kills > 0
+                return kills > 0
+            return (kills / deaths) > kd_threshold
+        
+        matching = work_df.apply(_kd_above_threshold, axis=1)
+        return int(matching.sum())
+    
+    return 0
 
 
 _H5G_TITLE_OVERRIDES_FR: dict[str, str] = {
@@ -63,6 +237,14 @@ _H5G_TITLE_OVERRIDES_FR: dict[str, str] = {
     "Tick Tick Boom": "Tic-tac, boum",
     "Grand Theft": "Vol à la tire",
     "Not so fast": "Pas si vite",
+}
+
+
+# Descriptions personnalisées pour certaines citations (override du JSON)
+_H5G_DESC_OVERRIDES_FR: dict[str, str] = {
+    # Seul contre tous / Player vs Everything
+    "Player vs Everything": "Gagner des parties en Baptême du feu",
+    "Seul contre tous": "Gagner des parties en Baptême du feu",
 }
 
 
@@ -142,7 +324,26 @@ def _display_citation_name(name: str) -> str:
     return _H5G_TITLE_OVERRIDES_FR.get(n, n)
 
 
-def _display_citation_desc(desc: str) -> str:
+def _display_citation_desc(desc: str, name: str | None = None) -> str:
+    """Retourne la description à afficher pour une citation.
+    
+    Args:
+        desc: Description originale de la citation.
+        name: Nom de la citation (pour les overrides).
+        
+    Returns:
+        Description traduite/personnalisée.
+    """
+    # Priorité aux overrides de description
+    if name:
+        n = str(name).strip()
+        if n in _H5G_DESC_OVERRIDES_FR:
+            return _H5G_DESC_OVERRIDES_FR[n]
+        # Essayer aussi avec le nom traduit
+        translated_name = _H5G_TITLE_OVERRIDES_FR.get(n, n)
+        if translated_name in _H5G_DESC_OVERRIDES_FR:
+            return _H5G_DESC_OVERRIDES_FR[translated_name]
+    
     d = str(desc or "").strip()
     if not d:
         return d
@@ -453,7 +654,17 @@ def render_h5g_commendations_section(
     *,
     counts_by_medal: dict[int, int] | None = None,
     stats_totals: dict[str, int] | None = None,
+    delta_count: int | None = None,
+    df: pd.DataFrame | None = None,
 ) -> None:
+    """Affiche la section des commendations Halo 5.
+    
+    Args:
+        counts_by_medal: Compteurs de médailles par ID.
+        stats_totals: Totaux des stats (kills, deaths, etc.).
+        delta_count: Delta à afficher en vert (si filtré).
+        df: DataFrame des matchs pour les calculs personnalisés.
+    """
     abs_json = _abs_from_repo(DEFAULT_H5G_JSON_PATH)
     json_mtime = None
     try:
@@ -511,6 +722,12 @@ def render_h5g_commendations_section(
         excluded_count = 0
 
     st.subheader("Citations")
+    # Afficher le delta si filtré.
+    if delta_count is not None and delta_count > 0:
+        st.markdown(
+            f"<span style='color: #4CAF50; font-weight: bold;'>+{delta_count:,}</span> sur cette sélection".replace(",", " "),
+            unsafe_allow_html=True,
+        )
     if not items:
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -535,18 +752,20 @@ def render_h5g_commendations_section(
     has_local_icons = os.path.isdir(local_icons_dir)
     extra = f" — {excluded_count} exclue(s)" if excluded_count else ""
 
-    # N'affiche que les citations suivies (celles ayant une méthode de calcul).
-    items = [it for it in items if _normalize_name(str(it.get("name") or "").strip()) in tracking]
+    # N'affiche que les citations suivies (celles ayant une méthode de calcul via tracking OU via CUSTOM_CITATION_RULES).
+    def _has_tracking_rule(it: dict[str, Any]) -> bool:
+        norm_name = _normalize_name(str(it.get("name") or "").strip())
+        return norm_name in tracking or norm_name in CUSTOM_CITATION_RULES
+    
+    items = [it for it in items if _has_tracking_rule(it)]
 
     # Filtres
     cats = sorted({str(x.get("category") or "").strip() for x in items if str(x.get("category") or "").strip()})
-    c1, c2, c3 = st.columns([1, 2, 1])
+    c1, c2 = st.columns([1, 2])
     with c1:
         picked_cat = st.selectbox("Catégorie", options=["(toutes)"] + cats, index=0)
     with c2:
         q = st.text_input("Recherche", value="", placeholder="ex: assassin, pilote, multifrag…")
-    with c3:
-        limit = int(st.slider("Nombre affiché", 20, 200, 60, 10))
 
     filtered = items
     if picked_cat != "(toutes)":
@@ -561,7 +780,7 @@ def render_h5g_commendations_section(
             or (qn in str(x.get("category") or "").lower())
         ]
 
-    filtered = filtered[:limit]
+    # Afficher TOUTES les citations (plus de limite).
 
     # 8 colonnes au lieu de 6 ≈ -25% de largeur par vignette.
     cols_per_row = 8
@@ -571,14 +790,20 @@ def render_h5g_commendations_section(
         name_raw = str(item.get("name") or "").strip()
         desc_raw = str(item.get("description") or "").strip()
         name = _display_citation_name(name_raw)
-        desc = _display_citation_desc(desc_raw)
+        desc = _display_citation_desc(desc_raw, name_raw)
         img = _img_src(item)
         key = _image_basename_from_item(item)
         tiers = item.get("tiers") or []
 
         rule = tracking.get(_normalize_name(name_raw)) or {}
+        norm_name = _normalize_name(name_raw)
         current = 0
-        if isinstance(rule.get("medal_ids"), list):
+        
+        # Priorité aux règles personnalisées (CUSTOM_CITATION_RULES)
+        if norm_name in CUSTOM_CITATION_RULES:
+            custom_rule = CUSTOM_CITATION_RULES[norm_name]
+            current = _compute_custom_citation_value(custom_rule, df, counts_by_medal, stats_totals)
+        elif isinstance(rule.get("medal_ids"), list):
             total = 0
             for mid in rule.get("medal_ids") or []:
                 try:
@@ -592,9 +817,9 @@ def render_h5g_commendations_section(
             except Exception:
                 current = 0
         elif isinstance(rule.get("stat"), str) and rule.get("stat"):
-            key = str(rule.get("stat") or "").strip()
+            stat_key = str(rule.get("stat") or "").strip()
             try:
-                current = int(stats_totals.get(key, 0))
+                current = int(stats_totals.get(stat_key, 0))
             except Exception:
                 current = 0
 
@@ -610,18 +835,20 @@ def render_h5g_commendations_section(
                     mtime = None
                 data_uri = _img_data_uri(img, mtime)
 
+            # Tooltip avec la description de la citation.
+            tip = html.escape(desc) if desc else html.escape(name)
+
             if data_uri:
                 ring_class = "os-citation-ring os-citation-ring--master" if is_master else "os-citation-ring"
                 ring_color = "#d6b35a" if is_master else "#41d6ff"
                 st.markdown(
-                    "<div class='" + ring_class + "' "
+                    "<div class='" + ring_class + "' title='" + tip + "' "
                     + "style=\"--p:" + str(float(progress_ratio)) + ";--ring-color:" + ring_color + ";--img:url('" + data_uri + "')\"></div>",
                     unsafe_allow_html=True,
                 )
             else:
-                st.markdown("<div class='os-medal-missing'>?</div>", unsafe_allow_html=True)
+                st.markdown("<div class='os-medal-missing' title='" + tip + "'>?</div>", unsafe_allow_html=True)
 
-            tip = html.escape(desc) if desc else ""
             st.markdown(
                 "<div class='os-citation-name' title='" + tip + "'>" + html.escape(name) + "</div>",
                 unsafe_allow_html=True,

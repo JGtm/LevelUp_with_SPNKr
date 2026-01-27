@@ -209,6 +209,7 @@ def render_active_page(
     elif page == "Citations":
         render_citations_page(
             dff=dff,
+            df_full=df,
             xuid=xuid,
             db_path=db_path,
             db_key=db_key,

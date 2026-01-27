@@ -141,6 +141,7 @@ def dispatch_page(
     elif page == "Citations":
         render_citations_page_fn(
             dff=dff,
+            df_full=df,
             xuid=xuid,
             db_path=db_path,
             db_key=db_key,
