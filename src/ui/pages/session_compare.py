@@ -560,14 +560,27 @@ def render_comparison_bar_chart(
         perf_b: Métriques de la session B.
         hist_avg: Moyenne historique des sessions similaires (optionnel).
     """
-    metrics_labels = ["K/D Ratio", "Victoire (%)"]
+    def _per_match(total: float | int | None, matches: int | None) -> float:
+        m = int(matches or 0)
+        if m <= 0:
+            return 0.0
+        try:
+            return float(total or 0.0) / float(m)
+        except Exception:
+            return 0.0
+
+    metrics_labels = ["Frags / partie", "Morts / partie", "Ratio F/D", "Victoire (%)"]
     values_a_bar = [
-        perf_a["kd_ratio"] or 0,
-        perf_a["win_rate"] or 0,
+        _per_match(perf_a.get("kills"), perf_a.get("matches")),
+        _per_match(perf_a.get("deaths"), perf_a.get("matches")),
+        float(perf_a.get("kd_ratio") or 0.0),
+        float(perf_a.get("win_rate") or 0.0),
     ]
     values_b_bar = [
-        perf_b["kd_ratio"] or 0,
-        perf_b["win_rate"] or 0,
+        _per_match(perf_b.get("kills"), perf_b.get("matches")),
+        _per_match(perf_b.get("deaths"), perf_b.get("matches")),
+        float(perf_b.get("kd_ratio") or 0.0),
+        float(perf_b.get("win_rate") or 0.0),
     ]
     
     fig_bar = go.Figure()
@@ -588,8 +601,10 @@ def render_comparison_bar_chart(
     hist_n = int((hist_avg or {}).get("session_count", 0) or 0)
     if hist_avg and hist_n >= 1:
         values_hist = [
-            hist_avg.get("kd_ratio", 0) or 0,
-            hist_avg.get("win_rate", 0) or 0,
+            float(hist_avg.get("kills_per_match", 0) or 0.0),
+            float(hist_avg.get("deaths_per_match", 0) or 0.0),
+            float(hist_avg.get("kd_ratio", 0) or 0.0),
+            float(hist_avg.get("win_rate", 0) or 0.0),
         ]
         fig_bar.add_trace(go.Bar(
             name=f'Moy. historique ({hist_n} sessions)' + (" ⚠️" if hist_n < 3 else ""),

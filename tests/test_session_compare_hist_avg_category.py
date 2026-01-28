@@ -75,6 +75,8 @@ class TestSessionCompareHistoricalAverageByCategory:
         assert hist.get("kd_ratio") is not None
         assert hist.get("win_rate") is not None
         assert hist.get("accuracy") is not None
+        assert hist.get("kills_per_match") is not None
+        assert hist.get("deaths_per_match") is not None
 
         # Contrôle: catégorie BTB -> uniquement session_id 2
         hist_btb = compute_similar_sessions_average(
