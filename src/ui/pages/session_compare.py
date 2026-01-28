@@ -498,15 +498,17 @@ def render_comparison_radar_chart(
     fig_radar = go.Figure()
     
     # Moyenne historique en fond (si disponible)
-    if hist_avg and hist_avg.get("session_count", 0) >= 3:
+    hist_n = int((hist_avg or {}).get("session_count", 0) or 0)
+    if hist_avg and hist_n >= 1:
         values_hist = _normalize_for_radar(
             hist_avg.get("kd_ratio"), hist_avg.get("win_rate"), hist_avg.get("accuracy")
         )
+        suffix = " ⚠️" if hist_n < 3 else ""
         fig_radar.add_trace(go.Scatterpolar(
             r=values_hist + [values_hist[0]],
             theta=categories + [categories[0]],
             fill='toself',
-            name=f'Moy. historique ({hist_avg["session_count"]} sessions)',
+            name=f'Moy. historique ({hist_n} sessions){suffix}',
             line_color=SESSION_COLORS["historical"],
             fillcolor=SESSION_COLORS["historical_fill"],
             line=dict(dash="dot"),
@@ -582,16 +584,21 @@ def render_comparison_bar_chart(
     ))
     
     # Ajouter la moyenne historique si disponible
-    if hist_avg and hist_avg.get("session_count", 0) >= 3:
+    hist_n = int((hist_avg or {}).get("session_count", 0) or 0)
+    if hist_avg and hist_n >= 1:
         values_hist = [
             hist_avg.get("kd_ratio", 0) or 0,
             hist_avg.get("win_rate", 0) or 0,
         ]
         fig_bar.add_trace(go.Bar(
-            name=f'Moy. historique ({hist_avg["session_count"]} sessions)',
+            name=f'Moy. historique ({hist_n} sessions)' + (" ⚠️" if hist_n < 3 else ""),
             x=metrics_labels,
             y=values_hist,
-            marker_color=SESSION_COLORS["historical"],
+            marker=dict(
+                color=SESSION_COLORS["historical"],
+                pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
+            ),
+            opacity=0.45,
         ))
     
     fig_bar.update_layout(
@@ -825,7 +832,7 @@ def render_session_comparison_page(
     st.markdown("---")
     
     # Afficher l'indicateur du type de session et la moyenne historique
-    if hist_avg and hist_avg.get("session_count", 0) >= 3:
+    if hist_avg and hist_avg.get("session_count", 0) >= 1:
         st.markdown(
             f"### 📈 Graphiques comparatifs\n"
             f"*Session {session_type_label} — Moyenne historique : {compare_label}*"
