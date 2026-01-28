@@ -24,6 +24,10 @@ from src.analysis.filters import (
 from src.analysis.killer_victim import (
     KVPair,
     compute_killer_victim_pairs,
+    compute_personal_antagonists,
+    AntagonistsResult,
+    OpponentDuel,
+    EstimatedCount,
     killer_victim_counts_long,
     killer_victim_matrix,
 )
@@ -50,6 +54,10 @@ __all__ = [
     "build_xuid_option_map",
     "KVPair",
     "compute_killer_victim_pairs",
+    "compute_personal_antagonists",
+    "AntagonistsResult",
+    "OpponentDuel",
+    "EstimatedCount",
     "killer_victim_counts_long",
     "killer_victim_matrix",
     "compute_match_performance_from_row",

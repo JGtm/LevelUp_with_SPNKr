@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import os
 import re
 from typing import Callable
 
@@ -12,7 +13,7 @@ import streamlit as st
 from src.config import BOT_MAP, TEAM_MAP
 from src.db import has_table
 from src.db.parsers import parse_xuid_input
-from src.analysis import compute_killer_victim_pairs, killer_victim_counts_long
+from src.analysis import compute_personal_antagonists
 from src.ui import display_name_from_xuid
 from src.ui.pages.match_view_helpers import os_card
 
@@ -46,16 +47,43 @@ def render_nemesis_section(
 
     match_gt_map = load_match_gamertags_fn(db_path, match_id.strip(), db_key=db_key)
 
-    pairs = compute_killer_victim_pairs(he, tolerance_ms=5)
-    if not pairs:
-        st.info("Aucune paire kill/death trouvée (ou match sans timeline exploitable).")
+    me_xuid = str(parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()).strip()
+    res = compute_personal_antagonists(he, me_xuid=me_xuid, tolerance_ms=5)
+    if (res.nemesis is None) and (res.bully is None):
+        st.info("Impossible de déterminer Némésis/Souffre-douleur (timeline insuffisante).")
         return
 
-    kv_long = killer_victim_counts_long(pairs)
+    def _debug_enabled() -> bool:
+        env_flag = str(os.environ.get("OPENSPARTAN_DEBUG_ANTAGONISTS") or "").strip().lower()
+        if env_flag in {"1", "true", "yes", "y", "on"}:
+            return True
 
-    me_xuid = str(xuid).strip()
-    killed_me = kv_long[kv_long["victim_xuid"].astype(str) == me_xuid]
-    i_killed = kv_long[kv_long["killer_xuid"].astype(str) == me_xuid]
+        env_flag2 = str(os.environ.get("OPENSPARTAN_DEBUG") or "").strip().lower()
+        if env_flag2 in {"1", "true", "yes", "y", "on"}:
+            return True
+
+        try:
+            if bool(st.session_state.get("ui_debug_antagonists", False)):
+                return True
+        except Exception:
+            pass
+
+        # Query params (compatible Streamlit récent + fallback expérimental)
+        try:
+            if hasattr(st, "query_params"):
+                qp = st.query_params
+                v = qp.get("debug_antagonists") or qp.get("debug")
+            else:
+                qp = st.experimental_get_query_params()
+                v = (qp.get("debug_antagonists") or qp.get("debug") or [""])[0]
+            if isinstance(v, (list, tuple)):
+                v = v[0] if v else ""
+            if str(v or "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+                return True
+        except Exception:
+            pass
+
+        return False
 
     def _display_name_from_kv(xuid_value, gamertag_value) -> str:
         gt = str(gamertag_value or "").strip()
@@ -75,28 +103,32 @@ def render_nemesis_section(
         return gt
 
     nemesis_name = "-"
-    nemesis_kills = None
-    if not killed_me.empty:
-        top = (
-            killed_me[["killer_xuid", "killer_gamertag", "count"]]
-            .rename(columns={"count": "Kills"})
-            .sort_values(["Kills"], ascending=[False])
-            .iloc[0]
-        )
-        nemesis_name = _display_name_from_kv(top.get("killer_xuid"), top.get("killer_gamertag"))
-        nemesis_kills = int(top.get("Kills")) if top.get("Kills") is not None else None
+    nemesis_killed_me: int | None = None
+    nemesis_killed_me_approx = False
+    me_killed_nemesis: int | None = None
+    me_killed_nemesis_approx = False
+    nemesis_xu = ""
+    if res.nemesis is not None:
+        nemesis_xu = str(res.nemesis.xuid or "").strip()
+        nemesis_name = _display_name_from_kv(res.nemesis.xuid, res.nemesis.gamertag)
+        nemesis_killed_me = int(res.nemesis.opponent_killed_me.total)
+        nemesis_killed_me_approx = bool(res.nemesis.opponent_killed_me.has_estimated)
+        me_killed_nemesis = int(res.nemesis.me_killed_opponent.total)
+        me_killed_nemesis_approx = bool(res.nemesis.me_killed_opponent.has_estimated)
 
     bully_name = "-"
-    bully_kills = None
-    if not i_killed.empty:
-        top = (
-            i_killed[["victim_xuid", "victim_gamertag", "count"]]
-            .rename(columns={"count": "Kills"})
-            .sort_values(["Kills"], ascending=[False])
-            .iloc[0]
-        )
-        bully_name = _display_name_from_kv(top.get("victim_xuid"), top.get("victim_gamertag"))
-        bully_kills = int(top.get("Kills")) if top.get("Kills") is not None else None
+    bully_killed_me: int | None = None
+    bully_killed_me_approx = False
+    me_killed_bully: int | None = None
+    me_killed_bully_approx = False
+    bully_xu = ""
+    if res.bully is not None:
+        bully_xu = str(res.bully.xuid or "").strip()
+        bully_name = _display_name_from_kv(res.bully.xuid, res.bully.gamertag)
+        bully_killed_me = int(res.bully.opponent_killed_me.total)
+        bully_killed_me_approx = bool(res.bully.opponent_killed_me.has_estimated)
+        me_killed_bully = int(res.bully.me_killed_opponent.total)
+        me_killed_bully_approx = bool(res.bully.me_killed_opponent.has_estimated)
 
     def _clean_name(v: str) -> str:
         s = str(v or "")
@@ -108,35 +140,7 @@ def render_nemesis_section(
     nemesis_name = _clean_name(nemesis_name)
     bully_name = _clean_name(bully_name)
 
-    def _count_kills(df_: pd.DataFrame, *, col: str, xuid_value: str) -> int | None:
-        if df_ is None or df_.empty or not xuid_value:
-            return None
-        try:
-            mask = df_[col].astype(str) == str(xuid_value)
-            hit = df_.loc[mask]
-            if hit.empty:
-                return None
-            return int(hit["count"].iloc[0])
-        except Exception:
-            return None
-
-    nemesis_xu = ""
-    bully_xu = ""
-    if not killed_me.empty:
-        try:
-            nemesis_xu = str(killed_me.sort_values(["count"], ascending=[False]).iloc[0].get("killer_xuid") or "").strip()
-        except Exception:
-            nemesis_xu = ""
-    if not i_killed.empty:
-        try:
-            bully_xu = str(i_killed.sort_values(["count"], ascending=[False]).iloc[0].get("victim_xuid") or "").strip()
-        except Exception:
-            bully_xu = ""
-
-    nemesis_killed_me = nemesis_kills
-    me_killed_nemesis = _count_kills(i_killed, col="victim_xuid", xuid_value=nemesis_xu)
-    me_killed_bully = bully_kills
-    bully_killed_me = _count_kills(killed_me, col="killer_xuid", xuid_value=bully_xu)
+    # (nemesis_xu / bully_xu déjà déterminés par res)
 
     def _cmp_color(deaths_: int | None, kills_: int | None) -> str:
         if deaths_ is None or kills_ is None:
@@ -147,9 +151,17 @@ def render_nemesis_section(
             return colors["green"]
         return colors["violet"]
 
-    def _fmt_two_lines(deaths_: int | None, kills_: int | None) -> str:
-        d = "-" if deaths_ is None else f"{int(deaths_)} morts"
-        k = "-" if kills_ is None else f"Tué {int(kills_)} fois"
+    def _fmt_count(label: str, value: int | None, approx: bool) -> str:
+        if value is None:
+            return "-"
+        prefix = "≈ " if approx else ""
+        if label == "deaths":
+            return f"{prefix}{int(value)} morts"
+        return f"{prefix}Tué {int(value)} fois"
+
+    def _fmt_two_lines(deaths_: int | None, deaths_approx: bool, kills_: int | None, kills_approx: bool) -> str:
+        d = _fmt_count("deaths", deaths_, deaths_approx)
+        k = _fmt_count("kills", kills_, kills_approx)
         return html.escape(d) + "<br/>" + html.escape(k)
 
     c = st.columns(2)
@@ -157,7 +169,7 @@ def render_nemesis_section(
         os_card(
             "Némésis",
             nemesis_name,
-            _fmt_two_lines(nemesis_killed_me, me_killed_nemesis),
+            _fmt_two_lines(nemesis_killed_me, nemesis_killed_me_approx, me_killed_nemesis, me_killed_nemesis_approx),
             accent=_cmp_color(nemesis_killed_me, me_killed_nemesis),
             sub_style="color: rgba(245, 248, 255, 0.92); font-weight: 800; font-size: 16px; line-height: 1.15;",
             min_h=110,
@@ -166,10 +178,24 @@ def render_nemesis_section(
         os_card(
             "Souffre-douleur",
             bully_name,
-            _fmt_two_lines(bully_killed_me, me_killed_bully),
+            _fmt_two_lines(bully_killed_me, bully_killed_me_approx, me_killed_bully, me_killed_bully_approx),
             accent=_cmp_color(bully_killed_me, me_killed_bully),
             sub_style="color: rgba(245, 248, 255, 0.92); font-weight: 800; font-size: 16px; line-height: 1.15;",
             min_h=110,
+        )
+
+    if _debug_enabled():
+        deaths_missing = max(0, int(res.my_deaths_total) - int(res.my_deaths_assigned_total))
+        deaths_est = max(0, int(res.my_deaths_assigned_total) - int(res.my_deaths_assigned_certain))
+        kills_missing = max(0, int(res.my_kills_total) - int(res.my_kills_assigned_total))
+        kills_est = max(0, int(res.my_kills_assigned_total) - int(res.my_kills_assigned_certain))
+
+        st.caption(
+            "Debug antagonistes — "
+            f"Morts attribuées {res.my_deaths_assigned_total}/{res.my_deaths_total} "
+            f"(certain {res.my_deaths_assigned_certain}, estimé {deaths_est}, manquantes {deaths_missing}) · "
+            f"Kills attribués {res.my_kills_assigned_total}/{res.my_kills_total} "
+            f"(certain {res.my_kills_assigned_certain}, estimé {kills_est}, manquants {kills_missing})"
         )
 
 
