@@ -143,18 +143,20 @@ def render_expected_vs_actual(
         ),
         secondary_y=False,
     )
-    
-    # Moyenne historique par catégorie (si disponible)
+
+    # Moyenne historique par catégorie (si disponible) -> en barres
     if hist_avgs.get("match_count", 0) >= 10:
         exp_fig.add_trace(
-            go.Scatter(
+            go.Bar(
                 x=labels,
                 y=hist_vals,
-                mode="markers+lines",
-                name=f"Moyenne {mode_category} ({hist_avgs['match_count']} matchs)",
-                line=dict(color=HALO_COLORS.violet, width=3, dash="dot"),
-                marker=dict(size=10, symbol="diamond"),
-                hovertemplate=f"%{{x}} (moy. {mode_category}): %{{y:.1f}}<extra></extra>",
+                name=f"Moyenne hist. {mode_category} ({hist_avgs['match_count']} matchs)",
+                marker=dict(
+                    color=bar_colors,
+                    pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
+                ),
+                opacity=0.35,
+                hovertemplate=f"%{{x}} (moy. hist. {mode_category}): %{{y:.1f}}<extra></extra>",
             ),
             secondary_y=False,
         )
@@ -198,32 +200,71 @@ def render_expected_vs_actual(
     st.plotly_chart(exp_fig, width="stretch")
 
     # Folie meurtrière / Tirs à la tête
-    _render_spree_headshots(row)
+    _render_spree_headshots(row, df_full=df_full)
 
 
-def _render_spree_headshots(row: pd.Series) -> None:
-    """Rend le graphique folie meurtrière / tirs à la tête."""
+def _render_spree_headshots(row: pd.Series, df_full: pd.DataFrame | None = None) -> None:
+    """Rend le graphique folie meurtrière / tirs à la tête.
+
+    Ajoute, si possible, une série de barres correspondant à la moyenne
+    historique sur la même catégorie custom (alignée sidebar).
+    """
     spree_v = pd.to_numeric(row.get("max_killing_spree"), errors="coerce")
     headshots_v = pd.to_numeric(row.get("headshot_kills"), errors="coerce")
+    mode_category = extract_mode_category(row.get("pair_name"))
+    hist_avgs: dict[str, float | None] = {
+        "avg_max_killing_spree": None,
+        "avg_headshot_kills": None,
+        "match_count": 0,
+    }
+    if df_full is not None and len(df_full) >= 10:
+        hist_avgs_full = compute_mode_category_averages(df_full, mode_category)
+        hist_avgs["avg_max_killing_spree"] = hist_avgs_full.get("avg_max_killing_spree")
+        hist_avgs["avg_headshot_kills"] = hist_avgs_full.get("avg_headshot_kills")
+        hist_avgs["match_count"] = hist_avgs_full.get("match_count", 0)
+
     if (spree_v == spree_v) or (headshots_v == headshots_v):
         st.subheader("Folie meurtrière / Tirs à la tête")
         fig_sh = go.Figure()
+
+        x_labels = ["Folie meurtrière (max)", "Tirs à la tête"]
         fig_sh.add_trace(
             go.Bar(
-                x=["Folie meurtrière (max)", "Tirs à la tête"],
+                x=x_labels,
                 y=[
                     float(spree_v) if (spree_v == spree_v) else 0.0,
                     float(headshots_v) if (headshots_v == headshots_v) else 0.0,
                 ],
+                name="Réel",
                 marker_color=[HALO_COLORS.violet, HALO_COLORS.cyan],
                 opacity=0.85,
-                hovertemplate="%{x}: %{y:.0f}<extra></extra>",
+                hovertemplate="%{x} (réel): %{y:.0f}<extra></extra>",
             )
         )
+
+        if hist_avgs.get("match_count", 0) >= 10:
+            fig_sh.add_trace(
+                go.Bar(
+                    x=x_labels,
+                    y=[
+                        float(hist_avgs.get("avg_max_killing_spree") or 0.0),
+                        float(hist_avgs.get("avg_headshot_kills") or 0.0),
+                    ],
+                    name=f"Moyenne hist. {mode_category} ({hist_avgs['match_count']} matchs)",
+                    marker=dict(
+                        color=[HALO_COLORS.violet, HALO_COLORS.cyan],
+                        pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
+                    ),
+                    opacity=0.35,
+                    hovertemplate=f"%{{x}} (moy. hist. {mode_category}): %{{y:.1f}}<extra></extra>",
+                )
+            )
+
         fig_sh.update_layout(
+            barmode="group",
             height=260,
             margin=dict(l=40, r=20, t=30, b=60),
-            showlegend=False,
+            legend=get_legend_horizontal_bottom(),
         )
         fig_sh.update_yaxes(rangemode="tozero")
         st.plotly_chart(apply_halo_plot_style(fig_sh, height=260), width="stretch")

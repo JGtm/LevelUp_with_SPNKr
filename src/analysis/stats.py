@@ -1,9 +1,12 @@
 """Calcul des statistiques agrégées."""
 
+from __future__ import annotations
+
 from typing import Optional
 
 import pandas as pd
 
+from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.models import AggregatedStats, OutcomeRates
 from src.ui.formatting import format_mmss
 
@@ -78,50 +81,17 @@ def compute_global_ratio(df: pd.DataFrame) -> Optional[float]:
 
 
 def extract_mode_category(pair_name: str | None) -> str:
-    """Extrait la catégorie de mode depuis le pair_name.
-    
-    Exemples:
-        "Arena:CTF on Aquarius" → "Arena"
-        "BTB:CTF" → "BTB"
-        "Firefight: Kilo Five" → "Firefight"
-        "Slayer" → "Unknown"
-    
+    """Infère la catégorie custom (alignée sidebar) depuis le `pair_name`.
+
+    Catégories : Assassin, Fiesta, BTB, Ranked, Firefight, Other.
+
     Args:
         pair_name: Nom du couple mode/carte (ex: "Arena:Slayer on Aquarius").
-        
+
     Returns:
-        Catégorie du mode (Arena, BTB, Firefight, Community, etc.) ou "Unknown".
+        Catégorie custom.
     """
-    if not pair_name:
-        return "Unknown"
-    
-    s = str(pair_name).strip()
-    
-    # Format "Category:Mode" ou "Category:Mode on Map"
-    if ":" in s:
-        category = s.split(":", 1)[0].strip()
-        # Normaliser les noms courants
-        cat_lower = category.lower()
-        if cat_lower in ("arena", "arène"):
-            return "Arena"
-        if cat_lower in ("btb", "big team battle", "btb:"):
-            return "BTB"
-        if "firefight" in cat_lower or "pve" in cat_lower:
-            return "Firefight"
-        if cat_lower in ("ranked", "classé", "classée"):
-            return "Ranked"
-        if cat_lower in ("community", "communauté"):
-            return "Community"
-        return category.title()
-    
-    # Pas de préfixe, essayer de deviner
-    s_lower = s.lower()
-    if "firefight" in s_lower or "pve" in s_lower:
-        return "Firefight"
-    if "big team" in s_lower or "btb" in s_lower:
-        return "BTB"
-    
-    return "Unknown"
+    return infer_custom_category_from_pair_name(pair_name)
 
 
 def compute_mode_category_averages(
@@ -132,7 +102,7 @@ def compute_mode_category_averages(
     
     Args:
         df: DataFrame des matchs avec colonnes pair_name, kills, deaths, assists.
-        category: Catégorie de mode (Arena, BTB, Firefight, etc.).
+        category: Catégorie custom (Assassin, Fiesta, BTB, Ranked, Firefight, Other).
         
     Returns:
         Dict avec les moyennes: avg_kills, avg_deaths, avg_assists, avg_ratio, match_count.
@@ -142,13 +112,15 @@ def compute_mode_category_averages(
         "avg_deaths": None,
         "avg_assists": None,
         "avg_ratio": None,
+        "avg_max_killing_spree": None,
+        "avg_headshot_kills": None,
         "match_count": 0,
     }
     
     if df.empty:
         return empty_result
     
-    # Filtrer par catégorie - vectorisé pour performance
+    # Filtrer par catégorie (alignée sidebar) - vectorisé pour performance
     mask = df["pair_name"].apply(extract_mode_category) == category
     filtered = df.loc[mask]
     
@@ -159,6 +131,16 @@ def compute_mode_category_averages(
     avg_kills = filtered["kills"].mean()
     avg_deaths = filtered["deaths"].mean()
     avg_assists = filtered["assists"].mean()
+
+    avg_max_killing_spree = None
+    if "max_killing_spree" in filtered.columns:
+        s_spree = pd.to_numeric(filtered["max_killing_spree"], errors="coerce")
+        avg_max_killing_spree = float(s_spree.mean()) if not s_spree.dropna().empty else None
+
+    avg_headshot_kills = None
+    if "headshot_kills" in filtered.columns:
+        s_hs = pd.to_numeric(filtered["headshot_kills"], errors="coerce")
+        avg_headshot_kills = float(s_hs.mean()) if not s_hs.dropna().empty else None
     
     # Ratio moyen (somme des frags / somme des morts)
     total_deaths = filtered["deaths"].sum()
@@ -172,6 +154,8 @@ def compute_mode_category_averages(
         "avg_deaths": float(avg_deaths) if pd.notna(avg_deaths) else None,
         "avg_assists": float(avg_assists) if pd.notna(avg_assists) else None,
         "avg_ratio": float(avg_ratio) if avg_ratio is not None else None,
+        "avg_max_killing_spree": avg_max_killing_spree,
+        "avg_headshot_kills": avg_headshot_kills,
         "match_count": len(filtered),
     }
 

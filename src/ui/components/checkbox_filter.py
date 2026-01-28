@@ -13,6 +13,8 @@ from typing import Optional
 
 import streamlit as st
 
+from src.analysis.mode_categories import infer_mode_super_category
+
 
 def _set_filter_all(session_key: str, options: list[str]) -> None:
     """Callback pour sélectionner toutes les options."""
@@ -111,28 +113,7 @@ def _infer_category(mode_name: str) -> str:
         "Super Fiesta : Assassin" -> "Fiesta"
         "Communauté : Fiesta Assassin" -> "Fiesta" (contient Fiesta)
     """
-    # Détecter les modes Fiesta par leur contenu (pas seulement le préfixe)
-    mode_lower = mode_name.lower()
-    if "fiesta" in mode_lower or "husky raid" in mode_lower or "castle wars" in mode_lower:
-        return "Fiesta"
-    
-    # Extraire le préfixe (avant ":" ou " : ")
-    prefix = None
-    if " : " in mode_name:
-        prefix = mode_name.split(" : ", 1)[0].strip()
-    elif ":" in mode_name:
-        prefix = mode_name.split(":", 1)[0].strip()
-    
-    if prefix:
-        # Vérifier si le préfixe correspond à une catégorie connue
-        if prefix in PREFIX_TO_CATEGORY:
-            return PREFIX_TO_CATEGORY[prefix]
-        # Essayer en ignorant la casse
-        for p, cat in PREFIX_TO_CATEGORY.items():
-            if prefix.lower() == p.lower():
-                return cat
-    
-    return "Other"
+    return infer_mode_super_category(mode_name)
 
 
 # Traduction des catégories en français
