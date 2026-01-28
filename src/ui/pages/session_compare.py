@@ -569,53 +569,115 @@ def render_comparison_bar_chart(
         except Exception:
             return 0.0
 
-    metrics_labels = ["Frags / partie", "Morts / partie", "Ratio F/D", "Victoire (%)"]
-    values_a_bar = [
+    left_metrics = ["Frags / partie", "Morts / partie", "Ratio F/D"]
+    right_metric = "Victoire (%)"
+
+    a_left = [
         _per_match(perf_a.get("kills"), perf_a.get("matches")),
         _per_match(perf_a.get("deaths"), perf_a.get("matches")),
         float(perf_a.get("kd_ratio") or 0.0),
-        float(perf_a.get("win_rate") or 0.0),
     ]
-    values_b_bar = [
+    b_left = [
         _per_match(perf_b.get("kills"), perf_b.get("matches")),
         _per_match(perf_b.get("deaths"), perf_b.get("matches")),
         float(perf_b.get("kd_ratio") or 0.0),
-        float(perf_b.get("win_rate") or 0.0),
     ]
+    a_wr = float(perf_a.get("win_rate") or 0.0)
+    b_wr = float(perf_b.get("win_rate") or 0.0)
     
     fig_bar = go.Figure()
-    fig_bar.add_trace(go.Bar(
-        name='Session A',
-        x=metrics_labels,
-        y=values_a_bar,
-        marker_color=SESSION_COLORS["session_a"],
-    ))
-    fig_bar.add_trace(go.Bar(
-        name='Session B',
-        x=metrics_labels,
-        y=values_b_bar,
-        marker_color=SESSION_COLORS["session_b"],
-    ))
+
+    # Axe gauche : frags/morts/ratio
+    fig_bar.add_trace(
+        go.Bar(
+            name="Session A",
+            x=left_metrics,
+            y=a_left,
+            marker_color=SESSION_COLORS["session_a"],
+            hovertemplate="%{x} (A): %{y:.2f}<extra></extra>",
+            legendgroup="A",
+            showlegend=True,
+        )
+    )
+    fig_bar.add_trace(
+        go.Bar(
+            name="Session B",
+            x=left_metrics,
+            y=b_left,
+            marker_color=SESSION_COLORS["session_b"],
+            hovertemplate="%{x} (B): %{y:.2f}<extra></extra>",
+            legendgroup="B",
+            showlegend=True,
+        )
+    )
+
+    # Axe droit : victoire (%)
+    fig_bar.add_trace(
+        go.Bar(
+            name="Session A",
+            x=[right_metric],
+            y=[a_wr],
+            marker_color=SESSION_COLORS["session_a"],
+            hovertemplate="%{x} (A): %{y:.1f}%<extra></extra>",
+            legendgroup="A",
+            showlegend=False,
+            yaxis="y2",
+        )
+    )
+    fig_bar.add_trace(
+        go.Bar(
+            name="Session B",
+            x=[right_metric],
+            y=[b_wr],
+            marker_color=SESSION_COLORS["session_b"],
+            hovertemplate="%{x} (B): %{y:.1f}%<extra></extra>",
+            legendgroup="B",
+            showlegend=False,
+            yaxis="y2",
+        )
+    )
     
     # Ajouter la moyenne historique si disponible
     hist_n = int((hist_avg or {}).get("session_count", 0) or 0)
     if hist_avg and hist_n >= 1:
-        values_hist = [
+        h_left = [
             float(hist_avg.get("kills_per_match", 0) or 0.0),
             float(hist_avg.get("deaths_per_match", 0) or 0.0),
             float(hist_avg.get("kd_ratio", 0) or 0.0),
-            float(hist_avg.get("win_rate", 0) or 0.0),
         ]
-        fig_bar.add_trace(go.Bar(
-            name=f'Moy. historique ({hist_n} sessions)' + (" ⚠️" if hist_n < 3 else ""),
-            x=metrics_labels,
-            y=values_hist,
-            marker=dict(
-                color=SESSION_COLORS["historical"],
-                pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
-            ),
-            opacity=0.45,
-        ))
+        h_wr = float(hist_avg.get("win_rate", 0) or 0.0)
+
+        name = f"Moy. historique ({hist_n} sessions)" + (" ⚠️" if hist_n < 3 else "")
+        hist_marker = dict(
+            color=SESSION_COLORS["historical"],
+            pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
+        )
+
+        fig_bar.add_trace(
+            go.Bar(
+                name=name,
+                x=left_metrics,
+                y=h_left,
+                marker=hist_marker,
+                opacity=0.45,
+                hovertemplate="%{x} (moy. hist): %{y:.2f}<extra></extra>",
+                legendgroup="H",
+                showlegend=True,
+            )
+        )
+        fig_bar.add_trace(
+            go.Bar(
+                name=name,
+                x=[right_metric],
+                y=[h_wr],
+                marker=hist_marker,
+                opacity=0.45,
+                hovertemplate="%{x} (moy. hist): %{y:.1f}%<extra></extra>",
+                legendgroup="H",
+                showlegend=False,
+                yaxis="y2",
+            )
+        )
     
     fig_bar.update_layout(
         barmode='group',
@@ -623,7 +685,14 @@ def render_comparison_bar_chart(
         plot_bgcolor='rgba(0,0,0,0)',
         font=dict(color='#E0E0E0'),
         xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title='Par partie / Ratio'),
+        yaxis2=dict(
+            title='Victoire (%)',
+            overlaying='y',
+            side='right',
+            showgrid=False,
+            rangemode='tozero',
+        ),
         height=350,
     )
     
