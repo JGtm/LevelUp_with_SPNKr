@@ -22,6 +22,7 @@ PAGES: list[str] = [
     "Comparaison de sessions",
     "Dernier match",
     "Match",
+    "Bibliothèque médias",
     "Citations",
     "Victoires/Défaites",
     "Mes coéquipiers",
@@ -121,6 +122,7 @@ def dispatch_page(
     render_win_loss_page_fn: Callable,
     render_teammates_page_fn: Callable,
     render_match_history_page_fn: Callable,
+    render_media_library_page_fn: Callable,
     render_settings_page_fn: Callable,
     # Fonctions utilitaires
     cached_compute_sessions_db_fn: Callable,
@@ -195,6 +197,12 @@ def dispatch_page(
             xuid=xuid,
             db_key=db_key,
             df_full=df,
+        )
+
+    elif page == "Bibliothèque médias":
+        render_media_library_page_fn(
+            df_full=df,
+            settings=settings,
         )
 
     elif page == "Paramètres":

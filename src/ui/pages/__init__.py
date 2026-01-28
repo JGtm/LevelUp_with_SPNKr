@@ -9,6 +9,7 @@ from src.ui.pages.citations import render_citations_page
 from src.ui.pages.settings import render_settings_page
 from src.ui.pages.match_view import render_match_view
 from src.ui.pages.last_match import render_last_match_page, render_match_search_page
+from src.ui.pages.media_library import render_media_library_page
 
 __all__ = [
     "render_session_comparison_page",
@@ -21,4 +22,5 @@ __all__ = [
     "render_match_view",
     "render_last_match_page",
     "render_match_search_page",
+    "render_media_library_page",
 ]
