@@ -108,4 +108,45 @@ Réponses structurées systématiquement en sections :
     - `docs/DATA_ARCHITECTURE.md` : Flux de données et diagrammes
     - `docs/SQL_SCHEMA.md` : Schémas SQLite et Parquet
 
+## MODULE DE REQUÊTES ANALYTIQUES (Phase 3)
+23. Pour les requêtes analytiques, utiliser le module `src/data/query/` :
+    ```python
+    from src.data.query import QueryEngine, AnalyticsQueries, TrendAnalyzer
+    
+    engine = QueryEngine("data/warehouse")
+    analytics = AnalyticsQueries(engine, xuid="1234567890")
+    trends = TrendAnalyzer(engine, xuid="1234567890")
+    
+    # Stats globales
+    stats = analytics.get_global_stats()
+    
+    # Évolution du KDA avec moyenne mobile
+    kda_trend = trends.get_rolling_kda(window_size=20, last_n=500)
+    ```
+
+24. Classes principales du module query :
+    - `QueryEngine` : Moteur DuckDB avec attachement SQLite automatique
+    - `AnalyticsQueries` : Requêtes prédéfinies (stats, cartes, playlists, médailles)
+    - `TrendAnalyzer` : Évolutions temporelles et moyennes mobiles
+    - `QueryExamples` : Exemples de requêtes SQL complexes
+
+25. Pour les requêtes SQL personnalisées avec DuckDB :
+    ```python
+    # Jointure Parquet + SQLite
+    result = engine.query_with_metadata_join('''
+        SELECT p.gamertag, AVG(m.kda) as avg_kda
+        FROM {match_facts} m
+        JOIN {players} p ON m.xuid = p.xuid
+        GROUP BY p.gamertag
+    ''', xuid="1234567890")
+    ```
+
+26. Placeholders disponibles dans `query_with_metadata_join()` :
+    - `{match_facts}` : Table Parquet des matchs
+    - `{medals}` : Table Parquet des médailles
+    - `{players}` : meta.players (SQLite)
+    - `{playlists}` : meta.playlists (SQLite)
+    - `{maps}` : meta.maps (SQLite)
+    - `{medal_definitions}` : meta.medal_definitions (SQLite)
+
 FIN DES INSTRUCTIONS.
