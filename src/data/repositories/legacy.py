@@ -81,24 +81,29 @@ class LegacyRepository:
         Utilise le cache si disponible, sinon parse le JSON brut.
         """
         if self._use_cache:
-            return load_matches_cached(
-                self._db_path,
-                self._xuid,
-                playlist_filter=playlist_filter,
-                map_mode_pair_filter=map_mode_pair_filter,
-                map_filter=map_filter,
-                game_variant_filter=game_variant_filter,
-                include_firefight=include_firefight,
-            )
-        else:
-            return load_matches(
-                self._db_path,
-                self._xuid,
-                playlist_filter=playlist_filter,
-                map_mode_pair_filter=map_mode_pair_filter,
-                map_filter=map_filter,
-                game_variant_filter=game_variant_filter,
-            )
+            try:
+                return load_matches_cached(
+                    self._db_path,
+                    self._xuid,
+                    playlist_filter=playlist_filter,
+                    map_mode_pair_filter=map_mode_pair_filter,
+                    map_filter=map_filter,
+                    game_variant_filter=game_variant_filter,
+                    include_firefight=include_firefight,
+                )
+            except Exception:
+                # Fallback si le cache n'est pas à jour (colonnes manquantes, etc.)
+                pass
+        
+        # Chargement depuis JSON brut
+        return load_matches(
+            self._db_path,
+            self._xuid,
+            playlist_filter=playlist_filter,
+            map_mode_pair_filter=map_mode_pair_filter,
+            map_filter=map_filter,
+            game_variant_filter=game_variant_filter,
+        )
     
     def load_matches_in_range(
         self,

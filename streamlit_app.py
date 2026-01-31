@@ -63,6 +63,7 @@ from src.ui.components import (
     render_checkbox_filter,
     render_hierarchical_checkbox_filter,
     get_firefight_playlists,
+    render_analytics_section,
 )
 from src.analysis.performance_config import PERFORMANCE_SCORE_FULL_DESC
 from src.ui.cache import (
@@ -404,6 +405,9 @@ def main() -> None:
     
     render_kpis_section(dff)
     render_performance_info()
+
+    # Analytics DuckDB (si activées dans les paramètres)
+    render_analytics_section(db_path, xuid, db_key=db_key)
 
     # ==========================================================================
     # Pages (navigation)
