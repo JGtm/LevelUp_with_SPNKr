@@ -1,0 +1,41 @@
+Priorité architecture :
+- Vérifier comment les données sont gérées (SQLite/JSON ?), étudier la possibilité de passer à Neo4j
+- Etudier les possibilités offertes par Grunt API (source : https://github.com/dend/grunt)
+- Corriger la récupération du spartan ID et du rang de carrière pour tous les joueurs avec Grunt API
+- Ajouter la récupération de l'adornment au spartan ID
+
+
+Evolutions de l'app :
+- Matérialiser le tableau "Stats par minute" par un Graphe radar sur l'onglet "mes coéquipiers" à droite de ce tableau
+- Etiquettes sur les valeurs extremes des graphes (pas ceux de "Mes coéquipiers"
+- Note de performance et trueskill ? (analyser ce qui se dit sur ce lien pour voir si on peut améliorer la note de performance : https://www.reddit.com/r/CompetitiveHalo/comments/19f97ir/halo_query_a_new_stats_site_to_see_your_mmr/
+
+
+Correctifs :
+- Nemesis à revoir avec Claude
+- Modes et playlists à revoir encore (surtout sur la bdd de MAdi)
+- Synchro via app marche pas
+- Réparer l'association des matchs dans la bibliothèque
+
+Script qui surveille le dossier et genere des thumbnails animé
+
+Nouvelles données statistiques à ressortir (à traduire forcément) (source : https://github.com/OpenSpartan/notebooks/blob/main/src/hero/Hero%20Stats.ipynb) :
+- Frags parfaits/Perfect kills
+- Rang/position dans le match et scrore personnel
+- Graphe radar à ajouter seulmeent si on arrive à déterminer si le joueur à joué l'objectif : objectif/frags/morts/assistances
+- Pour les graphes avec précisions, ajouter le nombres de tirs total et le nombre de tirs réussis (Shots Fired/Shots Hit) et Callout Assists
+- Matches played grouped by the map, Number of Matches Played (by Game Variant) mais les deux en mode stacked columns, win/loss/tie/left
+- distribution of win ratio
+- Weekly Longest Winning Streak, Distribution of Win Streaks
+- Per-Match Personal Score
+- Distribution of Damage Dealt Values, Distribution of Damage Taken Values (si possible sur le meme graphe
+- Distribution of First Kill Timestamps, Distribution of First Death Timestamps (à coupler avec match ou map ???)
+- Distribution of Personal Score Earned Per Minute
+- Correlation between average life duration, kills, and outcomes
+- Correlation between average life duration, deaths, and outcomes
+- Correlation between kills, deaths, and outcomes
+- Medals Earned
+- Win Ratio by Day of the Week and Time of the Day
+- Matches At Top vs Total Matches Played Per Week
+- Ratio of Matches at Top to Total Matches Played (%)
+- Correlation between enemy and friendly team MMR

@@ -8,38 +8,38 @@ Ce module gère:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
-from typing import Callable, Optional
 
 import pandas as pd
 import streamlit as st
 
-from src.ui import translate_playlist_name, translate_pair_name
-from src.ui.components import (
-    render_checkbox_filter,
-    render_hierarchical_checkbox_filter,
-    get_firefight_playlists,
-)
+from src.ui import translate_pair_name, translate_playlist_name
 from src.ui.cache import (
     cached_compute_sessions_db,
     cached_same_team_match_ids_with_friend,
+)
+from src.ui.components import (
+    get_firefight_playlists,
+    render_checkbox_filter,
+    render_hierarchical_checkbox_filter,
 )
 
 
 @dataclass
 class FilterState:
     """État des filtres après rendu."""
-    
+
     filter_mode: str  # "Période" ou "Sessions"
     start_d: date
     end_d: date
     gap_minutes: int
-    picked_session_labels: Optional[list[str]]
+    picked_session_labels: list[str] | None
     playlists_selected: list[str]
     modes_selected: list[str]
     maps_selected: list[str]
-    base_s_ui: Optional[pd.DataFrame]  # DataFrame sessions (mode Sessions)
+    base_s_ui: pd.DataFrame | None  # DataFrame sessions (mode Sessions)
 
 
 def render_filters_sidebar(
@@ -55,15 +55,15 @@ def render_filters_sidebar(
     build_friends_opts_map_fn: Callable,
 ) -> FilterState:
     """Rend la section complète des filtres dans la sidebar.
-    
+
     Returns:
         FilterState avec tous les paramètres de filtrage sélectionnés.
     """
     st.header("Filtres")
-    
+
     base_for_filters = df.copy()
     dmin, dmax = date_range_fn(base_for_filters)
-    
+
     # Consommation des états pending
     pending_mode = st.session_state.pop("_pending_filter_mode", None)
     if pending_mode in ("Période", "Sessions"):
@@ -97,14 +97,18 @@ def render_filters_sidebar(
     # Valeurs par défaut
     start_d, end_d = dmin, dmax
     gap_minutes = 35
-    picked_session_labels: Optional[list[str]] = None
-    base_s_ui: Optional[pd.DataFrame] = None
-    
+    picked_session_labels: list[str] | None = None
+    base_s_ui: pd.DataFrame | None = None
+
     if filter_mode == "Période":
         start_d, end_d = _render_period_filter(dmin, dmax)
     else:
         gap_minutes, picked_session_labels, base_s_ui = _render_session_filter(
-            db_path, xuid, db_key, aliases_key, base_for_filters,
+            db_path,
+            xuid,
+            db_key,
+            aliases_key,
+            base_for_filters,
             build_friends_opts_map_fn,
         )
 
@@ -147,7 +151,11 @@ def _render_period_filter(dmin: date, dmax: date) -> tuple[date, date]:
             end_limit = start_default
         end_limit_date = end_limit.date()
         start_value = st.session_state.get("start_date_cal", start_default_date)
-        if not isinstance(start_value, date) or start_value < start_default_date or start_value > end_limit_date:
+        if (
+            not isinstance(start_value, date)
+            or start_value < start_default_date
+            or start_value > end_limit_date
+        ):
             start_value = start_default_date
         start_date = st.date_input(
             "Début",
@@ -167,7 +175,11 @@ def _render_period_filter(dmin: date, dmax: date) -> tuple[date, date]:
             start_limit = end_default
         start_limit_date = start_limit.date()
         end_value = st.session_state.get("end_date_cal", end_default_date)
-        if not isinstance(end_value, date) or end_value < start_limit_date or end_value > end_default_date:
+        if (
+            not isinstance(end_value, date)
+            or end_value < start_limit_date
+            or end_value > end_default_date
+        ):
             end_value = end_default_date
         end_date = st.date_input(
             "Fin",
@@ -189,7 +201,7 @@ def _render_session_filter(
     aliases_key: int | None,
     base_for_filters: pd.DataFrame,
     build_friends_opts_map_fn: Callable,
-) -> tuple[int, Optional[list[str]], pd.DataFrame]:
+) -> tuple[int, list[str] | None, pd.DataFrame]:
     """Rend les contrôles en mode Sessions."""
     gap_minutes = st.slider(
         "Écart max entre parties (minutes)",
@@ -201,7 +213,11 @@ def _render_session_filter(
     )
 
     base_s_ui = cached_compute_sessions_db(
-        db_path, xuid.strip(), db_key, True, gap_minutes,
+        db_path,
+        xuid.strip(),
+        db_key,
+        True,
+        gap_minutes,
     )
     session_labels_ui = (
         base_s_ui[["session_id", "session_label"]]
@@ -244,16 +260,50 @@ def _render_session_filter(
 
     # Trio
     trio_label = _compute_trio_label(
-        db_path, xuid, db_key, aliases_key, base_for_filters, base_s_ui,
-        options_ui, build_friends_opts_map_fn,
+        db_path,
+        xuid,
+        db_key,
+        aliases_key,
+        base_for_filters,
+        base_s_ui,
+        options_ui,
+        build_friends_opts_map_fn,
     )
     _render_trio_button(trio_label)
 
     # Sélecteur de session
-    picked_one = st.selectbox("Session", options=["(toutes)"] + options_ui, key="picked_session_label")
+    picked_one = st.selectbox(
+        "Session", options=["(toutes)"] + options_ui, key="picked_session_label"
+    )
     picked_session_labels = None if picked_one == "(toutes)" else [picked_one]
 
     return gap_minutes, picked_session_labels, base_s_ui
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def _cached_get_trio_match_ids(
+    db_path: str,
+    xuid: str,
+    f1_xuid: str,
+    f2_xuid: str,
+    db_key: tuple[int, int] | None,
+) -> tuple[str, ...]:
+    """Récupère les match IDs où les 3 joueurs sont dans la même équipe (cachée).
+
+    Cette fonction est coûteuse car elle fait 2 requêtes SQL.
+    Le cache TTL de 120s évite les recalculs fréquents.
+    """
+    try:
+        ids_m = set(
+            cached_same_team_match_ids_with_friend(db_path, xuid.strip(), f1_xuid, db_key=db_key)
+        )
+        ids_c = set(
+            cached_same_team_match_ids_with_friend(db_path, xuid.strip(), f2_xuid, db_key=db_key)
+        )
+        trio_ids = ids_m & ids_c
+        return tuple(sorted(trio_ids))
+    except Exception:
+        return ()
 
 
 def _compute_trio_label(
@@ -266,27 +316,46 @@ def _compute_trio_label(
     options_ui: list[str],
     build_friends_opts_map_fn: Callable,
 ) -> str | None:
-    """Calcule le label de la dernière session en trio."""
+    """Calcule le label de la dernière session en trio.
+
+    Optimisé: utilise un cache TTL pour éviter les recalculs coûteux
+    des requêtes SQL à chaque rendu.
+    """
     try:
+        # Récupérer les amis sélectionnés (déjà caché via @st.cache_data)
         friends_opts_map, friends_default_labels = build_friends_opts_map_fn(
             db_path, xuid.strip(), db_key, aliases_key
         )
         picked_friend_labels = st.session_state.get("friends_picked_labels")
         if not isinstance(picked_friend_labels, list) or not picked_friend_labels:
             picked_friend_labels = friends_default_labels
-        picked_xuids = [friends_opts_map[lbl] for lbl in picked_friend_labels if lbl in friends_opts_map]
+        picked_xuids = [
+            friends_opts_map[lbl] for lbl in picked_friend_labels if lbl in friends_opts_map
+        ]
         if len(picked_xuids) < 2:
             return None
+
         f1_xuid, f2_xuid = picked_xuids[0], picked_xuids[1]
-        ids_m = set(cached_same_team_match_ids_with_friend(db_path, xuid.strip(), f1_xuid, db_key=db_key))
-        ids_c = set(cached_same_team_match_ids_with_friend(db_path, xuid.strip(), f2_xuid, db_key=db_key))
-        trio_ids = ids_m & ids_c
-        trio_ids = trio_ids & set(base_for_filters["match_id"].astype(str))
+
+        # Utiliser la fonction cachée avec TTL pour les requêtes coûteuses
+        trio_ids_tuple = _cached_get_trio_match_ids(db_path, xuid.strip(), f1_xuid, f2_xuid, db_key)
+        if not trio_ids_tuple:
+            return None
+
+        trio_ids = set(trio_ids_tuple)
+
+        # Filtrer par les matchs disponibles dans base_for_filters
+        base_match_ids = set(base_for_filters["match_id"].astype(str))
+        trio_ids = trio_ids & base_match_ids
+
         if not trio_ids:
             return None
+
+        # Trouver la dernière session trio
         trio_rows = base_s_ui.loc[base_s_ui["match_id"].astype(str).isin(trio_ids)].copy()
         if trio_rows.empty:
             return None
+
         latest_sid = int(trio_rows["session_id"].max())
         latest_labels = (
             trio_rows.loc[trio_rows["session_id"] == latest_sid, "session_label"]
@@ -323,8 +392,8 @@ def _render_cascade_filters(
     filter_mode: str,
     start_d: date,
     end_d: date,
-    picked_session_labels: Optional[list[str]],
-    base_s_ui: Optional[pd.DataFrame],
+    picked_session_labels: list[str] | None,
+    base_s_ui: pd.DataFrame | None,
     clean_asset_label_fn: Callable[[str], str],
     normalize_mode_label_fn: Callable[[str], str],
     normalize_map_label_fn: Callable[[str], str],
@@ -338,18 +407,26 @@ def _render_cascade_filters(
         ].copy()
     else:
         if picked_session_labels and base_s_ui is not None:
-            dropdown_base = base_s_ui.loc[base_s_ui["session_label"].isin(picked_session_labels)].copy()
+            dropdown_base = base_s_ui.loc[
+                base_s_ui["session_label"].isin(picked_session_labels)
+            ].copy()
         elif base_s_ui is not None:
             dropdown_base = base_s_ui.copy()
 
-    dropdown_base["playlist_ui"] = dropdown_base["playlist_name"].apply(clean_asset_label_fn).apply(translate_playlist_name)
+    dropdown_base["playlist_ui"] = (
+        dropdown_base["playlist_name"].apply(clean_asset_label_fn).apply(translate_playlist_name)
+    )
     dropdown_base["mode_ui"] = dropdown_base["pair_name"].apply(normalize_mode_label_fn)
     dropdown_base["map_ui"] = dropdown_base["map_name"].apply(normalize_map_label_fn)
 
     # --- Playlists ---
-    playlist_values = sorted({str(x).strip() for x in dropdown_base["playlist_ui"].dropna().tolist() if str(x).strip()})
+    playlist_values = sorted(
+        {str(x).strip() for x in dropdown_base["playlist_ui"].dropna().tolist() if str(x).strip()}
+    )
     preferred_order = ["Partie rapide", "Arène classée", "Assassin classé"]
-    playlist_values = [p for p in preferred_order if p in playlist_values] + [p for p in playlist_values if p not in preferred_order]
+    playlist_values = [p for p in preferred_order if p in playlist_values] + [
+        p for p in playlist_values if p not in preferred_order
+    ]
 
     firefight_playlists = get_firefight_playlists(playlist_values)
     playlists_selected = render_checkbox_filter(
@@ -366,7 +443,9 @@ def _render_cascade_filters(
         scope1 = scope1.loc[scope1["playlist_ui"].fillna("").isin(playlists_selected)].copy()
 
     # --- Modes ---
-    mode_values = sorted({str(x).strip() for x in scope1["mode_ui"].dropna().tolist() if str(x).strip()})
+    mode_values = sorted(
+        {str(x).strip() for x in scope1["mode_ui"].dropna().tolist() if str(x).strip()}
+    )
     modes_selected = render_hierarchical_checkbox_filter(
         label="Modes",
         options=mode_values,
@@ -380,7 +459,9 @@ def _render_cascade_filters(
         scope2 = scope2.loc[scope2["mode_ui"].fillna("").isin(modes_selected)].copy()
 
     # --- Cartes ---
-    map_values = sorted({str(x).strip() for x in scope2["map_ui"].dropna().tolist() if str(x).strip()})
+    map_values = sorted(
+        {str(x).strip() for x in scope2["map_ui"].dropna().tolist() if str(x).strip()}
+    )
     maps_selected = render_checkbox_filter(
         label="Cartes",
         options=map_values,
@@ -402,19 +483,21 @@ def apply_filters(
     normalize_map_label_fn: Callable[[str], str],
 ) -> pd.DataFrame:
     """Applique tous les filtres au DataFrame.
-    
+
     Args:
         dff: DataFrame de base.
         filter_state: État des filtres depuis render_filters_sidebar.
-        
+
     Returns:
         DataFrame filtré.
     """
     from src.ui.perf import perf_section
-    
+
     with perf_section("filters/apply"):
         if filter_state.filter_mode == "Sessions":
-            base_s = cached_compute_sessions_db(db_path, xuid.strip(), db_key, True, filter_state.gap_minutes)
+            base_s = cached_compute_sessions_db(
+                db_path, xuid.strip(), db_key, True, filter_state.gap_minutes
+            )
             dff = (
                 base_s.loc[base_s["session_label"].isin(filter_state.picked_session_labels)].copy()
                 if filter_state.picked_session_labels
@@ -429,7 +512,9 @@ def apply_filters(
             dff["pair_fr"] = dff["pair_name"].apply(translate_pair_name)
 
     if "playlist_ui" not in dff.columns:
-        dff["playlist_ui"] = dff["playlist_name"].apply(clean_asset_label_fn).apply(translate_playlist_name)
+        dff["playlist_ui"] = (
+            dff["playlist_name"].apply(clean_asset_label_fn).apply(translate_playlist_name)
+        )
     if "mode_ui" not in dff.columns:
         dff["mode_ui"] = dff["pair_name"].apply(normalize_mode_label_fn)
     if "map_ui" not in dff.columns:

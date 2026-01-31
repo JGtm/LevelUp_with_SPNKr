@@ -33,6 +33,9 @@ dependencies = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "tqdm>=4.65.0",
+    "polars>=0.20.0",
+    "duckdb>=0.10.0",
+    "pydantic>=2.5.0",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +48,10 @@ dev = [
     "mypy>=1.6.0",
     "pyright>=1.1.0",
     "pandas-stubs>=2.0.0",
+    "pre-commit>=3.7.0",
+    "vulture>=2.11",
+    "watchdog>=4.0.0",
+    "detect-secrets>=1.4.0",
 ]
 spnkr = [
     "spnkr>=0.9.0",
@@ -107,6 +114,7 @@ select = [
 ]
 ignore = [
     "E501",   # line too long (handled by black)
+    "E402",   # module level import not at top of file (needed for sys.path manipulation)
     "B008",   # do not perform function calls in argument defaults
     "C901",   # too complex
     "ARG001", # unused function argument

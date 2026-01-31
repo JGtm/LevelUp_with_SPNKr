@@ -3,7 +3,6 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict
 
 
 def get_repo_root(start_path: str | None = None) -> str:
@@ -45,6 +44,7 @@ def get_repo_root(start_path: str | None = None) -> str:
 # =============================================================================
 # Chemins par défaut
 # =============================================================================
+
 
 def get_default_db_path() -> str:
     """Retourne le chemin par défaut de la DB OpenSpartan Workshop."""
@@ -98,14 +98,16 @@ DEFAULT_PLAYER_GAMERTAG = (os.environ.get("OPENSPARTAN_DEFAULT_GAMERTAG") or "")
 DEFAULT_PLAYER_XUID = (os.environ.get("OPENSPARTAN_DEFAULT_XUID") or "").strip()
 
 
-DEFAULT_WAYPOINT_PLAYER = (os.environ.get("OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER") or DEFAULT_PLAYER_GAMERTAG).strip()
+DEFAULT_WAYPOINT_PLAYER = (
+    os.environ.get("OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER") or DEFAULT_PLAYER_GAMERTAG
+).strip()
 
 
 # =============================================================================
 # Alias XUID par défaut (hardcodés)
 # =============================================================================
 
-XUID_ALIASES_DEFAULT: Dict[str, str] = (
+XUID_ALIASES_DEFAULT: dict[str, str] = (
     {DEFAULT_PLAYER_XUID: DEFAULT_PLAYER_GAMERTAG}
     if (DEFAULT_PLAYER_XUID and DEFAULT_PLAYER_GAMERTAG)
     else {}
@@ -116,9 +118,11 @@ XUID_ALIASES_DEFAULT: Dict[str, str] = (
 # Palette de couleurs Halo
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class HaloColors:
     """Palette de couleurs inspirée de l'univers Halo."""
+
     cyan: str = "#35D0FF"
     violet: str = "#8E6CFF"
     green: str = "#3DFFB5"
@@ -126,7 +130,7 @@ class HaloColors:
     amber: str = "#FFB703"
     slate: str = "#A8B2D1"
 
-    def as_dict(self) -> Dict[str, str]:
+    def as_dict(self) -> dict[str, str]:
         """Retourne les couleurs sous forme de dictionnaire."""
         return {
             "cyan": self.cyan,
@@ -144,42 +148,43 @@ HALO_COLORS = HaloColors()
 @dataclass(frozen=True)
 class ThemeColors:
     """Couleurs du thème UI (style Halo Waypoint).
-    
+
     Centralisé ici pour être réutilisé dans:
     - CSS (via variables)
     - Graphiques Plotly
     - Composants Python
     """
+
     # Backgrounds
-    bg_main: tuple[int, int, int] = (25, 36, 41)      # Fond principal de l'app
-    bg_plot: tuple[int, int, int] = (29, 35, 40)      # Fond des graphiques (Waypoint news section)
-    bg_surface: tuple[int, int, int] = (28, 38, 50)   # Surfaces (cards, panels)
-    bg_dark: tuple[int, int, int] = (16, 22, 30)      # Fond sombre (gradients)
-    
+    bg_main: tuple[int, int, int] = (25, 36, 41)  # Fond principal de l'app
+    bg_plot: tuple[int, int, int] = (29, 35, 40)  # Fond des graphiques (Waypoint news section)
+    bg_surface: tuple[int, int, int] = (28, 38, 50)  # Surfaces (cards, panels)
+    bg_dark: tuple[int, int, int] = (16, 22, 30)  # Fond sombre (gradients)
+
     # Accent
     accent: str = "#33d6ff"
     accent_rgb: tuple[int, int, int] = (51, 214, 255)
-    
+
     # Text
     text_primary: str = "rgba(245, 248, 255, 0.92)"
     text_muted: str = "rgba(182, 196, 214, 0.82)"
-    
+
     # Borders
     border: str = "rgba(255, 255, 255, 0.12)"
     border_accent: str = "rgba(51, 214, 255, 0.25)"
-    
+
     def bg_main_css(self) -> str:
         """Retourne bg_main en format CSS rgb()."""
         return f"rgb({self.bg_main[0]}, {self.bg_main[1]}, {self.bg_main[2]})"
-    
+
     def bg_plot_css(self) -> str:
         """Retourne bg_plot en format CSS rgb()."""
         return f"rgb({self.bg_plot[0]}, {self.bg_plot[1]}, {self.bg_plot[2]})"
-    
+
     def bg_plot_rgba(self, alpha: float = 1.0) -> str:
         """Retourne bg_plot en format rgba() pour Plotly."""
         return f"rgba({self.bg_plot[0]},{self.bg_plot[1]},{self.bg_plot[2]},{alpha})"
-    
+
     def bg_surface_css(self) -> str:
         """Retourne bg_surface en format CSS rgb()."""
         return f"rgb({self.bg_surface[0]}, {self.bg_surface[1]}, {self.bg_surface[2]})"
@@ -192,19 +197,21 @@ THEME_COLORS = ThemeColors()
 # Configuration des sessions
 # =============================================================================
 
+
 @dataclass
 class SessionConfig:
     """Configuration pour la détection des sessions de jeu.
-    
+
     Deux modes de calcul :
     - Legacy (default_gap_minutes) : Basé uniquement sur le gap temporel
     - Avancé (advanced_gap_minutes) : Gap + coéquipiers + heure de coupure
     """
+
     # Mode legacy (rétrocompatibilité)
     default_gap_minutes: int = 35
     min_gap_minutes: int = 15
     max_gap_minutes: int = 240
-    
+
     # Mode avancé (utilisé par MatchCache)
     advanced_gap_minutes: int = 120  # 2 heures
     cutoff_hour: int = 8  # Sessions avant 8h = session de la veille
@@ -223,9 +230,11 @@ SESSION_CONFIG = SessionConfig()
 # Codes de résultat (Outcome)
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class OutcomeCodes:
     """Codes de résultat des matchs selon l'API Halo."""
+
     TIE: int = 1
     WIN: int = 2
     LOSS: int = 3
@@ -249,17 +258,19 @@ OUTCOME_CODES = OutcomeCodes()
 # Configuration des graphiques
 # =============================================================================
 
+
 @dataclass
 class PlotConfig:
     """Configuration par défaut des graphiques."""
+
     default_height: int = 360
     tall_height: int = 520
     short_height: int = 320
-    
+
     bar_opacity: float = 0.85
     bar_opacity_secondary: float = 0.65
     line_width: float = 2.2
-    
+
     margin_left: int = 40
     margin_right: int = 20
     margin_top: int = 30
@@ -274,7 +285,7 @@ PLOT_CONFIG = PlotConfig()
 # =============================================================================
 
 # Mapping of bot IDs to names. For example, 'bid(1.0)' -> '343 Meowlnir'.
-BOT_MAP: Dict[str, str] = {
+BOT_MAP: dict[str, str] = {
     "bid(0.0)": "343 Ritzy",
     "bid(1.0)": "343 Meowlnir",
     "bid(2.0)": "343 Wiggle Cat",
@@ -338,7 +349,7 @@ BOT_MAP: Dict[str, str] = {
 }
 
 # Mapping of team IDs to names. For example, 0 -> 'Eagle'.
-TEAM_MAP: Dict[int, str] = {
+TEAM_MAP: dict[int, str] = {
     0: "Eagle",
     1: "Cobra",
     2: "Hades",

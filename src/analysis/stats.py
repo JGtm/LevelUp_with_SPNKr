@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import pandas as pd
 
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
@@ -13,22 +11,22 @@ from src.ui.formatting import format_mmss
 
 def compute_aggregated_stats(df: pd.DataFrame) -> AggregatedStats:
     """Agrège les statistiques d'un DataFrame de matchs.
-    
+
     Args:
         df: DataFrame avec colonnes kills, deaths, assists, time_played_seconds.
-        
+
     Returns:
         AggregatedStats contenant les totaux.
     """
     if df.empty:
         return AggregatedStats()
-    
+
     total_time = (
         pd.to_numeric(df["time_played_seconds"], errors="coerce").dropna().sum()
         if "time_played_seconds" in df.columns
         else 0.0
     )
-    
+
     return AggregatedStats(
         total_kills=int(df["kills"].sum()),
         total_deaths=int(df["deaths"].sum()),
@@ -40,20 +38,20 @@ def compute_aggregated_stats(df: pd.DataFrame) -> AggregatedStats:
 
 def compute_outcome_rates(df: pd.DataFrame) -> OutcomeRates:
     """Calcule les taux de victoire/défaite.
-    
+
     Args:
         df: DataFrame avec colonne outcome.
-        
+
     Returns:
         OutcomeRates avec les comptages.
-        
+
     Note:
         Codes outcome: 2=Wins, 3=Losses, 1=Ties, 4=NoFinishes
     """
     d = df.dropna(subset=["outcome"]).copy()
     total = len(d)
     counts = d["outcome"].value_counts().to_dict() if total else {}
-    
+
     return OutcomeRates(
         wins=int(counts.get(2, 0)),
         losses=int(counts.get(3, 0)),
@@ -63,12 +61,12 @@ def compute_outcome_rates(df: pd.DataFrame) -> OutcomeRates:
     )
 
 
-def compute_global_ratio(df: pd.DataFrame) -> Optional[float]:
+def compute_global_ratio(df: pd.DataFrame) -> float | None:
     """Calcule le ratio global (K + A/2) / D sur un DataFrame.
-    
+
     Args:
         df: DataFrame avec colonnes kills, deaths, assists.
-        
+
     Returns:
         Le ratio global, ou None si pas de deaths.
     """
@@ -99,11 +97,11 @@ def compute_mode_category_averages(
     category: str,
 ) -> dict[str, float | None]:
     """Calcule les moyennes historiques pour une catégorie de mode.
-    
+
     Args:
         df: DataFrame des matchs avec colonnes pair_name, kills, deaths, assists.
         category: Catégorie custom (Assassin, Fiesta, BTB, Ranked, Firefight, Other).
-        
+
     Returns:
         Dict avec les moyennes: avg_kills, avg_deaths, avg_assists, avg_ratio, match_count.
     """
@@ -116,18 +114,17 @@ def compute_mode_category_averages(
         "avg_headshot_kills": None,
         "match_count": 0,
     }
-    
+
     if df.empty:
         return empty_result
-    
+
     # Filtrer par catégorie (alignée sidebar) - vectorisé pour performance
     mask = df["pair_name"].apply(extract_mode_category) == category
     filtered = df.loc[mask]
-    
+
     if filtered.empty:
         return empty_result
-    
-    match_count = len(filtered)
+
     avg_kills = filtered["kills"].mean()
     avg_deaths = filtered["deaths"].mean()
     avg_assists = filtered["assists"].mean()
@@ -141,14 +138,14 @@ def compute_mode_category_averages(
     if "headshot_kills" in filtered.columns:
         s_hs = pd.to_numeric(filtered["headshot_kills"], errors="coerce")
         avg_headshot_kills = float(s_hs.mean()) if not s_hs.dropna().empty else None
-    
+
     # Ratio moyen (somme des frags / somme des morts)
     total_deaths = filtered["deaths"].sum()
     if total_deaths > 0:
         avg_ratio = (filtered["kills"].sum() + filtered["assists"].sum() / 2.0) / total_deaths
     else:
         avg_ratio = None
-    
+
     return {
         "avg_kills": float(avg_kills) if pd.notna(avg_kills) else None,
         "avg_deaths": float(avg_deaths) if pd.notna(avg_deaths) else None,
@@ -162,11 +159,11 @@ def compute_mode_category_averages(
 
 def format_selected_matches_summary(n: int, rates: OutcomeRates) -> str:
     """Formate un résumé des matchs sélectionnés pour l'UI.
-    
+
     Args:
         n: Nombre de matchs.
         rates: OutcomeRates calculé.
-        
+
     Returns:
         Chaîne formatée pour affichage.
     """
@@ -180,7 +177,7 @@ def format_selected_matches_summary(n: int, rates: OutcomeRates) -> str:
     losses = rates.losses
     ties = rates.ties
     nofinish = rates.no_finish
-    
+
     return (
         f"{plural(n, 'Partie', 'Parties')} sélectionnée{'' if n == 1 else 's'}: {n} | "
         f"{plural(wins, 'Victoire', 'Victoires')}: {wins} | "

@@ -5,6 +5,134 @@ Tu es l'assistant IA principal pour OpenSpartan Graph (dashboard Halo Infinite).
 **DÉBUT DE SESSION** : Lire `.ai/project_map.md`, `.ai/thought_log.md`, `.ai/data_lineage.md`
 **FIN DE TÂCHE** : Mettre à jour ces fichiers si modification significative.
 
+---
+
+# COMMANDES AGENTIQUES
+
+## Commande /investigate
+- **Rôle** : Agis comme un Agent de Recherche.
+- **Action** : Parcours récursivement le répertoire courant. Pour chaque module majeur (API SPNKr, stockage, stats, UI), crée un fichier dans `.ai/features/{nom_du_module}.md`.
+- **Format** : Condense le code en spécifications techniques :
+  - **Résumé** : Description en 2-3 phrases
+  - **Inputs/Outputs** : Types et sources/destinations des données
+  - **Dépendances** : Modules internes et packages externes
+  - **Logique Métier** : Algorithmes et règles importantes
+  - **Points d'Attention** : Bugs connus, limitations, TODOs
+- **But** : Créer une base de connaissances parfaite pour un Agent qui ne connaît pas le projet.
+
+## Commande /plan
+- **Rôle** : Agis comme un Product Owner & Architecte.
+- **Action** : Lis TOUS les fichiers dans `.ai/features/`. Analyse les dépendances et l'architecture actuelle.
+- **Output** : Crée ou met à jour `.ai/current_plan.md` avec :
+  1. **Objectif** : Ce qu'on veut accomplir
+  2. **Tâches Parallélisables** : Tâches indépendantes exécutables simultanément
+  3. **Tâches Séquentielles** : Tâches avec dépendances
+  4. **Critères d'Acceptation** : Tests et validations pour chaque tâche
+- **Règle** : Chaque tâche doit être atomique et avoir un critère d'acceptation clair.
+
+## Commande /implement
+- **Rôle** : Agis comme un Essaim d'Agents (Swarm).
+- **Action** : Lis le plan dans `.ai/current_plan.md`.
+- **Exécution** :
+  1. Pour chaque tâche, agis comme un agent expert spécialisé
+  2. Exécute le code, crée les fichiers nécessaires
+  3. Lance un test unitaire immédiatement après chaque modification
+- **Auto-Correction** : Si un test échoue :
+  1. Analyse l'erreur
+  2. Corrige le code
+  3. Relance le test jusqu'à succès
+  4. Passe à la tâche suivante seulement si les tests passent
+- **Parallélisme** : Modifie plusieurs fichiers simultanément quand les tâches sont indépendantes.
+
+## Commande /cleanup
+- **Rôle** : Agis comme un Agent de Nettoyage (Janitor).
+- **Action** : Analyse et nettoie le code selon ces étapes :
+  1. **Dead Code** : Identifie les fonctions/classes jamais appelées
+  2. **Imports** : Supprime les imports inutilisés (utilise `ruff --fix`)
+  3. **Fichiers orphelins** : Liste les fichiers `.py` non importés
+  4. **Fichiers temporaires** : Supprime `__pycache__`, `.pyc`, `.pyo`, `.coverage`, `.pytest_cache`
+  5. **Duplications** : Signale le code dupliqué entre modules
+- **Output** : Crée `.ai/cleanup_report.md` avec :
+  - Liste des fichiers supprimés
+  - Liste des imports nettoyés
+  - Code mort identifié (à valider manuellement)
+  - Suggestions de refactoring
+- **Sécurité** : Ne supprime JAMAIS de fichier `.py` sans confirmation explicite.
+
+## Commande /test
+- **Rôle** : Agis comme un Agent de Test (QA Engineer).
+- **Action** : Exécute une suite de tests intelligente :
+  1. **Détection des changements** : Identifie les fichiers modifiés (git diff)
+  2. **Tests ciblés** : Lance uniquement les tests liés aux fichiers modifiés
+  3. **Tests de régression** : Si tests ciblés OK, lance la suite complète
+  4. **Couverture** : Génère un rapport de couverture
+- **Niveaux** :
+  - `/test quick` : Tests rapides uniquement (< 30s)
+  - `/test full` : Suite complète avec couverture
+  - `/test <fichier>` : Tests pour un fichier spécifique
+- **Auto-Fix** : Si un test échoue :
+  1. Analyse l'erreur et le contexte
+  2. Propose une correction
+  3. Demande confirmation avant d'appliquer
+- **Output** : Affiche résumé coloré + détails des échecs
+
+## Commande /review
+- **Rôle** : Agis comme un Code Reviewer Senior.
+- **Action** : Analyse le code modifié et génère un rapport :
+  1. **Qualité** : Respect des conventions, lisibilité, maintenabilité
+  2. **Bugs potentiels** : Null checks, edge cases, race conditions
+  3. **Performance** : N+1 queries, boucles inefficaces, mémoire
+  4. **Sécurité** : Injections, secrets exposés, permissions
+  5. **Tests** : Couverture suffisante, cas manquants
+- **Output** : Crée `.ai/review_report.md` avec :
+  - Score global (A-F)
+  - Issues par catégorie (Critical, Major, Minor, Info)
+  - Suggestions d'amélioration avec exemples de code
+
+## Commande /orchestrate (MÉTA-AGENT)
+- **Rôle** : Agis comme un Chef de Projet / Orchestrateur d'Agents.
+- **Action** : Pour une requête complexe, exécute automatiquement ce workflow :
+
+### ÉTAPE 1 : ANALYSE (30 secondes)
+1. Lis `.ai/features/*.md` pour comprendre l'architecture
+2. Lis `.ai/project_map.md` pour le contexte
+3. Identifie les modules concernés par la requête
+
+### ÉTAPE 2 : PLANIFICATION (crée `.ai/current_plan.md`)
+1. Décompose la requête en tâches atomiques
+2. Identifie les dépendances entre tâches
+3. Sépare les tâches parallélisables des séquentielles
+4. Définis des critères d'acceptation (tests, vérifications)
+
+### ÉTAPE 3 : EXÉCUTION (mode Swarm)
+Pour chaque tâche du plan :
+1. **Code** : Implémente la fonctionnalité
+2. **Test** : Lance les tests associés (`/test`)
+3. **Lint** : Vérifie le code (`ruff check --fix`)
+4. **Valide** : Vérifie le critère d'acceptation
+5. **Log** : Met à jour `.ai/current_plan.md` (statut: ✓/✗)
+
+### ÉTAPE 4 : VÉRIFICATION FINALE
+1. Lance la suite de tests complète : `pytest tests/ -v`
+2. Vérifie l'app Streamlit si concernée : `streamlit run streamlit_app.py`
+3. Vérifie les commandes CLI si concernées
+4. Génère un rapport dans `.ai/orchestration_report.md`
+
+### ÉTAPE 5 : RAPPORT
+Crée `.ai/orchestration_report.md` avec :
+- Résumé de la requête initiale
+- Tâches complétées vs échouées
+- Tests passés/échoués
+- Prochaines étapes suggérées
+
+### RÈGLES DE L'ORCHESTRATEUR
+- **Autonomie** : Ne demande confirmation que pour les suppressions de fichiers
+- **Récupération** : Si une tâche échoue, tente de corriger avant d'abandonner
+- **Parallélisme** : Exécute les tâches indépendantes simultanément
+- **Traçabilité** : Log chaque action dans `.ai/thought_log.md`
+
+---
+
 ## LANGUE
 - Répondre en français 100% du temps
 - Variables/code en anglais

@@ -1,0 +1,126 @@
+# Pre-commit hooks pour nettoyage automatique
+# Installation: pip install pre-commit && pre-commit install
+#
+# Exécution manuelle: pre-commit run --all-files
+# Exécution automatique: à chaque commit
+#
+# Pour activer les tests avant push:
+#   pre-commit install --hook-type pre-push
+
+repos:
+  # ==========================================================================
+  # QUALITÉ DU CODE (à chaque commit)
+  # ==========================================================================
+
+  # Ruff - Linting et formatage ultra-rapide (remplace black, isort, flake8)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      # Linter: imports inutilisés, bugs potentiels, style
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+
+      # Formatter: formatage cohérent du code
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # Hooks génériques de pre-commit
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # Nettoyage basique
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+      # Validation de syntaxe
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+
+      # Sécurité et erreurs courantes
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: debug-statements          # Détecte print(), pdb, breakpoint()
+      - id: check-merge-conflict      # Conflits git non résolus
+      - id: detect-private-key        # Clés privées accidentelles
+      - id: check-case-conflict       # Fichiers qui diffèrent par la casse
+
+      # Python-specific
+      - id: check-ast                 # Syntaxe Python valide
+      - id: check-docstring-first     # Docstring en premier
+      - id: name-tests-test           # Tests nommés test_*
+        args: [--pytest-test-first]
+
+  # ==========================================================================
+  # SÉCURITÉ (détection de secrets)
+  # ==========================================================================
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package.lock.json
+
+  # ==========================================================================
+  # VALIDATION PYDANTIC (important pour ton projet)
+  # ==========================================================================
+
+  - repo: local
+    hooks:
+      # Validation des modèles Pydantic à chaque commit
+      - id: validate-models
+        name: Validate Pydantic models
+        entry: python -c "from src.data.domain.models import *; print('Models OK')"
+        language: system
+        pass_filenames: false
+        files: ^src/data/domain/models/.*\.py$
+
+  # ==========================================================================
+  # TESTS RAPIDES (avant push uniquement)
+  # ==========================================================================
+
+  - repo: local
+    hooks:
+      # Tests unitaires rapides avant push
+      - id: pytest-fast
+        name: Run fast tests
+        entry: pytest tests/ -x -q --tb=line -m "not slow and not integration"
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Vérification des imports circulaires
+      - id: check-imports
+        name: Check circular imports
+        entry: python -c "import src; print('No circular imports')"
+        language: system
+        pass_filenames: false
+
+  # ==========================================================================
+  # TYPE CHECKING (optionnel - décommenter si souhaité)
+  # ==========================================================================
+
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.10.0
+  #   hooks:
+  #     - id: mypy
+  #       additional_dependencies: [pydantic>=2.0, polars-lts-cpu, types-requests]
+  #       args: [--ignore-missing-imports, --no-error-summary]
+  #       files: ^src/
+
+# ==========================================================================
+# CONFIGURATION CI/CD
+# ==========================================================================
+
+ci:
+  autofix_commit_msg: "style: auto-fix by pre-commit hooks"
+  autofix_prs: true
+  autoupdate_branch: 'main'
+  autoupdate_commit_msg: "chore: update pre-commit hooks"
+  autoupdate_schedule: monthly
+  skip: [pytest-fast]  # Tests seulement en local, pas en CI (GitHub Actions s'en charge)

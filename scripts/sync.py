@@ -25,15 +25,18 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 # Ajouter le répertoire parent au path pour les imports
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.config import get_default_db_path
-from src.db.connection import get_connection
-from src.db.schema import get_all_cache_table_ddl, get_source_table_indexes, CACHE_SCHEMA_VERSION
+from src.config import get_default_db_path  # noqa: E402
+from src.db.connection import get_connection  # noqa: E402
+from src.db.schema import (  # noqa: E402
+    CACHE_SCHEMA_VERSION,
+    get_all_cache_table_ddl,
+    get_source_table_indexes,
+)
 
 # Configuration du logging
 logging.basicConfig(
@@ -156,23 +159,23 @@ def _count_rows(con: sqlite3.Connection, table_name: str) -> int:
 
 def apply_indexes(db_path: str) -> tuple[bool, str]:
     """Applique les index optimisés sur la base de données.
-    
+
     Args:
         db_path: Chemin vers la base de données.
-        
+
     Returns:
         Tuple (success, message).
     """
     logger.info("Application des index optimisés...")
-    
+
     try:
         with get_connection(db_path) as con:
             cur = con.cursor()
-            
+
             # Index des tables sources
             source_indexes = get_source_table_indexes()
             applied = 0
-            
+
             for ddl in source_indexes:
                 try:
                     cur.execute(ddl)
@@ -181,18 +184,18 @@ def apply_indexes(db_path: str) -> tuple[bool, str]:
                     # Index déjà existant ou table manquante
                     if "already exists" not in str(e).lower():
                         logger.warning(f"Index ignoré: {e}")
-            
+
             con.commit()
-            
+
             # Analyser les tables pour optimiser le query planner
             logger.info("Analyse des tables (ANALYZE)...")
             cur.execute("ANALYZE")
             con.commit()
-            
+
             msg = f"Index appliqués: {applied}/{len(source_indexes)}"
             logger.info(msg)
             return True, msg
-            
+
     except Exception as e:
         msg = f"Erreur lors de l'application des index: {e}"
         logger.error(msg)
@@ -201,32 +204,32 @@ def apply_indexes(db_path: str) -> tuple[bool, str]:
 
 def ensure_cache_tables(db_path: str) -> tuple[bool, str]:
     """Crée les tables de cache si elles n'existent pas.
-    
+
     Args:
         db_path: Chemin vers la base de données.
-        
+
     Returns:
         Tuple (success, message).
     """
     logger.info("Vérification des tables de cache...")
-    
+
     try:
         with get_connection(db_path) as con:
             cur = con.cursor()
-            
+
             # Créer les tables de cache
             ddl_list = get_all_cache_table_ddl()
             created = 0
-            
+
             for ddl in ddl_list:
                 try:
                     cur.execute(ddl)
                     created += 1
                 except sqlite3.OperationalError:
                     pass  # Table/index déjà existant
-            
+
             con.commit()
-            
+
             # Mettre à jour la version du schéma
             cur.execute(
                 """INSERT OR REPLACE INTO CacheMeta (key, value, updated_at)
@@ -234,11 +237,11 @@ def ensure_cache_tables(db_path: str) -> tuple[bool, str]:
                 (CACHE_SCHEMA_VERSION, _get_iso_now()),
             )
             con.commit()
-            
+
             msg = f"Tables de cache vérifiées ({created} opérations)"
             logger.info(msg)
             return True, msg
-            
+
     except Exception as e:
         msg = f"Erreur lors de la création des tables de cache: {e}"
         logger.error(msg)
@@ -247,16 +250,16 @@ def ensure_cache_tables(db_path: str) -> tuple[bool, str]:
 
 def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, str]:
     """Reconstruit le cache MatchCache depuis MatchStats.
-    
+
     Args:
         db_path: Chemin vers la base de données.
         xuid: XUID optionnel pour filtrer (None = tous les joueurs).
-        
+
     Returns:
         Tuple (success, message).
     """
     import math
-    
+
     def _safe_float(v) -> float | None:
         """Convertit une valeur en float, gérant NaN et None."""
         if v is None:
@@ -268,7 +271,7 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
             return f
         except (TypeError, ValueError):
             return None
-    
+
     def _safe_int(v) -> int | None:
         """Convertit une valeur en int, gérant NaN et None."""
         if v is None:
@@ -280,7 +283,7 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
             return int(f)
         except (TypeError, ValueError):
             return None
-    
+
     def _safe_str(v) -> str:
         """Convertit une valeur en str, gérant None."""
         if v is None:
@@ -292,23 +295,24 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
             return s
         except Exception:
             return ""
-    
+
     logger.info(f"Reconstruction du cache MatchCache{f' pour {xuid}' if xuid else ''}...")
-    
+
     try:
         # Import des modules nécessaires
         import pandas as pd
-        from src.db.loaders import load_matches, get_players_from_db
-        from src.analysis.sessions import compute_sessions
+
         from src.analysis.filters import mark_firefight
-        
+        from src.analysis.sessions import compute_sessions
+        from src.db.loaders import get_players_from_db, load_matches
+
         with get_connection(db_path) as con:
             cur = con.cursor()
-            
+
             # Vérifier que MatchStats existe
             if not _has_table(con, "MatchStats"):
                 return False, "Table MatchStats introuvable"
-            
+
             # Déterminer les joueurs à traiter
             if xuid:
                 xuids_to_process = [xuid]
@@ -318,65 +322,67 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
                 if not players:
                     return False, "Aucun joueur trouvé dans la table Players"
                 xuids_to_process = [p["xuid"] for p in players]
-            
+
             total_inserted = 0
-            
+
             for player_xuid in xuids_to_process:
                 logger.info(f"Traitement du joueur {player_xuid}...")
-                
+
                 # Charger les matchs (retourne une liste de MatchRow)
                 matches = load_matches(db_path, player_xuid)
-                
+
                 if not matches:
                     logger.info(f"  Aucun match trouvé pour {player_xuid}")
                     continue
-                
+
                 # Convertir en DataFrame
-                df = pd.DataFrame([
-                    {
-                        "match_id": m.match_id,
-                        "start_time": m.start_time,
-                        "map_id": m.map_id,
-                        "map_name": m.map_name,
-                        "playlist_id": m.playlist_id,
-                        "playlist_name": m.playlist_name,
-                        "pair_id": m.map_mode_pair_id,
-                        "pair_name": m.map_mode_pair_name,
-                        "game_variant_id": m.game_variant_id,
-                        "game_variant_name": m.game_variant_name,
-                        "outcome": m.outcome,
-                        "last_team_id": m.last_team_id,
-                        "kda": m.kda,
-                        "max_killing_spree": m.max_killing_spree,
-                        "headshot_kills": m.headshot_kills,
-                        "average_life_seconds": m.average_life_seconds,
-                        "time_played_seconds": m.time_played_seconds,
-                        "kills": m.kills,
-                        "deaths": m.deaths,
-                        "assists": m.assists,
-                        "accuracy": m.accuracy,
-                        "my_team_score": m.my_team_score,
-                        "enemy_team_score": m.enemy_team_score,
-                        "team_mmr": m.team_mmr,
-                        "enemy_mmr": m.enemy_mmr,
-                        "xuid": player_xuid,
-                    }
-                    for m in matches
-                ])
-                
+                df = pd.DataFrame(
+                    [
+                        {
+                            "match_id": m.match_id,
+                            "start_time": m.start_time,
+                            "map_id": m.map_id,
+                            "map_name": m.map_name,
+                            "playlist_id": m.playlist_id,
+                            "playlist_name": m.playlist_name,
+                            "pair_id": m.map_mode_pair_id,
+                            "pair_name": m.map_mode_pair_name,
+                            "game_variant_id": m.game_variant_id,
+                            "game_variant_name": m.game_variant_name,
+                            "outcome": m.outcome,
+                            "last_team_id": m.last_team_id,
+                            "kda": m.kda,
+                            "max_killing_spree": m.max_killing_spree,
+                            "headshot_kills": m.headshot_kills,
+                            "average_life_seconds": m.average_life_seconds,
+                            "time_played_seconds": m.time_played_seconds,
+                            "kills": m.kills,
+                            "deaths": m.deaths,
+                            "assists": m.assists,
+                            "accuracy": m.accuracy,
+                            "my_team_score": m.my_team_score,
+                            "enemy_team_score": m.enemy_team_score,
+                            "team_mmr": m.team_mmr,
+                            "enemy_mmr": m.enemy_mmr,
+                            "xuid": player_xuid,
+                        }
+                        for m in matches
+                    ]
+                )
+
                 if df.empty:
                     continue
-            
+
                 # Marquer Firefight
                 df = mark_firefight(df)
-            
+
                 # Calculer les sessions
                 logger.info(f"  Calcul des sessions pour {len(df)} matchs...")
                 df = compute_sessions(df, gap_minutes=45)
-            
+
                 # Préparer les données pour insertion
                 logger.info(f"  Insertion de {len(df)} matchs dans MatchCache...")
-            
+
                 inserted = 0
                 for _, row in df.iterrows():
                     try:
@@ -433,23 +439,26 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
                         inserted += 1
                     except Exception as e:
                         logger.warning(f"Erreur insertion match {row.get('match_id')}: {e}")
-                
+
                 total_inserted += inserted
                 logger.info(f"  {inserted} matchs insérés pour {player_xuid}")
-            
+
             con.commit()
-            
+
             # Mettre à jour Players.total_matches depuis MatchCache
             logger.info("Mise à jour de Players.total_matches...")
-            cur.execute("""
-                UPDATE Players 
+            cur.execute(
+                """
+                UPDATE Players
                 SET total_matches = (
                     SELECT COUNT(*) FROM MatchCache WHERE MatchCache.xuid = Players.xuid
                 ),
                 updated_at = ?
-            """, (_get_iso_now(),))
+            """,
+                (_get_iso_now(),),
+            )
             con.commit()
-            
+
             # Mettre à jour les métadonnées
             # NOTE: total_inserted compte les INSERT/REPLACE effectués.
             # Le nombre de lignes finales peut être inférieur si la clé primaire
@@ -462,10 +471,10 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
                 (str(actual_count), _get_iso_now()),
             )
             con.commit()
-            
+
             msg = f"Cache reconstruit: {total_inserted} matchs total"
             logger.info(msg)
-            
+
             # Reconstruire TeammatesAggregate
             logger.info("Reconstruction de TeammatesAggregate...")
             teammates_ok, teammates_msg = rebuild_teammates_aggregate(db_path)
@@ -473,7 +482,7 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
                 logger.info(teammates_msg)
             else:
                 logger.warning(teammates_msg)
-            
+
             # Reconstruire MedalsAggregate
             logger.info("Reconstruction de MedalsAggregate...")
             medals_ok, medals_msg = rebuild_medals_aggregate(db_path)
@@ -481,9 +490,9 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
                 logger.info(medals_msg)
             else:
                 logger.warning(medals_msg)
-            
+
             return True, msg
-            
+
     except Exception as e:
         msg = f"Erreur lors de la reconstruction du cache: {e}"
         logger.error(msg)
@@ -492,89 +501,91 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
 
 def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
     """Reconstruit la table TeammatesAggregate depuis MatchStats.
-    
+
     Analyse tous les matchs pour extraire les coéquipiers et leurs stats.
-    
+
     Args:
         db_path: Chemin vers la base de données.
-        
+
     Returns:
         Tuple (success, message).
     """
     import json
     import re
-    
+
     try:
         from src.db.loaders import get_players_from_db
-        
+
         with get_connection(db_path) as con:
             cur = con.cursor()
-            
+
             # Vider la table
             cur.execute("DELETE FROM TeammatesAggregate")
-            
+
             # Récupérer tous les joueurs
             players = get_players_from_db(db_path)
             if not players:
                 return True, "Aucun joueur trouvé"
-            
+
             total_teammates = 0
-            
+
             for player in players:
                 xuid = player["xuid"]
                 logger.info(f"  Analyse des coéquipiers pour {xuid}...")
-                
+
                 # Récupérer les matchs depuis MatchStats (source de vérité)
                 cur.execute("SELECT ResponseBody FROM MatchStats")
-                
+
                 # Agréger par coéquipier
                 teammate_stats: dict[str, dict] = {}
                 gamertag_map: dict[str, str] = {}  # xuid -> gamertag
-                
+
                 for (body,) in cur.fetchall():
                     try:
                         obj = json.loads(body)
                     except Exception:
                         continue
-                    
+
                     players_list = obj.get("Players", [])
                     if not players_list:
                         continue
-                    
+
                     # Trouver le joueur principal et son équipe
                     me = None
                     my_team_id = None
                     target_ids = {xuid, f"xuid({xuid})"}
-                    
+
                     for p in players_list:
                         if not isinstance(p, dict):
                             continue
                         pid = p.get("PlayerId")
                         pid_str = str(pid) if pid else ""
-                        if pid_str in target_ids or pid_str.lower() in {t.lower() for t in target_ids}:
+                        if pid_str in target_ids or pid_str.lower() in {
+                            t.lower() for t in target_ids
+                        }:
                             me = p
                             my_team_id = p.get("LastTeamId")
                             break
-                    
+
                     if me is None or my_team_id is None:
                         continue
-                    
+
                     outcome = me.get("Outcome")
                     match_info = obj.get("MatchInfo", {})
                     start_time = match_info.get("StartTime", "")
-                    
+
                     # Trouver les coéquipiers (même équipe)
                     for p in players_list:
                         if not isinstance(p, dict):
                             continue
-                        
+
                         p_team_id = p.get("LastTeamId")
                         if p_team_id != my_team_id:
                             continue
-                        
+
                         pid = p.get("PlayerId")
                         pid_str = str(pid) if pid else ""
-                        
+
                         # Extraire le XUID
                         tm_xuid = None
                         if pid_str.isdigit():
@@ -583,21 +594,21 @@ def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
                             m = re.match(r"xuid\((\d+)\)", pid_str, re.IGNORECASE)
                             if m:
                                 tm_xuid = m.group(1)
-                        
+
                         if not tm_xuid or tm_xuid == xuid:
                             continue
-                        
+
                         # Ignorer les bots
                         if tm_xuid.startswith("bid(") or "bid(" in pid_str.lower():
                             continue
-                        
+
                         # Extraire le gamertag si disponible
                         gt = None
                         if isinstance(pid, dict):
                             gt = pid.get("Gamertag") or pid.get("gamertag")
                         if gt and isinstance(gt, str) and gt.strip():
                             gamertag_map[tm_xuid] = gt.strip()
-                        
+
                         if tm_xuid not in teammate_stats:
                             teammate_stats[tm_xuid] = {
                                 "matches_together": 0,
@@ -607,18 +618,18 @@ def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
                                 "first_played": start_time,
                                 "last_played": start_time,
                             }
-                        
+
                         stats = teammate_stats[tm_xuid]
                         stats["matches_together"] += 1
                         stats["same_team_count"] += 1
                         if start_time:
                             stats["last_played"] = start_time
-                        
+
                         if outcome == 2:  # Win
                             stats["wins_together"] += 1
                         elif outcome == 3:  # Loss
                             stats["losses_together"] += 1
-                
+
                 # Insérer dans TeammatesAggregate
                 for tm_xuid, stats in teammate_stats.items():
                     gamertag = gamertag_map.get(tm_xuid)
@@ -642,70 +653,70 @@ def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
                         ),
                     )
                     total_teammates += 1
-                
+
                 logger.info(f"    {len(teammate_stats)} coéquipiers trouvés")
-            
+
             con.commit()
             return True, f"TeammatesAggregate reconstruit: {total_teammates} entrées"
-            
+
     except Exception as e:
         return False, f"Erreur TeammatesAggregate: {e}"
 
 
 def rebuild_medals_aggregate(db_path: str) -> tuple[bool, str]:
     """Reconstruit la table MedalsAggregate depuis MatchStats.
-    
+
     Agrège les médailles par joueur (scope global).
-    
+
     Args:
         db_path: Chemin vers la base de données.
-        
+
     Returns:
         Tuple (success, message).
     """
     try:
-        from src.db.loaders import load_top_medals, get_players_from_db
-        
+        from src.db.loaders import get_players_from_db, load_top_medals
+
         with get_connection(db_path) as con:
             cur = con.cursor()
-            
+
             # Vider la table
             cur.execute("DELETE FROM MedalsAggregate")
-            
+
             # Récupérer tous les joueurs
             players = get_players_from_db(db_path)
             if not players:
                 return True, "Aucun joueur trouvé"
-            
+
             total_medals = 0
-            
+
             for player in players:
                 xuid = player["xuid"]
-                
+
                 # Récupérer tous les match_ids pour ce joueur depuis MatchCache
                 cur.execute("SELECT match_id FROM MatchCache WHERE xuid = ?", (xuid,))
                 match_ids = [row[0] for row in cur.fetchall()]
-                
+
                 if not match_ids:
                     continue
-                
+
                 # Charger toutes les médailles (pas de limite)
                 medals = load_top_medals(db_path, xuid, match_ids, top_n=None)
-                
+
                 # Insérer dans MedalsAggregate
                 for medal_id, count in medals:
                     cur.execute(
-                        """INSERT OR REPLACE INTO MedalsAggregate 
+                        """INSERT OR REPLACE INTO MedalsAggregate
                            (xuid, scope_type, scope_id, medal_id, total_count, computed_at)
                            VALUES (?, 'global', NULL, ?, ?, ?)""",
                         (xuid, medal_id, count, _get_iso_now()),
                     )
                     total_medals += 1
-            
+
             con.commit()
-            
+
             return True, f"MedalsAggregate reconstruit: {total_medals} entrées"
-            
+
     except Exception as e:
         return False, f"Erreur MedalsAggregate: {e}"
 
@@ -720,19 +731,19 @@ def sync_delta(
     with_aliases: bool = True,
 ) -> tuple[bool, str]:
     """Effectue une synchronisation incrémentale via SPNKr.
-    
+
     Args:
         db_path: Chemin vers la base de données.
         match_type: Type de matchs à récupérer.
         max_matches: Nombre maximum de matchs.
         with_highlight_events: Inclure les highlight events.
         with_aliases: Mettre à jour les alias XUID.
-        
+
     Returns:
         Tuple (success, message).
     """
     logger.info("Synchronisation incrémentale (delta)...")
-    
+
     try:
         from src.ui.sync import refresh_spnkr_db_via_api, sync_all_players
 
@@ -763,7 +774,7 @@ def sync_delta(
                 delta=True,
                 timeout_seconds=300,
             )
-        
+
         if ok:
             logger.info(msg)
             # Rebuild cache avec les nouvelles données
@@ -774,9 +785,9 @@ def sync_delta(
                 logger.warning(f"Cache non mis à jour: {cache_msg}")
         else:
             logger.error(msg)
-            
+
         return ok, msg
-        
+
     except ImportError as e:
         msg = f"SPNKr non disponible: {e}"
         logger.error(msg)
@@ -797,19 +808,19 @@ def sync_full(
     with_aliases: bool = True,
 ) -> tuple[bool, str]:
     """Effectue une synchronisation complète via SPNKr.
-    
+
     Args:
         db_path: Chemin vers la base de données.
         match_type: Type de matchs à récupérer.
         max_matches: Nombre maximum de matchs.
         with_highlight_events: Inclure les highlight events.
         with_aliases: Mettre à jour les alias XUID.
-        
+
     Returns:
         Tuple (success, message).
     """
     logger.info("Synchronisation complète...")
-    
+
     try:
         from src.ui.sync import refresh_spnkr_db_via_api, sync_all_players
 
@@ -840,7 +851,7 @@ def sync_full(
                 delta=False,
                 timeout_seconds=600,
             )
-        
+
         if ok:
             logger.info(msg)
             # Rebuild cache avec les nouvelles données
@@ -851,9 +862,9 @@ def sync_full(
                 logger.warning(f"Cache non mis à jour: {cache_msg}")
         else:
             logger.error(msg)
-            
+
         return ok, msg
-        
+
     except ImportError as e:
         msg = f"SPNKr non disponible: {e}"
         logger.error(msg)
@@ -864,27 +875,105 @@ def sync_full(
         return False, msg
 
 
+def migrate_to_parquet(
+    db_path: str,
+    *,
+    xuid: str | None = None,
+    warehouse_path: str | None = None,
+) -> tuple[bool, str]:
+    """Migre les données SQLite vers Parquet.
+
+    Args:
+        db_path: Chemin vers la base de données SQLite.
+        xuid: XUID optionnel pour filtrer (None = tous les joueurs).
+        warehouse_path: Chemin vers le warehouse (défaut: data/warehouse).
+
+    Returns:
+        Tuple (success, message).
+    """
+    logger.info(f"Migration vers Parquet{f' pour {xuid}' if xuid else ''}...")
+
+    try:
+        from src.data.repositories.shadow import ShadowMode, ShadowRepository
+        from src.db.loaders import get_players_from_db
+
+        # Déterminer les joueurs à migrer
+        if xuid:
+            xuids_to_process = [xuid]
+        else:
+            players = get_players_from_db(db_path)
+            if not players:
+                return False, "Aucun joueur trouvé dans la table Players"
+            xuids_to_process = [p["xuid"] for p in players if p.get("xuid")]
+
+        if not xuids_to_process:
+            return False, "Aucun XUID à migrer"
+
+        # Déterminer le warehouse path
+        if warehouse_path is None:
+            from pathlib import Path
+
+            db_parent = Path(db_path).parent
+            warehouse_path = str(db_parent / "warehouse")
+
+        total_migrated = 0
+        total_errors = 0
+
+        for player_xuid in xuids_to_process:
+            logger.info(f"  Migration pour {player_xuid}...")
+
+            shadow = ShadowRepository(
+                db_path,
+                player_xuid,
+                warehouse_path=warehouse_path,
+                mode=ShadowMode.SHADOW_READ,
+            )
+
+            try:
+                result = shadow.migrate_matches_to_parquet()
+                total_migrated += result["rows_written"]
+                total_errors += result["errors"]
+                logger.info(
+                    f"    {result['rows_written']} matchs migrés, {result['errors']} erreurs"
+                )
+            finally:
+                shadow.close()
+
+        msg = f"Migration Parquet: {total_migrated} matchs migrés, {total_errors} erreurs"
+        logger.info(msg)
+        return True, msg
+
+    except ImportError as e:
+        msg = f"Modules de migration non disponibles: {e}"
+        logger.error(msg)
+        return False, msg
+    except Exception as e:
+        msg = f"Erreur lors de la migration Parquet: {e}"
+        logger.error(msg)
+        return False, msg
+
+
 def download_assets(db_path: str) -> tuple[bool, str]:
     """Télécharge les assets manquants (médailles, maps).
-    
+
     Args:
         db_path: Chemin vers la base de données.
-        
+
     Returns:
         Tuple (success, message).
     """
     logger.info("Téléchargement des assets...")
-    
+
     try:
         from src.ui.medals import download_missing_medal_icons
-        
+
         # Télécharger les icônes de médailles manquantes
         downloaded = download_missing_medal_icons(db_path)
-        
+
         msg = f"Assets téléchargés: {downloaded} médailles"
         logger.info(msg)
         return True, msg
-        
+
     except ImportError as e:
         msg = f"Module assets non disponible: {e}"
         logger.warning(msg)
@@ -898,7 +987,7 @@ def download_assets(db_path: str) -> tuple[bool, str]:
 def print_stats(db_path: str) -> None:
     """Affiche les statistiques de la base de données."""
     logger.info("=== Statistiques de la base de données ===")
-    
+
     try:
         with get_connection(db_path) as con:
             tables = [
@@ -908,18 +997,18 @@ def print_stats(db_path: str) -> None:
                 ("XuidAliases", "Alias XUID"),
                 ("MatchCache", "Cache matchs"),
             ]
-            
+
             for table, label in tables:
                 if _has_table(con, table):
                     count = _count_rows(con, table)
                     logger.info(f"  {label}: {count:,}")
                 else:
                     logger.info(f"  {label}: (table absente)")
-                    
+
             # Taille du fichier
             size_mb = os.path.getsize(db_path) / (1024 * 1024)
             logger.info(f"  Taille: {size_mb:.2f} MB")
-            
+
     except Exception as e:
         logger.error(f"Erreur lors de la lecture des stats: {e}")
 
@@ -946,7 +1035,7 @@ Exemples:
   python scripts/sync.py --stats                    # Affiche les statistiques
         """,
     )
-    
+
     # Base de données
     parser.add_argument(
         "--db",
@@ -961,7 +1050,7 @@ Exemples:
         default=None,
         help="Sync d'un seul joueur (XUID, gamertag ou label de la table Players)",
     )
-    
+
     # Modes de synchronisation
     sync_group = parser.add_mutually_exclusive_group()
     sync_group.add_argument(
@@ -974,7 +1063,7 @@ Exemples:
         action="store_true",
         help="Synchronisation complète",
     )
-    
+
     # Options de sync
     parser.add_argument(
         "--match-type",
@@ -999,7 +1088,7 @@ Exemples:
         action="store_true",
         help="Ne pas mettre à jour les alias XUID",
     )
-    
+
     # Opérations de maintenance
     parser.add_argument(
         "--rebuild-cache",
@@ -1017,59 +1106,71 @@ Exemples:
         help="Télécharge les assets manquants",
     )
     parser.add_argument(
+        "--migrate-parquet",
+        action="store_true",
+        help="Migre les données vers Parquet après synchronisation",
+    )
+    parser.add_argument(
+        "--warehouse",
+        type=str,
+        default=None,
+        help="Chemin vers le warehouse Parquet (défaut: data/warehouse)",
+    )
+    parser.add_argument(
         "--stats",
         action="store_true",
         help="Affiche les statistiques de la DB",
     )
-    
+
     # Verbosité
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Mode verbeux",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Configuration du logging
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     # Déterminer le chemin de la DB
     db_path = args.db
     if not db_path:
         db_path = get_default_db_path()
-        
+
     if not db_path:
         logger.error("Aucune base de données trouvée. Utilisez --db pour spécifier le chemin.")
         return 1
-        
+
     if not os.path.exists(db_path):
         logger.error(f"Base de données introuvable: {db_path}")
         return 1
-        
+
     logger.info(f"Base de données: {db_path}")
-    
+
     # Exécuter les opérations demandées
     success = True
-    
+
     # Statistiques seules
     if args.stats:
         print_stats(db_path)
         return 0
-    
+
     # Vérifier/créer les tables de cache
     ok, msg = ensure_cache_tables(db_path)
     if not ok:
         logger.error(msg)
         success = False
-    
+
     # Appliquer les index
     if args.apply_indexes or args.delta or args.full:
         ok, msg = apply_indexes(db_path)
         if not ok:
             success = False
-    
+
     # Synchronisation
     if args.delta:
         ok, msg = sync_delta(
@@ -1082,7 +1183,7 @@ Exemples:
         )
         if not ok:
             success = False
-            
+
     elif args.full:
         ok, msg = sync_full(
             db_path,
@@ -1094,7 +1195,7 @@ Exemples:
         )
         if not ok:
             success = False
-    
+
     # Reconstruction du cache
     if args.rebuild_cache:
         resolved_xuid = None
@@ -1105,17 +1206,31 @@ Exemples:
         ok, msg = rebuild_match_cache(db_path, xuid=resolved_xuid)
         if not ok:
             success = False
-    
+
     # Téléchargement des assets
     if args.with_assets:
         ok, msg = download_assets(db_path)
         if not ok:
             success = False
-    
+
+    # Migration vers Parquet
+    if args.migrate_parquet or (args.delta or args.full):
+        resolved_xuid = None
+        if args.player:
+            _, resolved_xuid, _ = _resolve_player_in_db(db_path, args.player)
+        ok, msg = migrate_to_parquet(
+            db_path,
+            xuid=resolved_xuid,
+            warehouse_path=args.warehouse,
+        )
+        if not ok:
+            logger.warning(f"Migration Parquet: {msg}")
+            # Non bloquant: on continue même si la migration échoue
+
     # Afficher les stats finales
     if args.delta or args.full or args.rebuild_cache:
         print_stats(db_path)
-    
+
     return 0 if success else 1
 
 

@@ -15,8 +15,10 @@ from src.ui.cache import (
     cached_friend_matches_df,
     cached_query_matches_with_friend,
     cached_same_team_match_ids_with_friend,
+    cached_has_cache_tables,
     load_df_optimized,
 )
+from src.ui.perf import perf_section
 from src.ui.medals import render_medals_grid
 from src.visualization import plot_map_ratio_with_winloss
 
@@ -72,6 +74,18 @@ def render_teammates_page(
         plot_multi_metric_bars_fn: Fonction pour tracer les barres multi-métriques.
         top_medals_fn: Fonction pour récupérer les top médailles.
     """
+    # Vérification du cache pour performance
+    if not st.session_state.get("_cache_warning_shown"):
+        has_cache = cached_has_cache_tables(db_path, db_key)
+        if not has_cache:
+            st.warning(
+                "⚠️ **Performance** : Les tables de cache ne sont pas initialisées. "
+                "Le chargement sera plus lent. Exécutez `python scripts/migrate_to_cache.py` "
+                "pour accélérer significativement cette page.",
+                icon="⚠️",
+            )
+            st.session_state["_cache_warning_shown"] = True
+    
     apply_current_filters_teammates = st.toggle(
         "Appliquer les filtres actuels (période/sessions + map/playlist)",
         value=True,
@@ -86,7 +100,8 @@ def render_teammates_page(
         help="Active/désactive les courbes de moyenne lissée sur les graphes de cette section.",
     )
 
-    opts_map, default_labels = build_friends_opts_map_fn(db_path, xuid.strip(), db_key, aliases_key)
+    with perf_section("teammates/build_friends_opts_map"):
+        opts_map, default_labels = build_friends_opts_map_fn(db_path, xuid.strip(), db_key, aliases_key)
     picked_labels = st.multiselect(
         "Coéquipiers",
         options=list(opts_map.keys()),
@@ -96,7 +111,8 @@ def render_teammates_page(
     picked_xuids = [opts_map[lbl] for lbl in picked_labels if lbl in opts_map]
 
     # Afficher les Spartan ID cards des coéquipiers sélectionnés en grille 2 colonnes
-    render_teammate_cards(picked_xuids, settings)
+    with perf_section("teammates/render_cards"):
+        render_teammate_cards(picked_xuids, settings)
 
     if len(picked_xuids) < 1:
         st.info("Sélectionne au moins un coéquipier.")
