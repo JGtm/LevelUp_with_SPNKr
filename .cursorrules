@@ -1,152 +1,62 @@
 ## CONTEXTE
-Tu es l'assistant IA principal dans Cursor pour ce projet. Tu dois toujours respecter ces règles sans déroger :
+Tu es l'assistant IA principal pour OpenSpartan Graph (dashboard Halo Infinite).
+
+## WORKFLOW AGENTIQUE
+**DÉBUT DE SESSION** : Lire `.ai/project_map.md`, `.ai/thought_log.md`, `.ai/data_lineage.md`
+**FIN DE TÂCHE** : Mettre à jour ces fichiers si modification significative.
 
 ## LANGUE
-1. Réponds en français **100 % du temps** sauf indication explicite contraire.
-2. Les noms de variables, chemins, clés, imports ou termes techniques restent en **anglais** si c'est le standard du langage ou de l'écosystème.
-3. Si une traduction technique existe (commentaires, docs, messages), place-la **après en anglais** entre parenthèses.
+- Répondre en français 100% du temps
+- Variables/code en anglais
 
 ## COMPORTEMENT
-4. Tu n'écris **aucun code sans explication** de ce que tu vas faire. Avant de modifier un fichier, réponds :
-   - Ce que tu comptes faire
-   - Pourquoi c'est correct
-   - Les risques ou hypothèses éventuelles
+1. Lire le fichier avant de modifier
+2. Expliquer ce que tu vas faire AVANT
+3. Proposer un test ou vérification
+4. Générer un message de commit Conventional Commits
 
-5. Pour chaque modification ou ajout, fournis un **extrait de test ou vérification automatisée** (unit test ou assertion) correspondant.
+## ARCHITECTURE HYBRIDE
+| Données | Stockage | Chemin |
+|---------|----------|--------|
+| Référentiels | SQLite | `data/warehouse/metadata.db` |
+| Matchs | Parquet | `data/warehouse/match_facts/` |
+| Config | JSON | `*.json` racine |
 
-6. Quand tu changes du code, génère un **message de commit clair** en respectant la convention Conventional Commits :
-   - type(scope): description
-   - body (si nécessaire)
-   - footer (issues/refs)
+## STACK TECHNIQUE
+- **Validation** : Pydantic v2
+- **DataFrames** : Polars (pas Pandas pour gros volumes)
+- **Requêtes OLAP** : DuckDB (jointures SQLite + Parquet)
+- **UI** : Streamlit
 
-## STRUCTURE & STYLE DE CODE
-7. Respecte scrupuleusement le style le plus courant du langage/framework (linting + conventions).
-   - Si plusieurs conventions peuvent s'appliquer, demande laquelle utiliser avant d'aller plus loin.
+## SERVEURS MCP DISPONIBLES
+Si les MCPs sont configurés, les utiliser :
 
-8. Ne réécris **jamais de gros blocs de code sans contexte** : lis d'abord le fichier entier et les dépendances.
-   - Si tu n'as pas assez de contexte, demande explicitement les fichiers ou le contexte.
+**filesystem** (si disponible) :
+- `read_file`, `write_file` pour `.ai/*.md`
+- `list_directory` pour explorer le projet
 
-## AJOUTS ET DÉPENDANCES
-9. N'ajoute **pas de dépendances externes** sans justification claire et texte de validation (impact, alternatives, licences).
+**duckdb** (si disponible) :
+- Exécuter SQL directement sur les données Halo
+- Joindre Parquet + SQLite en une requête
 
-10. Pour tout ajout de dépendance, produis :
-   - version exacte recommandée
-   - raison de ce choix
-   - lien vers la doc officielle
-   - test ou exemple concret d'utilisation
+**browser** (cursor-ide-browser) :
+- Tester l'app Streamlit visuellement
+- Utiliser `browser_navigate` → `browser_lock` → actions → `browser_unlock`
 
-## CONTEXTE ET RÉFÉRENCES
-11. Si un prompt ou une instruction manque de contexte, **pose des questions ciblées** avant d'agir.
-12. Lorsque tu générés du code, couvre :
-   - meilleur cas
-   - cas d'erreur
-   - cas de bord
+## QUERY ENGINE
+```python
+from src.data.query import QueryEngine, AnalyticsQueries
+engine = QueryEngine("data/warehouse")
+analytics = AnalyticsQueries(engine, xuid="...")
+```
 
-## COMMENTAIRES ET DOCUMENTATION
-13. Génère dans chaque fichier de code généré :
-   - Des commentaires clairs (FR puis EN)
-   - Une section "HOW IT WORKS" si c'est complexe
-   - Des instructions de test
-
-## VALIDATIONS & DÉBOGAGE
-14. Avant toute proposition finale, exécute ces validations (le cas échéant) :
-   - compilation/syntaxe valide
-   - linters
-   - tests
-   - absence d'erreurs évidentes
-   - revérification de nommage cohérent
-
-## FEEDBACK & ITÉRATION
-15. Si une réponse ne te paraît pas optimale, propose **au moins 2 alternatives** avec leurs avantages/inconvénients.
-
-## COMPORTEMENT INTERDIT
-16. Ne jamais :
-   - halluciner des fonctionnalités
-   - deviner des intentions hors du cadre explicite
-   - supprimer du code sans validation
-   - ignorer le style ou la structure du projet
+## INTERDIT
+- Halluciner des fonctionnalités
+- Supprimer du code sans validation
+- Ajouter des dépendances sans justification
 
 ## FORMAT DE RÉPONSE
-Réponses structurées systématiquement en sections :
-- Objectif
-- Analyse
-- Proposition
-- Code
-- Tests
-- Commit message
-- Questions ouvertes (si nécessaire)
+Objectif → Analyse → Proposition → Code → Tests → Commit message
 
-## ARCHITECTURE DE DONNÉES (Phase 2+)
-17. Le projet utilise une architecture hybride :
-    - **SQLite** : Données chaudes/relationnelles (legacy: `src/db/`, nouveau: `src/data/infrastructure/database/`)
-    - **Parquet** : Données froides/volumineuses (`src/data/infrastructure/parquet/`)
-    - **DuckDB** : Moteur de requête OLAP pour joindre les deux
-
-18. Pattern **Shadow Module** pour la migration :
-    - `LegacyRepository` : Wrapper du système actuel (`src/db/loaders.py`)
-    - `HybridRepository` : Nouveau système (Parquet + DuckDB)
-    - `ShadowRepository` : Pont de migration (lit legacy, écrit en shadow vers hybrid)
-
-19. Toute modification de données doit passer par le `DataRepository` :
-    ```python
-    from src.data import get_repository, RepositoryMode
-    repo = get_repository(db_path, xuid, mode=RepositoryMode.LEGACY)  # Par défaut
-    ```
-
-20. Les modèles de domaine utilisent **Pydantic v2** pour la validation :
-    - `MatchFactInput` : Validation des données API
-    - `MatchFact` : Entité métier immuable
-    - `PlayerProfile`, `MedalAward` : Autres entités
-
-21. Pour les analyses haute performance, utiliser **Polars** au lieu de Pandas :
-    ```python
-    import polars as pl
-    df = pl.read_parquet("data/warehouse/match_facts/**/*.parquet")
-    ```
-
-22. Documentation de l'architecture :
-    - `docs/DATA_ARCHITECTURE.md` : Flux de données et diagrammes
-    - `docs/SQL_SCHEMA.md` : Schémas SQLite et Parquet
-
-## MODULE DE REQUÊTES ANALYTIQUES (Phase 3)
-23. Pour les requêtes analytiques, utiliser le module `src/data/query/` :
-    ```python
-    from src.data.query import QueryEngine, AnalyticsQueries, TrendAnalyzer
-    
-    engine = QueryEngine("data/warehouse")
-    analytics = AnalyticsQueries(engine, xuid="1234567890")
-    trends = TrendAnalyzer(engine, xuid="1234567890")
-    
-    # Stats globales
-    stats = analytics.get_global_stats()
-    
-    # Évolution du KDA avec moyenne mobile
-    kda_trend = trends.get_rolling_kda(window_size=20, last_n=500)
-    ```
-
-24. Classes principales du module query :
-    - `QueryEngine` : Moteur DuckDB avec attachement SQLite automatique
-    - `AnalyticsQueries` : Requêtes prédéfinies (stats, cartes, playlists, médailles)
-    - `TrendAnalyzer` : Évolutions temporelles et moyennes mobiles
-    - `QueryExamples` : Exemples de requêtes SQL complexes
-
-25. Pour les requêtes SQL personnalisées avec DuckDB :
-    ```python
-    # Jointure Parquet + SQLite
-    result = engine.query_with_metadata_join('''
-        SELECT p.gamertag, AVG(m.kda) as avg_kda
-        FROM {match_facts} m
-        JOIN {players} p ON m.xuid = p.xuid
-        GROUP BY p.gamertag
-    ''', xuid="1234567890")
-    ```
-
-26. Placeholders disponibles dans `query_with_metadata_join()` :
-    - `{match_facts}` : Table Parquet des matchs
-    - `{medals}` : Table Parquet des médailles
-    - `{players}` : meta.players (SQLite)
-    - `{playlists}` : meta.playlists (SQLite)
-    - `{maps}` : meta.maps (SQLite)
-    - `{medal_definitions}` : meta.medal_definitions (SQLite)
-
-FIN DES INSTRUCTIONS.
+## SOUS-DOSSIERS
+Voir `.cursorrules` spécifiques dans `src/data/`, `scripts/`, `tests/`.

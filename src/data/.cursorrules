@@ -1,0 +1,19 @@
+# Règles pour src/data/ - Architecture Hybride
+
+## Modèles Pydantic
+- Utiliser `ConfigDict(frozen=True)` pour les entités immuables
+- Utiliser `ConfigDict(extra="ignore")` pour les inputs API
+- Toujours créer `from_input()` ou `from_raw()` pour la conversion
+
+## Parquet
+- Partitionner par `player={xuid}/year={year}/month={month:02d}`
+- Compression: snappy (défaut)
+- Dédupliquer sur `match_id` avant écriture
+
+## SQLite (metadata)
+- Tables de référentiel uniquement (playlists, medals, etc.)
+- Pas de données volumineuses ici
+
+## DuckDB
+- Utiliser `ATTACH '*.db' AS meta (TYPE sqlite)` pour les jointures
+- Placeholders: `{match_facts}`, `{medals}`, `{players}`, etc.

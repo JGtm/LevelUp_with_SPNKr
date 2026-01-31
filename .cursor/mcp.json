@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "duckdb": {
+      "command": "C:\\Users\\Guillaume\\AppData\\Local\\Python\\pythoncore-3.14-64\\Scripts\\duckdb-mcp-server.exe",
+      "args": ["--db-path", ":memory:"],
+      "disabled": false
+    }
+  }
+}
