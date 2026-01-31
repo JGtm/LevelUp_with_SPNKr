@@ -6,3 +6,15 @@ tqdm>=4.65.0
 
 # Optionnel (CLI / export PNG)
 matplotlib>=3.7.0
+
+# Architecture hybride SQLite + DuckDB + Parquet (Phase 2)
+# Validation des données API
+pydantic>=2.5.0
+
+# Traitement de données haute performance (remplace Pandas pour les gros volumes)
+polars>=0.20.0
+
+# Moteur de requête OLAP (jointures SQLite + Parquet)
+duckdb>=0.10.0
+
+# Note: pyarrow est une dépendance de Polars et DuckDB, pas besoin de l'installer séparément
