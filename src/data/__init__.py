@@ -28,8 +28,26 @@ Usage:
 from src.data.repositories.factory import get_repository, RepositoryMode
 from src.data.repositories.protocol import DataRepository
 
+# Re-export du module d'intégration pour l'UI
+from src.data.integration import (
+    load_matches_df,
+    get_repository_for_ui,
+    get_analytics_for_ui,
+    get_trends_for_ui,
+    matches_to_dataframe,
+    get_repository_mode_from_settings,
+)
+
 __all__ = [
+    # Core
     "get_repository",
     "RepositoryMode",
     "DataRepository",
+    # Intégration UI
+    "load_matches_df",
+    "get_repository_for_ui",
+    "get_analytics_for_ui",
+    "get_trends_for_ui",
+    "matches_to_dataframe",
+    "get_repository_mode_from_settings",
 ]

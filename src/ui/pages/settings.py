@@ -119,6 +119,93 @@ def render_settings_page(
             help="Utile si la DB change en dehors de l'app (NAS / import externe).",
         )
 
+    # Section Architecture de données (Phase 2+)
+    with st.expander("Architecture de données (Avancé)", expanded=False):
+        st.caption(
+            "Le nouveau système hybride utilise Parquet + DuckDB pour des analyses "
+            "10-20x plus rapides sur de gros volumes de données."
+        )
+        
+        current_mode = str(getattr(settings, "repository_mode", "legacy") or "legacy").lower()
+        mode_options = ["legacy", "shadow", "hybrid"]
+        mode_labels = {
+            "legacy": "Legacy (SQLite + JSON) - Stable",
+            "shadow": "Shadow (Migration progressive) - Recommandé",
+            "hybrid": "Hybrid (Parquet + DuckDB) - Performance",
+        }
+        
+        repository_mode = st.selectbox(
+            "Mode de stockage",
+            options=mode_options,
+            index=mode_options.index(current_mode) if current_mode in mode_options else 0,
+            format_func=lambda x: mode_labels.get(x, x),
+            help=(
+                "Legacy: système actuel, stable. "
+                "Shadow: lit depuis legacy, écrit vers Parquet (migration). "
+                "Hybrid: utilise Parquet + DuckDB (après migration complète)."
+            ),
+        )
+        
+        enable_duckdb_analytics = st.toggle(
+            "Activer les analytics DuckDB (expérimental)",
+            value=bool(getattr(settings, "enable_duckdb_analytics", False)),
+            help="Active les requêtes haute performance pour les graphiques de tendances.",
+        )
+        
+        # Afficher l'état de la migration si on a un XUID
+        xuid = str(st.session_state.get("xuid_input", "") or "").strip()
+        db_path = str(st.session_state.get("db_path", "") or "").strip()
+        
+        if xuid and db_path:
+            try:
+                from src.ui.cache import cached_get_migration_status, db_cache_key
+                
+                db_key = db_cache_key(db_path) if db_path else None
+                migration_status = cached_get_migration_status(db_path, xuid, db_key=db_key)
+                
+                if "error" not in migration_status:
+                    st.divider()
+                    st.markdown("**État de la migration**")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Matchs Legacy", migration_status.get("legacy_count", 0))
+                    col2.metric("Matchs Parquet", migration_status.get("hybrid_count", 0))
+                    col3.metric("Progression", f"{migration_status.get('progress_percent', 0):.0f}%")
+                    
+                    if migration_status.get("is_complete"):
+                        st.success("Migration complète ! Vous pouvez passer en mode Hybrid.")
+                    elif migration_status.get("hybrid_count", 0) > 0:
+                        st.info("Migration en cours. Continuez à utiliser l'app en mode Shadow.")
+                    else:
+                        st.warning("Migration non démarrée. Activez le mode Shadow pour commencer.")
+                    
+                    # Bouton de migration manuelle
+                    if st.button("Migrer maintenant", help="Lance la migration des données vers Parquet"):
+                        with st.spinner("Migration en cours..."):
+                            try:
+                                from src.data.repositories.shadow import ShadowRepository, ShadowMode
+                                from pathlib import Path
+                                
+                                warehouse_path = Path(db_path).parent / "warehouse"
+                                shadow = ShadowRepository(
+                                    db_path, xuid,
+                                    warehouse_path=warehouse_path,
+                                    mode=ShadowMode.SHADOW_READ,
+                                )
+                                result = shadow.migrate_matches_to_parquet()
+                                shadow.close()
+                                
+                                st.success(
+                                    f"Migration terminée ! "
+                                    f"{result['rows_written']} lignes écrites, "
+                                    f"{result['errors']} erreurs."
+                                )
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erreur lors de la migration: {e}")
+            except ImportError:
+                st.info("Module d'intégration non disponible. Installez les dépendances avec: pip install pydantic polars duckdb")
+
     # Section "Fichiers (avancé)" masquée - valeurs conservées depuis settings
     aliases_path = str(getattr(settings, "aliases_path", "") or "").strip()
     profiles_path = str(getattr(settings, "profiles_path", "") or "").strip()
@@ -139,6 +226,18 @@ def render_settings_page(
     profile_rank_subtitle = str(getattr(settings, "profile_rank_subtitle", "") or "").strip()
 
     # Section "Profil joueur (avancé)" masquée - valeurs conservées depuis settings
+
+    # Récupérer les valeurs de l'architecture de données
+    # (définies dans la section expander plus haut, ou valeurs par défaut)
+    try:
+        repository_mode_val = repository_mode  # type: ignore
+    except NameError:
+        repository_mode_val = str(getattr(settings, "repository_mode", "legacy") or "legacy")
+    
+    try:
+        enable_duckdb_val = enable_duckdb_analytics  # type: ignore
+    except NameError:
+        enable_duckdb_val = bool(getattr(settings, "enable_duckdb_analytics", False))
 
     cols = st.columns(2)
     if cols[0].button("Enregistrer", width="stretch"):
@@ -169,6 +268,8 @@ def render_settings_page(
             profile_id_badge_text_color=str(profile_id_badge_text_color or "").strip(),
             profile_rank_label=str(profile_rank_label or "").strip(),
             profile_rank_subtitle=str(profile_rank_subtitle or "").strip(),
+            repository_mode=str(repository_mode_val),
+            enable_duckdb_analytics=bool(enable_duckdb_val),
         )
         ok, err = save_settings(new_settings)
         if ok:

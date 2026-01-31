@@ -3,12 +3,20 @@
 Ce module regroupe toutes les fonctions @st.cache_data utilisées
 pour éviter de recharger les données à chaque interaction.
 
-Stratégie de cache à deux niveaux :
-1. Cache DB (MatchCache, etc.) : Données pré-parsées, sessions pré-calculées
-2. Cache Streamlit (@st.cache_data) : Évite les requêtes DB répétées
+Stratégie de cache à trois niveaux :
+1. Cache Parquet/DuckDB (nouveau) : Données en format colonnaire haute performance
+2. Cache DB (MatchCache, etc.) : Données pré-parsées, sessions pré-calculées
+3. Cache Streamlit (@st.cache_data) : Évite les requêtes DB répétées
 
 Les fonctions suffixées par _cached utilisent prioritairement le cache DB
 avec fallback sur les loaders originaux si le cache n'existe pas.
+
+Architecture hybride (Phase 2+) :
+- Mode "legacy" : Utilise src/db/loaders.py (comportement original)
+- Mode "hybrid" : Utilise Parquet + DuckDB (haute performance)
+- Mode "shadow" : Lit legacy, écrit en shadow vers hybrid (migration)
+
+Le mode est configurable via AppSettings.repository_mode.
 """
 
 from __future__ import annotations
@@ -547,3 +555,220 @@ def cached_compute_sessions_db_optimized(
         return compute_sessions_with_context(df0, gap_minutes=gap_minutes)
     else:
         return compute_sessions(df0, gap_minutes=gap_minutes)
+
+
+# =============================================================================
+# Fonctions utilisant l'architecture hybride (Phase 2+)
+# =============================================================================
+
+def _get_repository_mode() -> str:
+    """Récupère le mode de repository depuis les settings."""
+    try:
+        settings = st.session_state.get("app_settings")
+        if settings and hasattr(settings, "repository_mode"):
+            return str(settings.repository_mode).lower()
+    except Exception:
+        pass
+    return "legacy"
+
+
+def _is_duckdb_analytics_enabled() -> bool:
+    """Vérifie si les analytics DuckDB sont activées."""
+    try:
+        settings = st.session_state.get("app_settings")
+        if settings and hasattr(settings, "enable_duckdb_analytics"):
+            return bool(settings.enable_duckdb_analytics)
+    except Exception:
+        pass
+    return False
+
+
+@st.cache_data(show_spinner=False)
+def load_df_hybrid(
+    db_path: str,
+    xuid: str,
+    db_key: tuple[int, int] | None = None,
+    include_firefight: bool = True,
+) -> pd.DataFrame:
+    """Charge les matchs via le système hybride (Parquet + DuckDB).
+    
+    Utilise le DataRepository configuré selon le mode dans les settings.
+    Fallback automatique sur legacy si le mode hybride échoue.
+    
+    Args:
+        db_path: Chemin vers la DB.
+        xuid: XUID du joueur.
+        db_key: Clé de cache (mtime, size).
+        include_firefight: Inclure les matchs PvE.
+        
+    Returns:
+        DataFrame enrichi avec toutes les colonnes calculées.
+    """
+    _ = db_key  # Utilisé pour invalidation du cache Streamlit
+    
+    try:
+        from src.data.integration import load_matches_df, get_repository_mode_from_settings
+        
+        mode = get_repository_mode_from_settings()
+        
+        # Utiliser le nouveau système
+        df = load_matches_df(
+            db_path,
+            xuid,
+            include_firefight=include_firefight,
+            mode=mode,
+        )
+        
+        if not df.empty:
+            return df
+        
+        # Fallback sur legacy si vide (pas de données Parquet)
+        return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
+        
+    except ImportError:
+        # Module d'intégration non disponible, utiliser legacy
+        return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
+    except Exception:
+        # Erreur inattendue, fallback sur legacy
+        return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
+
+
+def load_df_smart(
+    db_path: str,
+    xuid: str,
+    db_key: tuple[int, int] | None = None,
+    include_firefight: bool = True,
+) -> pd.DataFrame:
+    """Charge les matchs avec sélection automatique du meilleur loader.
+    
+    Choisit automatiquement entre :
+    - load_df_hybrid() si repository_mode != "legacy"
+    - load_df_optimized() sinon
+    
+    C'est la fonction recommandée pour le nouveau code.
+    """
+    mode = _get_repository_mode()
+    
+    if mode in ("hybrid", "shadow"):
+        return load_df_hybrid(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
+    else:
+        return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def cached_get_global_stats_duckdb(
+    db_path: str,
+    xuid: str,
+    db_key: tuple[int, int] | None = None,
+) -> dict | None:
+    """Récupère les stats globales via DuckDB (haute performance).
+    
+    Utilise le QueryEngine pour des agrégations ultra-rapides sur Parquet.
+    Retourne None si DuckDB n'est pas disponible ou pas de données.
+    """
+    if not _is_duckdb_analytics_enabled():
+        return None
+    
+    try:
+        from src.data.integration import get_analytics_for_ui, check_hybrid_available
+        
+        if not check_hybrid_available(db_path, xuid):
+            return None
+        
+        engine, analytics = get_analytics_for_ui(db_path, xuid)
+        try:
+            stats = analytics.get_global_stats()
+            return {
+                "total_matches": stats.total_matches,
+                "total_kills": stats.total_kills,
+                "total_deaths": stats.total_deaths,
+                "total_assists": stats.total_assists,
+                "total_time_hours": stats.total_time_hours,
+                "avg_kda": stats.avg_kda,
+                "avg_accuracy": stats.avg_accuracy,
+                "win_rate": stats.win_rate,
+                "loss_rate": stats.loss_rate,
+                "wins": stats.wins,
+                "losses": stats.losses,
+            }
+        finally:
+            engine.close()
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def cached_get_kda_trend_duckdb(
+    db_path: str,
+    xuid: str,
+    window_size: int = 20,
+    last_n: int = 500,
+    db_key: tuple[int, int] | None = None,
+) -> list[dict] | None:
+    """Récupère l'évolution du KDA via DuckDB (haute performance).
+    
+    Utilise le TrendAnalyzer pour calculer des moyennes mobiles
+    ultra-rapidement sur les fichiers Parquet.
+    """
+    if not _is_duckdb_analytics_enabled():
+        return None
+    
+    try:
+        from src.data.integration import get_trends_for_ui, check_hybrid_available
+        
+        if not check_hybrid_available(db_path, xuid):
+            return None
+        
+        engine, trends = get_trends_for_ui(db_path, xuid)
+        try:
+            return trends.get_rolling_kda(window_size=window_size, last_n=last_n)
+        finally:
+            engine.close()
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def cached_get_performance_by_map_duckdb(
+    db_path: str,
+    xuid: str,
+    min_matches: int = 3,
+    db_key: tuple[int, int] | None = None,
+) -> list[dict] | None:
+    """Récupère les performances par carte via DuckDB."""
+    if not _is_duckdb_analytics_enabled():
+        return None
+    
+    try:
+        from src.data.integration import get_analytics_for_ui, check_hybrid_available
+        
+        if not check_hybrid_available(db_path, xuid):
+            return None
+        
+        engine, analytics = get_analytics_for_ui(db_path, xuid)
+        try:
+            return analytics.get_performance_by_map(min_matches=min_matches)
+        finally:
+            engine.close()
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=60)
+def cached_get_migration_status(
+    db_path: str,
+    xuid: str,
+    db_key: tuple[int, int] | None = None,
+) -> dict:
+    """Récupère l'état de la migration vers le système hybride."""
+    try:
+        from src.data.integration import get_migration_status
+        return get_migration_status(db_path, xuid)
+    except Exception as e:
+        return {
+            "error": str(e),
+            "legacy_count": 0,
+            "hybrid_count": 0,
+            "progress_percent": 0,
+            "is_complete": False,
+        }
