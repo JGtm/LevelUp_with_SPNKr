@@ -17,6 +17,61 @@
 
 ## Journal
 
+### [2026-01-31] - Optimisation Performance Section "Mes coéquipiers"
+
+**Contexte** :
+L'utilisateur signale 3 problèmes de performance :
+1. Section "Mes coéquipiers" lente au chargement
+2. Switch du bouton radio "Période à Sessions" lent
+3. Bouton "Dernière session en trio" qui n'apparaît pas ou est lent
+
+**Diagnostic effectué** :
+
+1. **Requêtes SQL avec parsing JSON intensif** :
+   - `LIST_TOP_TEAMMATES`, `LIST_OTHER_PLAYER_XUIDS`, `QUERY_MATCHES_WITH_FRIEND`
+   - Ces requêtes parsent le JSON de TOUS les matchs à chaque appel
+   - Le fallback est utilisé si `TeammatesAggregate` n'est pas peuplé
+
+2. **`_compute_trio_label()` non cachée** :
+   - Appelée à chaque rendu de la sidebar en mode Sessions
+   - Fait 2 requêtes SQL coûteuses pour calculer l'intersection des matchs trio
+
+3. **`render_teammate_cards()` séquentiel** :
+   - Appelle `get_profile_appearance()` pour chaque coéquipier sans cache
+
+**Corrections apportées** :
+
+1. **Cache TTL pour le calcul du trio** (`filters_render.py`) :
+   - Nouvelle fonction `_cached_get_trio_match_ids()` avec `@st.cache_data(ttl=120)`
+   - Évite les requêtes SQL répétées pendant 2 minutes
+
+2. **Cache pour les cartes coéquipiers** (`teammates_helpers.py`) :
+   - Nouvelle fonction `_get_teammate_card_data()` avec `@st.cache_data(ttl=300)`
+   - Évite les appels API répétés pendant 5 minutes
+
+3. **Avertissement si cache non initialisé** (`teammates.py`) :
+   - Affiche un warning si `TeammatesAggregate` est vide
+   - Guide l'utilisateur vers `python scripts/migrate_to_cache.py`
+
+4. **Mesures de performance** (`teammates.py`) :
+   - Ajout de `perf_section()` sur les sections critiques
+   - Permet de visualiser les temps dans l'onglet Debug
+
+**Raisonnement** :
+- Le cache Streamlit `@st.cache_data` avec TTL évite les recalculs fréquents
+- La migration vers `TeammatesAggregate` est la solution définitive pour la performance
+- Les mesures de performance aident au diagnostic futur
+
+**Suivi** :
+- [x] Cache trio_label avec TTL
+- [x] Cache cartes coéquipiers avec TTL
+- [x] Avertissement si cache vide
+- [x] Mesures de performance ajoutées
+- [ ] Exécuter `python scripts/migrate_to_cache.py` pour peupler TeammatesAggregate
+- [ ] Vérifier que le switch radio est plus rapide après les optimisations
+
+---
+
 ### [2026-01-31] - Finalisation Migration DuckDB/Parquet + Script sync.py Unifié
 
 **Contexte** :
