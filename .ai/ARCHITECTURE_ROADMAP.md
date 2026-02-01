@@ -1,7 +1,7 @@
 # Roadmap Architecture - Migration DuckDB Unifiée
 
 > Ce document trace l'évolution planifiée de l'architecture de données.
-> Mis à jour : 2026-02-01 (Phase 4 en cours)
+> Mis à jour : 2026-02-01 (Sprint 4.7 - Refonte Sync en cours)
 
 ---
 
@@ -654,6 +654,111 @@ Fichiers avec docstrings/commentaires mentionnant "SQLite" ou "metadata.db" à m
 6. **Commentaires mis à jour** :
    - `src/db/loaders.py` : Docstring indiquant le support DuckDB limité
    - `src/data/repositories/hybrid.py` : Docstring mis à jour
+
+---
+
+### Sprint 4.7 : Refonte Système de Synchronisation 📋 (Avant Phase 5)
+
+**Objectif** : Simplifier le pipeline de synchronisation en passant directement de l'API SPNKr à DuckDB, sans intermédiaires.
+
+**Spécification détaillée** : `.ai/features/SYNC_REFACTORING_SPEC.md`
+
+#### Problème Actuel
+
+Le pipeline actuel est trop complexe (4 étapes, 8+ fichiers) :
+
+```
+API SPNKr → SQLite (JSON) → SQLite (Cache) → Parquet → DuckDB
+```
+
+| Fichier | Verdict |
+|---------|---------|
+| `scripts/spnkr_import_db.py` | À refactorer |
+| `scripts/sync.py` | À refactorer |
+| `scripts/migrate_to_cache.py` | **OBSOLÈTE** |
+| `scripts/migrate_to_parquet.py` | **OBSOLÈTE** |
+| `src/db/loaders.py` | **À DÉPRÉCIER** |
+| `src/data/repositories/shadow.py` | **OBSOLÈTE** |
+
+#### Architecture Cible
+
+```
+API SPNKr
+    │
+    ▼
+DuckDBSyncEngine (src/data/sync/)
+├── api_client.py      # SPNKr wrapper async
+├── transformers.py    # API JSON → DuckDB rows  
+├── engine.py          # Orchestrateur
+└── delta.py           # Logique incrémentale
+    │
+    ▼
+data/players/{gamertag}/stats.duckdb
+├── match_stats
+├── player_match_stats  # MMR/skill (nouveau)
+├── highlight_events    # (nouveau)
+├── xuid_aliases        # (nouveau)
+└── sync_meta
+```
+
+#### Sprint 4.7.1 : Core Sync Engine ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.7.1.1 | Créer structure `src/data/sync/` | `__init__.py`, `models.py` | ⏳ |
+| S4.7.1.2 | Implémenter `SPNKrAPIClient` | `api_client.py` | ⏳ |
+| S4.7.1.3 | Implémenter transformers | `transformers.py` | ⏳ |
+| S4.7.1.4 | Implémenter `DuckDBSyncEngine` | `engine.py` | ⏳ |
+| S4.7.1.5 | Tests unitaires | `tests/test_sync_engine.py` | ⏳ |
+
+#### Sprint 4.7.2 : Intégration ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.7.2.1 | Adapter `scripts/sync.py` CLI | `scripts/sync.py` | ⏳ |
+| S4.7.2.2 | Adapter `src/ui/sync.py` | `src/ui/sync.py` | ⏳ |
+| S4.7.2.3 | Adapter `openspartan_launcher.py` | `openspartan_launcher.py` | ⏳ |
+| S4.7.2.4 | Tests d'intégration | `tests/test_sync_integration.py` | ⏳ |
+
+#### Sprint 4.7.3 : Migration Historique ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.7.3.1 | Migrer HighlightEvents → DuckDB | `scripts/migrate_highlight_events.py` | ⏳ |
+| S4.7.3.2 | Migrer PlayerMatchStats → DuckDB | `scripts/migrate_player_match_stats.py` | ⏳ |
+| S4.7.3.3 | Migrer XuidAliases → DuckDB | Inclus dans les précédents | ⏳ |
+| S4.7.3.4 | Script unifié | `scripts/migrate_all_to_duckdb.py` | ⏳ |
+
+#### Sprint 4.7.4 : Nettoyage ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.7.4.1 | Marquer obsolète | `src/db/loaders.py`, `loaders_cached.py` | ⏳ |
+| S4.7.4.2 | Supprimer du workflow auto | `migrate_to_cache.py`, `migrate_to_parquet.py` | ⏳ |
+| S4.7.4.3 | MAJ documentation | `ARCHITECTURE_ROADMAP.md`, `thought_log.md` | ⏳ |
+| S4.7.4.4 | Supprimer ShadowRepository | `src/data/repositories/shadow.py` | ⏳ |
+
+#### Décisions Architecturales (Sprint 4.7)
+
+| Question | Décision | Justification |
+|----------|----------|---------------|
+| Données historiques | Migrer TOUT | HighlightEvents, PlayerMatchStats, Aliases |
+| Parquet | Optionnel (archivage) | DuckDB suffit pour l'analytique |
+| Grunt API | Phase 5 | Comparaison SPNKr vs Grunt à faire |
+| DB unifiée vs multi | Multi-joueurs | Réactivité + isolation par joueur |
+
+#### Parquet : Verdict Final
+
+**Parquet n'est plus nécessaire comme format intermédiaire** car :
+1. DuckDB lit nativement les fichiers Parquet si besoin
+2. On n'a plus de flux SQLite → Parquet → DuckDB
+3. DuckDB offre les mêmes perfs analytiques avec transactions ACID
+
+**Conserver Parquet uniquement pour** :
+- **Export/Backup** : Archivage annuel (`scripts/archive_season.py`)
+- **Interopérabilité** : Partage de données avec outils externes
+
+**Action** : Supprimer `migrate_to_parquet.py` du workflow automatique.
 
 ---
 

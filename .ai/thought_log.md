@@ -1286,4 +1286,97 @@ migration des modules vers DuckDB, et création de modules utilitaires centralis
 
 ---
 
+### [2026-02-01] - Sprint 4.5 (Nouveau) - Refonte Système de Synchronisation
+
+**Contexte** :
+Avant de passer à la Phase 5 (API Grunt), l'utilisateur demande une analyse complète du système de synchronisation actuel. L'objectif est de simplifier le pipeline en passant directement de l'API SPNKr à DuckDB, sans intermédiaires.
+
+**Analyse effectuée** :
+
+1. **Pipeline actuel (4 étapes, 8+ fichiers)** :
+   ```
+   API SPNKr → SQLite (JSON brut) → SQLite (MatchCache) → Parquet → DuckDB
+   ```
+   
+   | Fichier | Rôle | Verdict |
+   |---------|------|---------|
+   | `scripts/spnkr_import_db.py` | Import API → SQLite | À refactorer |
+   | `scripts/sync.py` | Orchestrateur | À refactorer |
+   | `scripts/migrate_to_cache.py` | JSON → MatchCache | **OBSOLÈTE** |
+   | `scripts/migrate_to_parquet.py` | MatchCache → Parquet | **OBSOLÈTE** |
+   | `src/db/loaders.py` | Parse JSON SQLite | **À DÉPRÉCIER** |
+   | `src/db/loaders_cached.py` | Lit MatchCache | **À DÉPRÉCIER** |
+   | `src/data/repositories/shadow.py` | Bridge legacy→hybrid | **OBSOLÈTE** |
+
+2. **Points d'intégration identifiés** :
+   - `openspartan_launcher.py` : Appelle `spnkr_import_db.py` via subprocess
+   - `src/ui/sync.py` : Bridge UI → subprocess
+   - `src/app/sidebar.py` : Bouton "Synchroniser" → `sync_all_players()`
+
+3. **Duplication de logique** :
+   - Parsing JSON dans 3 fichiers différents
+   - Extraction MMR dans 2 fichiers
+   - Calcul sessions dans 2 endroits
+
+**Architecture cible** :
+
+```
+API SPNKr
+    │
+    ▼
+DuckDBSyncEngine (src/data/sync/)
+├── api_client.py      # SPNKr wrapper async
+├── transformers.py    # API JSON → DuckDB rows
+├── engine.py          # Orchestrateur principal
+└── delta.py           # Logique incrémentale
+    │
+    ▼
+data/players/{gamertag}/stats.duckdb
+├── match_stats
+├── player_match_stats  # MMR/skill (nouveau)
+├── highlight_events    # (nouveau)
+├── xuid_aliases        # (nouveau)
+└── sync_meta
+```
+
+**Décisions prises** :
+
+| Question | Décision | Raison |
+|----------|----------|--------|
+| Données historiques | Migrer TOUT | Demande utilisateur |
+| Parquet | Optionnel pour archivage | DuckDB suffit pour l'analytique |
+| Grunt API | Phase 5 | Comparaison SPNKr vs Grunt séparée |
+| DB unifiée vs multi | Multi-joueurs | Réactivité + isolation |
+
+**Plan Sprint 4.5** :
+
+| Sprint | Tâches | Durée |
+|--------|--------|-------|
+| 4.5.1 | Core Sync Engine (`DuckDBSyncEngine`) | 2-3j |
+| 4.5.2 | Intégration (sync.py, launcher, UI) | 1-2j |
+| 4.5.3 | Migration historique (events, skill, aliases) | 1j |
+| 4.5.4 | Nettoyage (déprécier loaders, shadow) | 1j |
+
+**Fichiers créés** :
+- `.ai/features/SYNC_REFACTORING_SPEC.md` : Spécification détaillée (400+ lignes)
+
+**Raisonnement** :
+- Le pipeline actuel est trop long et complexe (4 étapes, 8 fichiers)
+- Avec DuckDB, on peut écrire directement depuis l'API (transactions ACID)
+- L'approche simplifie le code de 60% et accélère la sync de 50%
+- La migration progressive est possible grâce au fallback legacy
+
+**Suivi** :
+- [x] Analyse complète du système de sync
+- [x] Identification des fichiers obsolètes
+- [x] Spécification détaillée créée
+- [x] Points d'intégration documentés (launcher, UI)
+- [x] Décisions architecturales validées avec utilisateur
+- [ ] Sprint 4.5.1 : Core Sync Engine
+- [ ] Sprint 4.5.2 : Intégration
+- [ ] Sprint 4.5.3 : Migration historique
+- [ ] Sprint 4.5.4 : Nettoyage
+
+---
+
 <!-- Les entrées sont ajoutées ici, les plus récentes en haut -->
