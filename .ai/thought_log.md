@@ -17,6 +17,44 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 4.8 COMPLETE - Suppression ShadowRepository
+
+**Contexte** :
+Sprint 4.7.4 (Nettoyage) terminé. Passage au Sprint 4.8 : Suppression définitive des repositories legacy.
+
+**Objectif** :
+Éliminer `ShadowRepository`, `HybridRepository`, `LegacyRepository` et finaliser la migration vers `DuckDBRepository` uniquement.
+
+**Actions réalisées** :
+
+| Tâche | Fichier(s) | Action |
+|-------|------------|--------|
+| S4.8.1 | `factory.py` | Mode par défaut = DUCKDB, modes legacy lèvent ValueError |
+| S4.8.2 | `sync.py` | `migrate_to_parquet()` → message de dépréciation |
+| S4.8.3 | `streamlit_bridge.py` | `get_migration_status()` → stub retournant "complete" |
+| S4.8.4 | `settings.py` | Section "Architecture de données" simplifiée (DuckDB only) |
+| S4.8.5-7 | `hybrid.py`, `shadow.py`, `legacy.py` | Fichiers supprimés |
+| S4.8.8 | `__init__.py` | Exports nettoyés |
+| S4.8.9 | Tests | `test_hybrid_benchmark.py`, `benchmark_hybrid.py` supprimés |
+| S4.8.10 | Parquet | Gardé pour QueryEngine (archivage/export) |
+
+**Fichiers supprimés** :
+- `src/data/repositories/shadow.py` (17 KB)
+- `src/data/repositories/hybrid.py` (8.5 KB)
+- `src/data/repositories/legacy.py` (6.5 KB)
+- `tests/test_hybrid_benchmark.py` (19 KB)
+- `scripts/benchmark_hybrid.py` (14 KB)
+
+**Décision architecturale** :
+Les modules Parquet (`ParquetWriter`, `ParquetReader`) sont conservés car encore utilisés par `QueryEngine` pour les analyses OLAP. Ils seront supprimés dans un sprint futur quand QueryEngine sera entièrement migré vers DuckDB.
+
+**Suivi** :
+- [ ] Migrer QueryEngine vers DuckDB natif (Phase 5)
+- [ ] Supprimer `src/data/infrastructure/parquet/` après migration QueryEngine
+- [ ] Supprimer `src/db/loaders.py` et `loaders_cached.py` quand plus utilisés
+
+---
+
 ### [2026-02-01] - Sprint 4.7.4 COMPLETE - Nettoyage Code Legacy
 
 **Contexte** :

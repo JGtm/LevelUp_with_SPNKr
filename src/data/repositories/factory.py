@@ -3,30 +3,25 @@ Factory pour la création des repositories.
 (Factory for repository creation)
 
 HOW IT WORKS:
-Ce module fournit une interface simple pour créer le bon repository
-selon le mode de fonctionnement souhaité.
+Ce module fournit une interface simple pour créer le bon repository.
+Depuis la v4, seul DuckDBRepository est utilisé.
 
-Architecture v2.1 (recommandée):
-    Le mode DUCKDB est maintenant le mode par défaut pour les profils v2.0+.
+Architecture v4 (actuelle):
     Utiliser get_repository_from_profile() pour auto-détection.
 
-Usage recommandé (v2.1+):
+Usage recommandé:
     from src.data.repositories.factory import get_repository_from_profile
 
     # Auto-détection depuis db_profiles.json (recommandé)
     repo = get_repository_from_profile("JGtm")
 
-Usage legacy (compatibilité):
-    from src.data import get_repository, RepositoryMode
+Usage explicite:
+    from src.data import get_repository
 
-    # Utiliser le système legacy (déprécié)
-    repo = get_repository(db_path, xuid, mode=RepositoryMode.LEGACY)
-
-    # Utiliser DuckDB natif (architecture v4)
+    # DuckDB natif (architecture v4)
     repo = get_repository(
         "data/players/JGtm/stats.duckdb",
         xuid,
-        mode=RepositoryMode.DUCKDB,
     )
 """
 
@@ -39,9 +34,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from src.data.repositories.duckdb_repo import DuckDBRepository
-from src.data.repositories.hybrid import HybridRepository
-from src.data.repositories.legacy import LegacyRepository
-from src.data.repositories.shadow import ShadowMode, ShadowRepository
 
 if TYPE_CHECKING:
     from src.data.repositories.protocol import DataRepository
@@ -51,97 +43,75 @@ class RepositoryMode(Enum):
     """
     Modes de repository disponibles.
     (Available repository modes)
+
+    Note: Depuis v4, seul DUCKDB est supporté.
+    Les autres modes sont conservés pour compatibilité de l'enum mais lèvent une erreur.
     """
 
-    LEGACY = "legacy"  # Système actuel (JSON/SQLite)
-    HYBRID = "hybrid"  # Système intermédiaire (Parquet/DuckDB)
-    SHADOW = "shadow"  # Mode migration (lit legacy, écrit hybrid)
-    SHADOW_COMPARE = "compare"  # Mode validation (compare legacy et hybrid)
-    DUCKDB = "duckdb"  # Nouveau système v4 (DuckDB natif)
+    LEGACY = "legacy"  # @deprecated - Supprimé en v4
+    HYBRID = "hybrid"  # @deprecated - Supprimé en v4
+    SHADOW = "shadow"  # @deprecated - Supprimé en v4
+    SHADOW_COMPARE = "compare"  # @deprecated - Supprimé en v4
+    DUCKDB = "duckdb"  # Système v4 (DuckDB natif) - Seul mode supporté
 
 
 def get_repository(
     db_path: str,
     xuid: str,
     *,
-    mode: RepositoryMode | str = RepositoryMode.LEGACY,
-    warehouse_path: str | Path | None = None,
+    mode: RepositoryMode | str = RepositoryMode.DUCKDB,
+    warehouse_path: str | Path | None = None,  # @deprecated - ignoré
     gamertag: str | None = None,
 ) -> DataRepository:
     """
     Crée et retourne le repository approprié.
     (Create and return the appropriate repository)
 
+    Depuis v4, seul le mode DUCKDB est supporté.
+
     Args:
-        db_path: Chemin vers la DB (SQLite legacy ou DuckDB)
+        db_path: Chemin vers la DB DuckDB (stats.duckdb)
         xuid: XUID du joueur principal
-        mode: Mode de repository (legacy, hybrid, shadow, compare, duckdb)
-        warehouse_path: Chemin optionnel vers le warehouse pour les modes hybrid/shadow
-        gamertag: Gamertag du joueur (optionnel, pour le mode duckdb)
+        mode: Mode de repository (seul DUCKDB est supporté)
+        warehouse_path: @deprecated - Ignoré depuis v4
+        gamertag: Gamertag du joueur (optionnel)
 
     Returns:
-        Instance de DataRepository
+        Instance de DataRepository (DuckDBRepository)
+
+    Raises:
+        ValueError: Si un mode legacy est demandé
 
     Exemple:
-        # Mode par défaut (legacy)
-        repo = get_repository("data/player.db", "1234567890")
-
-        # Mode shadow pour migration
-        repo = get_repository(
-            "data/player.db",
-            "1234567890",
-            mode=RepositoryMode.SHADOW,
-            warehouse_path="data/warehouse",
-        )
-
         # Mode DuckDB natif (v4)
         repo = get_repository(
             "data/players/JGtm/stats.duckdb",
             "1234567890",
-            mode=RepositoryMode.DUCKDB,
         )
     """
     # Normalise le mode si c'est une string
     if isinstance(mode, str):
         mode = RepositoryMode(mode.lower())
 
-    # Détermine le warehouse_path par défaut
-    if warehouse_path is None:
-        db_parent = Path(db_path).parent
-        warehouse_path = db_parent / "warehouse"
-
-    if mode == RepositoryMode.LEGACY:
-        return LegacyRepository(db_path, xuid)
-
-    elif mode == RepositoryMode.HYBRID:
-        return HybridRepository(warehouse_path, xuid, legacy_db_path=db_path)
-
-    elif mode == RepositoryMode.SHADOW:
-        return ShadowRepository(
-            db_path,
-            xuid,
-            warehouse_path=warehouse_path,
-            mode=ShadowMode.SHADOW_READ,
+    # Depuis v4, seul DUCKDB est supporté
+    if mode in (
+        RepositoryMode.LEGACY,
+        RepositoryMode.HYBRID,
+        RepositoryMode.SHADOW,
+        RepositoryMode.SHADOW_COMPARE,
+    ):
+        raise ValueError(
+            f"Mode '{mode.value}' n'est plus supporté depuis v4. "
+            f"Utilisez RepositoryMode.DUCKDB. "
+            f"Migrez vos données avec scripts/migrate_to_duckdb.py"
         )
 
-    elif mode == RepositoryMode.SHADOW_COMPARE:
-        return ShadowRepository(
-            db_path,
-            xuid,
-            warehouse_path=warehouse_path,
-            mode=ShadowMode.SHADOW_COMPARE,
-        )
-
-    elif mode == RepositoryMode.DUCKDB:
-        # Mode DuckDB natif - le db_path pointe vers stats.duckdb
-        return DuckDBRepository(
-            player_db_path=db_path,
-            xuid=xuid,
-            gamertag=gamertag,
-        )
-
-    else:
-        raise ValueError(f"Mode de repository inconnu: {mode}")
+    # Mode DuckDB natif - le db_path pointe vers stats.duckdb
+    return DuckDBRepository(
+        player_db_path=db_path,
+        xuid=xuid,
+        gamertag=gamertag,
+    )
 
 
 def load_db_profiles(profiles_path: str | Path | None = None) -> dict[str, Any]:
@@ -168,29 +138,25 @@ def load_db_profiles(profiles_path: str | Path | None = None) -> dict[str, Any]:
 def get_repository_from_profile(
     gamertag: str,
     *,
-    mode: RepositoryMode | str | None = None,
+    mode: RepositoryMode | str | None = None,  # @deprecated - ignoré, toujours DUCKDB
     profiles_path: str | Path | None = None,
 ) -> DataRepository:
     """
     Crée un repository à partir du profil d'un joueur.
     (Create repository from player profile)
 
-    Lit db_profiles.json et crée le repository approprié.
+    Lit db_profiles.json et crée un DuckDBRepository.
 
     Args:
         gamertag: Gamertag du joueur
-        mode: Mode de repository (si None, auto-détecté depuis version)
+        mode: @deprecated - Ignoré depuis v4, toujours DUCKDB
         profiles_path: Chemin vers db_profiles.json
 
     Returns:
-        Instance de DataRepository configurée
+        Instance de DuckDBRepository configurée
 
     Exemple:
-        # Auto-détection du mode selon la version du profil
         repo = get_repository_from_profile("JGtm")
-
-        # Forcer le mode legacy
-        repo = get_repository_from_profile("JGtm", mode=RepositoryMode.LEGACY)
     """
     profiles = load_db_profiles(profiles_path)
 
@@ -200,38 +166,11 @@ def get_repository_from_profile(
     profile = profiles["profiles"][gamertag]
     xuid = profile.get("xuid", "")
 
-    # Auto-détection du mode si non spécifié
-    if mode is None:
-        version = profiles.get("version", "1.0")
-        if version >= "2.0" and Path(profile.get("db_path", "")).suffix == ".duckdb":
-            mode = RepositoryMode.DUCKDB
-        else:
-            mode = RepositoryMode.LEGACY
-
-    # Normalise le mode
-    if isinstance(mode, str):
-        mode = RepositoryMode(mode.lower())
-
-    if mode == RepositoryMode.DUCKDB:
-        return DuckDBRepository(
-            player_db_path=profile["db_path"],
-            xuid=xuid,
-            gamertag=gamertag,
-        )
-    elif mode == RepositoryMode.LEGACY:
-        legacy_path = profile.get("legacy_db_path", profile.get("db_path"))
-        return LegacyRepository(legacy_path, xuid)
-    else:
-        # Pour hybrid/shadow, utiliser le legacy_db_path
-        legacy_path = profile.get("legacy_db_path", profile.get("db_path"))
-        warehouse_path = profiles.get("warehouse_path", "data/warehouse")
-        return get_repository(
-            legacy_path,
-            xuid,
-            mode=mode,
-            warehouse_path=warehouse_path,
-            gamertag=gamertag,
-        )
+    return DuckDBRepository(
+        player_db_path=profile["db_path"],
+        xuid=xuid,
+        gamertag=gamertag,
+    )
 
 
 def get_default_mode() -> RepositoryMode:
@@ -253,13 +192,8 @@ def is_migration_complete(db_path: str, xuid: str) -> bool:
     Vérifie si la migration est complète pour un joueur.
     (Check if migration is complete for a player)
 
-    Une migration est considérée complète si :
-    - Les données Parquet existent
-    - Le nombre de lignes Parquet >= nombre legacy
+    @deprecated Depuis v4, cette fonction retourne toujours True car
+    seul DuckDB est utilisé. Les migrations legacy → DuckDB sont terminées.
     """
-    try:
-        shadow = ShadowRepository(db_path, xuid)
-        progress = shadow.get_migration_progress()
-        return progress.get("is_complete", False)
-    except Exception:
-        return False
+    # En v4, on utilise uniquement DuckDB, donc pas de migration en cours
+    return True

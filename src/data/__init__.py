@@ -1,37 +1,29 @@
 """
-Module data : Architecture hybride SQLite + DuckDB + Parquet.
-(Data module: Hybrid SQLite + DuckDB + Parquet architecture)
+Module data : Architecture DuckDB native.
+(Data module: Native DuckDB architecture)
 
-Ce module implémente le pattern "Shadow Module" pour permettre une migration
-progressive de l'ancien système (JSON dans SQLite) vers le nouveau système
-(SQLite métadonnées + Parquet faits + DuckDB requêtes).
+Architecture v4 : Toutes les données sont stockées dans DuckDB.
+Les anciens modes (Legacy, Hybrid, Shadow) ont été supprimés.
 
 HOW IT WORKS:
 1. DataRepository : Interface abstraite définissant le contrat d'accès aux données
-2. LegacyRepository : Implémentation utilisant le système actuel (src/db/loaders)
-3. HybridRepository : Implémentation utilisant le système Parquet + DuckDB
-4. DuckDBRepository : Implémentation v4 utilisant DuckDB natif (stats.duckdb)
-5. ShadowRepository : Orchestrateur pour migration progressive
+2. DuckDBRepository : Implémentation v4 utilisant DuckDB natif (stats.duckdb)
 
-Usage (recommandé - v4 architecture):
+Usage recommandé:
     from src.data import get_repository_from_profile
 
-    # Via gamertag (auto-détection du mode)
+    # Via gamertag
     repo = get_repository_from_profile("JGtm")
     matches = repo.load_matches()
 
-Usage (explicite):
-    from src.data import get_repository, RepositoryMode
+Usage explicite:
+    from src.data import get_repository
 
     # Mode DuckDB natif (v4)
     repo = get_repository(
         "data/players/JGtm/stats.duckdb",
         xuid,
-        mode=RepositoryMode.DUCKDB,
     )
-
-    # Mode legacy (ancien système)
-    repo = get_repository(db_path, xuid, mode=RepositoryMode.LEGACY)
 """
 
 # Re-export du module d'intégration pour l'UI

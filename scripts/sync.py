@@ -1104,76 +1104,25 @@ def migrate_to_parquet(
     xuid: str | None = None,
     warehouse_path: str | None = None,
 ) -> tuple[bool, str]:
-    """Migre les données SQLite vers Parquet.
+    """@deprecated Migration vers Parquet n'est plus nécessaire depuis v4.
+
+    Depuis l'architecture v4, seul DuckDB est utilisé.
+    Utilisez scripts/migrate_to_duckdb.py pour migrer depuis SQLite legacy.
 
     Args:
-        db_path: Chemin vers la base de données SQLite.
-        xuid: XUID optionnel pour filtrer (None = tous les joueurs).
-        warehouse_path: Chemin vers le warehouse (défaut: data/warehouse).
+        db_path: Ignoré
+        xuid: Ignoré
+        warehouse_path: Ignoré
 
     Returns:
-        Tuple (success, message).
+        Tuple (True, message d'avertissement).
     """
-    logger.info(f"Migration vers Parquet{f' pour {xuid}' if xuid else ''}...")
-
-    try:
-        from src.data.repositories.shadow import ShadowMode, ShadowRepository
-        from src.db.loaders import get_players_from_db
-
-        # Déterminer les joueurs à migrer
-        if xuid:
-            xuids_to_process = [xuid]
-        else:
-            players = get_players_from_db(db_path)
-            if not players:
-                return False, "Aucun joueur trouvé dans la table Players"
-            xuids_to_process = [p["xuid"] for p in players if p.get("xuid")]
-
-        if not xuids_to_process:
-            return False, "Aucun XUID à migrer"
-
-        # Déterminer le warehouse path
-        if warehouse_path is None:
-            from pathlib import Path
-
-            db_parent = Path(db_path).parent
-            warehouse_path = str(db_parent / "warehouse")
-
-        total_migrated = 0
-        total_errors = 0
-
-        for player_xuid in xuids_to_process:
-            logger.info(f"  Migration pour {player_xuid}...")
-
-            shadow = ShadowRepository(
-                db_path,
-                player_xuid,
-                warehouse_path=warehouse_path,
-                mode=ShadowMode.SHADOW_READ,
-            )
-
-            try:
-                result = shadow.migrate_matches_to_parquet()
-                total_migrated += result["rows_written"]
-                total_errors += result["errors"]
-                logger.info(
-                    f"    {result['rows_written']} matchs migrés, {result['errors']} erreurs"
-                )
-            finally:
-                shadow.close()
-
-        msg = f"Migration Parquet: {total_migrated} matchs migrés, {total_errors} erreurs"
-        logger.info(msg)
-        return True, msg
-
-    except ImportError as e:
-        msg = f"Modules de migration non disponibles: {e}"
-        logger.error(msg)
-        return False, msg
-    except Exception as e:
-        msg = f"Erreur lors de la migration Parquet: {e}"
-        logger.error(msg)
-        return False, msg
+    msg = (
+        "Migration Parquet dépréciée depuis v4. "
+        "Utilisez scripts/migrate_to_duckdb.py pour migrer vers DuckDB."
+    )
+    logger.warning(msg)
+    return True, msg
 
 
 def download_assets(db_path: str) -> tuple[bool, str]:
@@ -1436,19 +1385,12 @@ Exemples:
         if not ok:
             success = False
 
-    # Migration vers Parquet
-    if args.migrate_parquet or (args.delta or args.full):
-        resolved_xuid = None
-        if args.player:
-            _, resolved_xuid, _ = _resolve_player_in_db(db_path, args.player)
-        ok, msg = migrate_to_parquet(
-            db_path,
-            xuid=resolved_xuid,
-            warehouse_path=args.warehouse,
+    # Migration vers Parquet (dépréciée depuis v4)
+    if args.migrate_parquet:
+        logger.warning(
+            "--migrate-parquet est déprécié depuis v4. "
+            "Utilisez scripts/migrate_to_duckdb.py pour migrer vers DuckDB."
         )
-        if not ok:
-            logger.warning(f"Migration Parquet: {msg}")
-            # Non bloquant: on continue même si la migration échoue
 
     # Afficher les stats finales
     if args.delta or args.full or args.rebuild_cache:

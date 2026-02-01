@@ -292,42 +292,24 @@ def get_trends_for_ui(
 
 def check_hybrid_available(db_path: str, xuid: str) -> bool:
     """
-    Vérifie si les données hybrides (Parquet) sont disponibles.
-    (Check if hybrid data (Parquet) is available)
+    @deprecated Vérifie si les données hybrides (Parquet) sont disponibles.
+
+    Depuis v4, cette fonction retourne toujours False car Parquet n'est plus utilisé.
     """
-    warehouse_path = get_warehouse_path(db_path)
-    parquet_path = warehouse_path / "match_facts" / f"player={xuid}"
-
-    if not parquet_path.exists():
-        return False
-
-    return bool(list(parquet_path.glob("**/*.parquet")))
+    return False
 
 
 def get_migration_status(db_path: str, xuid: str) -> dict[str, Any]:
     """
-    Retourne l'état de la migration pour un joueur.
-    (Return migration status for a player)
+    @deprecated Retourne l'état de la migration pour un joueur.
+
+    Depuis v4, les migrations legacy → Parquet ne sont plus supportées.
+    Utilisez scripts/migrate_to_duckdb.py pour migrer vers DuckDB.
     """
-    from src.data.repositories.shadow import ShadowMode, ShadowRepository
-
-    warehouse_path = get_warehouse_path(db_path)
-
-    try:
-        shadow = ShadowRepository(
-            db_path,
-            xuid,
-            warehouse_path=warehouse_path,
-            mode=ShadowMode.SHADOW_READ,
-        )
-        progress = shadow.get_migration_progress()
-        shadow.close()
-        return progress
-    except Exception as e:
-        return {
-            "error": str(e),
-            "legacy_count": 0,
-            "hybrid_count": 0,
-            "progress_percent": 0,
-            "is_complete": False,
-        }
+    return {
+        "legacy_count": 0,
+        "hybrid_count": 0,
+        "progress_percent": 100,
+        "is_complete": True,
+        "message": "Migration v4 (DuckDB) - Pas de migration Parquet nécessaire",
+    }

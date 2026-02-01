@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import streamlit as st
 
 from src.config import get_default_db_path
 from src.ui import (
     AppSettings,
+    directory_input,
     load_settings,
     save_settings,
-    directory_input,
 )
 from src.ui.sections import render_source_section
 
@@ -63,8 +63,14 @@ def render_settings_page(
             "Type de matchs",
             options=["matchmaking", "all", "custom", "local"],
             index=["matchmaking", "all", "custom", "local"].index(
-                str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking").strip().lower()
-                if str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking").strip().lower()
+                str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking")
+                .strip()
+                .lower()
+                if str(
+                    getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking"
+                )
+                .strip()
+                .lower()
                 in {"matchmaking", "all", "custom", "local"}
                 else "matchmaking"
             ),
@@ -119,92 +125,22 @@ def render_settings_page(
             help="Utile si la DB change en dehors de l'app (NAS / import externe).",
         )
 
-    # Section Architecture de données (Phase 2+)
-    with st.expander("Architecture de données (Avancé)", expanded=False):
+    # Section Architecture de données (v4 - DuckDB uniquement)
+    with st.expander("Architecture de données", expanded=False):
         st.caption(
-            "Le nouveau système hybride utilise Parquet + DuckDB pour des analyses "
-            "10-20x plus rapides sur de gros volumes de données."
+            "LevelUp utilise DuckDB pour des analyses haute performance. "
+            "L'architecture v4 remplace les anciens modes legacy/hybrid/shadow."
         )
-        
-        current_mode = str(getattr(settings, "repository_mode", "legacy") or "legacy").lower()
-        mode_options = ["legacy", "shadow", "hybrid"]
-        mode_labels = {
-            "legacy": "Legacy (SQLite + JSON) - Stable",
-            "shadow": "Shadow (Migration progressive) - Recommandé",
-            "hybrid": "Hybrid (Parquet + DuckDB) - Performance",
-        }
-        
-        repository_mode = st.selectbox(
-            "Mode de stockage",
-            options=mode_options,
-            index=mode_options.index(current_mode) if current_mode in mode_options else 0,
-            format_func=lambda x: mode_labels.get(x, x),
-            help=(
-                "Legacy: système actuel, stable. "
-                "Shadow: lit depuis legacy, écrit vers Parquet (migration). "
-                "Hybrid: utilise Parquet + DuckDB (après migration complète)."
-            ),
+
+        st.info(
+            "**Architecture v4 (DuckDB)** : Toutes les données sont stockées dans "
+            "des fichiers DuckDB (`data/players/{gamertag}/stats.duckdb`). "
+            "Les modes legacy, shadow et hybrid ont été supprimés."
         )
-        
-        enable_duckdb_analytics = st.toggle(
-            "Activer les analytics DuckDB (expérimental)",
-            value=bool(getattr(settings, "enable_duckdb_analytics", False)),
-            help="Active les requêtes haute performance pour les graphiques de tendances.",
-        )
-        
-        # Afficher l'état de la migration si on a un XUID
-        xuid = str(st.session_state.get("xuid_input", "") or "").strip()
-        db_path = str(st.session_state.get("db_path", "") or "").strip()
-        
-        if xuid and db_path:
-            try:
-                from src.ui.cache import cached_get_migration_status, db_cache_key
-                
-                db_key = db_cache_key(db_path) if db_path else None
-                migration_status = cached_get_migration_status(db_path, xuid, db_key=db_key)
-                
-                if "error" not in migration_status:
-                    st.divider()
-                    st.markdown("**État de la migration**")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Matchs Legacy", migration_status.get("legacy_count", 0))
-                    col2.metric("Matchs Parquet", migration_status.get("hybrid_count", 0))
-                    col3.metric("Progression", f"{migration_status.get('progress_percent', 0):.0f}%")
-                    
-                    if migration_status.get("is_complete"):
-                        st.success("Migration complète ! Vous pouvez passer en mode Hybrid.")
-                    elif migration_status.get("hybrid_count", 0) > 0:
-                        st.info("Migration en cours. Continuez à utiliser l'app en mode Shadow.")
-                    else:
-                        st.warning("Migration non démarrée. Activez le mode Shadow pour commencer.")
-                    
-                    # Bouton de migration manuelle
-                    if st.button("Migrer maintenant", help="Lance la migration des données vers Parquet"):
-                        with st.spinner("Migration en cours..."):
-                            try:
-                                from src.data.repositories.shadow import ShadowRepository, ShadowMode
-                                from pathlib import Path
-                                
-                                warehouse_path = Path(db_path).parent / "warehouse"
-                                shadow = ShadowRepository(
-                                    db_path, xuid,
-                                    warehouse_path=warehouse_path,
-                                    mode=ShadowMode.SHADOW_READ,
-                                )
-                                result = shadow.migrate_matches_to_parquet()
-                                shadow.close()
-                                
-                                st.success(
-                                    f"Migration terminée ! "
-                                    f"{result['rows_written']} lignes écrites, "
-                                    f"{result['errors']} erreurs."
-                                )
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erreur lors de la migration: {e}")
-            except ImportError:
-                st.info("Module d'intégration non disponible. Installez les dépendances avec: pip install pydantic polars duckdb")
+
+        # Garder les valeurs pour compatibilité mais en lecture seule
+        repository_mode = "duckdb"
+        enable_duckdb_analytics = True
 
     # Section "Fichiers (avancé)" masquée - valeurs conservées depuis settings
     aliases_path = str(getattr(settings, "aliases_path", "") or "").strip()
@@ -212,16 +148,24 @@ def render_settings_page(
 
     # Profil joueur (bannière / rang)
     # Par défaut, on masque ces réglages et on garde les valeurs actuelles.
-    profile_assets_download_enabled = bool(getattr(settings, "profile_assets_download_enabled", False))
-    profile_assets_auto_refresh_hours = int(getattr(settings, "profile_assets_auto_refresh_hours", 24) or 0)
+    profile_assets_download_enabled = bool(
+        getattr(settings, "profile_assets_download_enabled", False)
+    )
+    profile_assets_auto_refresh_hours = int(
+        getattr(settings, "profile_assets_auto_refresh_hours", 24) or 0
+    )
     profile_api_enabled = bool(getattr(settings, "profile_api_enabled", False))
-    profile_api_auto_refresh_hours = int(getattr(settings, "profile_api_auto_refresh_hours", 6) or 0)
+    profile_api_auto_refresh_hours = int(
+        getattr(settings, "profile_api_auto_refresh_hours", 6) or 0
+    )
     profile_banner = str(getattr(settings, "profile_banner", "") or "").strip()
     profile_emblem = str(getattr(settings, "profile_emblem", "") or "").strip()
     profile_backdrop = str(getattr(settings, "profile_backdrop", "") or "").strip()
     profile_nameplate = str(getattr(settings, "profile_nameplate", "") or "").strip()
     profile_service_tag = str(getattr(settings, "profile_service_tag", "") or "").strip()
-    profile_id_badge_text_color = str(getattr(settings, "profile_id_badge_text_color", "") or "").strip()
+    profile_id_badge_text_color = str(
+        getattr(settings, "profile_id_badge_text_color", "") or ""
+    ).strip()
     profile_rank_label = str(getattr(settings, "profile_rank_label", "") or "").strip()
     profile_rank_subtitle = str(getattr(settings, "profile_rank_subtitle", "") or "").strip()
 
@@ -233,7 +177,7 @@ def render_settings_page(
         repository_mode_val = repository_mode  # type: ignore
     except NameError:
         repository_mode_val = str(getattr(settings, "repository_mode", "legacy") or "legacy")
-    
+
     try:
         enable_duckdb_val = enable_duckdb_analytics  # type: ignore
     except NameError:
