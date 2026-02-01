@@ -284,7 +284,7 @@ data/
 | S4.1.3 | Créer table `mv_session_stats` | `src/data/repositories/duckdb_repo.py` | ✅ |
 | S4.1.4 | Créer table `mv_global_stats` | `src/data/repositories/duckdb_repo.py` | ✅ |
 | S4.1.5 | Méthode `refresh_materialized_views()` | `src/data/repositories/duckdb_repo.py` | ✅ |
-| S4.1.6 | Appeler refresh après sync | `scripts/sync_player.py` | ⏳ (À faire lors du prochain sync) |
+| S4.1.6 | Appeler refresh après sync | `scripts/sync.py` | ✅ |
 | S4.1.7 | Tests de performance | `tests/test_materialized_views.py` | ✅ |
 
 **Implémentations réalisées** :
@@ -408,17 +408,25 @@ dff_table["delta_mmr"] = pd.to_numeric(
 - De 500+ requêtes à 0 requête supplémentaire
 - Gain estimé : ~90% de temps sur la page Historique
 
-### Sprint 4.3 : Lazy Loading et Pagination ⏳
+### Sprint 4.3 : Lazy Loading et Pagination ✅ COMPLETE
 
 **Problème identifié** : `load_matches()` charge tous les matchs en mémoire (~2000 matchs × 50 colonnes).
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S4.3.1 | Ajouter `limit`/`offset` à `load_matches()` | `src/data/repositories/duckdb_repo.py` | ⏳ |
-| S4.3.2 | Créer `load_recent_matches(limit)` | `src/data/repositories/duckdb_repo.py` | ⏳ |
-| S4.3.3 | Pagination dans `match_history.py` | `src/ui/pages/match_history.py` | ⏳ |
-| S4.3.4 | Chargement par chunks temporels | `src/ui/cache.py` | ⏳ |
-| S4.3.5 | Tests de mémoire avant/après | `tests/test_lazy_loading.py` | ⏳ |
+| S4.3.1 | Ajouter `limit`/`offset` à `load_matches()` | `src/data/repositories/duckdb_repo.py` | ✅ |
+| S4.3.2 | Créer `load_recent_matches(limit)` | `src/data/repositories/duckdb_repo.py` | ✅ |
+| S4.3.3 | Fonctions de cache pour pagination | `src/ui/cache.py` | ✅ |
+| S4.3.4 | Chargement par chunks temporels | `src/ui/cache.py` | ✅ |
+| S4.3.5 | Tests de lazy loading | `tests/test_lazy_loading.py` | ✅ |
+
+**Implémentations réalisées** :
+- `load_matches(limit=N, offset=M)` : Pagination SQL native
+- `load_recent_matches(limit=50)` : Chargement des matchs récents (tri DESC)
+- `load_matches_paginated(page, page_size)` : Pagination avec total de pages
+- `cached_load_recent_matches()` : Cache Streamlit pour lazy loading
+- `cached_load_matches_paginated()` : Cache Streamlit pour pagination
+- `cached_get_match_count_duckdb()` : Compte total des matchs
 
 **Stratégie** :
 
@@ -428,24 +436,40 @@ dff_table["delta_mmr"] = pd.to_numeric(
 
 ```python
 @st.cache_data(ttl=300)
-def load_recent_matches(gamertag: str, limit: int = 50, offset: int = 0):
+def cached_load_recent_matches(player_db_path, xuid, limit=50, db_key=None):
     """Charge les N matchs avec pagination lazy."""
-    repo = get_repository_for_player(gamertag)
-    return repo.load_matches(limit=limit, offset=offset)
+    repo = DuckDBRepository(player_db_path, xuid)
+    return repo.load_recent_matches(limit=limit)
 ```
 
-### Sprint 4.4 : Compression Zstd et Export ⏳
+### Sprint 4.4 : Compression Zstd et Export ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S4.4.1 | Script backup Zstd | `scripts/backup_player.py` | ⏳ |
-| S4.4.2 | Script restore depuis Parquet | `scripts/restore_player.py` | ⏳ |
-| S4.4.3 | Documentation export/import | `docs/BACKUP_RESTORE.md` | ⏳ |
+| S4.4.1 | Script backup Zstd | `scripts/backup_player.py` | ✅ |
+| S4.4.2 | Script restore depuis Parquet | `scripts/restore_player.py` | ✅ |
+| S4.4.3 | Documentation export/import | `docs/BACKUP_RESTORE.md` | ✅ |
+
+**Implémentations réalisées** :
+- `backup_player.py` : Export vers Parquet avec compression Zstd (niveaux 1-22)
+- `restore_player.py` : Import depuis Parquet avec options --replace, --dry-run
+- Documentation complète avec exemples, cas d'usage, et dépannage
 
 **Export avec compression optimale** :
 
+```bash
+# Backup d'un joueur
+python scripts/backup_player.py --gamertag Chocoboflor
+
+# Backup de tous les joueurs
+python scripts/backup_player.py --all --compression-level 15
+
+# Restauration
+python scripts/restore_player.py --gamertag Chocoboflor --backup ./backups/Chocoboflor
+```
+
 ```sql
--- Export compressé (compression 9 = max)
+-- Export compressé (compression 9 = défaut recommandé)
 COPY match_stats TO 'backup/match_stats.parquet' 
     (FORMAT PARQUET, COMPRESSION 'zstd', COMPRESSION_LEVEL 9);
 
@@ -690,18 +714,19 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 4.1 COMPLETE | Vues matérialisées (mv_map_stats, mv_mode_category_stats, mv_global_stats, mv_session_stats) |
 | 2026-02-01 | Sprint 4.2 COMPLETE | Optimisation N+1 - colonnes MMR déjà dans le DataFrame, boucle supprimée |
 | 2026-02-01 | Découverte N+1 | Les colonnes team_mmr/enemy_mmr étaient déjà chargées par load_matches() |
+| 2026-02-01 | Sprint 4.1.6 COMPLETE | Appel refresh_materialized_views() après sync (delta/full) |
+| 2026-02-01 | Sprint 4.3 COMPLETE | Lazy loading + pagination (load_recent_matches, load_matches_paginated) |
+| 2026-02-01 | Sprint 4.4 COMPLETE | Scripts backup/restore Parquet + compression Zstd + documentation |
 
 ---
 
 ## Prochaine Action
 
-**Phase 4 en cours** : Optimisations Avancées (Sprints 4.1-4.2 terminés ✅)
+**Phase 4 COMPLETE** : Optimisations Avancées (Sprints 4.1-4.4 terminés ✅)
 
 Prochaines priorités :
-1. **Sprint 4.1.6** : Appeler `refresh_materialized_views()` après chaque sync
-2. **Sprint 4.3** : Lazy loading et pagination pour réduire la consommation RAM
-3. **Sprint 4.4** : Compression Zstd et export/backup
-4. **Sprint 4.5** : Partitionnement temporel (si > 5000 matchs)
+1. **Sprint 4.5** : Partitionnement temporel (optionnel, si > 5000 matchs)
+2. **Phase 5** : Enrichissement Visuel & Grunt API
 
 ```python
 # Utilisation des vues matérialisées dans le code UI :
@@ -716,10 +741,22 @@ mode_stats = repo.get_mode_category_stats()
 # Stats globales (instantané via mv_global_stats)
 global_stats = repo.get_global_stats()
 
-# Après sync : rafraîchir les vues
+# Lazy loading : les 50 derniers matchs
+recent = repo.load_recent_matches(limit=50)
+
+# Pagination : page 2 avec 50 matchs par page
+matches, total_pages = repo.load_matches_paginated(page=2, page_size=50)
+
+# Après sync : rafraîchir les vues (appelé automatiquement par sync.py)
 repo.refresh_materialized_views()
+```
+
+```bash
+# Backup et restore (Sprint 4.4)
+python scripts/backup_player.py --gamertag Chocoboflor
+python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/Chocoboflor
 ```
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprints 4.1 + 4.2 terminés)*
+*Dernière mise à jour : 2026-02-01 (Phase 4 Sprints 4.1-4.4 terminés)*

@@ -663,6 +663,101 @@ def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
         return False, f"Erreur TeammatesAggregate: {e}"
 
 
+def refresh_duckdb_materialized_views(gamertag: str | None = None) -> tuple[bool, str]:
+    """Rafraîchit les vues matérialisées DuckDB après synchronisation.
+
+    Détecte automatiquement si le joueur a une DB DuckDB et rafraîchit
+    les vues matérialisées (mv_map_stats, mv_mode_category_stats, etc.).
+
+    Args:
+        gamertag: Gamertag du joueur (optionnel, None = tous les joueurs).
+
+    Returns:
+        Tuple (success, message).
+    """
+    try:
+        from src.data.repositories.duckdb_repo import DuckDBRepository
+
+        # Chercher les DB DuckDB des joueurs
+        data_dir = REPO_ROOT / "data" / "players"
+        if not data_dir.exists():
+            return True, "Pas de dossier data/players (architecture legacy)"
+
+        players_refreshed = 0
+        total_rows = {}
+
+        if gamertag:
+            # Un seul joueur
+            player_dirs = [data_dir / gamertag]
+        else:
+            # Tous les joueurs
+            player_dirs = [d for d in data_dir.iterdir() if d.is_dir()]
+
+        for player_dir in player_dirs:
+            stats_db = player_dir / "stats.duckdb"
+            if not stats_db.exists():
+                continue
+
+            # Lire le XUID depuis db_profiles.json ou metadata
+            gt = player_dir.name
+            xuid = _get_xuid_for_gamertag(gt)
+            if not xuid:
+                logger.warning(f"XUID non trouvé pour {gt}, skip refresh MV")
+                continue
+
+            try:
+                repo = DuckDBRepository(
+                    player_db_path=stats_db,
+                    xuid=xuid,
+                    gamertag=gt,
+                    read_only=False,
+                )
+                results = repo.refresh_materialized_views()
+                repo.close()
+
+                players_refreshed += 1
+                for table, count in results.items():
+                    total_rows[table] = total_rows.get(table, 0) + count
+
+                logger.info(f"  Vues matérialisées rafraîchies pour {gt}: {results}")
+            except Exception as e:
+                logger.warning(f"Erreur refresh MV pour {gt}: {e}")
+
+        if players_refreshed == 0:
+            return True, "Aucune DB DuckDB trouvée à rafraîchir"
+
+        msg = f"Vues matérialisées rafraîchies: {players_refreshed} joueur(s), {total_rows}"
+        return True, msg
+
+    except ImportError as e:
+        return True, f"DuckDB non disponible: {e}"
+    except Exception as e:
+        return False, f"Erreur refresh vues matérialisées: {e}"
+
+
+def _get_xuid_for_gamertag(gamertag: str) -> str | None:
+    """Récupère le XUID d'un joueur depuis db_profiles.json."""
+    import json
+
+    profiles_path = REPO_ROOT / "db_profiles.json"
+    if not profiles_path.exists():
+        return None
+
+    try:
+        with open(profiles_path) as f:
+            profiles = json.load(f)
+
+        for profile in profiles.get("profiles", []):
+            if profile.get("gamertag", "").lower() == gamertag.lower():
+                return profile.get("xuid")
+            if profile.get("label", "").lower() == gamertag.lower():
+                return profile.get("xuid")
+
+        return None
+    except Exception:
+        return None
+
+
 def rebuild_medals_aggregate(db_path: str) -> tuple[bool, str]:
     """Reconstruit la table MedalsAggregate depuis MatchStats.
 
@@ -783,6 +878,18 @@ def sync_delta(
                 logger.info(f"Cache mis à jour: {cache_msg}")
             else:
                 logger.warning(f"Cache non mis à jour: {cache_msg}")
+
+            # Rafraîchir les vues matérialisées DuckDB (Sprint 4.1.6)
+            if player:
+                _, resolved_xuid, display_label = _resolve_player_in_db(db_path, player)
+                gamertag_for_mv = display_label
+            else:
+                gamertag_for_mv = None
+            mv_ok, mv_msg = refresh_duckdb_materialized_views(gamertag_for_mv)
+            if mv_ok:
+                logger.info(f"Vues matérialisées: {mv_msg}")
+            else:
+                logger.warning(f"Vues matérialisées: {mv_msg}")
         else:
             logger.error(msg)
 
@@ -860,6 +967,18 @@ def sync_full(
                 logger.info(f"Cache mis à jour: {cache_msg}")
             else:
                 logger.warning(f"Cache non mis à jour: {cache_msg}")
+
+            # Rafraîchir les vues matérialisées DuckDB (Sprint 4.1.6)
+            if player:
+                _, resolved_xuid, display_label = _resolve_player_in_db(db_path, player)
+                gamertag_for_mv = display_label
+            else:
+                gamertag_for_mv = None
+            mv_ok, mv_msg = refresh_duckdb_materialized_views(gamertag_for_mv)
+            if mv_ok:
+                logger.info(f"Vues matérialisées: {mv_msg}")
+            else:
+                logger.warning(f"Vues matérialisées: {mv_msg}")
         else:
             logger.error(msg)
 

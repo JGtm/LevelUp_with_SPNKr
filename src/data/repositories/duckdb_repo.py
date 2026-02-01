@@ -130,6 +130,8 @@ class DuckDBRepository:
         map_filter: str | None = None,
         game_variant_filter: str | None = None,
         include_firefight: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[MatchRow]:
         """
         Charge tous les matchs depuis match_stats.
@@ -161,6 +163,13 @@ class DuckDBRepository:
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
+        # Construire les clauses LIMIT/OFFSET pour la pagination (Sprint 4.3)
+        pagination_sql = ""
+        if limit is not None:
+            pagination_sql += f" LIMIT {int(limit)}"
+        if offset is not None:
+            pagination_sql += f" OFFSET {int(offset)}"
+
         sql = f"""
             SELECT
                 match_id,
@@ -191,6 +200,7 @@ class DuckDBRepository:
             FROM match_stats
             WHERE {where_sql}
             ORDER BY start_time ASC
+            {pagination_sql}
         """
 
         result = conn.execute(sql, params) if params else conn.execute(sql)
@@ -290,6 +300,174 @@ class DuckDBRepository:
         conn = self._get_connection()
         result = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
         return result[0] if result else 0
+
+    # =========================================================================
+    # Lazy Loading et Pagination (Sprint 4.3)
+    # =========================================================================
+
+    def load_recent_matches(
+        self,
+        limit: int = 50,
+        *,
+        include_firefight: bool = True,
+    ) -> list[MatchRow]:
+        """Charge les N matchs les plus récents.
+
+        Optimisé pour le chargement initial rapide de l'UI.
+        Tri par start_time DESC (les plus récents en premier).
+
+        Args:
+            limit: Nombre maximum de matchs à retourner.
+            include_firefight: Inclure les matchs PvE.
+
+        Returns:
+            Liste de MatchRow triée par date décroissante.
+        """
+        conn = self._get_connection()
+
+        where_clauses = []
+        if not include_firefight:
+            where_clauses.append("is_firefight = FALSE")
+
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+        sql = f"""
+            SELECT
+                match_id, start_time, map_id, map_name,
+                playlist_id, playlist_name, pair_id, pair_name,
+                game_variant_id, game_variant_name,
+                outcome, team_id, kda, max_killing_spree, headshot_kills,
+                avg_life_seconds, time_played_seconds,
+                kills, deaths, assists, accuracy,
+                my_team_score, enemy_team_score, team_mmr, enemy_mmr
+            FROM match_stats
+            WHERE {where_sql}
+            ORDER BY start_time DESC
+            LIMIT {int(limit)}
+        """
+
+        result = conn.execute(sql)
+        rows = result.fetchall()
+        columns = [desc[0] for desc in result.description]
+
+        return [
+            MatchRow(
+                match_id=row[columns.index("match_id")],
+                start_time=row[columns.index("start_time")],
+                map_id=row[columns.index("map_id")],
+                map_name=row[columns.index("map_name")],
+                playlist_id=row[columns.index("playlist_id")],
+                playlist_name=row[columns.index("playlist_name")],
+                map_mode_pair_id=row[columns.index("pair_id")],
+                map_mode_pair_name=row[columns.index("pair_name")],
+                game_variant_id=row[columns.index("game_variant_id")],
+                game_variant_name=row[columns.index("game_variant_name")],
+                outcome=row[columns.index("outcome")],
+                last_team_id=row[columns.index("team_id")],
+                kda=row[columns.index("kda")],
+                max_killing_spree=row[columns.index("max_killing_spree")],
+                headshot_kills=row[columns.index("headshot_kills")],
+                average_life_seconds=row[columns.index("avg_life_seconds")],
+                time_played_seconds=row[columns.index("time_played_seconds")],
+                kills=row[columns.index("kills")] or 0,
+                deaths=row[columns.index("deaths")] or 0,
+                assists=row[columns.index("assists")] or 0,
+                accuracy=row[columns.index("accuracy")],
+                my_team_score=row[columns.index("my_team_score")],
+                enemy_team_score=row[columns.index("enemy_team_score")],
+                team_mmr=row[columns.index("team_mmr")],
+                enemy_mmr=row[columns.index("enemy_mmr")],
+            )
+            for row in rows
+        ]
+
+    def load_matches_paginated(
+        self,
+        page: int = 1,
+        page_size: int = 50,
+        *,
+        order_desc: bool = True,
+        include_firefight: bool = True,
+    ) -> tuple[list[MatchRow], int]:
+        """Charge les matchs avec pagination.
+
+        Args:
+            page: Numéro de page (1-indexed).
+            page_size: Nombre de matchs par page.
+            order_desc: Si True, tri décroissant (récents en premier).
+            include_firefight: Inclure les matchs PvE.
+
+        Returns:
+            Tuple (matchs, total_pages).
+        """
+        # Calculer le total de pages
+        total_count = self.get_match_count()
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+
+        # Valider la page
+        page = max(1, min(page, total_pages))
+        offset = (page - 1) * page_size
+
+        conn = self._get_connection()
+
+        where_clauses = []
+        if not include_firefight:
+            where_clauses.append("is_firefight = FALSE")
+
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        order_dir = "DESC" if order_desc else "ASC"
+
+        sql = f"""
+            SELECT
+                match_id, start_time, map_id, map_name,
+                playlist_id, playlist_name, pair_id, pair_name,
+                game_variant_id, game_variant_name,
+                outcome, team_id, kda, max_killing_spree, headshot_kills,
+                avg_life_seconds, time_played_seconds,
+                kills, deaths, assists, accuracy,
+                my_team_score, enemy_team_score, team_mmr, enemy_mmr
+            FROM match_stats
+            WHERE {where_sql}
+            ORDER BY start_time {order_dir}
+            LIMIT {int(page_size)} OFFSET {int(offset)}
+        """
+
+        result = conn.execute(sql)
+        rows = result.fetchall()
+        columns = [desc[0] for desc in result.description]
+
+        matches = [
+            MatchRow(
+                match_id=row[columns.index("match_id")],
+                start_time=row[columns.index("start_time")],
+                map_id=row[columns.index("map_id")],
+                map_name=row[columns.index("map_name")],
+                playlist_id=row[columns.index("playlist_id")],
+                playlist_name=row[columns.index("playlist_name")],
+                map_mode_pair_id=row[columns.index("pair_id")],
+                map_mode_pair_name=row[columns.index("pair_name")],
+                game_variant_id=row[columns.index("game_variant_id")],
+                game_variant_name=row[columns.index("game_variant_name")],
+                outcome=row[columns.index("outcome")],
+                last_team_id=row[columns.index("team_id")],
+                kda=row[columns.index("kda")],
+                max_killing_spree=row[columns.index("max_killing_spree")],
+                headshot_kills=row[columns.index("headshot_kills")],
+                average_life_seconds=row[columns.index("avg_life_seconds")],
+                time_played_seconds=row[columns.index("time_played_seconds")],
+                kills=row[columns.index("kills")] or 0,
+                deaths=row[columns.index("deaths")] or 0,
+                assists=row[columns.index("assists")] or 0,
+                accuracy=row[columns.index("accuracy")],
+                my_team_score=row[columns.index("my_team_score")],
+                enemy_team_score=row[columns.index("enemy_team_score")],
+                team_mmr=row[columns.index("team_mmr")],
+                enemy_mmr=row[columns.index("enemy_mmr")],
+            )
+            for row in rows
+        ]
+
+        return matches, total_pages
 
     # =========================================================================
     # Médailles

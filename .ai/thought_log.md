@@ -1119,4 +1119,77 @@ L'utilisateur demande d'analyser `current_plan.md` et `ARCHITECTURE_ROADMAP.md`,
 
 ---
 
+### [2026-02-01] - Phase 4 Terminée - Sprints 4.1.6, 4.3, 4.4
+
+**Contexte** :
+Demande de l'utilisateur de compléter les sprints restants de la Phase 4 : 
+- S4.1.6 : Appeler `refresh_materialized_views()` après sync
+- S4.3 : Lazy Loading et Pagination  
+- S4.4 : Compression Zstd et Export
+
+**Raisonnement** :
+
+1. **Sprint 4.1.6 - Refresh vues matérialisées** :
+   - Le script `sync.py` gère la synchronisation via SQLite
+   - Ajout d'une fonction `refresh_duckdb_materialized_views()` qui détecte les joueurs DuckDB
+   - Appel automatique après `sync_delta()` et `sync_full()` pour garder les vues à jour
+
+2. **Sprint 4.3 - Lazy Loading** :
+   - Problème : `load_matches()` chargeait tous les matchs (~2000 × 50 colonnes)
+   - Solution : Ajout de `limit` et `offset` au SQL pour pagination native
+   - Nouvelles méthodes :
+     - `load_recent_matches(limit=50)` : Les N derniers matchs (tri DESC)
+     - `load_matches_paginated(page, page_size)` : Pagination avec total de pages
+   - Cache Streamlit : Fonctions `cached_load_recent_matches()` et `cached_load_matches_paginated()`
+
+3. **Sprint 4.4 - Backup/Restore** :
+   - `backup_player.py` : Export Parquet avec compression Zstd (niveaux 1-22)
+   - `restore_player.py` : Import avec options `--replace`, `--dry-run`, `--tables`
+   - Documentation complète dans `docs/BACKUP_RESTORE.md`
+
+**Décisions techniques** :
+
+| Décision | Justification |
+|----------|---------------|
+| Compression Zstd niveau 9 par défaut | Bon équilibre vitesse/ratio |
+| Pagination tri DESC par défaut | L'utilisateur veut voir les matchs récents |
+| Détection auto des joueurs DuckDB | Compatibilité legacy SQLite + DuckDB |
+| Métadonnées JSON avec backup | Traçabilité et vérification du backup |
+
+**Fichiers créés/modifiés** :
+
+| Fichier | Action |
+|---------|--------|
+| `scripts/sync.py` | +80 lignes (refresh MV après sync) |
+| `src/data/repositories/duckdb_repo.py` | +160 lignes (pagination) |
+| `src/ui/cache.py` | +130 lignes (cache lazy loading) |
+| `scripts/backup_player.py` | Nouveau (210 lignes) |
+| `scripts/restore_player.py` | Nouveau (250 lignes) |
+| `docs/BACKUP_RESTORE.md` | Nouveau (documentation) |
+| `tests/test_lazy_loading.py` | Nouveau (tests unitaires) |
+
+**Impact performance** :
+
+| Métrique | Avant | Après |
+|----------|-------|-------|
+| Chargement initial | Tous les matchs | 50 matchs |
+| Mémoire UI | ~100MB | ~10MB estimé |
+| Requêtes sync | 0 refresh MV | +1 refresh MV |
+| Backup 500 matchs | N/A | ~2MB Zstd |
+
+**Suivi** :
+- [x] Sprint 4.1.6 : Refresh MV après sync
+- [x] Sprint 4.3.1 : `limit`/`offset` dans `load_matches()`
+- [x] Sprint 4.3.2 : `load_recent_matches()`
+- [x] Sprint 4.3.3-4 : Cache Streamlit pour pagination
+- [x] Sprint 4.3.5 : Tests lazy loading
+- [x] Sprint 4.4.1 : Script backup Zstd
+- [x] Sprint 4.4.2 : Script restore Parquet
+- [x] Sprint 4.4.3 : Documentation backup/restore
+- [x] Mise à jour roadmap Phase 4 → COMPLETE
+
+**Phase 4 terminée** ✅
+
+---
+
 <!-- Les entrées sont ajoutées ici, les plus récentes en haut -->

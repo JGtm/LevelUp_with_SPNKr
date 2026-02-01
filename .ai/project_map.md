@@ -7,10 +7,12 @@
 ### Migration DuckDB Unifiée
 
 - **Phase 1 COMPLETE** : Référentiels JSON → SQLite ✅
-- **Phase 2 EN COURS** : Migration vers DuckDB Unifiée 🚧
-  - Nouvelle structure `data/players/{gamertag}/`
-  - Migration `metadata.db` → `metadata.duckdb`
-  - Suppression de la redondance MatchCache/Parquet
+- **Phase 2 COMPLETE** : Migration vers DuckDB Unifiée ✅
+- **Phase 3 COMPLETE** : Enrichissement des Données (antagonistes) ✅
+- **Phase 4 COMPLETE** : Optimisations Avancées ✅
+  - Vues matérialisées (mv_map_stats, mv_mode_category_stats, mv_global_stats, mv_session_stats)
+  - Lazy loading et pagination (load_recent_matches, load_matches_paginated)
+  - Backup/Restore Parquet avec compression Zstd
 
 ### Architecture Cible v4
 
@@ -70,10 +72,28 @@ data/
 - `streamlit_app.py` : Application principale
 - `openspartan_launcher.py` : Lanceur
 
+## Scripts Utilitaires
+
+| Script | Description |
+|--------|-------------|
+| `scripts/sync.py` | Synchronisation SPNKr + refresh vues matérialisées |
+| `scripts/backup_player.py` | Export Parquet avec compression Zstd |
+| `scripts/restore_player.py` | Import depuis backup Parquet |
+| `scripts/migrate_player_to_duckdb.py` | Migration SQLite → DuckDB |
+| `scripts/populate_antagonists.py` | Calcul des antagonistes |
+
 ## Configuration
 
 - `db_profiles.json` : Profils joueurs avec chemins vers `data/players/`
 - `app_settings.json` : Configuration de l'application
 
+## Documentation
+
+| Document | Contenu |
+|----------|---------|
+| `docs/BACKUP_RESTORE.md` | Guide backup/restore Parquet |
+| `docs/SQL_SCHEMA.md` | Schémas DuckDB |
+| `docs/DATA_ARCHITECTURE.md` | Architecture des données |
+
 ## Dernière Mise à Jour
-- **2026-02-01** : Migration vers architecture DuckDB unifiée, fusion des fichiers de planification
+- **2026-02-01** : Phase 4 terminée (vues matérialisées, lazy loading, backup/restore)
