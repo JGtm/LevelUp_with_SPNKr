@@ -1286,6 +1286,72 @@ migration des modules vers DuckDB, et création de modules utilitaires centralis
 
 ---
 
+### [2026-02-01] - Analyse Comparative SPNKr vs Grunt API (Pré-Phase 5)
+
+**Contexte** :
+Avant la Phase 5, l'utilisateur demande une analyse comparative des deux APIs disponibles pour déterminer laquelle utiliser pour l'enrichissement des données.
+
+**APIs Analysées** :
+
+| API | Langage | Mainteneur | Package |
+|-----|---------|------------|---------|
+| **SPNKr** | Python | acurtis166 | PyPI `spnkr` v0.9.6 |
+| **Grunt** | C# (.NET) | Den Delimarsky | NuGet `Den.Dev.Grunt` |
+
+**Critères d'Évaluation** :
+
+1. **Compatibilité Stack** (30%) :
+   - SPNKr : ⭐⭐⭐⭐⭐ (Python natif, asyncio, Pydantic)
+   - Grunt : ⭐⭐ (nécessite bridge Python → .NET)
+
+2. **Endpoints Disponibles** (25%) :
+   - SPNKr : ⭐⭐⭐⭐ (Match, Skill, Film/Events, UGC)
+   - Grunt : ⭐⭐⭐⭐⭐ (+ Career Rank dédié, Service Record)
+
+3. **Effort d'Intégration** (20%) :
+   - SPNKr : ⭐⭐⭐⭐⭐ (déjà 1400 lignes de code fonctionnel)
+   - Grunt : ⭐⭐ (2-3 semaines de travail)
+
+4. **Stabilité** (15%) :
+   - Les deux utilisent les mêmes endpoints Waypoint
+   - Mêmes limitations (tokens, rate limits)
+
+5. **Documentation** (10%) :
+   - SPNKr : ⭐⭐⭐ (basique mais fonctionnelle)
+   - Grunt : ⭐⭐⭐⭐ (docs.gruntapi.com)
+
+**Score Final** :
+- SPNKr : **4.15 / 5**
+- Grunt : **3.45 / 5**
+
+**Décision** : **Continuer avec SPNKr**
+
+**Raisons** :
+1. Déjà intégré et fonctionnel
+2. Pas de bridge Python → .NET à maintenir
+3. Highlight Events (fonctionnalité critique) disponible
+4. Sprint 4.7 optimise déjà SPNKr → DuckDB
+
+**Stratégie Hybride (optionnelle)** :
+Si certaines données (Career Rank progression, Service Record) sont requises et non disponibles via SPNKr, créer un bridge .NET minimal appelé via subprocess.
+
+**Fichiers créés** :
+- `.ai/features/API_COMPARISON_SPNKR_GRUNT.md` : Comparaison détaillée (300+ lignes)
+
+**Roadmap mise à jour** :
+- Phase 5 renommée "Enrichissement Visuel & API Complémentaires"
+- Sprint 5.0 ajouté : Validation post-refactoring
+- Sprint 5.1 révisé : Career Rank via SPNKr d'abord, Grunt en option
+
+**Suivi** :
+- [x] Analyse comparative réalisée
+- [x] Documentation créée
+- [x] Roadmap mise à jour
+- [ ] Sprint 4.7 à terminer avant Phase 5
+- [ ] Sprint 5.0 : Benchmarks de validation
+
+---
+
 ### [2026-02-01] - Sprint 4.5 (Nouveau) - Refonte Système de Synchronisation
 
 **Contexte** :

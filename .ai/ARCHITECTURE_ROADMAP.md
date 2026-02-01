@@ -762,19 +762,54 @@ data/players/{gamertag}/stats.duckdb
 
 ---
 
-### Phase 5 : Enrichissement Visuel & Grunt API 📋 (Futur)
+### Phase 5 : Enrichissement Visuel & API Complémentaires 📋 (Futur)
 
-**Objectif** : Nouvelles sources de données (Grunt API) + visualisations avancées + correctifs.
+**Objectif** : Visualisations avancées + données complémentaires (Career Rank, Weapon Stats).
 
-#### Sprint 5.1 : Intégration Grunt API & Stats Armes
+**Prérequis** : Sprint 4.7 (Refonte Sync) terminé.
+
+#### Analyse Comparative SPNKr vs Grunt
+
+> Analyse détaillée : `.ai/features/API_COMPARISON_SPNKR_GRUNT.md`
+
+| Critère | SPNKr | Grunt | Verdict |
+|---------|-------|-------|---------|
+| **Langage** | Python (natif) | C# (bridge requis) | **SPNKr** |
+| **Intégration** | ✅ Déjà fait | ❌ À implémenter | **SPNKr** |
+| **Endpoints core** | ✅ Complet | ✅ Complet | Égal |
+| **Highlight Events** | ✅ `film` module | ❓ Non documenté | **SPNKr** |
+| **Career Rank** | ⚠️ Partiel | ✅ Endpoint dédié | **Grunt** |
+| **Service Record** | ❓ Non trouvé | ✅ Disponible | **Grunt** |
+| **Effort intégration** | 0 (existant) | 2-3 semaines | **SPNKr** |
+
+**Recommandation** : **Continuer avec SPNKr** (score 4.15/5 vs 3.45/5)
+
+**Stratégie hybride** (optionnelle) : Bridge .NET minimal pour Career Rank si demandé.
+
+#### Sprint 5.0 : Validation Post-Refactoring ⏳
+
+| # | Tâche | Objectif | Statut |
+|---|-------|----------|--------|
+| S5.0.1 | Benchmark sync 1000 matchs | Stabilité SPNKr | ⏳ |
+| S5.0.2 | Test rate limiting 10 req/s | Limites API | ⏳ |
+| S5.0.3 | Test token refresh 24h | Durabilité auth | ⏳ |
+| S5.0.4 | Comparaison données vs HaloWaypoint | Complétude | ⏳ |
+
+**Métriques cibles** :
+- Taux d'erreurs < 1%
+- Latence moyenne < 300ms
+- Token refresh 100% OK
+- Données manquantes < 5%
+
+#### Sprint 5.1 : Career Rank & Stats Armes ⏳
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S5.1.1 | Étudier les possibilités de Grunt API | `docs/API_GRUNT_RESEARCH.md` | ⏳ |
-| S5.1.2 | Récupérer Spartan ID + rang carrière | `src/api/grunt_client.py` | ⏳ |
-| S5.1.3 | Ajouter récupération de l'adornment | `src/api/grunt_client.py` | ⏳ |
-| S5.1.4 | Explorer récupération stats armes | `src/api/grunt_client.py` | ⏳ |
-| S5.1.5 | Persister stats armes en BDD | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S5.1.1 | Endpoint Career Rank via SPNKr | `src/data/sync/api_client.py` | ⏳ |
+| S5.1.2 | Récupérer Spartan ID + adornment | `src/data/sync/api_client.py` | ⏳ |
+| S5.1.3 | Explorer weapon_core dans match stats | Investigation | ⏳ |
+| S5.1.4 | Persister career_progression en BDD | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S5.1.5 | (Optionnel) Bridge Grunt pour Service Record | `scripts/grunt_bridge.py` | ⏳ |
 
 **Table cible** : `weapon_stats` (déjà dans le schéma v4)
 
