@@ -69,10 +69,92 @@ Phase 3 (Enrichissement des Données) terminée. L'utilisateur lance la Phase 4 
 - [x] Analyse des bottlenecks
 - [x] Plan Phase 4 créé dans ARCHITECTURE_ROADMAP.md
 - [x] Thought_log documenté
-- [ ] Sprint 4.1 : Vues matérialisées
-- [ ] Sprint 4.2 : Optimisation N+1
+- [x] Sprint 4.1 : Vues matérialisées ✅
+- [x] Sprint 4.2 : Optimisation N+1 ✅
 - [ ] Sprint 4.3 : Lazy loading
 - [ ] Sprint 4.4 : Compression Zstd
+
+---
+
+### [2026-02-01] - Sprints 4.1 + 4.2 COMPLETE - Vues Matérialisées + Fix N+1
+
+**Contexte** :
+Implémentation des premiers sprints d'optimisation de la Phase 4.
+
+**Sprint 4.1 - Vues Matérialisées** :
+
+1. **Tables créées dans `duckdb_repo.py`** :
+   - `mv_map_stats` : Stats agrégées par carte (matches, wins, losses, avg_kda, win_rate)
+   - `mv_mode_category_stats` : Stats par catégorie de mode (Slayer, CTF, Oddball, etc.)
+   - `mv_session_stats` : Stats par session (si session_id existe)
+   - `mv_global_stats` : Stats globales du joueur (10 métriques clés)
+
+2. **Méthodes implémentées** :
+   - `refresh_materialized_views()` : Rafraîchit toutes les vues en une opération
+   - `get_map_stats(min_matches)` : Lecture instantanée des stats par carte
+   - `get_mode_category_stats()` : Lecture des stats par mode
+   - `get_global_stats()` : Lecture des stats globales (dict stat_key → stat_value)
+   - `get_session_stats(limit)` : Lecture des stats par session
+   - `has_materialized_views()` : Vérifie si les vues sont remplies
+
+3. **Catégorisation des modes** :
+   - Basée sur le `pair_name` (pattern matching)
+   - Catégories : Slayer, CTF, Strongholds, Oddball, Total Control, Attrition, King of the Hill, Extraction, Firefight, FFA, Autre
+
+**Sprint 4.2 - Optimisation N+1** :
+
+1. **Découverte critique** :
+   - `match_history.py` faisait une boucle `.apply()` sur chaque match_id
+   - Appelait `cached_load_player_match_result()` pour récupérer team_mmr/enemy_mmr
+   - Pour 500 matchs = 500 requêtes DB !
+
+2. **Solution découverte** :
+   - Les colonnes `team_mmr` et `enemy_mmr` étaient DÉJÀ dans le DataFrame
+   - Chargées par `load_matches()` via `DuckDBRepository`
+   - La boucle était donc totalement redondante !
+
+3. **Changements appliqués** :
+   - Supprimé la boucle `.apply(_mmr_tuple)` 
+   - Supprimé le spinner "Chargement des MMR"
+   - Ajouté des vérifications simples pour les colonnes manquantes
+   - Calcul vectorisé du delta_mmr
+
+4. **Méthode batch ajoutée** :
+   - `load_match_mmr_batch(match_ids)` : Pour les cas futurs où le batch serait utile
+   - Retourne `dict[match_id, (team_mmr, enemy_mmr)]`
+
+**Tests créés** (`tests/test_materialized_views.py`) :
+- 13 tests unitaires couvrant :
+  - Création et refresh des tables MV
+  - Lecture des stats (map, mode, global, session)
+  - Filtres (min_matches)
+  - Idempotence du refresh
+  - Chargement batch MMR (single, multiple, nulls, empty, unknown)
+  - Comparaison de performance MV vs requête directe
+
+**Impact estimé** :
+- Page Historique : ~90% plus rapide (suppression N+1)
+- Agrégations par carte/mode : ~50% plus rapides (lecture MV instantanée)
+- RAM : Pas de changement significatif (Sprint 4.3 à venir)
+
+**Fichiers modifiés** :
+- `src/data/repositories/duckdb_repo.py` : +350 lignes (MV + batch)
+- `src/ui/pages/match_history.py` : -20 lignes, +10 lignes (simplification)
+- `tests/test_materialized_views.py` : Nouveau fichier (13 tests)
+- `.ai/ARCHITECTURE_ROADMAP.md` : Sprints 4.1 + 4.2 marqués COMPLETE
+
+**Raisonnement** :
+- Le fix N+1 était un "quick win" majeur car les données étaient déjà chargées
+- Les vues matérialisées préparent le terrain pour des dashboards ultra-réactifs
+- Les tests couvrent les cas edge (nulls, vide, inconnu) pour robustesse
+
+**Suivi** :
+- [x] S4.1.1-5 : Tables MV + refresh + lecture
+- [x] S4.1.7 : Tests de performance
+- [x] S4.2.1 : Méthode batch MMR
+- [x] S4.2.2 : Suppression boucle N+1 match_history
+- [ ] S4.1.6 : Appeler refresh après sync (à intégrer dans scripts/sync.py)
+- [ ] S4.2.3 : Optimiser chargement coéquipiers (Sprint futur)
 
 ---
 
