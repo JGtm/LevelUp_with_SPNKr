@@ -17,6 +17,52 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 3.3 COMPLETE - Mode Debug Antagonistes Enrichi
+
+**Contexte** :
+Suite aux sprints 3.1 (stabilisation) et 3.2 (agrégation/persistance), ce sprint enrichit le mode debug pour afficher les informations de validation des antagonistes.
+
+**Problème identifié** :
+- `compute_personal_antagonists()` était appelé sans `official_stats` dans l'UI
+- Donc `is_validated` était toujours `False` et `validation_notes` affichait "Pas de stats officielles pour validation"
+- Les utilisateurs en mode debug ne voyaient pas si les calculs étaient fiables
+
+**Solution implémentée** :
+
+1. **Chargement des stats officielles** (`match_view_players.py`) :
+   - Import de `load_match_players_stats` depuis `src.db.loaders`
+   - Appel avant `compute_personal_antagonists()` pour charger les stats de tous les joueurs du match
+   - Passage du paramètre `official_stats` à la fonction de calcul
+
+2. **Affichage enrichi en mode debug** :
+   - Indicateur visuel de confiance : `✓ Validé` ou `⚠ Non validé`
+   - Affichage de `validation_notes` expliquant les écarts éventuels
+   - Exemple : "Écarts: kills: 5 vs 7 (-2), deaths: 3 vs 4 (-1)"
+
+**Activation du mode debug** :
+- Variable d'environnement : `OPENSPARTAN_DEBUG=1` ou `OPENSPARTAN_DEBUG_ANTAGONISTS=1`
+- Query param : `?debug=1` ou `?debug_antagonists=1`
+- Session state : `st.session_state.ui_debug_antagonists = True`
+
+**Fichiers modifiés** :
+- `src/ui/pages/match_view_players.py` (imports + logique + affichage debug)
+
+**Raisonnement** :
+- Le mode debug existe déjà et affichait des infos de répartition (certain/estimé/manquant)
+- Ajouter `is_validated` et `validation_notes` complète les informations disponibles
+- L'indicateur visuel (✓/⚠) permet un diagnostic rapide de la fiabilité
+
+**Suivi** :
+- [x] S3.3.1 : Charger stats officielles dans render_nemesis_section()
+- [x] S3.3.2 : Afficher is_validated + validation_notes
+- [x] S3.3.3 : Indicateur visuel de confiance (✓/⚠)
+- [x] Roadmap mise à jour (Phase 3 COMPLETE)
+- [x] Thought_log documenté
+
+**Note** : La Phase 3 (Enrichissement des Données) est maintenant terminée.
+
+---
+
 ### [2026-02-01] - Sprint 3.2 COMPLETE - Agrégation et Persistance Antagonistes
 
 **Contexte** :
@@ -170,9 +216,9 @@ Phase 2 (Migration DuckDB Unifiée) terminée. L'utilisateur signale un problèm
 
 **Suivi** :
 - [x] Roadmap mise à jour avec Phase 3
-- [ ] Sprint 3.1 : Implémenter la stabilisation
-- [ ] Sprint 3.2 : Agrégation et persistance
-- [ ] Sprint 3.3 : UI Rivalités
+- [x] Sprint 3.1 : Stabilisation algorithme ✅
+- [x] Sprint 3.2 : Agrégation et persistance ✅
+- [x] Sprint 3.3 : Mode debug enrichi ✅ (UI Rivalités reportée)
 
 ---
 

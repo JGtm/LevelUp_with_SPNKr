@@ -5,18 +5,17 @@ from __future__ import annotations
 import html
 import os
 import re
-from typing import Callable
+from collections.abc import Callable
 
-import pandas as pd
 import streamlit as st
 
+from src.analysis import compute_personal_antagonists
 from src.config import BOT_MAP, TEAM_MAP
 from src.db import has_table
+from src.db.loaders import load_match_players_stats
 from src.db.parsers import parse_xuid_input
-from src.analysis import compute_personal_antagonists
 from src.ui import display_name_from_xuid
 from src.ui.pages.match_view_helpers import os_card
-
 
 # =============================================================================
 # Section Némésis / Souffre-douleur
@@ -48,7 +47,13 @@ def render_nemesis_section(
     match_gt_map = load_match_gamertags_fn(db_path, match_id.strip(), db_key=db_key)
 
     me_xuid = str(parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()).strip()
-    res = compute_personal_antagonists(he, me_xuid=me_xuid, tolerance_ms=5)
+
+    # Sprint 3.3: Charger les stats officielles pour validation des antagonistes
+    official_stats = load_match_players_stats(db_path, match_id.strip())
+
+    res = compute_personal_antagonists(
+        he, me_xuid=me_xuid, tolerance_ms=5, official_stats=official_stats
+    )
     if (res.nemesis is None) and (res.bully is None):
         st.info("Impossible de déterminer Némésis/Souffre-douleur (timeline insuffisante).")
         return
@@ -76,7 +81,7 @@ def render_nemesis_section(
             else:
                 qp = st.experimental_get_query_params()
                 v = (qp.get("debug_antagonists") or qp.get("debug") or [""])[0]
-            if isinstance(v, (list, tuple)):
+            if isinstance(v, list | tuple):
                 v = v[0] if v else ""
             if str(v or "").strip().lower() in {"1", "true", "yes", "y", "on"}:
                 return True
@@ -107,9 +112,7 @@ def render_nemesis_section(
     nemesis_killed_me_approx = False
     me_killed_nemesis: int | None = None
     me_killed_nemesis_approx = False
-    nemesis_xu = ""
     if res.nemesis is not None:
-        nemesis_xu = str(res.nemesis.xuid or "").strip()
         nemesis_name = _display_name_from_kv(res.nemesis.xuid, res.nemesis.gamertag)
         nemesis_killed_me = int(res.nemesis.opponent_killed_me.total)
         nemesis_killed_me_approx = bool(res.nemesis.opponent_killed_me.has_estimated)
@@ -121,9 +124,7 @@ def render_nemesis_section(
     bully_killed_me_approx = False
     me_killed_bully: int | None = None
     me_killed_bully_approx = False
-    bully_xu = ""
     if res.bully is not None:
-        bully_xu = str(res.bully.xuid or "").strip()
         bully_name = _display_name_from_kv(res.bully.xuid, res.bully.gamertag)
         bully_killed_me = int(res.bully.opponent_killed_me.total)
         bully_killed_me_approx = bool(res.bully.opponent_killed_me.has_estimated)
@@ -139,8 +140,6 @@ def render_nemesis_section(
 
     nemesis_name = _clean_name(nemesis_name)
     bully_name = _clean_name(bully_name)
-
-    # (nemesis_xu / bully_xu déjà déterminés par res)
 
     def _cmp_color(deaths_: int | None, kills_: int | None) -> str:
         if deaths_ is None or kills_ is None:
@@ -159,7 +158,9 @@ def render_nemesis_section(
             return f"{prefix}{int(value)} morts"
         return f"{prefix}Tué {int(value)} fois"
 
-    def _fmt_two_lines(deaths_: int | None, deaths_approx: bool, kills_: int | None, kills_approx: bool) -> str:
+    def _fmt_two_lines(
+        deaths_: int | None, deaths_approx: bool, kills_: int | None, kills_approx: bool
+    ) -> str:
         d = _fmt_count("deaths", deaths_, deaths_approx)
         k = _fmt_count("kills", kills_, kills_approx)
         return html.escape(d) + "<br/>" + html.escape(k)
@@ -169,7 +170,12 @@ def render_nemesis_section(
         os_card(
             "Némésis",
             nemesis_name,
-            _fmt_two_lines(nemesis_killed_me, nemesis_killed_me_approx, me_killed_nemesis, me_killed_nemesis_approx),
+            _fmt_two_lines(
+                nemesis_killed_me,
+                nemesis_killed_me_approx,
+                me_killed_nemesis,
+                me_killed_nemesis_approx,
+            ),
             accent=_cmp_color(nemesis_killed_me, me_killed_nemesis),
             sub_style="color: rgba(245, 248, 255, 0.92); font-weight: 800; font-size: 16px; line-height: 1.15;",
             min_h=110,
@@ -178,7 +184,9 @@ def render_nemesis_section(
         os_card(
             "Souffre-douleur",
             bully_name,
-            _fmt_two_lines(bully_killed_me, bully_killed_me_approx, me_killed_bully, me_killed_bully_approx),
+            _fmt_two_lines(
+                bully_killed_me, bully_killed_me_approx, me_killed_bully, me_killed_bully_approx
+            ),
             accent=_cmp_color(bully_killed_me, me_killed_bully),
             sub_style="color: rgba(245, 248, 255, 0.92); font-weight: 800; font-size: 16px; line-height: 1.15;",
             min_h=110,
@@ -190,13 +198,21 @@ def render_nemesis_section(
         kills_missing = max(0, int(res.my_kills_total) - int(res.my_kills_assigned_total))
         kills_est = max(0, int(res.my_kills_assigned_total) - int(res.my_kills_assigned_certain))
 
+        # Sprint 3.3: Indicateur visuel de confiance
+        validation_icon = "✓" if res.is_validated else "⚠"
+        validation_label = "Validé" if res.is_validated else "Non validé"
+
         st.caption(
-            "Debug antagonistes — "
+            f"Debug antagonistes {validation_icon} {validation_label} — "
             f"Morts attribuées {res.my_deaths_assigned_total}/{res.my_deaths_total} "
             f"(certain {res.my_deaths_assigned_certain}, estimé {deaths_est}, manquantes {deaths_missing}) · "
             f"Kills attribués {res.my_kills_assigned_total}/{res.my_kills_total} "
             f"(certain {res.my_kills_assigned_certain}, estimé {kills_est}, manquants {kills_missing})"
         )
+
+        # Sprint 3.3: Afficher validation_notes si présentes
+        if res.validation_notes:
+            st.caption(f"Validation: {res.validation_notes}")
 
 
 # =============================================================================
@@ -217,7 +233,9 @@ def render_roster_section(
     st.subheader("Joueurs")
     rosters = load_match_rosters_fn(db_path, match_id.strip(), xuid.strip(), db_key=db_key)
     if not rosters:
-        st.info("Roster indisponible pour ce match (payload MatchStats manquant ou équipe introuvable).")
+        st.info(
+            "Roster indisponible pour ce match (payload MatchStats manquant ou équipe introuvable)."
+        )
         return
 
     gt_map = load_match_gamertags_fn(db_path, match_id.strip(), db_key=db_key)
@@ -267,7 +285,9 @@ def render_roster_section(
     for r in my_rows:
         xu = str(r.get("xuid") or "").strip()
         name = str(r.get("display_name") or "").strip() or _roster_name(xu, r.get("gamertag"))
-        is_self = bool(me_xu and xu and (str(parse_xuid_input(xu) or xu).strip() == me_xu)) or bool(r.get("is_me"))
+        is_self = bool(me_xu and xu and (str(parse_xuid_input(xu) or xu).strip() == me_xu)) or bool(
+            r.get("is_me")
+        )
         my_names.append((name, is_self))
 
     for r in en_rows:

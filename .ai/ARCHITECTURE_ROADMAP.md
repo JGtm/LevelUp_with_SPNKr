@@ -171,7 +171,7 @@ data/
 
 ---
 
-### Phase 3 : Enrichissement des Données 🚧 (En cours)
+### Phase 3 : Enrichissement des Données ✅ (Complète)
 
 **Objectif** : Ajouter des tables pour améliorer l'UX + stabiliser les calculs existants
 
@@ -237,13 +237,19 @@ data/
 - `DuckDBRepository.load_antagonists()` : Chargement avec tri configurable
 - `DuckDBRepository.get_top_nemeses()` / `get_top_victims()` : Helpers pour les requêtes fréquentes
 
-### Sprint 3.3 : Enrichissement Mode Debug 📋
+### Sprint 3.3 : Enrichissement Mode Debug ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S3.3.1 | Afficher validation antagonistes en mode debug | `src/ui/pages/match_view_players.py` | ⏳ |
-| S3.3.2 | Afficher is_validated + validation_notes | `src/ui/components/debug_panel.py` | ⏳ |
-| S3.3.3 | Indicateur visuel de confiance (✓/⚠) | `src/ui/pages/match_view_players.py` | ⏳ |
+| S3.3.1 | Afficher validation antagonistes en mode debug | `src/ui/pages/match_view_players.py` | ✅ |
+| S3.3.2 | Afficher is_validated + validation_notes | `src/ui/pages/match_view_players.py` | ✅ |
+| S3.3.3 | Indicateur visuel de confiance (✓/⚠) | `src/ui/pages/match_view_players.py` | ✅ |
+
+**Implémentation réalisée** :
+- Chargement des stats officielles via `load_match_players_stats()` avant `compute_personal_antagonists()`
+- Passage du paramètre `official_stats` pour activer la validation
+- Affichage de l'indicateur visuel (✓ Validé / ⚠ Non validé) en mode debug
+- Affichage de `validation_notes` pour expliquer les écarts éventuels
 
 > **Note** : La page "Mes Rivalités" initialement prévue est reportée (faible priorité).
 
@@ -536,33 +542,33 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 3.3 recentré sur debug | Page Rivalités reportée (faible priorité) |
 | 2026-02-01 | Phase 4 détaillée | Documentation des 4 axes d'optimisation |
 | 2026-02-01 | Phase 5 créée | Grunt API + Stats armes + Visualisations avancées |
+| 2026-02-01 | Sprint 3.3 COMPLETE | Mode debug enrichi avec validation antagonistes |
 
 ---
 
 ## Prochaine Action
 
-**Sprint 3.3 : Enrichissement Mode Debug**
+**Phase 4 : Optimisations Avancées** ou **Phase 5 : Enrichissement Visuel & Grunt API**
 
-Priorité : Afficher les informations de validation antagonistes en mode debug.
+La Phase 3 (Enrichissement des Données) est maintenant complète. Deux options :
 
-**Tâches** :
-1. Afficher validation antagonistes en mode debug
-2. Afficher is_validated + validation_notes
-3. Indicateur visuel de confiance (✓/⚠)
+**Option A - Phase 4** : Optimisations performance (vues matérialisées, lazy loading)
+**Option B - Phase 5** : Nouvelles fonctionnalités (Grunt API, stats armes, graphes radar)
 
 ```python
-# Utilisation du nouveau système (Sprint 3.2) :
+# Utilisation du système actuel :
 from src.data.repositories.factory import get_repository_from_profile
 repo = get_repository_from_profile("JGtm")
 
-# Peupler les antagonistes (depuis la DB legacy)
-# python scripts/populate_antagonists.py --gamertag JGtm
-
-# Charger les rivalités
+# Charger les rivalités (Sprint 3.2)
 nemeses = repo.get_top_nemeses(limit=20)  # Qui m'a le plus tué
 victims = repo.get_top_victims(limit=20)   # Qui j'ai le plus tué
+
+# Mode debug antagonistes (Sprint 3.3)
+# Ajouter ?debug=1 à l'URL ou OPENSPARTAN_DEBUG=1
+# Affiche ✓/⚠ + validation_notes sur la page Match View
 ```
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Phase 5 ajoutée - Grunt API & Visualisations)*
+*Dernière mise à jour : 2026-02-01 (Sprint 3.3 COMPLETE - Mode debug antagonistes enrichi)*
