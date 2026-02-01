@@ -11,8 +11,10 @@ import streamlit as st
 from src.config import HALO_COLORS
 from src.visualization.distributions import (
     plot_correlation_scatter,
+    plot_first_event_distribution,
     plot_histogram,
     plot_kda_distribution,
+    plot_top_weapons,
 )
 from src.visualization.timeseries import (
     plot_assists_timeseries,
@@ -179,6 +181,41 @@ def render_timeseries_page(dff: pd.DataFrame, df_full: pd.DataFrame | None = Non
             else:
                 st.info("Données insuffisantes pour cette corrélation.")
 
+        # === Distribution Premier Kill/Death (Sprint 5.4.4) ===
+        st.divider()
+        st.subheader("Temps du premier kill / première mort")
+        st.caption(
+            "Distribution des timestamps du premier kill et de la première mort. "
+            "Visualise à quelle vitesse tu obtiens ton premier kill vs ta première mort."
+        )
+
+        first_kills: dict[str, int | None] = {}
+        first_deaths: dict[str, int | None] = {}
+
+        if db_path and xuid and "match_id" in dff.columns:
+            try:
+                from src.data.repositories.duckdb_repo import DuckDBRepository
+
+                if db_path.endswith(".duckdb"):
+                    repo = DuckDBRepository(db_path, str(xuid).strip())
+                    match_ids = dff["match_id"].astype(str).tolist()
+                    first_kills, first_deaths = repo.get_first_kill_death_times(match_ids)
+            except Exception:
+                pass
+
+        if first_kills or first_deaths:
+            fig_events = plot_first_event_distribution(
+                first_kills,
+                first_deaths,
+                title=None,
+            )
+            st.plotly_chart(fig_events, use_container_width=True)
+        else:
+            st.info(
+                "Données d'événements non disponibles. "
+                "Synchronise tes matchs avec l'option highlight_events activée."
+            )
+
         st.subheader("Performance")
         history = df_full if df_full is not None else dff
         st.plotly_chart(plot_performance_timeseries(dff, df_history=history), width="stretch")
@@ -198,5 +235,71 @@ def render_timeseries_page(dff: pd.DataFrame, df_full: pd.DataFrame | None = Non
         else:
             st.plotly_chart(plot_average_life(dff), width="stretch")
 
-        st.subheader("Folie meurtrière / Tirs à la tête / Précision")
-        st.plotly_chart(plot_spree_headshots_accuracy(dff), width="stretch")
+        # === Top armes (Sprint 5.4.8) ===
+        st.divider()
+        st.subheader("Top armes")
+        st.caption("Armes avec le plus de kills (données globales).")
+
+        if db_path and xuid:
+            try:
+                from src.data.repositories.duckdb_repo import DuckDBRepository
+
+                if db_path.endswith(".duckdb"):
+                    repo = DuckDBRepository(db_path, str(xuid).strip())
+                    weapons_data = repo.get_top_weapons(limit=10)
+                    if weapons_data:
+                        fig_weapons = plot_top_weapons(weapons_data, title=None, top_n=10)
+                        st.plotly_chart(fig_weapons, use_container_width=True)
+                    else:
+                        st.info("Pas de données d'armes disponibles.")
+
+                    # === Shots Fired/Hit Stats (Sprint 5.4.10) ===
+                    shots_stats = repo.get_total_shots_stats()
+                    if shots_stats:
+                        st.markdown("##### Statistiques de tirs globales")
+                        col_s1, col_s2, col_s3 = st.columns(3)
+                        with col_s1:
+                            st.metric(
+                                "Tirs tirés",
+                                f"{shots_stats.get('total_shots_fired', 0):,}".replace(",", " "),
+                            )
+                        with col_s2:
+                            st.metric(
+                                "Tirs touchés",
+                                f"{shots_stats.get('total_shots_hit', 0):,}".replace(",", " "),
+                            )
+                        with col_s3:
+                            st.metric(
+                                "Précision globale",
+                                f"{shots_stats.get('overall_accuracy', 0):.1f}%",
+                            )
+                else:
+                    st.info("Statistiques d'armes non disponibles pour ce profil.")
+            except Exception:
+                st.info("Erreur lors du chargement des statistiques d'armes.")
+        else:
+            st.info("Profil joueur non configuré.")
+
+        st.subheader("Folie meurtrière / Tirs à la tête / Précision / Frags parfaits")
+
+        # Charger les Perfect kills depuis le repository si disponible
+        perfect_counts: dict[str, int] | None = None
+        db_path = st.session_state.get("db_path")
+        xuid = st.session_state.get("player_xuid")
+
+        if db_path and xuid and "match_id" in dff.columns:
+            try:
+                # Importer le repository ici pour éviter les imports circulaires
+                from src.data.repositories.duckdb_repo import DuckDBRepository
+
+                if db_path.endswith(".duckdb"):
+                    repo = DuckDBRepository(db_path, str(xuid).strip())
+                    match_ids = dff["match_id"].astype(str).tolist()
+                    perfect_counts = repo.count_perfect_kills_by_match(match_ids)
+            except Exception:
+                perfect_counts = None
+
+        st.plotly_chart(
+            plot_spree_headshots_accuracy(dff, perfect_counts=perfect_counts),
+            width="stretch",
+        )

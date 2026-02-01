@@ -2,12 +2,14 @@
 
 from src.visualization.distributions import (
     plot_correlation_scatter,
+    plot_first_event_distribution,
     plot_histogram,
     plot_kda_distribution,
     plot_matches_at_top_by_week,
     plot_medals_distribution,
     plot_outcomes_over_time,
     plot_stacked_outcomes_by_category,
+    plot_top_weapons,
     plot_win_ratio_heatmap,
 )
 from src.visualization.maps import (
@@ -47,6 +49,8 @@ __all__ = [
     "plot_medals_distribution",
     "plot_correlation_scatter",
     "plot_matches_at_top_by_week",
+    "plot_first_event_distribution",
+    "plot_top_weapons",
     "plot_map_comparison",
     "plot_map_ratio_with_winloss",
     "plot_trio_metric",

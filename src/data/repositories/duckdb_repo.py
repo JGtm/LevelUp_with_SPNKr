@@ -524,6 +524,209 @@ class DuckDBRepository:
         except Exception:
             return []
 
+    def count_medal_by_match(
+        self,
+        match_ids: list[str],
+        medal_name_id: int,
+    ) -> dict[str, int]:
+        """Compte une médaille spécifique pour chaque match.
+
+        Args:
+            match_ids: Liste des IDs de matchs.
+            medal_name_id: ID de la médaille à compter (ex: 1512363953 pour Perfect).
+
+        Returns:
+            Dict {match_id: count} pour les matchs ayant cette médaille.
+        """
+        if not match_ids:
+            return {}
+
+        conn = self._get_connection()
+
+        try:
+            placeholders = ", ".join(["?" for _ in match_ids])
+            result = conn.execute(
+                f"""
+                SELECT match_id, count
+                FROM medals_earned
+                WHERE match_id IN ({placeholders})
+                  AND medal_name_id = ?
+                """,
+                [*match_ids, medal_name_id],
+            )
+            return {row[0]: row[1] for row in result.fetchall()}
+        except Exception:
+            return {}
+
+    def count_perfect_kills_by_match(
+        self,
+        match_ids: list[str],
+    ) -> dict[str, int]:
+        """Compte les médailles 'Perfect' (kills parfaits) par match.
+
+        La médaille 'Perfect' (ID 1512363953) est obtenue quand le joueur
+        tue un adversaire sans prendre de dégâts.
+
+        Args:
+            match_ids: Liste des IDs de matchs.
+
+        Returns:
+            Dict {match_id: perfect_count} pour les matchs avec des Perfect.
+        """
+        return self.count_medal_by_match(match_ids, medal_name_id=1512363953)
+
+    # =========================================================================
+    # Highlight Events
+    # =========================================================================
+
+    def load_first_event_times(
+        self,
+        match_ids: list[str],
+        event_type: str = "Kill",
+    ) -> dict[str, int | None]:
+        """Charge le timestamp du premier événement par match.
+
+        Args:
+            match_ids: Liste des IDs de matchs.
+            event_type: Type d'événement ("Kill" ou "Death").
+
+        Returns:
+            Dict {match_id: time_ms} pour le premier événement de chaque match.
+        """
+        if not match_ids:
+            return {}
+
+        conn = self._get_connection()
+
+        try:
+            # Vérifier si la table existe
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='highlight_events'"
+            ).fetchall()
+            if not tables:
+                return {}
+
+            placeholders = ", ".join(["?" for _ in match_ids])
+            result = conn.execute(
+                f"""
+                SELECT match_id, MIN(time_ms) as first_time
+                FROM highlight_events
+                WHERE match_id IN ({placeholders})
+                  AND event_type = ?
+                  AND xuid = ?
+                GROUP BY match_id
+                """,
+                [*match_ids, event_type, self._xuid],
+            )
+            return {row[0]: row[1] for row in result.fetchall()}
+        except Exception:
+            return {}
+
+    def get_first_kill_death_times(
+        self,
+        match_ids: list[str],
+    ) -> tuple[dict[str, int | None], dict[str, int | None]]:
+        """Charge les timestamps du premier kill et première mort par match.
+
+        Args:
+            match_ids: Liste des IDs de matchs.
+
+        Returns:
+            Tuple (first_kills, first_deaths) où chaque dict est {match_id: time_ms}.
+        """
+        first_kills = self.load_first_event_times(match_ids, event_type="Kill")
+        first_deaths = self.load_first_event_times(match_ids, event_type="Death")
+        return first_kills, first_deaths
+
+    # =========================================================================
+    # Weapon Stats
+    # =========================================================================
+
+    def get_top_weapons(
+        self,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Charge les armes les plus utilisées (par kills).
+
+        Args:
+            limit: Nombre d'armes à retourner.
+
+        Returns:
+            Liste de dicts avec weapon_name, total_kills, headshot_kills, shots_fired, shots_hit.
+        """
+        conn = self._get_connection()
+
+        try:
+            # Vérifier si la table existe
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='weapon_stats'"
+            ).fetchall()
+            if not tables:
+                return []
+
+            result = conn.execute(
+                """
+                SELECT weapon_name, total_kills, headshot_kills, shots_fired, shots_hit
+                FROM weapon_stats
+                WHERE total_kills > 0
+                ORDER BY total_kills DESC
+                LIMIT ?
+                """,
+                [limit],
+            )
+            return [
+                {
+                    "weapon_name": row[0],
+                    "total_kills": row[1],
+                    "headshot_kills": row[2],
+                    "shots_fired": row[3],
+                    "shots_hit": row[4],
+                    "accuracy": (row[4] / row[3] * 100) if row[3] > 0 else 0,
+                    "headshot_rate": (row[2] / row[1] * 100) if row[1] > 0 else 0,
+                }
+                for row in result.fetchall()
+            ]
+        except Exception:
+            return []
+
+    def get_total_shots_stats(self) -> dict[str, int]:
+        """Récupère les statistiques totales de tirs.
+
+        Returns:
+            Dict avec total_shots_fired, total_shots_hit, overall_accuracy.
+        """
+        conn = self._get_connection()
+
+        try:
+            # Vérifier si la table existe
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='weapon_stats'"
+            ).fetchall()
+            if not tables:
+                return {}
+
+            result = conn.execute(
+                """
+                SELECT 
+                    SUM(shots_fired) as total_fired,
+                    SUM(shots_hit) as total_hit
+                FROM weapon_stats
+                """
+            ).fetchone()
+
+            if result and result[0]:
+                total_fired = result[0] or 0
+                total_hit = result[1] or 0
+                accuracy = (total_hit / total_fired * 100) if total_fired > 0 else 0
+                return {
+                    "total_shots_fired": total_fired,
+                    "total_shots_hit": total_hit,
+                    "overall_accuracy": round(accuracy, 2),
+                }
+            return {}
+        except Exception:
+            return {}
+
     # =========================================================================
     # Coéquipiers
     # =========================================================================

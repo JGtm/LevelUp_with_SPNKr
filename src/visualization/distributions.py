@@ -460,6 +460,73 @@ def plot_win_ratio_heatmap(
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
+def plot_top_weapons(
+    weapons_data: list[dict],
+    *,
+    title: str | None = None,
+    top_n: int = 10,
+) -> go.Figure:
+    """Graphique des armes les plus utilisées.
+
+    Args:
+        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
+        title: Titre optionnel.
+        top_n: Nombre d'armes à afficher.
+
+    Returns:
+        Figure Plotly avec barres horizontales.
+    """
+    colors = HALO_COLORS.as_dict()
+
+    if not weapons_data:
+        fig = go.Figure()
+        fig.update_layout(height=PLOT_CONFIG.default_height)
+        return apply_halo_plot_style(fig, title=title)
+
+    # Limiter et trier
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
+        :top_n
+    ]
+
+    names = [w.get("weapon_name", "?") for w in data][::-1]
+    kills = [w.get("total_kills", 0) for w in data][::-1]
+    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
+    accuracies = [w.get("accuracy", 0) for w in data][::-1]
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=kills,
+            y=names,
+            orientation="h",
+            name="Kills",
+            marker_color=colors["cyan"],
+            opacity=0.85,
+            text=[f"{k} kills" for k in kills],
+            textposition="outside",
+            customdata=list(zip(hs_rates, accuracies)),
+            hovertemplate=(
+                "%{y}<br>"
+                "Kills: %{x}<br>"
+                "Headshot: %{customdata[0]:.1f}%<br>"
+                "Précision: %{customdata[1]:.1f}%<extra></extra>"
+            ),
+        )
+    )
+
+    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
+
+    fig.update_layout(
+        height=height,
+        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
+    )
+    fig.update_xaxes(title_text="Kills")
+    fig.update_yaxes(title_text="")
+
+    return apply_halo_plot_style(fig, title=title, height=height)
+
+
 def plot_histogram(
     values: pd.Series | np.ndarray,
     *,
@@ -556,6 +623,73 @@ def plot_histogram(
     fig.update_yaxes(title_text=y_label)
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
+
+
+def plot_top_weapons(
+    weapons_data: list[dict],
+    *,
+    title: str | None = None,
+    top_n: int = 10,
+) -> go.Figure:
+    """Graphique des armes les plus utilisées.
+
+    Args:
+        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
+        title: Titre optionnel.
+        top_n: Nombre d'armes à afficher.
+
+    Returns:
+        Figure Plotly avec barres horizontales.
+    """
+    colors = HALO_COLORS.as_dict()
+
+    if not weapons_data:
+        fig = go.Figure()
+        fig.update_layout(height=PLOT_CONFIG.default_height)
+        return apply_halo_plot_style(fig, title=title)
+
+    # Limiter et trier
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
+        :top_n
+    ]
+
+    names = [w.get("weapon_name", "?") for w in data][::-1]
+    kills = [w.get("total_kills", 0) for w in data][::-1]
+    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
+    accuracies = [w.get("accuracy", 0) for w in data][::-1]
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=kills,
+            y=names,
+            orientation="h",
+            name="Kills",
+            marker_color=colors["cyan"],
+            opacity=0.85,
+            text=[f"{k} kills" for k in kills],
+            textposition="outside",
+            customdata=list(zip(hs_rates, accuracies)),
+            hovertemplate=(
+                "%{y}<br>"
+                "Kills: %{x}<br>"
+                "Headshot: %{customdata[0]:.1f}%<br>"
+                "Précision: %{customdata[1]:.1f}%<extra></extra>"
+            ),
+        )
+    )
+
+    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
+
+    fig.update_layout(
+        height=height,
+        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
+    )
+    fig.update_xaxes(title_text="Kills")
+    fig.update_yaxes(title_text="")
+
+    return apply_halo_plot_style(fig, title=title, height=height)
 
 
 def plot_medals_distribution(
@@ -734,6 +868,73 @@ def plot_correlation_scatter(
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
+def plot_top_weapons(
+    weapons_data: list[dict],
+    *,
+    title: str | None = None,
+    top_n: int = 10,
+) -> go.Figure:
+    """Graphique des armes les plus utilisées.
+
+    Args:
+        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
+        title: Titre optionnel.
+        top_n: Nombre d'armes à afficher.
+
+    Returns:
+        Figure Plotly avec barres horizontales.
+    """
+    colors = HALO_COLORS.as_dict()
+
+    if not weapons_data:
+        fig = go.Figure()
+        fig.update_layout(height=PLOT_CONFIG.default_height)
+        return apply_halo_plot_style(fig, title=title)
+
+    # Limiter et trier
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
+        :top_n
+    ]
+
+    names = [w.get("weapon_name", "?") for w in data][::-1]
+    kills = [w.get("total_kills", 0) for w in data][::-1]
+    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
+    accuracies = [w.get("accuracy", 0) for w in data][::-1]
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=kills,
+            y=names,
+            orientation="h",
+            name="Kills",
+            marker_color=colors["cyan"],
+            opacity=0.85,
+            text=[f"{k} kills" for k in kills],
+            textposition="outside",
+            customdata=list(zip(hs_rates, accuracies)),
+            hovertemplate=(
+                "%{y}<br>"
+                "Kills: %{x}<br>"
+                "Headshot: %{customdata[0]:.1f}%<br>"
+                "Précision: %{customdata[1]:.1f}%<extra></extra>"
+            ),
+        )
+    )
+
+    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
+
+    fig.update_layout(
+        height=height,
+        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
+    )
+    fig.update_xaxes(title_text="Kills")
+    fig.update_yaxes(title_text="")
+
+    return apply_halo_plot_style(fig, title=title, height=height)
+
+
 def plot_matches_at_top_by_week(
     df: pd.DataFrame,
     *,
@@ -846,3 +1047,223 @@ def plot_matches_at_top_by_week(
     fig.update_yaxes(title_text="Matchs")
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
+
+
+def plot_top_weapons(
+    weapons_data: list[dict],
+    *,
+    title: str | None = None,
+    top_n: int = 10,
+) -> go.Figure:
+    """Graphique des armes les plus utilisées.
+
+    Args:
+        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
+        title: Titre optionnel.
+        top_n: Nombre d'armes à afficher.
+
+    Returns:
+        Figure Plotly avec barres horizontales.
+    """
+    colors = HALO_COLORS.as_dict()
+
+    if not weapons_data:
+        fig = go.Figure()
+        fig.update_layout(height=PLOT_CONFIG.default_height)
+        return apply_halo_plot_style(fig, title=title)
+
+    # Limiter et trier
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
+        :top_n
+    ]
+
+    names = [w.get("weapon_name", "?") for w in data][::-1]
+    kills = [w.get("total_kills", 0) for w in data][::-1]
+    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
+    accuracies = [w.get("accuracy", 0) for w in data][::-1]
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=kills,
+            y=names,
+            orientation="h",
+            name="Kills",
+            marker_color=colors["cyan"],
+            opacity=0.85,
+            text=[f"{k} kills" for k in kills],
+            textposition="outside",
+            customdata=list(zip(hs_rates, accuracies)),
+            hovertemplate=(
+                "%{y}<br>"
+                "Kills: %{x}<br>"
+                "Headshot: %{customdata[0]:.1f}%<br>"
+                "Précision: %{customdata[1]:.1f}%<extra></extra>"
+            ),
+        )
+    )
+
+    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
+
+    fig.update_layout(
+        height=height,
+        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
+    )
+    fig.update_xaxes(title_text="Kills")
+    fig.update_yaxes(title_text="")
+
+    return apply_halo_plot_style(fig, title=title, height=height)
+
+
+def plot_first_event_distribution(
+    first_kills: dict[str, int | None],
+    first_deaths: dict[str, int | None],
+    *,
+    title: str | None = None,
+) -> go.Figure:
+    """Graphique de distribution des timestamps du premier kill/death.
+
+    Args:
+        first_kills: Dict {match_id: time_ms} pour le premier kill.
+        first_deaths: Dict {match_id: time_ms} pour la première mort.
+        title: Titre optionnel.
+
+    Returns:
+        Figure Plotly avec histogrammes superposés.
+    """
+    colors = HALO_COLORS.as_dict()
+
+    # Convertir en secondes et filtrer les None
+    kills_sec = [t / 1000 for t in first_kills.values() if t is not None and t > 0]
+    deaths_sec = [t / 1000 for t in first_deaths.values() if t is not None and t > 0]
+
+    if not kills_sec and not deaths_sec:
+        fig = go.Figure()
+        fig.update_layout(height=PLOT_CONFIG.default_height)
+        return apply_halo_plot_style(fig, title=title)
+
+    fig = go.Figure()
+
+    if kills_sec:
+        fig.add_trace(
+            go.Histogram(
+                x=kills_sec,
+                name="Premier kill",
+                marker_color=colors["green"],
+                opacity=0.7,
+                nbinsx=20,
+                hovertemplate="Temps: %{x:.0f}s<br>Matchs: %{y}<extra></extra>",
+            )
+        )
+
+    if deaths_sec:
+        fig.add_trace(
+            go.Histogram(
+                x=deaths_sec,
+                name="Première mort",
+                marker_color=colors["red"],
+                opacity=0.6,
+                nbinsx=20,
+                hovertemplate="Temps: %{x:.0f}s<br>Matchs: %{y}<extra></extra>",
+            )
+        )
+
+    # Ajouter des lignes verticales pour les moyennes
+    if kills_sec:
+        avg_kill = sum(kills_sec) / len(kills_sec)
+        fig.add_vline(
+            x=avg_kill,
+            line_dash="dash",
+            line_color=colors["green"],
+            annotation_text=f"Moy. kill: {avg_kill:.0f}s",
+            annotation_position="top",
+        )
+
+    if deaths_sec:
+        avg_death = sum(deaths_sec) / len(deaths_sec)
+        fig.add_vline(
+            x=avg_death,
+            line_dash="dash",
+            line_color=colors["red"],
+            annotation_text=f"Moy. mort: {avg_death:.0f}s",
+            annotation_position="bottom",
+        )
+
+    fig.update_layout(
+        barmode="overlay",
+        height=PLOT_CONFIG.default_height,
+        margin={"l": 40, "r": 20, "t": 60 if title else 30, "b": 40},
+        legend=get_legend_horizontal_bottom(),
+    )
+    fig.update_xaxes(title_text="Temps (secondes)")
+    fig.update_yaxes(title_text="Nombre de matchs")
+
+    return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
+
+
+def plot_top_weapons(
+    weapons_data: list[dict],
+    *,
+    title: str | None = None,
+    top_n: int = 10,
+) -> go.Figure:
+    """Graphique des armes les plus utilisées.
+
+    Args:
+        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
+        title: Titre optionnel.
+        top_n: Nombre d'armes à afficher.
+
+    Returns:
+        Figure Plotly avec barres horizontales.
+    """
+    colors = HALO_COLORS.as_dict()
+
+    if not weapons_data:
+        fig = go.Figure()
+        fig.update_layout(height=PLOT_CONFIG.default_height)
+        return apply_halo_plot_style(fig, title=title)
+
+    # Limiter et trier
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
+        :top_n
+    ]
+
+    names = [w.get("weapon_name", "?") for w in data][::-1]
+    kills = [w.get("total_kills", 0) for w in data][::-1]
+    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
+    accuracies = [w.get("accuracy", 0) for w in data][::-1]
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=kills,
+            y=names,
+            orientation="h",
+            name="Kills",
+            marker_color=colors["cyan"],
+            opacity=0.85,
+            text=[f"{k} kills" for k in kills],
+            textposition="outside",
+            customdata=list(zip(hs_rates, accuracies)),
+            hovertemplate=(
+                "%{y}<br>"
+                "Kills: %{x}<br>"
+                "Headshot: %{customdata[0]:.1f}%<br>"
+                "Précision: %{customdata[1]:.1f}%<extra></extra>"
+            ),
+        )
+    )
+
+    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
+
+    fig.update_layout(
+        height=height,
+        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
+    )
+    fig.update_xaxes(title_text="Kills")
+    fig.update_yaxes(title_text="")
+
+    return apply_halo_plot_style(fig, title=title, height=height)
