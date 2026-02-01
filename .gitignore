@@ -29,6 +29,12 @@ data/cache/*
 # RAG LanceDB (base vectorielle locale)
 data/rag/
 
+# Architecture v4 - DuckDB (données locales volumineuses)
+data/players/
+data/warehouse/match_facts/
+data/warehouse/*.duckdb
+data/warehouse/metadata.db
+
 # Fichiers temporaires d'import SPNKr
 *.tmp.*.db
 data/*.tmp.*
