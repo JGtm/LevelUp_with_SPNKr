@@ -19,14 +19,19 @@
          │               │  ┌─────────────────────────────────────┐   │
          ▼               │  │  players/{gt}/stats.duckdb          │   │
 ┌─────────────────┐      │  │  - match_stats                      │   │
-│  Transformation │──────│  │  - medals_earned                    │   │
-│  Polars         │      │  │  - teammates_aggregate              │   │
-└─────────────────┘      │  │  - antagonists, weapon_stats        │   │
-                         │  │  - skill_history, sessions          │   │
+│ DuckDBSyncEngine│──────│  │  - player_match_stats               │   │
+│  Transformers   │      │  │  - highlight_events                 │   │
+└─────────────────┘      │  │  - xuid_aliases                     │   │
+                         │  │  - teammates_aggregate              │   │
+                         │  │  - antagonists                      │   │
+                         │  │  - career_progression               │   │
+                         │  │  - mv_* (vues matérialisées)        │   │
                          │  └─────────────────────────────────────┘   │
                          │                                             │
                          │  ┌─────────────────────────────────────┐   │
-                         │  │  archive/parquet/ (cold storage)    │   │
+                         │  │  players/{gt}/archive/ (Parquet)    │   │
+                         │  │  - matches_*.parquet                │   │
+                         │  │  - archive_index.json               │   │
                          │  └─────────────────────────────────────┘   │
                          └─────────────────────────────────────────────┘
                                             │
@@ -39,18 +44,22 @@
 
 ## Flux de Données Principaux
 
-### 1. API Halo → DuckDB (Production)
+### 1. API Halo → DuckDB (Synchronisation)
+
 ```
-Source: API Halo Infinite (via spnkr)
+Source: API Halo Infinite (via SPNKr)
      ↓
-Validation: Pydantic v2 (MatchFact, MedalAward)
+Client: SPNKrAPIClient (src/data/sync/api_client.py)
      ↓
-Transform: Polars (src/data/infrastructure/)
+Transformers: transform_match_stats(), transform_skill_stats(), etc.
+     ↓
+Engine: DuckDBSyncEngine (src/data/sync/engine.py)
      ↓
 Destination: data/players/{gamertag}/stats.duckdb
 ```
 
 ### 2. JSON → DuckDB (Référentiels)
+
 ```
 Source: Fichiers JSON locaux
      ↓
@@ -60,26 +69,37 @@ Destination: data/warehouse/metadata.duckdb
 ```
 
 ### 3. DuckDB → Parquet (Archive)
+
 ```
 Source: DuckDB (match_stats)
      ↓
-Export: COPY ... TO 'file.parquet'
+Script: scripts/archive_season.py
      ↓
-Destination: data/archive/parquet/
+Destination: data/players/{gamertag}/archive/matches_*.parquet
 ```
 
-## Structure des Données
+### 4. Parquet → DuckDB (Restore)
+
+```
+Source: Backup Parquet
+     ↓
+Script: scripts/restore_player.py
+     ↓
+Destination: data/players/{gamertag}/stats.duckdb
+```
+
+## Tables et Cardinalité
 
 ### Métadonnées (metadata.duckdb)
 
 | Table | Lignes | Description |
 |-------|--------|-------------|
-| `playlists` | 14 | Définitions des playlists |
-| `game_modes` | 313 | Traductions EN/FR des modes |
-| `categories` | 16 | Catégories de modes |
-| `medal_definitions` | 153 | Définitions des médailles |
-| `career_ranks` | 273 | Rangs de carrière (0-272) |
-| `players` | variable | Profils des joueurs connus |
+| `playlists` | ~14 | Définitions playlists |
+| `game_modes` | ~313 | Modes de jeu (FR/EN) |
+| `categories` | ~16 | Catégories de modes |
+| `medal_definitions` | ~153 | Définitions médailles |
+| `career_ranks` | 273 | Rangs (0-272) |
+| `players` | Variable | Joueurs connus |
 
 ### Données Joueur (stats.duckdb)
 
@@ -87,51 +107,55 @@ Destination: data/archive/parquet/
 |-------|-------------|-------------|
 | `match_stats` | 1:N par joueur | Faits des matchs |
 | `medals_earned` | M:N | Médailles par match |
-| `teammates_aggregate` | 1:N | Stats agrégées coéquipiers |
-| `antagonists` | 1:N | Top killers/victimes |
-| `weapon_stats` | 1:N | Stats par arme |
-| `skill_history` | 1:N | Historique CSR |
-| `sessions` | 1:N | Sessions de jeu |
+| `player_match_stats` | 1:1 | Données MMR par match |
+| `highlight_events` | 1:N | Événements par match |
+| `teammates_aggregate` | 1:N | Stats coéquipiers |
+| `antagonists` | 1:N | Rivalités |
+| `xuid_aliases` | 1:1 | Mapping XUID→Gamertag |
+| `career_progression` | 1:N | Historique rangs |
+| `sync_meta` | 1:1 | Métadonnées sync |
 
-## Transformations
+### Vues Matérialisées
 
-### Ingestion Référentiels (2026-01-31)
+| Vue | Description | Rafraîchissement |
+|-----|-------------|------------------|
+| `mv_map_stats` | Stats par carte | Post-sync |
+| `mv_mode_category_stats` | Stats par mode | Post-sync |
+| `mv_session_stats` | Stats par session | Post-sync |
+| `mv_global_stats` | Stats globales | Post-sync |
 
-| Source | Table DuckDB | Lignes |
-|--------|--------------|--------|
-| `Playlist_modes_translations.json` | `playlists` | 14 |
-| `Playlist_modes_translations.json` | `game_modes` | 313 |
-| `Playlist_modes_translations.json` | `categories` | 16 |
-| `static/medals/medals_fr.json` | `medal_definitions` | 153 |
-
-### Calculs Dérivés
+## Transformations Clés
 
 | Donnée | Source | Formule |
 |--------|--------|---------|
 | `kda` | match_stats | `(kills + assists/3) / max(deaths, 1)` |
 | `accuracy` | match_stats | `shots_hit / shots_fired * 100` |
 | `net_kills` | antagonists | `times_killed - times_killed_by` |
+| `win_rate` | mv_global_stats | `wins / total_matches * 100` |
 | `headshot_rate` | weapon_stats | `headshot_kills / total_kills * 100` |
 
-## Qualité des Données
+## Validations
 
-### Validations Pydantic v2
-- [x] Playlists : UUID format, noms non-vides
-- [x] Modes de jeu : Traductions EN/FR présentes
-- [x] Médailles : name_id unique, sprite_index valide
-- [x] Matchs : Timestamps valides, outcome ∈ {1,2,3,4}
+### Pydantic v2
+
+- [x] MatchStatsRow : Validation des champs matchs
+- [x] PlayerMatchStatsRow : Validation MMR
+- [x] HighlightEventRow : Validation événements
+- [x] XuidAliasRow : Validation XUID (16 chiffres)
+- [x] CareerRankData : Validation progression
 
 ### Contraintes DuckDB
+
 - Clés primaires sur toutes les tables
-- Index sur colonnes fréquemment filtrées
-- Colonnes GENERATED pour les calculs
+- Index sur colonnes fréquemment filtrées (`start_time`, `playlist_id`)
+- Colonnes GENERATED pour les calculs (`net_kills`, `accuracy`)
 
 ## Problèmes Connus
 
-- Aucun pour l'instant
+- Aucun problème majeur identifié
 
 ## Références
 
-- `docs/SQL_SCHEMA.md` : Schémas complets des tables
-- `.ai/ARCHITECTURE_ROADMAP.md` : Roadmap de migration
-- `src/data/domain/models/` : Modèles Pydantic
+- `docs/SQL_SCHEMA.md` : Schémas complets
+- `docs/SYNC_GUIDE.md` : Guide de synchronisation
+- `.ai/ARCHITECTURE_ROADMAP.md` : Roadmap des phases

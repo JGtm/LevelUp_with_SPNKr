@@ -1098,21 +1098,21 @@ CREATE TABLE weapon_match_stats (
 
 ---
 
-### Phase 6 : Documentation & Branding "LevelUp" 📋 (Après Phase 5)
+### Phase 6 : Documentation & Branding "LevelUp" ✅ (Complète)
 
 **Objectif** : Mise à jour complète de la documentation et finalisation du branding "LevelUp".
 
 **Nom officiel de l'application** : **LevelUp** (anciennement OpenSpartan Graph)
 
-#### Sprint 6.1 : README & Documentation Utilisateur ⏳
+#### Sprint 6.1 : README & Documentation Utilisateur ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S6.1.1 | Réécriture complète du README.md | `README.md` | ⏳ |
-| S6.1.2 | Screenshots UI mise à jour | `docs/images/` | ⏳ |
-| S6.1.3 | Guide d'installation simplifié | `docs/INSTALL.md` | ⏳ |
-| S6.1.4 | Guide de configuration (db_profiles, tokens) | `docs/CONFIGURATION.md` | ⏳ |
-| S6.1.5 | FAQ utilisateurs | `docs/FAQ.md` | ⏳ |
+| S6.1.1 | Réécriture complète du README.md | `README.md` | ✅ |
+| S6.1.2 | Screenshots UI mise à jour | `docs/images/` | ⏳ (Optionnel) |
+| S6.1.3 | Guide d'installation simplifié | `docs/INSTALL.md` | ✅ |
+| S6.1.4 | Guide de configuration (db_profiles, tokens) | `docs/CONFIGURATION.md` | ✅ |
+| S6.1.5 | FAQ utilisateurs | `docs/FAQ.md` | ✅ |
 
 **Contenu README cible** :
 - Présentation "LevelUp" avec logo
@@ -1121,64 +1121,65 @@ CREATE TABLE weapon_match_stats (
 - Configuration minimale
 - Liens vers documentation détaillée
 
-#### Sprint 6.2 : Documentation Technique ⏳
+#### Sprint 6.2 : Documentation Technique ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S6.2.1 | MAJ ARCHITECTURE.md avec DuckDB | `docs/ARCHITECTURE.md` | ⏳ |
-| S6.2.2 | MAJ DATA_ARCHITECTURE.md | `docs/DATA_ARCHITECTURE.md` | ⏳ |
-| S6.2.3 | MAJ SQL_SCHEMA.md | `docs/SQL_SCHEMA.md` | ⏳ |
-| S6.2.4 | MAJ API_GRUNT_RESEARCH.md | `docs/API_GRUNT_RESEARCH.md` | ⏳ |
-| S6.2.5 | Nouveau SYNC_GUIDE.md | `docs/SYNC_GUIDE.md` | ⏳ |
-| S6.2.6 | MAJ BACKUP_RESTORE.md | `docs/BACKUP_RESTORE.md` | ⏳ |
+| S6.2.1 | MAJ ARCHITECTURE.md avec DuckDB | `docs/ARCHITECTURE.md` | ✅ |
+| S6.2.2 | MAJ DATA_ARCHITECTURE.md | `docs/DATA_ARCHITECTURE.md` | ✅ |
+| S6.2.3 | MAJ SQL_SCHEMA.md | `docs/SQL_SCHEMA.md` | ✅ (Déjà à jour) |
+| S6.2.4 | MAJ API_GRUNT_RESEARCH.md | `docs/API_GRUNT_RESEARCH.md` | ⏳ (Optionnel) |
+| S6.2.5 | Nouveau SYNC_GUIDE.md | `docs/SYNC_GUIDE.md` | ✅ |
+| S6.2.6 | MAJ BACKUP_RESTORE.md | `docs/BACKUP_RESTORE.md` | ✅ (Déjà à jour) |
 
-#### Sprint 6.3 : Branding & Renommage ⏳
+#### Sprint 6.3 : Branding & Renommage ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S6.3.1 | Renommer références "OpenSpartan Graph" → "LevelUp" | Global | ⏳ |
-| S6.3.2 | Renommer streamlit_app.py si nécessaire | `streamlit_app.py` | ⏳ |
+| S6.3.1 | Renommer références "OpenSpartan Graph" → "LevelUp" | Global | ✅ |
+| S6.3.2 | Renommer streamlit_app.py si nécessaire | `streamlit_app.py` | ⏳ (Non requis) |
 | S6.3.3 | MAJ sidebar brand "LevelUp" | `src/app/sidebar.py` | ✅ Déjà fait |
 | S6.3.4 | MAJ launcher "LevelUp" | `openspartan_launcher.py` | ✅ Déjà fait |
-| S6.3.5 | MAJ pyproject.toml (name, description) | `pyproject.toml` | ⏳ |
-| S6.3.6 | Création logo LevelUp | `static/logo.png` | ⏳ |
+| S6.3.5 | MAJ pyproject.toml (name, description) | `pyproject.toml` | ✅ |
+| S6.3.6 | Création logo LevelUp | `static/logo.png` | ⏳ (Optionnel) |
 
-#### Sprint 6.4 : Documentation Agent/IA ⏳
-
-| # | Tâche | Fichier(s) | Statut |
-|---|-------|------------|--------|
-| S6.4.1 | MAJ CLAUDE.md avec nouvelles commandes | `CLAUDE.md` | ⏳ |
-| S6.4.2 | MAJ .cursorrules | `.cursorrules` | ⏳ |
-| S6.4.3 | MAJ project_map.md | `.ai/project_map.md` | ⏳ |
-| S6.4.4 | MAJ data_lineage.md | `.ai/data_lineage.md` | ⏳ |
-| S6.4.5 | Archivage thought_log.md ancien | `.ai/archive/` | ⏳ |
-| S6.4.6 | Nouveau thought_log.md frais | `.ai/thought_log.md` | ⏳ |
-
-#### Sprint 6.5 : GitHub & CI/CD ⏳
+#### Sprint 6.4 : Documentation Agent/IA ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S6.5.1 | MAJ copilot-instructions.md | `.github/copilot-instructions.md` | ⏳ |
-| S6.5.2 | MAJ ci.yml avec DuckDB | `.github/workflows/ci.yml` | ⏳ |
-| S6.5.3 | Création CONTRIBUTING.md | `CONTRIBUTING.md` | ⏳ |
-| S6.5.4 | MAJ LICENSE si nécessaire | `LICENSE` | ⏳ |
-| S6.5.5 | Templates issues/PR | `.github/ISSUE_TEMPLATE/` | ⏳ |
+| S6.4.1 | MAJ CLAUDE.md avec nouvelles commandes | `CLAUDE.md` | ✅ |
+| S6.4.2 | MAJ .cursorrules | `.cursorrules` | ✅ |
+| S6.4.3 | MAJ project_map.md | `.ai/project_map.md` | ✅ |
+| S6.4.4 | MAJ data_lineage.md | `.ai/data_lineage.md` | ✅ |
+| S6.4.5 | Archivage thought_log.md ancien | `.ai/archive/` | ✅ |
+| S6.4.6 | Nouveau thought_log.md frais | `.ai/thought_log.md` | ✅ |
 
-#### Checklist Documentation
+#### Sprint 6.5 : GitHub & CI/CD ✅ COMPLETE
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S6.5.1 | MAJ copilot-instructions.md | `.github/copilot-instructions.md` | ✅ |
+| S6.5.2 | MAJ ci.yml avec DuckDB | `.github/workflows/ci.yml` | ✅ |
+| S6.5.3 | Création CONTRIBUTING.md | `CONTRIBUTING.md` | ✅ |
+| S6.5.4 | MAJ LICENSE si nécessaire | `LICENSE` | ⏳ (Optionnel) |
+| S6.5.5 | Templates issues/PR | `.github/ISSUE_TEMPLATE/` | ⏳ (Optionnel) |
+
+#### Checklist Documentation ✅ COMPLETE
 
 | Document | Existe | À Jour | Priorité |
 |----------|--------|--------|----------|
-| README.md | ✅ | ❌ | **Critique** |
-| CLAUDE.md | ✅ | ⚠️ | Haute |
-| .cursorrules | ✅ | ⚠️ | Haute |
-| docs/ARCHITECTURE.md | ✅ | ❌ | Haute |
-| docs/DATA_ARCHITECTURE.md | ✅ | ❌ | Haute |
-| docs/SQL_SCHEMA.md | ✅ | ⚠️ | Moyenne |
+| README.md | ✅ | ✅ | **Critique** |
+| CLAUDE.md | ✅ | ✅ | Haute |
+| .cursorrules | ✅ | ✅ | Haute |
+| docs/ARCHITECTURE.md | ✅ | ✅ | Haute |
+| docs/DATA_ARCHITECTURE.md | ✅ | ✅ | Haute |
+| docs/SQL_SCHEMA.md | ✅ | ✅ | Moyenne |
 | docs/BACKUP_RESTORE.md | ✅ | ✅ | Basse |
-| docs/INSTALL.md | ❌ | N/A | Haute |
-| docs/CONFIGURATION.md | ❌ | N/A | Haute |
-| docs/FAQ.md | ❌ | N/A | Moyenne |
-| CONTRIBUTING.md | ❌ | N/A | Basse |
+| docs/INSTALL.md | ✅ | ✅ | Haute |
+| docs/CONFIGURATION.md | ✅ | ✅ | Haute |
+| docs/FAQ.md | ✅ | ✅ | Moyenne |
+| docs/SYNC_GUIDE.md | ✅ | ✅ | Haute |
+| CONTRIBUTING.md | ✅ | ✅ | Basse |
 
 ---
 
@@ -1337,27 +1338,28 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 5.2 COMPLETE | Correctifs modes/playlists, synchro auto DuckDB, association vidéos, script thumbnails |
 | 2026-02-01 | Sprint 5.3 COMPLETE | Graphe radar, annotations extrêmes, composante MMR Performance (style Elo) |
 | 2026-02-01 | Sprint 5.4 COMPLETE | 10/10 tâches : Toutes les visualisations + méthodes repository implémentées |
+| 2026-02-01 | Phase 6 COMPLETE | Documentation & Branding "LevelUp" - Toute la documentation mise à jour |
+| 2026-02-01 | Renommage LevelUp | OpenSpartan Graph → LevelUp, pyproject.toml v3.0.0 |
 
 ---
 
 ## Prochaine Action
 
-**Sprint 5.4 COMPLETE** : Nouvelles Représentations Statistiques (10/10 ✅)
+**Phase 6 COMPLETE** : Documentation & Branding "LevelUp" ✅
 
-Toutes les visualisations implémentées :
-- ✅ Stacked columns Win/Loss/Tie par carte et mode
-- ✅ Histogrammes (précision, kills, durée de vie, score de performance)
-- ✅ Heatmap Win Rate par jour/heure de la semaine
-- ✅ Scatter plots corrélations (durée vie vs kills, précision vs FDA)
-- ✅ Matches at Top vs Total par semaine
-- ✅ Distribution des médailles gagnées
-- ✅ Perfect kills (médailles Perfect sur graphe précision)
-- ✅ Distribution timestamps premier kill/mort
-- ✅ Top armes avec kills
-- ✅ Statistiques de tirs globales (shots fired/hit)
+Tous les sprints de documentation terminés :
+- ✅ Sprint 6.1 : README.md, INSTALL.md, CONFIGURATION.md, FAQ.md
+- ✅ Sprint 6.2 : ARCHITECTURE.md, DATA_ARCHITECTURE.md, SYNC_GUIDE.md
+- ✅ Sprint 6.3 : Branding LevelUp, pyproject.toml v3.0.0
+- ✅ Sprint 6.4 : CLAUDE.md, .cursorrules, project_map.md, data_lineage.md
+- ✅ Sprint 6.5 : copilot-instructions.md, ci.yml, CONTRIBUTING.md
 
-Prochaine priorité :
-- **Phase 6** : Documentation & Branding "LevelUp"
+**Toutes les phases sont maintenant terminées !**
+
+Prochaines étapes possibles :
+- **Maintenance** : Corrections de bugs, améliorations mineures
+- **Screenshots** : Captures d'écran pour la documentation (optionnel)
+- **Logo** : Création d'un logo LevelUp (optionnel)
 
 ```python
 # Utilisation des vues matérialisées dans le code UI :
@@ -1390,4 +1392,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 5.4 COMPLETE - Nouvelles Représentations Statistiques 10/10)*
+*Dernière mise à jour : 2026-02-01 (Phase 6 COMPLETE - Documentation & Branding "LevelUp")*

@@ -1,19 +1,31 @@
-# Project Map - OpenSpartan Graph
+# Project Map - LevelUp
 
 > Ce fichier est la cartographie vivante du projet. L'agent IA doit le consulter et le mettre à jour.
 
 ## État Actuel (2026-02-01)
 
-### Migration DuckDB Unifiée
+### Phases Complétées
 
-- **Phase 1 COMPLETE** : Référentiels JSON → SQLite ✅
-- **Phase 2 COMPLETE** : Migration vers DuckDB Unifiée ✅
-- **Phase 3 COMPLETE** : Enrichissement des Données (antagonistes) ✅
-- **Phase 4 COMPLETE** : Optimisations Avancées ✅
-  - Vues matérialisées (mv_map_stats, mv_mode_category_stats, mv_global_stats, mv_session_stats)
-  - Lazy loading et pagination (load_recent_matches, load_matches_paginated)
+- **Phase 1** : Stabilisation architecture hybride ✅
+- **Phase 2** : Migration vers DuckDB Unifiée ✅
+- **Phase 3** : Enrichissement des Données (antagonistes) ✅
+- **Phase 4** : Optimisations Avancées ✅
+  - Vues matérialisées (`mv_map_stats`, `mv_mode_category_stats`, etc.)
+  - Lazy loading et pagination
   - Backup/Restore Parquet avec compression Zstd
-  - Partitionnement temporel (archive_season.py, vue unifiée DB+archives)
+  - Partitionnement temporel
+  - Refonte système de synchronisation (DuckDBSyncEngine)
+- **Phase 5** : Enrichissement Visuel & API ✅
+  - Career Rank & Stats Armes
+  - Correctifs modes/playlists
+  - Graphes Radar & Étiquettes
+  - Nouvelles représentations statistiques
+  - Watcher/Daemon Thumbnails
+- **Phase 6** : Documentation & Branding "LevelUp" ✅
+  - README.md complet
+  - Guides d'installation et configuration
+  - Documentation technique mise à jour
+  - Branding LevelUp appliqué
 
 ### Architecture Cible v4
 
@@ -27,78 +39,89 @@ data/
 │           └── archive_index.json
 ├── warehouse/
 │   └── metadata.duckdb        # Référentiels partagés
-└── archive/
-    └── parquet/               # Cold storage (backup global)
+└── backups/                   # Backups Parquet
 ```
 
-## Architecture des Données
+## Modules Clés
 
-### Sources de Données
-- **DuckDB** : Moteur unifié pour toutes les données (v4)
-- **JSON** : Fichiers de configuration (`static/medals/*.json`)
-- **Parquet** : Archive/backup (`data/archive/parquet/`)
+### Accès aux Données
+- `src/data/repositories/duckdb_repo.py` : Repository principal DuckDB
+- `src/data/repositories/factory.py` : Factory pattern
+- `src/data/sync/engine.py` : Moteur de synchronisation
 
-### Modules Clés
+### Analyse
+- `src/analysis/killer_victim.py` : Calcul antagonistes
+- `src/analysis/antagonists.py` : Agrégation rivalités
+- `src/analysis/sessions.py` : Détection sessions
+- `src/analysis/performance_score.py` : Score de performance
 
-#### Ingestion & Validation
-- `scripts/ingest_halo_data.py` : Ingestion JSON → DuckDB
-- `src/data/domain/models/` : Modèles Pydantic (MatchFact, MedalAward, PlayerProfile)
+### UI
+- `src/ui/pages/` : Pages du dashboard
+- `src/ui/components/` : Composants réutilisables
+- `src/visualization/` : Graphiques Plotly
 
-#### Stockage DuckDB Unifié
-- `src/data/infrastructure/database/duckdb_engine.py` : Moteur DuckDB
-- `src/data/infrastructure/parquet/` : Lecture/écriture Parquet (archive)
-- `src/data/query/` : Requêtes analytiques
+## Tables DuckDB
 
-#### Repositories
-- `src/data/repositories/legacy.py` : Accès legacy SQLite (rétrocompat)
-- `src/data/repositories/hybrid.py` : Nouveau système DuckDB
-- `src/data/repositories/factory.py` : Factory avec modes
-
-## Nouvelles Tables (v4)
+### Base Joueur (stats.duckdb)
 
 | Table | Description |
 |-------|-------------|
-| `antagonists` | Top killers/victimes (rivalités) |
-| `weapon_stats` | Stats par arme |
-| `skill_history` | Historique CSR |
-| `career_ranks` | Traductions des rangs |
+| `match_stats` | Faits des matchs |
+| `medals_earned` | Médailles par match |
+| `teammates_aggregate` | Stats coéquipiers |
+| `antagonists` | Top killers/victimes |
+| `player_match_stats` | Données MMR/skill |
+| `highlight_events` | Événements film |
+| `xuid_aliases` | Mapping XUID→Gamertag |
+| `career_progression` | Historique rangs |
+| `sync_meta` | Métadonnées sync |
+| `mv_*` | Vues matérialisées |
 
-## Dépendances Critiques
+### Base Métadonnées (metadata.duckdb)
 
-| Package | Version | Usage |
-|---------|---------|-------|
-| pydantic | >=2.5.0 | Validation données API |
-| polars | >=0.20.0 | DataFrame haute performance |
-| duckdb | >=0.10.0 | **Moteur unique** (requêtes + stockage) |
-| streamlit | >=1.28.0 | Interface utilisateur |
-
-## Points d'Entrée
-- `streamlit_app.py` : Application principale
-- `openspartan_launcher.py` : Lanceur
+| Table | Description |
+|-------|-------------|
+| `playlists` | Définitions playlists |
+| `game_modes` | Modes de jeu (FR/EN) |
+| `medal_definitions` | Référentiel médailles |
+| `career_ranks` | Rangs de carrière |
 
 ## Scripts Utilitaires
 
 | Script | Description |
 |--------|-------------|
-| `scripts/sync.py` | Synchronisation SPNKr + refresh vues matérialisées |
-| `scripts/backup_player.py` | Export Parquet avec compression Zstd |
-| `scripts/restore_player.py` | Import depuis backup Parquet |
-| `scripts/archive_season.py` | Archivage temporel des matchs anciens |
-| `scripts/migrate_player_to_duckdb.py` | Migration SQLite → DuckDB |
-| `scripts/populate_antagonists.py` | Calcul des antagonistes |
+| `scripts/sync.py` | Synchronisation SPNKr |
+| `scripts/backup_player.py` | Export Parquet Zstd |
+| `scripts/restore_player.py` | Import depuis backup |
+| `scripts/archive_season.py` | Archivage temporel |
+| `scripts/migrate_*.py` | Scripts de migration |
 
-## Configuration
+## Dépendances Critiques
 
-- `db_profiles.json` : Profils joueurs avec chemins vers `data/players/`
-- `app_settings.json` : Configuration de l'application
+| Package | Version | Usage |
+|---------|---------|-------|
+| `duckdb` | >=0.10.0 | Moteur unique |
+| `polars` | >=0.20.0 | DataFrames |
+| `pydantic` | >=2.5.0 | Validation |
+| `streamlit` | >=1.28.0 | Interface |
+
+## Points d'Entrée
+
+- `streamlit_app.py` : Application principale
+- `openspartan_launcher.py` : Lanceur CLI
 
 ## Documentation
 
 | Document | Contenu |
 |----------|---------|
-| `docs/BACKUP_RESTORE.md` | Guide backup/restore Parquet |
-| `docs/SQL_SCHEMA.md` | Schémas DuckDB |
-| `docs/DATA_ARCHITECTURE.md` | Architecture des données |
+| `docs/INSTALL.md` | Installation |
+| `docs/CONFIGURATION.md` | Configuration |
+| `docs/ARCHITECTURE.md` | Architecture technique |
+| `docs/DATA_ARCHITECTURE.md` | Architecture données |
+| `docs/SYNC_GUIDE.md` | Guide synchronisation |
+| `docs/BACKUP_RESTORE.md` | Backup/Restore |
+| `docs/FAQ.md` | Questions fréquentes |
 
 ## Dernière Mise à Jour
-- **2026-02-01** : Phase 4 terminée (vues matérialisées, lazy loading, backup/restore, partitionnement temporel)
+
+**2026-02-01** : Phase 6 terminée - Documentation & Branding "LevelUp"

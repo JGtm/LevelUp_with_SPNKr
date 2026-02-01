@@ -1,127 +1,71 @@
-# 🎮 OpenSpartan Graph
+# LevelUp - Dashboard Halo Infinite
 
-> **Dashboard interactif pour analyser vos statistiques Halo Infinite**
+> **Analysez vos performances Halo Infinite avec des visualisations avancées et une architecture DuckDB ultra-rapide.**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-FF4B4B.svg)](https://streamlit.io/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-0.10%2B-FEE14E.svg)](https://duckdb.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## 📑 Table des matières
+## Fonctionnalités
 
-- [Fonctionnalités](#-fonctionnalités)
-- [Nouveautés v2.0](#-nouveautés-v20---delta-sync-pipeline)
-- [Prérequis](#-prérequis)
-- [Installation](#-installation)
-- [Utilisation](#-utilisation)
-  - [Dashboard](#dashboard-recommandé)
-  - [Sync incrémental (Delta)](#-sync-incrémental-delta)
-  - [Rafraîchir la DB](#rafraîchir-la-db-au-lancement-spnkr)
-  - [Réparer les gamertags](#réparer-les-gamertags-aliases-via-film-roster)
-- [Configuration](#️-configuration)
-- [Architecture](#-architecture)
-- [Tests](#-tests)
-- [Docker](#-docker)
-- [Contribution](#-contribution)
+### Statistiques Avancées
+- **Dashboard interactif** - Visualisez vos stats en temps réel
+- **Graphiques détaillés** - Évolution K/D, précision, durée de vie, séries de frags
+- **Analyse par carte** - Performance détaillée sur chaque map avec heatmaps
+- **Coéquipiers** - Statistiques avec vos amis (même équipe ou adversaires)
+- **Sessions de jeu** - Détection automatique avec métriques de performance
 
----
+### Visualisations
+- **Graphes radar** - Stats par minute et performance globale
+- **Heatmaps** - Win rate par jour/heure de la semaine
+- **Distributions** - Histogrammes précision, kills, scores
+- **Corrélations** - Scatter plots durée de vie vs kills
+- **Top armes** - Statistiques par arme avec headshot rate
 
-## ✨ Fonctionnalités
-
-### Core
-- 📊 **Dashboard interactif** — Visualisez vos stats en temps réel avec Streamlit
-- 📈 **Graphiques détaillés** — Évolution frags/morts/assistances, précision, durée de vie moyenne, séries de frags
-- 🗺️ **Analyse par carte** — Performance détaillée sur chaque map
-- 👥 **Analyse des coéquipiers** — Statistiques avec vos amis (même équipe ou adversaires)
-- 🎯 **Sessions de jeu** — Détection automatique des sessions avec métriques
-
-### Personnalisation
-- 🎨 **Thème Halo** — Interface inspirée de Halo Waypoint
-- 🌍 **Traductions FR** — Interface et modes de jeu traduits en français (313+ modes)
+### Architecture v4 - DuckDB Unifié
+- **Performance** - Requêtes 10-20x plus rapides
+- **Vues matérialisées** - Agrégations instantanées
+- **Lazy loading** - Chargement à la demande
+- **Backup Parquet** - Export/restore avec compression Zstd
 
 ---
 
-## 🆕 Nouveautés v2.0 - Delta Sync Pipeline
-
-### ⚡ Sync incrémental (Delta Mode)
-
-Plus besoin de tout resynchroniser ! Le mode delta ne récupère que les **nouveaux matchs** :
-
-```bash
-# Sync rapide (delta) - seulement les nouveaux matchs
-python openspartan_launcher.py refresh --player MonGamertag --delta
-
-# Sync complet (si besoin)
-python openspartan_launcher.py refresh --player MonGamertag
-```
-
-### 📋 Tables de métadonnées
-
-| Table | Description |
-|-------|-------------|
-| `SyncMeta` | Suivi des synchronisations (dernière sync, compteurs) |
-| `XuidAliases` | Mapping XUID → Gamertag (auto-peuplé depuis les matchs) |
-| `HighlightEvents` | Événements marquants (frags, morts, médailles) |
-
-### 🎯 Highlight Events par défaut
-
-Les highlight events sont maintenant extraits automatiquement lors de l'import, permettant d'afficher :
-- Les kills/deaths remarquables
-- Les médailles obtenues
-- Les séquences de frags
-
-### 🔄 Indicateur de sync dans la sidebar
-
-La sidebar affiche maintenant :
-- ⏱️ Date de dernière synchronisation
-- 📊 Nombre de matchs synchronisés
-- 🔘 Boutons **Sync** (delta) et **Full** (complet)
-
----
-
-## 📋 Prérequis
-
-- **Windows 10/11** (ou Linux/macOS via Docker)
-- **Python 3.10+** (recommandé: 3.11 ou 3.12)
-- **Compte Azure AD**
-- **SPNKr** API Halo Infinite
-
----
-
-## 📦 Installation
-
-### Installation rapide
+## Installation Rapide
 
 ```bash
 # Cloner le projet
-git clone https://github.com/username/openspartan-graph.git
-cd openspartan-graph
+git clone https://github.com/username/levelup-halo.git
+cd levelup-halo
 
 # Créer l'environnement virtuel
 python -m venv .venv
 
-# Activer l'environnement (Windows)
+# Activer (Windows)
 .venv\Scripts\activate
 
-# Activer l'environnement (Linux/macOS)
+# Activer (Linux/macOS)
 source .venv/bin/activate
 
 # Installer les dépendances
 pip install -e .
 ```
 
-### Installation développeur
+**Documentation détaillée** : [docs/INSTALL.md](docs/INSTALL.md)
+
+---
+
+## Configuration
+
+### 1. Copier le fichier d'environnement
 
 ```bash
-# Avec les outils de dev (tests, linting, typing)
-pip install -e ".[dev]"
+cp .env.example .env.local
 ```
 
-### Configuration SPNKr (API Halo)
-
-1. Copier `.env.example` → `.env.local`
-2. Configurer vos tokens Azure :
+### 2. Configurer les tokens Azure
 
 ```env
 SPNKR_AZURE_CLIENT_ID=votre_client_id
@@ -130,222 +74,102 @@ SPNKR_AZURE_REDIRECT_URI=https://localhost
 SPNKR_OAUTH_REFRESH_TOKEN=votre_refresh_token
 ```
 
-3. Récupérer le refresh token :
+### 3. Récupérer le refresh token
 
 ```bash
 python scripts/spnkr_get_refresh_token.py
 ```
 
+**Documentation détaillée** : [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+
 ---
 
-## 🎮 Utilisation
+## Utilisation
 
-### Dashboard (recommandé)
-
-Le mode de lancement recommandé est le **lanceur Python unique** :
+### Lancer le Dashboard
 
 ```bash
-# Mode interactif (questions automatiques)
+# Mode interactif
 python openspartan_launcher.py
 
-# Lancer directement le dashboard
+# Lancer directement
 python openspartan_launcher.py run
 
-# Afficher l'aide complète
-python openspartan_launcher.py --help
-```
-
-### ⚡ Sync incrémental (Delta)
-
-```bash
-# Sync rapide (delta) - récupère uniquement les nouveaux matchs
-python openspartan_launcher.py refresh --player MonGamertag --delta
-
-# Sync complet avec highlight events
-python openspartan_launcher.py refresh --player MonGamertag --patch-highlight-events
-
-# Sync + lancer le dashboard
+# Avec synchronisation
 python openspartan_launcher.py run+refresh --player MonGamertag --delta
 ```
 
-#### Options de synchronisation
-
-| Option | Description | Défaut |
-|--------|-------------|--------|
-| `--delta` | Mode incrémental (nouveaux matchs seulement) | Non |
-| `--max-matches N` | Limite de matchs à récupérer | 50 |
-| `--match-type` | Type de matchs (`all`, `matchmaking`, `custom`) | matchmaking |
-| `--patch-highlight-events` | Extraire les highlight events | Non |
-| `--no-assets` | Ne pas télécharger les assets (plus rapide) | Non |
-
-### Rafraîchir la DB au lancement (SPNKr)
+### Synchronisation des Données
 
 ```bash
-# Premier lancement (bootstrap complet)
-python openspartan_launcher.py run+refresh --player MonGamertag
+# Sync incrémentale (nouveaux matchs uniquement)
+python scripts/sync.py --delta --gamertag MonGamertag
 
-# Lancements suivants (delta)
-python openspartan_launcher.py run+refresh --player MonGamertag --delta
+# Sync complète
+python scripts/sync.py --full --gamertag MonGamertag --max-matches 500
 ```
 
-### Réparer les gamertags (aliases) via film roster
-
-Quand les gamertags dans `HighlightEvents` sont corrompus :
+### Backup et Restore
 
 ```bash
-# Répare le match le plus récent
-python openspartan_launcher.py repair-aliases --db data/spnkr_gt_MonGamertag.db --latest
+# Backup d'un joueur
+python scripts/backup_player.py --gamertag MonGamertag
 
-# Répare tous les matchs
-python openspartan_launcher.py repair-aliases --db data/spnkr_gt_MonGamertag.db --all-matches
+# Restauration
+python scripts/restore_player.py --gamertag MonGamertag --backup ./backups/MonGamertag
 ```
 
 ---
 
-## ⚙️ Configuration
+## Architecture
 
-### Filtres (sidebar)
-
-Les filtres utilisent des **menus dépliables avec cases à cocher** pour une sélection facile parmi de nombreuses valeurs :
-
-| Filtre | Description | Comportement par défaut |
-|--------|-------------|------------------------|
-| **Playlists** | Sélection des playlists à inclure | Tout coché sauf Firefight |
-| **Modes** | Sélection des modes de jeu | Tout coché |
-| **Cartes** | Sélection des cartes | Tout coché |
-
-> **Note** : Firefight (PvE) est décoché par défaut mais peut être activé via les checkboxes Playlists.
-
-### Playlists supportées
-
-Toutes les playlists sont affichées dans les filtres, incluant :
-- Quick Play, Ranked Arena, Ranked Slayer
-- **Big Team Battle** (toutes variantes)
-- Firefight, Super Fiesta, Team Snipers
-- Modes communautaires, événements spéciaux
-
-### Variables d'environnement
-
-| Variable | Description |
-|----------|-------------|
-| `OPENSPARTAN_DB_PATH` | Chemin vers la base de données |
-| `OPENSPARTAN_DB_READONLY` | Mode lecture seule (Docker) |
-| `SPNKR_PLAYER` | Joueur par défaut pour le refresh |
-
----
-
-## 🏗️ Architecture
+### Structure des Données (v4)
 
 ```
-openspartan-graph/
-├── src/                        # Code source modulaire
-│   ├── config.py              # Configuration centralisée
-│   ├── models.py              # Modèles de données (dataclasses)
-│   ├── db/                    # Accès base de données
-│   │   ├── connection.py      # Gestion connexions SQLite
-│   │   ├── loaders.py         # Chargement des données + SyncMeta
-│   │   ├── parsers.py         # Parsing JSON des matchs
-│   │   ├── profiles.py        # Gestion profils joueurs
-│   │   └── queries.py         # Requêtes SQL
-│   ├── analysis/              # Fonctions d'analyse
-│   │   ├── filters.py         # Filtres playlists (Big Team Battle inclus)
-│   │   ├── killer_victim.py   # Analyse confrontations
-│   │   ├── maps.py            # Stats par carte
-│   │   ├── sessions.py        # Détection sessions
-│   │   └── stats.py           # Calculs statistiques
-│   ├── ui/                    # Helpers interface utilisateur
-│   │   ├── aliases.py         # Gestion des alias joueurs
-│   │   ├── translations.py    # Traductions FR (313+ modes)
-│   │   ├── medals.py          # Affichage médailles
-│   │   ├── settings.py        # Paramètres utilisateur (dataclass)
-│   │   ├── components/        # Composants réutilisables
-│   │   │   └── performance.py # Score de performance sessions
-│   │   └── pages/             # Pages du dashboard (modulaires)
-│   │       ├── session_compare.py  # Comparaison de sessions
-│   │       ├── timeseries.py       # Séries temporelles
-│   │       ├── win_loss.py         # Victoires/Défaites
-│   │       ├── match_history.py    # Historique des parties
-│   │       ├── teammates.py        # Analyse coéquipiers
-│   │       ├── citations.py        # Citations & Médailles
-│   │       └── settings.py         # Page Paramètres
-│   └── visualization/         # Génération des graphiques
-│       ├── distributions.py   # Histogrammes, box plots
-│       ├── maps.py            # Heatmaps cartes
-│       ├── theme.py           # Thème Halo
-│       └── timeseries.py      # Graphiques temporels
-├── scripts/                    # Scripts utilitaires
-│   ├── spnkr_import_db.py     # Import SPNKr avec delta
-│   ├── spnkr_get_refresh_token.py  # Auth Azure
-│   └── prefetch_profile_assets.py  # Préchargement assets
-├── static/                     # Fichiers statiques
-│   ├── styles.css             # Thème CSS Halo Waypoint
-│   └── medals/                # Icônes médailles
-├── tests/                      # Suite de tests pytest
-│   ├── test_delta_sync.py     # Tests sync delta
-│   ├── test_analysis.py       # Tests analyse
-│   └── test_models.py         # Tests modèles
-├── data/                       # Données locales (gitignored)
-│   ├── cache/                 # Cache API et assets
-│   └── spnkr_gt_*.db          # Bases de données joueurs
-├── streamlit_app.py           # Point d'entrée dashboard
-├── openspartan_launcher.py    # Lanceur CLI unifié
-└── pyproject.toml             # Configuration projet
+data/
+├── players/                    # Données par joueur
+│   └── {gamertag}/
+│       ├── stats.duckdb       # Base DuckDB persistée
+│       └── archive/           # Archives Parquet temporelles
+├── warehouse/
+│   └── metadata.duckdb        # Référentiels partagés
+└── backups/                   # Backups Parquet
 ```
 
-## 📈 Score de performance (sessions)
-
-Le dashboard affiche un **score de performance (0–100)** dans la page *Comparaison de session*.
-
-- Documentation : [docs/PERFORMANCE_SCORE.md](docs/PERFORMANCE_SCORE.md)
-
-### Tables de base de données
-
-#### Tables source (données brutes)
+### Tables DuckDB
 
 | Table | Description |
 |-------|-------------|
-| `MatchStats` | Statistiques des matchs (JSON compressé) |
-| `PlayerMatchStats` | Détails par joueur/match |
-| `HighlightEvents` | Événements marquants extraits |
-| `XuidAliases` | Mapping XUID → Gamertag |
-| `SyncMeta` | Métadonnées de synchronisation |
-| `Playlists` | Informations playlists |
-| `PlaylistMapModePairs` | Modes de jeu |
-| `Maps`, `GameVariants` | Assets de jeu |
+| `match_stats` | Statistiques des matchs |
+| `medals_earned` | Médailles par match |
+| `teammates_aggregate` | Stats coéquipiers agrégées |
+| `antagonists` | Top killers/victimes (rivalités) |
+| `highlight_events` | Événements marquants |
+| `career_progression` | Progression de rang |
+| `mv_map_stats` | Vue matérialisée par carte |
+| `mv_mode_category_stats` | Vue matérialisée par mode |
+| `mv_global_stats` | Statistiques globales |
 
-#### Tables de cache (optimisation, v3.0+)
-
-| Table | Description |
-|-------|-------------|
-| `MatchCache` | Données de match pré-parsées (évite le parsing JSON) |
-| `Friends` | Liste des amis (manuelle) |
-| `PerformanceScores` | Scores de performance pré-calculés |
-| `TeammatesAggregate` | Stats coéquipiers agrégées |
-| `MedalsAggregate` | Totaux de médailles pré-calculés |
-| `CacheMeta` | Version du schéma de cache |
-
-### Migration vers les tables de cache
-
-Pour bénéficier des optimisations de performance :
-
-```bash
-# Exécuter la migration (remplacez XUID par le vôtre)
-python scripts/migrate_to_cache.py --xuid 2533274823110022
-
-# Options
---db PATH     # Chemin vers la DB (auto-détecté sinon)
---force       # Réinitialise les tables de cache
---dry-run     # Affiche ce qui serait fait sans modifier la DB
-```
-
-**Gains de performance attendus :**
-- `load_matches()` : ~200-500ms → ~20-50ms (10x plus rapide)
-- Sessions : Pré-calculées, accès instantané
-- Coéquipiers : Pré-agrégés, accès instantané
+**Documentation technique** : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ---
 
-## 🧪 Tests
+## Documentation
+
+| Document | Contenu |
+|----------|---------|
+| [INSTALL.md](docs/INSTALL.md) | Guide d'installation détaillé |
+| [CONFIGURATION.md](docs/CONFIGURATION.md) | Configuration des tokens et profils |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique |
+| [DATA_ARCHITECTURE.md](docs/DATA_ARCHITECTURE.md) | Architecture des données |
+| [SQL_SCHEMA.md](docs/SQL_SCHEMA.md) | Schémas DuckDB complets |
+| [SYNC_GUIDE.md](docs/SYNC_GUIDE.md) | Guide de synchronisation |
+| [BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) | Backup et restauration |
+| [FAQ.md](docs/FAQ.md) | Questions fréquentes |
+
+---
+
+## Tests
 
 ```bash
 # Lancer tous les tests
@@ -355,100 +179,57 @@ pytest
 pytest --cov=src --cov-report=html
 
 # Tests spécifiques
-pytest tests/test_delta_sync.py -v
-pytest tests/test_analysis.py -v
-pytest tests/test_cache_optimization.py -v
-
-# Tests rapides (sans couverture)
-pytest -x --tb=short
+pytest tests/test_duckdb_repository.py -v
 ```
-
-### Couverture actuelle
-
-| Module | Couverture |
-|--------|------------|
-| `src/ui/translations.py` | 100% |
-| `src/analysis/filters.py` | 95% |
-| `src/db/loaders.py` | 85% |
-| `src/db/loaders_cached.py` | 90% |
 
 ---
 
-## 🐳 Docker
-
-### Docker Compose (recommandé)
+## Docker
 
 ```bash
-# Démarrer
+# Démarrer avec Docker Compose
 docker compose up --build
 
 # Accéder au dashboard
 open http://localhost:8501
 ```
 
-### Configuration Docker
+---
 
-```yaml
-# docker-compose.yml
-services:
-  openspartan:
-    build: .
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./data:/data:ro
-      - ./appdata:/appdata
-    environment:
-      - OPENSPARTAN_DB=/data/spnkr_gt_MonGamertag.db
-      - OPENSPARTAN_DB_READONLY=1
+## Contribution
+
+Les contributions sont les bienvenues ! Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour les guidelines.
+
+```bash
+# Format du code
+ruff check --fix .
+black .
+isort .
+
+# Avant de commiter
+pytest
 ```
 
 ---
 
-## 📝 Changelog
+## Stack Technique
 
-### v2.0.0 (2026-01-22)
-
-#### ✨ Nouvelles fonctionnalités
-- **Delta Sync** : Mode `--delta` pour synchronisation incrémentale
-- **Tables SyncMeta/XuidAliases** : Suivi des syncs et mapping gamertags
-- **Highlight Events par défaut** : Extraction automatique à l'import
-- **Indicateur sync sidebar** : Affichage dernière sync + boutons Sync/Full
-- **Traductions complètes** : 313 modes de jeu traduits en français
-
-#### 🔧 Améliorations UX
-- Filtres déplacés dans la sidebar (plus accessible)
-- Big Team Battle ajouté aux playlists autorisées
-- `restrict_playlists=False` par défaut (tous les matchs affichés)
-
-#### 🐛 Corrections
-- Fix affichage 281/955 matchs (filtres trop restrictifs)
-- Fix gamertags corrompus via repair-aliases
+| Technologie | Usage |
+|-------------|-------|
+| **Python 3.10+** | Langage principal |
+| **Streamlit** | Interface utilisateur |
+| **DuckDB** | Moteur de requêtes OLAP |
+| **Polars** | DataFrames haute performance |
+| **Pydantic v2** | Validation des données |
+| **Plotly** | Visualisations interactives |
+| **SPNKr** | API Halo Infinite |
 
 ---
 
-## 🤝 Contribution
+## Licence
 
-Les contributions sont les bienvenues !
-
-1. Fork le projet
-2. Créer une branche (`git checkout -b feature/ma-feature`)
-3. Commit (`git commit -m 'feat: ajout ma feature'`)
-4. Push (`git push origin feature/ma-feature`)
-5. Ouvrir une Pull Request
-
-### Conventions
-
-- **Commits** : Format [Conventional Commits](https://www.conventionalcommits.org/)
-- **Code** : Black + isort + ruff
-- **Tests** : pytest avec couverture > 80%
+Ce projet est sous licence MIT. Voir [LICENSE](LICENSE) pour plus de détails.
 
 ---
 
-## 📄 Licence
-
-Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
-
----
-
-**Fait avec ❤️ pour la communauté Halo**
+**Fait avec passion pour la communauté Halo**

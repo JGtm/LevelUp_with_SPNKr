@@ -4,7 +4,7 @@
 
 ## Contexte Projet
 
-OpenSpartan Graph - Dashboard de statistiques Halo Infinite avec architecture hybride SQLite + Parquet.
+**LevelUp** - Dashboard de statistiques Halo Infinite avec architecture DuckDB unifiée (v4).
 
 ## Workflow Agentique
 
@@ -12,25 +12,43 @@ OpenSpartan Graph - Dashboard de statistiques Halo Infinite avec architecture hy
 - `.ai/project_map.md` : Cartographie du projet
 - `.ai/thought_log.md` : Journal des décisions
 - `.ai/data_lineage.md` : Flux de données
+- `.ai/ARCHITECTURE_ROADMAP.md` : Roadmap des phases
 
 **APRÈS CHAQUE MODIFICATION SIGNIFICATIVE** : Mettre à jour ces fichiers.
 
-## Architecture des Données
+## Architecture des Données (v4)
 
 | Type | Stockage | Chemin |
 |------|----------|--------|
-| Référentiels | SQLite | `data/warehouse/metadata.db` |
-| Matchs (volume) | Parquet | `data/warehouse/match_facts/` |
+| Référentiels | DuckDB | `data/warehouse/metadata.duckdb` |
+| Matchs joueur | DuckDB | `data/players/{gamertag}/stats.duckdb` |
+| Archives | Parquet | `data/players/{gamertag}/archive/` |
 | Config | JSON | `db_profiles.json`, `app_settings.json` |
+
+## Tables DuckDB Principales
+
+| Table | Description |
+|-------|-------------|
+| `match_stats` | Faits des matchs |
+| `medals_earned` | Médailles par match |
+| `teammates_aggregate` | Stats coéquipiers |
+| `antagonists` | Top killers/victimes |
+| `highlight_events` | Événements film |
+| `career_progression` | Historique rangs |
+| `mv_*` | Vues matérialisées |
 
 ## Commandes Utiles
 
 ```bash
-# Ingestion des référentiels
-python scripts/ingest_halo_data.py --action all
-
 # Lancer l'app Streamlit
 streamlit run streamlit_app.py
+
+# Synchronisation
+python scripts/sync.py --delta --gamertag MonGamertag
+
+# Backup/Restore
+python scripts/backup_player.py --gamertag MonGamertag
+python scripts/restore_player.py --gamertag MonGamertag --backup ./backups/
 
 # Tests
 pytest tests/ -v
@@ -41,4 +59,35 @@ pytest tests/ -v
 1. Répondre en français
 2. Utiliser Pydantic v2 pour valider les données
 3. Préférer Polars à Pandas pour les gros volumes
-4. Documenter les décisions dans `.ai/thought_log.md`
+4. Utiliser DuckDBRepository pour l'accès aux données
+5. Documenter les décisions dans `.ai/thought_log.md`
+
+## Stack Technique
+
+| Composant | Usage |
+|-----------|-------|
+| **DuckDB** | Moteur de requêtes OLAP |
+| **Polars** | DataFrames haute performance |
+| **Pydantic v2** | Validation des données |
+| **Streamlit** | Interface utilisateur |
+| **SPNKr** | API Halo Infinite |
+
+## Code Déprécié
+
+Les modules suivants sont DÉPRÉCIÉS :
+- `src/db/loaders.py` → Utiliser `DuckDBRepository`
+- `src/db/loaders_cached.py` → Utiliser `DuckDBRepository`
+- `src/data/repositories/legacy.py` → Supprimé
+- `src/data/repositories/shadow.py` → Supprimé
+- `src/data/repositories/hybrid.py` → Supprimé
+
+## Serveurs MCP Disponibles
+
+Si les MCPs sont configurés, les utiliser :
+
+**duckdb** :
+- Exécuter SQL directement sur les données Halo
+- `ATTACH 'data/warehouse/metadata.duckdb' AS meta`
+
+**browser** (cursor-ide-browser) :
+- Tester l'app Streamlit visuellement

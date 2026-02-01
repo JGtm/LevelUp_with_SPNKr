@@ -1,0 +1,283 @@
+# Guide de Synchronisation - LevelUp
+
+> Comment synchroniser vos matchs Halo Infinite avec LevelUp.
+
+## Architecture de Synchronisation
+
+LevelUp utilise une architecture DuckDB unifiée où les données sont synchronisées directement depuis l'API Halo vers votre base de données locale.
+
+```
+API SPNKr (Halo Infinite)
+        │
+        ▼
+DuckDBSyncEngine
+├── api_client.py      # Wrapper API async
+├── transformers.py    # JSON → DuckDB rows
+└── engine.py          # Orchestrateur
+        │
+        ▼
+data/players/{gamertag}/stats.duckdb
+├── match_stats
+├── player_match_stats
+├── highlight_events
+├── xuid_aliases
+└── sync_meta
+```
+
+---
+
+## Commandes de Base
+
+### Sync Incrémentale (Delta)
+
+Récupère uniquement les nouveaux matchs depuis la dernière synchronisation :
+
+```bash
+python scripts/sync.py --delta --gamertag MonGamertag
+```
+
+**Avantages :**
+- Rapide (quelques secondes)
+- Idéal pour une utilisation quotidienne
+- Ne surcharge pas l'API
+
+### Sync Complète (Full)
+
+Récupère tous les matchs jusqu'à une limite :
+
+```bash
+python scripts/sync.py --full --gamertag MonGamertag --max-matches 500
+```
+
+**Quand utiliser :**
+- Premier import
+- Récupérer l'historique manquant
+- Après une longue période sans sync
+
+### Sync de Tous les Joueurs
+
+```bash
+python scripts/sync.py --all --delta
+```
+
+---
+
+## Options Disponibles
+
+| Option | Description | Défaut |
+|--------|-------------|--------|
+| `--gamertag` | Nom du joueur à synchroniser | Profil par défaut |
+| `--delta` | Mode incrémental | Non |
+| `--full` | Mode complet | Non |
+| `--max-matches` | Nombre max de matchs | 50 |
+| `--match-type` | Type de matchs (`all`, `matchmaking`, `custom`) | `matchmaking` |
+| `--with-skill` | Inclure les données MMR | Oui |
+| `--with-events` | Inclure les highlight events | Oui |
+| `--dry-run` | Simuler sans écrire | Non |
+| `--verbose` | Mode verbeux | Non |
+
+---
+
+## Synchronisation via l'Interface
+
+### Bouton dans la Sidebar
+
+Le dashboard affiche :
+- **Dernière sync** : Date et heure
+- **Matchs** : Nombre de matchs synchronisés
+- **Bouton Sync** : Déclenche une sync delta
+- **Bouton Full** : Déclenche une sync complète
+
+### Sync au Lancement
+
+```bash
+# Lancer le dashboard avec sync
+python openspartan_launcher.py run+refresh --player MonGamertag --delta
+```
+
+---
+
+## Types de Données Synchronisées
+
+### match_stats
+
+Statistiques principales de chaque match :
+
+| Colonne | Description |
+|---------|-------------|
+| `match_id` | Identifiant unique du match |
+| `start_time` | Date et heure de début |
+| `duration_seconds` | Durée en secondes |
+| `playlist_id` | ID de la playlist |
+| `map_id` | ID de la carte |
+| `kills`, `deaths`, `assists` | Stats de base |
+| `accuracy` | Précision (%) |
+| `kda` | Ratio (kills + assists/3) / deaths |
+| `outcome` | Résultat (1=Tie, 2=Win, 3=Loss, 4=Left) |
+
+### player_match_stats
+
+Données MMR et skill par match :
+
+| Colonne | Description |
+|---------|-------------|
+| `team_mmr` | MMR de l'équipe |
+| `enemy_mmr` | MMR de l'équipe adverse |
+| `expected_kills` | Kills attendus (modèle) |
+| `expected_deaths` | Deaths attendus (modèle) |
+
+### highlight_events
+
+Événements marquants du match :
+
+| Colonne | Description |
+|---------|-------------|
+| `event_type` | Type (kill, death, medal) |
+| `time_ms` | Timestamp en millisecondes |
+| `xuid` | Joueur impliqué |
+| `gamertag` | Nom du joueur |
+
+### xuid_aliases
+
+Correspondances XUID ↔ Gamertag :
+
+| Colonne | Description |
+|---------|-------------|
+| `xuid` | Identifiant Xbox |
+| `gamertag` | Dernier gamertag connu |
+| `last_seen` | Dernière apparition |
+
+---
+
+## Vues Matérialisées
+
+Après chaque sync, les vues matérialisées sont automatiquement rafraîchies :
+
+| Vue | Description |
+|-----|-------------|
+| `mv_map_stats` | Stats agrégées par carte |
+| `mv_mode_category_stats` | Stats par catégorie de mode |
+| `mv_session_stats` | Stats par session de jeu |
+| `mv_global_stats` | Statistiques globales |
+
+Ces vues permettent un affichage instantané des agrégations dans le dashboard.
+
+---
+
+## Gestion des Erreurs
+
+### Rate Limiting
+
+L'API Halo a des limites de requêtes. Si vous recevez une erreur 429 :
+
+```
+Error: Rate limit exceeded
+```
+
+**Solution :**
+1. Attendez quelques minutes
+2. Réduisez `--max-matches`
+3. Utilisez `--delta` au lieu de `--full`
+
+### Token Expiré
+
+```
+Error: Authentication failed
+```
+
+**Solution :**
+```bash
+python scripts/spnkr_get_refresh_token.py
+```
+
+### Match Introuvable
+
+Certains matchs très anciens peuvent ne plus être disponibles sur les serveurs Halo.
+
+---
+
+## Bonnes Pratiques
+
+### Fréquence de Sync
+
+| Usage | Fréquence | Commande |
+|-------|-----------|----------|
+| Joueur actif | Quotidienne | `--delta` |
+| Joueur occasionnel | Hebdomadaire | `--delta` |
+| Premier import | Une fois | `--full --max-matches 1000` |
+
+### Avant une Session de Jeu
+
+```bash
+# Sync rapide avant de jouer
+python scripts/sync.py --delta --gamertag MonGamertag
+```
+
+### Après une Session de Jeu
+
+```bash
+# Sync pour voir les nouveaux matchs
+python scripts/sync.py --delta --gamertag MonGamertag
+```
+
+---
+
+## Données Historiques
+
+### Migrer depuis SQLite
+
+Si vous avez des données d'une ancienne version :
+
+```bash
+# Migrer les données historiques
+python scripts/migrate_all_to_duckdb.py --gamertag MonGamertag
+
+# Vérifier la migration
+python scripts/sync.py --gamertag MonGamertag --stats
+```
+
+### Archiver les Anciens Matchs
+
+Pour les joueurs avec beaucoup de matchs (> 5000) :
+
+```bash
+# Archiver les matchs de plus d'un an
+python scripts/archive_season.py --gamertag MonGamertag --older-than-days 365
+```
+
+---
+
+## Dépannage
+
+### Sync Bloquée
+
+Si la sync semble bloquée :
+
+1. Vérifier la connexion internet
+2. Vérifier les tokens Azure
+3. Réessayer avec `--verbose` pour plus de détails
+
+### Données Incohérentes
+
+Si les stats ne correspondent pas à Halo Waypoint :
+
+```bash
+# Forcer une resync complète
+python scripts/sync.py --full --gamertag MonGamertag --max-matches 100
+
+# Rafraîchir les vues
+python scripts/sync.py --gamertag MonGamertag --refresh-views
+```
+
+### Base de Données Corrompue
+
+En dernier recours :
+
+```bash
+# Backup
+python scripts/backup_player.py --gamertag MonGamertag
+
+# Supprimer et recréer
+rm data/players/MonGamertag/stats.duckdb
+python scripts/sync.py --full --gamertag MonGamertag
+```
