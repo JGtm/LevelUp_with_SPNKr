@@ -17,6 +17,50 @@
 
 ## Journal
 
+### [2026-02-01] - Migration DuckDB - Sprint 2.1 COMPLETE
+
+**Contexte** :
+Poursuite de l'implémentation de la Phase 2 du roadmap (Migration DuckDB Unifiée).
+Sprint 2.1 : Scripts de Migration.
+
+**Actions réalisées** :
+
+1. **Script `scripts/migrate_metadata_to_duckdb.py`** :
+   - Migre `metadata.db` (SQLite) → `metadata.duckdb` (DuckDB)
+   - Copie les 11 tables existantes (playlists, game_modes, categories, etc.)
+   - Ajoute la nouvelle table `career_ranks` (272 rangs depuis JSON)
+   - Crée les index nécessaires
+   - Validation automatique post-migration
+
+2. **Script `scripts/migrate_player_to_duckdb.py`** :
+   - Migre les DBs legacy `spnkr_gt_*.db` vers `data/players/{gamertag}/stats.duckdb`
+   - Migre `MatchCache` → `match_stats`
+   - Migre `TeammatesAggregate` → `teammates_aggregate`
+   - Crée les tables vides : `antagonists`, `weapon_stats`, `skill_history`, `sessions`, `medals_earned`
+   - Supporte `--all` pour migrer tous les joueurs
+
+3. **Migrations exécutées** :
+   | Fichier | Taille | Données |
+   |---------|--------|---------|
+   | `metadata.duckdb` | 2.8 MB | 12 tables, 769 lignes |
+   | `JGtm/stats.duckdb` | 2.3 MB | 407 matchs, 853 coéquipiers |
+   | `Madina97294/stats.duckdb` | 2.8 MB | 955 matchs, 6472 coéquipiers |
+   | `Chocoboflor/stats.duckdb` | 2.3 MB | 10 matchs, 24 coéquipiers |
+   | `XxDaemonGamerxX/stats.duckdb` | 0.3 MB | 0 matchs (DB legacy ancienne) |
+
+**Raisonnement** :
+- DuckDB peut attacher directement SQLite en lecture → migration simple
+- Les types sont castés explicitement pour garantir la cohérence
+- Les tables vides sont créées pour préparer Phase 3 (enrichissement)
+
+**Prochaines étapes (Sprint 2.2)** :
+- [ ] Adapter `HybridRepository` pour lire DuckDB natif
+- [ ] Mettre à jour `DuckDBEngine` pour attacher player DB
+- [ ] Adapter `streamlit_bridge.py` pour les nouveaux chemins
+- [ ] Tests de non-régression UI
+
+---
+
 ### [2026-02-01] - Architecture Multi-Agent Orchestration
 
 **Contexte** :
@@ -533,6 +577,90 @@ Rester en LEGACY pour l'UI, utiliser Hybrid pour analytics batch uniquement.
 - [ ] Documenter dans Sprint 2 (SHADOW_COMPARE)
 
 **Rapport** : `.ai/reports/benchmark_v1.json`
+
+---
+
+### [2026-02-01] - Migration vers Architecture DuckDB Unifiée (v4)
+
+**Contexte** :
+L'utilisateur demande d'analyser `current_plan.md` et `ARCHITECTURE_ROADMAP.md`, de les fusionner, et d'évaluer si une DB unifiée est toujours pertinente avec DuckDB. Également demandé : déplacer les DBs dans `data/players/` et proposer des optimisations.
+
+**Découvertes** :
+
+| Fichier | Taille | Notes |
+|---------|--------|-------|
+| `halo_unified.db` | 156 MB | DB unifiée existante (tentative précédente SQLite) |
+| `spnkr_gt_Chocoboflor.db` | 15 MB | Legacy |
+| `spnkr_gt_JGtm.db` | 62 MB | Legacy |
+| `spnkr_gt_Madina97294.db` | 121 MB | Legacy |
+| `spnkr_gt_XxDaemonGamerxX.db` | 17 MB | Legacy |
+| `warehouse/metadata.db` | ~1 MB | Référentiels |
+
+**Analyse** :
+1. `current_plan.md` et `ARCHITECTURE_ROADMAP.md` étaient redondants
+2. Avec DuckDB, une architecture unifiée est PLUS pertinente qu'avec SQLite+Parquet car :
+   - DuckDB est OLAP-natif (SQLite est OLTP)
+   - Jointures cross-store natives (pas besoin de ATTACH)
+   - Compression Zstd intégrée (2x mieux que Snappy/Parquet)
+   - Import/Export Parquet natif (`COPY ... TO/FROM`)
+3. `halo_unified.db` est obsolète - l'approche distribuée par joueur est meilleure
+
+**Actions réalisées** :
+
+1. **Fusion des fichiers** :
+   - Supprimé `current_plan.md`
+   - Mis à jour `ARCHITECTURE_ROADMAP.md` avec tout le contenu
+
+2. **Nouvelle structure créée** :
+   ```
+   data/
+   ├── players/
+   │   ├── Chocoboflor/
+   │   ├── JGtm/
+   │   ├── Madina97294/
+   │   └── XxDaemonGamerxX/
+   ├── archive/
+   │   └── parquet/
+   └── warehouse/
+   ```
+
+3. **Mise à jour `db_profiles.json`** :
+   - Version 2.0
+   - Nouveaux chemins vers `data/players/{gamertag}/stats.duckdb`
+   - Conserve `legacy_db_path` pour rétrocompatibilité
+
+4. **Mise à jour `docs/SQL_SCHEMA.md`** :
+   - Schéma DuckDB complet
+   - Nouvelles tables : `antagonists`, `weapon_stats`, `skill_history`, `career_ranks`
+   - Exemples de requêtes DuckDB
+
+5. **Mise à jour `.ai/project_map.md` et `.ai/data_lineage.md`**
+
+**Décisions architecturales** :
+
+| Décision | Raison |
+|----------|--------|
+| DuckDB unifié | Performance OLAP, moins de complexité |
+| `data/players/{gamertag}/` | Isolation, portabilité, lisibilité |
+| Garder Parquet pour archive | Cold storage, export, backup |
+| Nouvelles tables `antagonists`, `weapon_stats` | Améliorer l'UX avec rivalités et stats armes |
+
+**Prochaines étapes** :
+1. Créer `scripts/migrate_metadata_to_duckdb.py`
+2. Créer `scripts/migrate_player_to_duckdb.py`
+3. Adapter `HybridRepository` pour DuckDB natif
+4. Migrer les 4 joueurs existants (~250 MB total)
+
+**Suivi** :
+- [x] Fusion des fichiers de planification
+- [x] Structure `data/players/` créée
+- [x] `db_profiles.json` mis à jour (v2.0)
+- [x] Schéma DuckDB documenté
+- [x] Roadmap mise à jour avec sprints détaillés
+- [ ] Créer script migration métadonnées
+- [ ] Créer script migration joueur
+- [ ] Exécuter migrations
+- [ ] Adapter le code des repositories
 
 ---
 

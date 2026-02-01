@@ -1,31 +1,25 @@
-# Schémas de Données
+# Schémas de Données - Architecture DuckDB Unifiée
 
-## Vue d'ensemble
-
-L'architecture hybride utilise deux types de stockage :
-
-1. **SQLite** (`metadata.db`) : Données relationnelles/chaudes
-2. **Parquet** : Données volumineuses/froides (faits)
+> Mis à jour : 2026-02-01
+> Migration vers DuckDB natif avec support Parquet intégré
 
 ---
 
-## SQLite : Schéma des Métadonnées
+## Vue d'ensemble
 
-### Table `players`
+L'architecture v4 utilise **DuckDB** comme moteur unique :
 
-Profils des joueurs (dimension principale).
+| Fichier | Contenu | Scope |
+|---------|---------|-------|
+| `data/warehouse/metadata.duckdb` | Référentiels partagés | Global |
+| `data/players/{gamertag}/stats.duckdb` | Données du joueur | Par joueur |
+| `data/archive/parquet/` | Cold storage (optionnel) | Backup |
 
-| Colonne | Type | Description |
-|---------|------|-------------|
-| `xuid` | TEXT PK | Xbox User ID unique |
-| `gamertag` | TEXT | Nom d'affichage Xbox |
-| `service_tag` | TEXT | Tag de service (4 chars) |
-| `emblem_path` | TEXT | Chemin vers l'emblème |
-| `backdrop_path` | TEXT | Chemin vers le backdrop |
-| `career_rank` | INTEGER | Rang de carrière (0-272) |
-| `last_seen_at` | TEXT | Dernier match joué (ISO 8601) |
-| `created_at` | TEXT | Date de création |
-| `updated_at` | TEXT | Date de mise à jour |
+---
+
+## DuckDB : Métadonnées Globales
+
+**Fichier** : `data/warehouse/metadata.duckdb`
 
 ### Table `playlists`
 
@@ -33,14 +27,14 @@ Définitions des playlists (dimension).
 
 | Colonne | Type | Description |
 |---------|------|-------------|
-| `asset_id` | TEXT PK | ID de l'asset |
-| `version_id` | TEXT | Version de l'asset |
-| `public_name` | TEXT | Nom affiché |
-| `description` | TEXT | Description |
-| `is_ranked` | INTEGER | 1 si ranked, 0 sinon |
-| `category` | TEXT | Catégorie (ranked, social, btb, custom) |
-| `raw_json` | TEXT | JSON brut pour backup |
-| `created_at` | TEXT | Date de création |
+| `asset_id` | VARCHAR PK | ID de l'asset |
+| `version_id` | VARCHAR | Version de l'asset |
+| `public_name` | VARCHAR | Nom affiché |
+| `description` | VARCHAR | Description |
+| `is_ranked` | BOOLEAN | True si ranked |
+| `category` | VARCHAR | ranked, social, btb, custom |
+| `raw_json` | JSON | Backup du JSON brut |
+| `created_at` | TIMESTAMP | Date de création |
 
 ### Table `maps`
 
@@ -48,72 +42,24 @@ Définitions des cartes (dimension).
 
 | Colonne | Type | Description |
 |---------|------|-------------|
-| `asset_id` | TEXT PK | ID de l'asset |
-| `version_id` | TEXT | Version de l'asset |
-| `public_name` | TEXT | Nom affiché |
-| `description` | TEXT | Description |
-| `thumbnail_path` | TEXT | Chemin vers la miniature |
-| `raw_json` | TEXT | JSON brut pour backup |
-| `created_at` | TEXT | Date de création |
+| `asset_id` | VARCHAR PK | ID de l'asset |
+| `version_id` | VARCHAR | Version |
+| `public_name` | VARCHAR | Nom affiché |
+| `description` | VARCHAR | Description |
+| `thumbnail_path` | VARCHAR | Chemin miniature |
+| `created_at` | TIMESTAMP | Date de création |
 
-### Table `game_variants`
+### Table `game_modes`
 
-Variantes de jeu (dimension).
-
-| Colonne | Type | Description |
-|---------|------|-------------|
-| `asset_id` | TEXT PK | ID de l'asset |
-| `version_id` | TEXT | Version de l'asset |
-| `public_name` | TEXT | Nom affiché |
-| `description` | TEXT | Description |
-| `category` | TEXT | Catégorie (slayer, ctf, oddball, etc.) |
-| `raw_json` | TEXT | JSON brut |
-| `created_at` | TEXT | Date de création |
-
-### Table `friends`
-
-Relations d'amitié.
+Modes de jeu (dimension).
 
 | Colonne | Type | Description |
 |---------|------|-------------|
-| `owner_xuid` | TEXT PK | XUID du propriétaire |
-| `friend_xuid` | TEXT PK | XUID de l'ami |
-| `friend_gamertag` | TEXT | Gamertag de l'ami |
-| `nickname` | TEXT | Surnom personnalisé |
-| `added_at` | TEXT | Date d'ajout |
-
-### Table `sessions`
-
-Sessions de jeu détectées.
-
-| Colonne | Type | Description |
-|---------|------|-------------|
-| `session_id` | TEXT PK | ID unique de session |
-| `xuid` | TEXT | XUID du joueur |
-| `start_time` | TEXT | Début de session (ISO 8601) |
-| `end_time` | TEXT | Fin de session |
-| `match_count` | INTEGER | Nombre de matchs |
-| `total_kills` | INTEGER | Total kills |
-| `total_deaths` | INTEGER | Total deaths |
-| `total_assists` | INTEGER | Total assists |
-| `avg_kda` | REAL | KDA moyen |
-| `avg_accuracy` | REAL | Précision moyenne |
-| `performance_score` | REAL | Score de performance |
-| `created_at` | TEXT | Date de création |
-
-### Table `sync_meta`
-
-État de synchronisation par joueur.
-
-| Colonne | Type | Description |
-|---------|------|-------------|
-| `xuid` | TEXT PK | XUID du joueur |
-| `last_sync_at` | TEXT | Dernière synchronisation |
-| `last_match_id` | TEXT | Dernier match importé |
-| `total_matches` | INTEGER | Nombre total de matchs |
-| `total_parquet_rows` | INTEGER | Lignes dans Parquet |
-| `sync_status` | TEXT | Statut (idle, syncing, error) |
-| `error_message` | TEXT | Message d'erreur |
+| `asset_id` | VARCHAR PK | ID de l'asset |
+| `name_en` | VARCHAR | Nom anglais |
+| `name_fr` | VARCHAR | Nom français |
+| `category` | VARCHAR | slayer, ctf, oddball, etc. |
+| `created_at` | TIMESTAMP | Date de création |
 
 ### Table `medal_definitions`
 
@@ -122,139 +68,315 @@ Référentiel des médailles.
 | Colonne | Type | Description |
 |---------|------|-------------|
 | `name_id` | INTEGER PK | ID de la médaille |
-| `name_en` | TEXT | Nom anglais |
-| `name_fr` | TEXT | Nom français |
-| `description_en` | TEXT | Description anglaise |
-| `description_fr` | TEXT | Description française |
-| `difficulty` | TEXT | Difficulté (normal, heroic, legendary, mythic) |
-| `sprite_path` | TEXT | Chemin vers le sprite |
+| `name_en` | VARCHAR | Nom anglais |
+| `name_fr` | VARCHAR | Nom français |
+| `description_en` | VARCHAR | Description EN |
+| `description_fr` | VARCHAR | Description FR |
+| `difficulty` | VARCHAR | normal, heroic, legendary, mythic |
+| `sprite_index` | INTEGER | Index dans le sprite sheet |
+| `sprite_path` | VARCHAR | Chemin vers l'image |
 
-### Table `migration_meta`
+### Table `career_ranks` (NOUVELLE)
 
-Suivi de la migration.
+Traductions des rangs de carrière (0-272).
 
 | Colonne | Type | Description |
 |---------|------|-------------|
-| `key` | TEXT PK | Clé de métadonnée |
-| `value` | TEXT | Valeur |
-| `updated_at` | TEXT | Date de mise à jour |
+| `rank_id` | INTEGER PK | Rang (0 à 272) |
+| `tier_name_en` | VARCHAR | "Recruit", "Bronze", etc. |
+| `tier_name_fr` | VARCHAR | "Recrue", "Bronze", etc. |
+| `grade` | INTEGER | Grade dans le tier (1 à N) |
+| `xp_required` | INTEGER | XP cumulé requis |
+| `sprite_path` | VARCHAR | Chemin vers l'icône |
+
+### Table `players`
+
+Profils des joueurs connus.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `xuid` | VARCHAR PK | Xbox User ID |
+| `gamertag` | VARCHAR | Nom d'affichage |
+| `service_tag` | VARCHAR | Tag 4 chars |
+| `emblem_path` | VARCHAR | Chemin emblème |
+| `career_rank` | INTEGER | FK → career_ranks |
+| `last_seen_at` | TIMESTAMP | Dernier match |
+| `created_at` | TIMESTAMP | Date création |
+| `updated_at` | TIMESTAMP | Dernière mise à jour |
 
 ---
 
-## Parquet : Schémas des Faits
+## DuckDB : Données Joueur
 
-### Table `match_facts`
+**Fichier** : `data/players/{gamertag}/stats.duckdb`
 
-Faits des matchs (1 ligne = 1 joueur dans 1 match).
+### Table `match_stats`
 
-| Colonne | Type Parquet | Description |
-|---------|--------------|-------------|
-| `match_id` | STRING | ID unique du match |
-| `xuid` | STRING | XUID du joueur (partition) |
-| `start_time` | TIMESTAMP[us, tz=UTC] | Début du match |
-| `year` | INT16 | Année (partition) |
-| `month` | INT8 | Mois (partition) |
-| `playlist_id` | STRING | FK vers playlists |
-| `map_id` | STRING | FK vers maps |
-| `game_variant_id` | STRING | FK vers game_variants |
-| `playlist_name` | STRING | Nom de playlist (dénormalisé) |
-| `map_name` | STRING | Nom de carte (dénormalisé) |
-| `game_variant_name` | STRING | Nom de variante (dénormalisé) |
-| `outcome` | INT8 | 1=Tie, 2=Win, 3=Loss, 4=NoFinish |
-| `team_id` | INT8 | ID de l'équipe |
-| `kills` | INT16 | Nombre de kills |
-| `deaths` | INT16 | Nombre de deaths |
-| `assists` | INT16 | Nombre d'assists |
-| `kda` | FLOAT32 | Ratio KDA |
-| `accuracy` | FLOAT32 | Précision (%) |
-| `headshot_kills` | INT16 | Kills en headshot |
-| `max_killing_spree` | INT16 | Meilleure série |
-| `time_played_seconds` | INT32 | Temps joué (s) |
-| `avg_life_seconds` | FLOAT32 | Durée de vie moyenne (s) |
-| `my_team_score` | INT16 | Score de mon équipe |
-| `enemy_team_score` | INT16 | Score équipe adverse |
-| `team_mmr` | FLOAT32 | MMR de mon équipe |
-| `enemy_mmr` | FLOAT32 | MMR équipe adverse |
-| `session_id` | STRING | ID de session (nullable) |
-| `performance_score` | FLOAT32 | Score de performance (nullable) |
+Faits des matchs (1 ligne = 1 match joué).
 
-**Partitionnement** : `player={xuid}/year={YYYY}/month={MM}/data.parquet`
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `match_id` | VARCHAR PK | ID unique du match |
+| `start_time` | TIMESTAMP | Début du match (UTC) |
+| `playlist_id` | VARCHAR | FK → playlists |
+| `map_id` | VARCHAR | FK → maps |
+| `game_variant_id` | VARCHAR | FK → game_modes |
+| `playlist_name` | VARCHAR | Nom (dénormalisé) |
+| `map_name` | VARCHAR | Nom (dénormalisé) |
+| `game_variant_name` | VARCHAR | Nom (dénormalisé) |
+| `outcome` | TINYINT | 1=Tie, 2=Win, 3=Loss, 4=NoFinish |
+| `team_id` | TINYINT | ID de l'équipe |
+| `kills` | SMALLINT | Nombre de kills |
+| `deaths` | SMALLINT | Nombre de deaths |
+| `assists` | SMALLINT | Nombre d'assists |
+| `kda` | FLOAT | Ratio KDA |
+| `accuracy` | FLOAT | Précision (%) |
+| `headshot_kills` | SMALLINT | Kills en headshot |
+| `max_killing_spree` | SMALLINT | Meilleure série |
+| `time_played_seconds` | INTEGER | Temps joué (s) |
+| `avg_life_seconds` | FLOAT | Durée vie moyenne |
+| `my_team_score` | SMALLINT | Score équipe |
+| `enemy_team_score` | SMALLINT | Score adversaire |
+| `team_mmr` | FLOAT | MMR équipe |
+| `enemy_mmr` | FLOAT | MMR adversaire |
+| `session_id` | VARCHAR | ID session (nullable) |
+| `performance_score` | FLOAT | Score perf (nullable) |
+| `raw_json` | JSON | JSON brut API (archive) |
 
-### Table `medals`
+**Index** :
+```sql
+CREATE INDEX idx_match_stats_time ON match_stats(start_time);
+CREATE INDEX idx_match_stats_playlist ON match_stats(playlist_id);
+CREATE INDEX idx_match_stats_outcome ON match_stats(outcome);
+```
 
-Médailles obtenues (1 ligne = 1 type de médaille par match).
+### Table `medals_earned`
 
-| Colonne | Type Parquet | Description |
-|---------|--------------|-------------|
-| `match_id` | STRING | ID du match |
-| `xuid` | STRING | XUID du joueur (partition) |
-| `start_time` | TIMESTAMP[us, tz=UTC] | Début du match |
-| `year` | INT16 | Année (partition) |
-| `month` | INT8 | Mois (partition) |
-| `medal_name_id` | INT32 | FK vers medal_definitions |
-| `count` | INT16 | Nombre d'occurrences |
+Médailles obtenues par match.
 
-**Partitionnement** : `player={xuid}/year={YYYY}/month={MM}/data.parquet`
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `match_id` | VARCHAR | FK → match_stats |
+| `medal_name_id` | INTEGER | FK → medal_definitions |
+| `count` | SMALLINT | Nombre d'occurrences |
+| PRIMARY KEY | | (match_id, medal_name_id) |
+
+### Table `teammates_aggregate`
+
+Statistiques agrégées des coéquipiers.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `teammate_xuid` | VARCHAR PK | XUID du coéquipier |
+| `teammate_gamertag` | VARCHAR | Gamertag |
+| `matches_together` | INTEGER | Nombre de matchs |
+| `wins_together` | INTEGER | Victoires |
+| `losses_together` | INTEGER | Défaites |
+| `total_kills` | INTEGER | Total kills du coéquipier |
+| `last_played_at` | TIMESTAMP | Dernier match ensemble |
+
+### Table `antagonists` (NOUVELLE)
+
+Top killers et victimes - rivalités.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `opponent_xuid` | VARCHAR PK | XUID de l'opposant |
+| `opponent_gamertag` | VARCHAR | Gamertag |
+| `times_killed` | INTEGER | Fois où on l'a tué |
+| `times_killed_by` | INTEGER | Fois où il nous a tué |
+| `matches_against` | INTEGER | Matchs en opposition |
+| `last_encounter` | TIMESTAMP | Dernier match |
+| `net_kills` | INTEGER | (GENERATED: times_killed - times_killed_by) |
+
+```sql
+CREATE TABLE antagonists (
+    opponent_xuid VARCHAR PRIMARY KEY,
+    opponent_gamertag VARCHAR,
+    times_killed INTEGER DEFAULT 0,
+    times_killed_by INTEGER DEFAULT 0,
+    matches_against INTEGER DEFAULT 0,
+    last_encounter TIMESTAMP,
+    net_kills INTEGER GENERATED ALWAYS AS (times_killed - times_killed_by)
+);
+```
+
+### Table `weapon_stats` (NOUVELLE)
+
+Statistiques par arme.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `weapon_id` | VARCHAR PK | ID de l'arme |
+| `weapon_name` | VARCHAR | Nom affiché |
+| `total_kills` | INTEGER | Total kills avec cette arme |
+| `total_deaths` | INTEGER | Total deaths par cette arme |
+| `headshot_kills` | INTEGER | Headshots |
+| `shots_fired` | INTEGER | Tirs effectués |
+| `shots_hit` | INTEGER | Tirs touchés |
+| `accuracy` | FLOAT | (GENERATED: shots_hit/shots_fired*100) |
+| `headshot_rate` | FLOAT | (GENERATED: headshot_kills/total_kills*100) |
+
+```sql
+CREATE TABLE weapon_stats (
+    weapon_id VARCHAR PRIMARY KEY,
+    weapon_name VARCHAR,
+    total_kills INTEGER DEFAULT 0,
+    total_deaths INTEGER DEFAULT 0,
+    headshot_kills INTEGER DEFAULT 0,
+    shots_fired INTEGER DEFAULT 0,
+    shots_hit INTEGER DEFAULT 0,
+    accuracy FLOAT GENERATED ALWAYS AS (
+        CASE WHEN shots_fired > 0 
+        THEN shots_hit * 100.0 / shots_fired 
+        ELSE 0 END
+    ),
+    headshot_rate FLOAT GENERATED ALWAYS AS (
+        CASE WHEN total_kills > 0 
+        THEN headshot_kills * 100.0 / total_kills 
+        ELSE 0 END
+    )
+);
+```
+
+### Table `skill_history` (NOUVELLE)
+
+Historique du CSR par playlist.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `playlist_id` | VARCHAR | FK → playlists |
+| `recorded_at` | TIMESTAMP | Date de l'enregistrement |
+| `csr` | INTEGER | Competitive Skill Rank |
+| `tier` | VARCHAR | Onyx, Diamond, Platinum, etc. |
+| `division` | INTEGER | Division dans le tier |
+| `matches_played` | INTEGER | Matchs joués à ce moment |
+| PRIMARY KEY | | (playlist_id, recorded_at) |
+
+### Table `sessions`
+
+Sessions de jeu détectées.
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `session_id` | VARCHAR PK | ID unique |
+| `start_time` | TIMESTAMP | Début de session |
+| `end_time` | TIMESTAMP | Fin de session |
+| `match_count` | INTEGER | Nombre de matchs |
+| `total_kills` | INTEGER | Total kills |
+| `total_deaths` | INTEGER | Total deaths |
+| `total_assists` | INTEGER | Total assists |
+| `avg_kda` | FLOAT | KDA moyen |
+| `avg_accuracy` | FLOAT | Précision moyenne |
+| `performance_score` | FLOAT | Score de performance |
 
 ---
 
-## Requêtes DuckDB
+## Requêtes DuckDB Exemples
 
-### Jointure SQLite + Parquet
+### Jointure avec métadonnées
 
 ```sql
--- Attacher la base SQLite
-ATTACH DATABASE 'metadata.db' AS meta (TYPE SQLITE, READ_ONLY);
+-- Attacher la base de métadonnées
+ATTACH 'data/warehouse/metadata.duckdb' AS meta (READ_ONLY);
 
--- Requête avec jointure
+-- Top 10 médailles avec noms FR
 SELECT 
-    p.gamertag,
-    AVG(m.kda) as avg_kda,
-    COUNT(*) as match_count
-FROM read_parquet('match_facts/player=*/year=*/month=*/*.parquet') m
-JOIN meta.players p ON m.xuid = p.xuid
-GROUP BY p.gamertag
-ORDER BY avg_kda DESC;
-```
-
-### Filtrage par partition
-
-```sql
--- Lecture optimisée (pruning de partition)
-SELECT *
-FROM read_parquet('match_facts/player=1234567890/year=2025/**/*.parquet')
-WHERE outcome = 2  -- Victoires uniquement
-ORDER BY start_time DESC
-LIMIT 100;
-```
-
-### Agrégation de médailles
-
-```sql
-SELECT 
-    d.name_fr,
-    SUM(m.count) as total
-FROM read_parquet('medals/player=1234567890/**/*.parquet') m
-JOIN meta.medal_definitions d ON m.medal_name_id = d.name_id
-GROUP BY d.name_fr
+    m.name_fr,
+    SUM(e.count) as total
+FROM medals_earned e
+JOIN meta.medal_definitions m ON e.medal_name_id = m.name_id
+GROUP BY m.name_fr
 ORDER BY total DESC
-LIMIT 25;
+LIMIT 10;
+```
+
+### Stats par playlist
+
+```sql
+ATTACH 'data/warehouse/metadata.duckdb' AS meta (READ_ONLY);
+
+SELECT 
+    p.public_name AS playlist,
+    COUNT(*) AS matches,
+    SUM(CASE WHEN s.outcome = 2 THEN 1 ELSE 0 END) AS wins,
+    ROUND(AVG(s.kda), 2) AS avg_kda
+FROM match_stats s
+JOIN meta.playlists p ON s.playlist_id = p.asset_id
+GROUP BY p.public_name
+ORDER BY matches DESC;
+```
+
+### Progression CSR
+
+```sql
+SELECT 
+    recorded_at,
+    csr,
+    tier || ' ' || division AS rank
+FROM skill_history
+WHERE playlist_id = 'edfef3ac-9cbe-4fa2-b949-8f29deafd483'
+ORDER BY recorded_at;
+```
+
+### Top rivalités
+
+```sql
+SELECT 
+    opponent_gamertag,
+    times_killed,
+    times_killed_by,
+    net_kills,
+    CASE WHEN net_kills > 0 THEN '🟢' ELSE '🔴' END AS status
+FROM antagonists
+ORDER BY ABS(net_kills) DESC
+LIMIT 20;
+```
+
+### Export Parquet (backup)
+
+```sql
+-- Exporter les matchs vers Parquet
+COPY match_stats TO 'data/archive/parquet/player_matches.parquet' (FORMAT PARQUET);
+
+-- Importer depuis Parquet
+INSERT INTO match_stats SELECT * FROM read_parquet('backup.parquet');
 ```
 
 ---
 
-## Indexation
+## Migration SQLite → DuckDB
 
-### SQLite
+Script de migration pour les données existantes :
 
 ```sql
--- Index sur les tables de métadonnées
-CREATE INDEX idx_players_gamertag ON players(gamertag);
-CREATE INDEX idx_sessions_xuid ON sessions(xuid);
-CREATE INDEX idx_sessions_start ON sessions(start_time);
+-- Attacher l'ancienne base SQLite
+ATTACH 'data/spnkr_gt_Chocoboflor.db' AS legacy (TYPE SQLITE, READ_ONLY);
+
+-- Migrer les données
+INSERT INTO match_stats 
+SELECT 
+    match_id,
+    start_time,
+    playlist_id,
+    ...
+FROM legacy.MatchCache;
+
+-- Détacher
+DETACH legacy;
 ```
 
-### Parquet
+---
 
-Le partitionnement par `player/year/month` permet un pruning automatique des fichiers.
-DuckDB n'a besoin de lire que les partitions correspondant aux filtres de la requête.
+## Conventions de Nommage
+
+| Type | Convention | Exemple |
+|------|------------|---------|
+| Tables | snake_case | `match_stats` |
+| Colonnes | snake_case | `start_time` |
+| Index | idx_{table}_{column} | `idx_match_stats_time` |
+| Clés primaires | Colonne simple ou composite | `match_id` ou `(playlist_id, recorded_at)` |
+
+---
+
+*Dernière mise à jour : 2026-02-01*
