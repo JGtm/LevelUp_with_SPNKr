@@ -346,4 +346,141 @@ La Phase 5 devrait se concentrer sur l'optimisation de SPNKr via `DuckDBSyncEngi
 
 ---
 
+## 13. Endpoints Grunt à Porter en Python
+
+### 13.1 Endpoints Intéressants Identifiés
+
+Après analyse du code source de Grunt (`HaloInfiniteClient.cs`), voici les endpoints absents ou partiels dans SPNKr :
+
+| Endpoint | Grunt Method | Intérêt | Effort |
+|----------|--------------|---------|--------|
+| **Career Rank Progression** | `EconomyGetRewardTrack()` | Progression XP joueur | Faible |
+| **Service Record** | Non trouvé directement | Stats globales | Moyen |
+| **Match Count** | `StatsGetMatchCount()` | Nombre total de matchs | Faible |
+| **Player Inventory** | `EconomyGetInventoryItems()` | Items possédés | Faible |
+| **Virtual Currencies** | `EconomyGetVirtualCurrencyBalances()` | Crédits, points | Faible |
+| **Clearance/Flight** | `SettingsGetPlayerClearance()` | ID clearance joueur | Faible |
+| **Film Chunks** | `HIUGCDiscoverySpectateByMatchId()` | **Métadonnées films** | Moyen |
+
+### 13.2 Highlight Events : Analyse Détaillée
+
+**SPNKr a déjà implémenté le parsing des film files** via le module `spnkr.film`.
+
+**Source** : Blog de Den Delimarsky ([Extracting Match Stats From Halo Infinite Film Files](https://den.dev/blog/extracting-stats-film-files-halo-infinite))
+
+**Comment ça fonctionne** :
+
+1. **Récupérer les chunks** :
+   ```
+   GET https://discovery-infiniteugc.svc.halowaypoint.com/hi/films/matches/{matchId}/spectate
+   ```
+
+2. **Télécharger chaque chunk** :
+   ```
+   GET {BlobStoragePathPrefix}/filmChunk{N}
+   ```
+
+3. **Décompresser** (zlib) :
+   ```python
+   import zlib
+   decompressed = zlib.decompress(chunk_data)
+   ```
+
+4. **Parser les events** :
+   - ChunkType 1 : Bootstrap (gamertags + XUIDs)
+   - ChunkType 2 : Events in-game (positions, mouvements)
+   - ChunkType 3 : **Summary (kills, deaths, medals)**
+
+**Structure d'un event** (ChunkType 3) :
+| Offset | Taille | Contenu |
+|--------|--------|---------|
+| 0 | 12 bytes | Header |
+| 12 | 32 bytes | Gamertag (Unicode) |
+| 44 | 15 bytes | Padding |
+| 59 | 1 byte | **Type** (10=objectif, 20=death, 50=kill) |
+| 60 | 4 bytes | **Timestamp** (ms) |
+| 64 | 3 bytes | Padding |
+| 67 | 1 byte | Medal marker |
+| 68 | 3 bytes | Padding |
+| 71 | 1 byte | **Medal ID** |
+
+**SPNKr implémente déjà** :
+- `film.read_highlight_events()` : Parse les events
+- `medal_codes.json` : Mapping des 150+ medals
+
+**Ce qui manque potentiellement** :
+- Heatmaps de positions (données dans chunks type 2)
+- Tracking des assists (non encore parsé)
+- Weapon switches (nécessite reverse-engineering)
+
+### 13.3 Endpoints Faciles à Porter
+
+**1. Career Rank Progression** (Haute priorité)
+
+```python
+# Nouveau endpoint pour SPNKr ou notre code
+async def get_career_rank_progression(self, xuid: str) -> dict:
+    """Récupère la progression de rang carrière."""
+    url = f"https://economy.svc.halowaypoint.com/hi/players/xuid({xuid})/rewardtracks/careerranks/careerrank1"
+    return await self._get(url)
+```
+
+**2. Match Count** (Faible priorité)
+
+```python
+async def get_match_count(self, xuid: str) -> dict:
+    """Récupère le nombre total de matchs."""
+    url = f"https://halostats.svc.halowaypoint.com/hi/players/xuid({xuid})/matches/count"
+    return await self._get(url)
+```
+
+**3. Player Inventory** (Moyenne priorité)
+
+```python
+async def get_player_inventory(self, xuid: str) -> dict:
+    """Récupère l'inventaire du joueur."""
+    url = f"https://economy.svc.halowaypoint.com/hi/players/xuid({xuid})/inventory"
+    return await self._get(url)
+```
+
+### 13.4 Recommandation : Extensions SPNKr
+
+Plutôt que de créer un bridge Grunt, **étendre SPNKr** avec les endpoints manquants :
+
+1. **Créer `src/data/sync/extended_api.py`** avec les endpoints additionnels
+2. **Contribuer à SPNKr upstream** si possible (PR GitHub)
+3. **Utiliser les mêmes tokens** (déjà gérés par notre code)
+
+**Effort estimé** : 2-3 jours vs 2-3 semaines pour un bridge Grunt
+
+---
+
+## 14. Plan d'Action Révisé
+
+### Option A : Extensions Python (Recommandée)
+
+| Tâche | Fichier | Priorité | Effort |
+|-------|---------|----------|--------|
+| Career Rank endpoint | `src/data/sync/api_client.py` | P0 | 1 jour |
+| Match Count endpoint | `src/data/sync/api_client.py` | P2 | 0.5 jour |
+| Player Inventory endpoint | `src/data/sync/api_client.py` | P3 | 0.5 jour |
+| Tests unitaires | `tests/test_extended_api.py` | P1 | 1 jour |
+
+### Option B : Bridge Grunt Minimal
+
+| Tâche | Fichier | Priorité | Effort |
+|-------|---------|----------|--------|
+| CLI .NET standalone | `scripts/grunt_cli/Program.cs` | P2 | 3 jours |
+| Wrapper Python | `scripts/grunt_bridge.py` | P2 | 1 jour |
+| Documentation | `docs/GRUNT_BRIDGE.md` | P3 | 0.5 jour |
+
+**Verdict** : **Option A** est préférable car :
+- Même stack Python
+- Mêmes tokens, pas de double auth
+- Maintenance simplifiée
+- Contribution possible à SPNKr upstream
+
+---
+
 *Document généré le 2026-02-01 - Analyse préliminaire Phase 5*
+*Mis à jour avec analyse du code source Grunt et endpoints à porter*

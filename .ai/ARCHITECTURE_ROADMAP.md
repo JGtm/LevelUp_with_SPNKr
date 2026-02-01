@@ -871,6 +871,90 @@ CREATE TABLE weapon_stats (
 
 ---
 
+### Phase 6 : Documentation & Branding "LevelUp" 📋 (Après Phase 5)
+
+**Objectif** : Mise à jour complète de la documentation et finalisation du branding "LevelUp".
+
+**Nom officiel de l'application** : **LevelUp** (anciennement OpenSpartan Graph)
+
+#### Sprint 6.1 : README & Documentation Utilisateur ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S6.1.1 | Réécriture complète du README.md | `README.md` | ⏳ |
+| S6.1.2 | Screenshots UI mise à jour | `docs/images/` | ⏳ |
+| S6.1.3 | Guide d'installation simplifié | `docs/INSTALL.md` | ⏳ |
+| S6.1.4 | Guide de configuration (db_profiles, tokens) | `docs/CONFIGURATION.md` | ⏳ |
+| S6.1.5 | FAQ utilisateurs | `docs/FAQ.md` | ⏳ |
+
+**Contenu README cible** :
+- Présentation "LevelUp" avec logo
+- Features clés avec captures
+- Installation one-liner
+- Configuration minimale
+- Liens vers documentation détaillée
+
+#### Sprint 6.2 : Documentation Technique ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S6.2.1 | MAJ ARCHITECTURE.md avec DuckDB | `docs/ARCHITECTURE.md` | ⏳ |
+| S6.2.2 | MAJ DATA_ARCHITECTURE.md | `docs/DATA_ARCHITECTURE.md` | ⏳ |
+| S6.2.3 | MAJ SQL_SCHEMA.md | `docs/SQL_SCHEMA.md` | ⏳ |
+| S6.2.4 | MAJ API_GRUNT_RESEARCH.md | `docs/API_GRUNT_RESEARCH.md` | ⏳ |
+| S6.2.5 | Nouveau SYNC_GUIDE.md | `docs/SYNC_GUIDE.md` | ⏳ |
+| S6.2.6 | MAJ BACKUP_RESTORE.md | `docs/BACKUP_RESTORE.md` | ⏳ |
+
+#### Sprint 6.3 : Branding & Renommage ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S6.3.1 | Renommer références "OpenSpartan Graph" → "LevelUp" | Global | ⏳ |
+| S6.3.2 | Renommer streamlit_app.py si nécessaire | `streamlit_app.py` | ⏳ |
+| S6.3.3 | MAJ sidebar brand "LevelUp" | `src/app/sidebar.py` | ✅ Déjà fait |
+| S6.3.4 | MAJ launcher "LevelUp" | `openspartan_launcher.py` | ✅ Déjà fait |
+| S6.3.5 | MAJ pyproject.toml (name, description) | `pyproject.toml` | ⏳ |
+| S6.3.6 | Création logo LevelUp | `static/logo.png` | ⏳ |
+
+#### Sprint 6.4 : Documentation Agent/IA ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S6.4.1 | MAJ CLAUDE.md avec nouvelles commandes | `CLAUDE.md` | ⏳ |
+| S6.4.2 | MAJ .cursorrules | `.cursorrules` | ⏳ |
+| S6.4.3 | MAJ project_map.md | `.ai/project_map.md` | ⏳ |
+| S6.4.4 | MAJ data_lineage.md | `.ai/data_lineage.md` | ⏳ |
+| S6.4.5 | Archivage thought_log.md ancien | `.ai/archive/` | ⏳ |
+| S6.4.6 | Nouveau thought_log.md frais | `.ai/thought_log.md` | ⏳ |
+
+#### Sprint 6.5 : GitHub & CI/CD ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S6.5.1 | MAJ copilot-instructions.md | `.github/copilot-instructions.md` | ⏳ |
+| S6.5.2 | MAJ ci.yml avec DuckDB | `.github/workflows/ci.yml` | ⏳ |
+| S6.5.3 | Création CONTRIBUTING.md | `CONTRIBUTING.md` | ⏳ |
+| S6.5.4 | MAJ LICENSE si nécessaire | `LICENSE` | ⏳ |
+| S6.5.5 | Templates issues/PR | `.github/ISSUE_TEMPLATE/` | ⏳ |
+
+#### Checklist Documentation
+
+| Document | Existe | À Jour | Priorité |
+|----------|--------|--------|----------|
+| README.md | ✅ | ❌ | **Critique** |
+| CLAUDE.md | ✅ | ⚠️ | Haute |
+| .cursorrules | ✅ | ⚠️ | Haute |
+| docs/ARCHITECTURE.md | ✅ | ❌ | Haute |
+| docs/DATA_ARCHITECTURE.md | ✅ | ❌ | Haute |
+| docs/SQL_SCHEMA.md | ✅ | ⚠️ | Moyenne |
+| docs/BACKUP_RESTORE.md | ✅ | ✅ | Basse |
+| docs/INSTALL.md | ❌ | N/A | Haute |
+| docs/CONFIGURATION.md | ❌ | N/A | Haute |
+| docs/FAQ.md | ❌ | N/A | Moyenne |
+| CONTRIBUTING.md | ❌ | N/A | Basse |
+
+---
+
 ## Décisions Architecturales
 
 ### Pourquoi migrer vers DuckDB unifié ?

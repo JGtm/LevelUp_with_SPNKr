@@ -1286,6 +1286,68 @@ migration des modules vers DuckDB, et création de modules utilitaires centralis
 
 ---
 
+### [2026-02-01] - Phase 6 Ajoutée + Endpoints Grunt à Porter en Python
+
+**Contexte** :
+Suite à l'analyse SPNKr vs Grunt, l'utilisateur demande :
+1. D'évaluer la possibilité de porter les parties intéressantes de Grunt en Python
+2. D'ajouter une Phase 6 pour la documentation complète et le branding "LevelUp"
+
+**Analyse du Code Source Grunt** :
+
+Après lecture de `HaloInfiniteClient.cs` (~2000 lignes), voici les endpoints intéressants à porter :
+
+| Endpoint | Méthode Grunt | Intérêt | Dans SPNKr |
+|----------|---------------|---------|------------|
+| Career Rank Progression | `EconomyGetRewardTrack()` | Progression XP | ⚠️ Partiel |
+| Match Count | `StatsGetMatchCount()` | Stats globales | ❌ |
+| Player Inventory | `EconomyGetInventoryItems()` | Items possédés | ❌ |
+| Virtual Currencies | `EconomyGetVirtualCurrencyBalances()` | Crédits | ❌ |
+| Film Chunks | `HIUGCDiscoverySpectateByMatchId()` | Highlight Events | ✅ Déjà fait |
+
+**Découverte importante sur Highlight Events** :
+
+SPNKr a **déjà implémenté** le parsing des film files via `spnkr.film` :
+- Source : Blog Den Delimarsky + travail d'Andy Curtis
+- `film.read_highlight_events()` fonctionne
+- 150+ medals mappés dans `medal_codes.json`
+
+**Décision : Extensions Python plutôt que Bridge Grunt**
+
+| Critère | Bridge Grunt | Extensions Python |
+|---------|--------------|-------------------|
+| Effort | 2-3 semaines | 2-3 jours |
+| Maintenance | Double stack | Même stack |
+| Auth | Double token | Réutilise tokens |
+| Contribution upstream | Impossible | Possible (PR SPNKr) |
+
+**Plan** : Créer `src/data/sync/extended_api.py` avec les endpoints manquants.
+
+**Phase 6 Ajoutée** :
+
+| Sprint | Contenu |
+|--------|---------|
+| 6.1 | README & Documentation Utilisateur |
+| 6.2 | Documentation Technique |
+| 6.3 | Branding "LevelUp" |
+| 6.4 | Documentation Agent/IA |
+| 6.5 | GitHub & CI/CD |
+
+**Fichiers mis à jour** :
+- `.ai/features/API_COMPARISON_SPNKR_GRUNT.md` : +100 lignes (endpoints à porter)
+- `.ai/ARCHITECTURE_ROADMAP.md` : Phase 6 complète ajoutée
+
+**Suivi** :
+- [x] Analyse code source Grunt
+- [x] Identification endpoints à porter
+- [x] Confirmation SPNKr a déjà Highlight Events
+- [x] Phase 6 ajoutée à la roadmap
+- [ ] Sprint 4.7 (Sync Refactoring) à terminer
+- [ ] Phase 5 après Sprint 4.7
+- [ ] Phase 6 après Phase 5
+
+---
+
 ### [2026-02-01] - Analyse Comparative SPNKr vs Grunt API (Pré-Phase 5)
 
 **Contexte** :
