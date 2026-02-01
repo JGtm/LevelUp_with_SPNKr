@@ -2,6 +2,18 @@
 Repository Shadow : Pont de migration entre Legacy et Hybrid.
 (Shadow Repository: Migration bridge between Legacy and Hybrid)
 
+.. deprecated:: 4.7.4
+    Ce module est OBSOLÈTE et sera supprimé dans une version future.
+    L'architecture SQLite + Parquet (Hybrid) est remplacée par DuckDB unifié.
+
+    Migration :
+    - ShadowRepository -> DuckDBRepository
+    - ShadowMode.HYBRID_FIRST -> N/A (DuckDB est maintenant la source unique)
+    - migrate_matches_to_parquet() -> N/A (utiliser `COPY ... TO` DuckDB pour export)
+
+    Pour les nouveaux développements, utiliser directement :
+    - `src.data.repositories.duckdb.DuckDBRepository`
+
 HOW IT WORKS:
 Le ShadowRepository implémente le pattern "Shadow Module" :
 
@@ -18,9 +30,23 @@ Ce pattern permet une migration progressive sans risque :
 - L'application continue de fonctionner avec les données legacy
 - Les données sont progressivement migrées vers hybrid
 - On peut valider la cohérence avant de basculer
+
+WARNING: Ce module est maintenu uniquement pour la compatibilité ascendante.
+Ne pas utiliser pour les nouveaux développements.
 """
 
 from __future__ import annotations
+
+import warnings
+
+# Émettre un avertissement à l'import
+warnings.warn(
+    "src.data.repositories.shadow.ShadowRepository est obsolète depuis v4.7.4. "
+    "Utiliser src.data.repositories.duckdb.DuckDBRepository à la place. "
+    "L'architecture SQLite + Parquet est remplacée par DuckDB unifié.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import logging
 from datetime import datetime

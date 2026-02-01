@@ -11,13 +11,14 @@ HOW IT WORKS:
 
 Usage:
     python scripts/migrate_to_parquet.py --db data/player.db --xuid 1234567890
-    
+
     # Avec warehouse personnalisé
     python scripts/migrate_to_parquet.py --db data/player.db --xuid 1234567890 --warehouse data/warehouse
-    
+
     # Mode dry-run (sans écriture)
     python scripts/migrate_to_parquet.py --db data/player.db --xuid 1234567890 --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,8 +29,7 @@ from pathlib import Path
 # Ajouter le répertoire parent au path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data.repositories.shadow import ShadowRepository, ShadowMode
-
+from src.data.repositories.shadow import ShadowMode, ShadowRepository
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,20 +69,20 @@ def main() -> int:
         action="store_true",
         help="Affiche plus de détails",
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     db_path = Path(args.db)
     if not db_path.exists():
         logger.error(f"Base de données non trouvée: {db_path}")
         return 1
-    
+
     logger.info(f"Début de la migration pour XUID: {args.xuid}")
     logger.info(f"Source: {db_path}")
-    
+
     # Créer le repository shadow
     shadow = ShadowRepository(
         str(db_path),
@@ -90,45 +90,45 @@ def main() -> int:
         warehouse_path=args.warehouse,
         mode=ShadowMode.SHADOW_READ,
     )
-    
+
     # Vérifier l'état initial
     progress = shadow.get_migration_progress()
-    logger.info(f"État initial:")
+    logger.info("État initial:")
     logger.info(f"  - Matchs legacy: {progress['legacy_count']}")
     logger.info(f"  - Matchs Parquet: {progress['hybrid_count']}")
     logger.info(f"  - Progression: {progress['progress_percent']}%")
-    
+
     if progress["is_complete"]:
         logger.info("Migration déjà complète!")
         return 0
-    
+
     if args.dry_run:
         logger.info("[DRY-RUN] Aucune écriture effectuée")
         return 0
-    
+
     # Effectuer la migration
     def progress_callback(current: int, total: int) -> None:
         logger.info(f"  Progression: {current}/{total} ({current/total*100:.1f}%)")
-    
+
     logger.info("Démarrage de la migration...")
     result = shadow.migrate_matches_to_parquet(
         progress_callback=progress_callback,
     )
-    
-    logger.info(f"Migration terminée:")
+
+    logger.info("Migration terminée:")
     logger.info(f"  - Lignes écrites: {result['rows_written']}")
     logger.info(f"  - Erreurs: {result['errors']}")
     logger.info(f"  - Total legacy: {result['total_legacy']}")
-    
+
     # Vérifier l'état final
     final_progress = shadow.get_migration_progress()
-    logger.info(f"État final:")
+    logger.info("État final:")
     logger.info(f"  - Matchs Parquet: {final_progress['hybrid_count']}")
     logger.info(f"  - Progression: {final_progress['progress_percent']}%")
     logger.info(f"  - Complète: {final_progress['is_complete']}")
-    
+
     shadow.close()
-    
+
     return 0 if result["errors"] == 0 else 1
 
 

@@ -1,14 +1,35 @@
 """Chargement des données depuis les bases legacy (SQLite).
 
+.. deprecated:: 4.7.4
+    Ce module est OBSOLÈTE et sera supprimé dans une version future.
+    Utiliser `src.data.repositories.duckdb.DuckDBRepository` pour l'architecture v4.
+
+    Migration :
+    - load_matches() -> DuckDBRepository.load_matches()
+    - load_highlight_events_for_match() -> DuckDBRepository.load_highlight_events()
+    - get_sync_metadata() -> DuckDBRepository.get_sync_metadata()
+
 Ce module gère la lecture des données depuis les DBs SQLite legacy
 (spnkr_gt_*.db, halo_unified.db). Pour l'architecture v4 (DuckDB),
 utiliser DuckDBRepository à la place.
 
 NOTE: Les fonctions de ce module détectent automatiquement le type de DB
 et retournent une liste vide si le fichier est un .duckdb (non supporté).
+
+WARNING: Ce module est maintenu uniquement pour la compatibilité ascendante
+pendant la période de transition. Ne pas utiliser pour les nouveaux développements.
 """
 
 import json
+import warnings
+
+# Émettre un avertissement à l'import
+warnings.warn(
+    "src.db.loaders est obsolète depuis v4.7.4. "
+    "Utiliser src.data.repositories.duckdb.DuckDBRepository à la place.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 import re
 import sqlite3
 from dataclasses import dataclass

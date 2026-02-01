@@ -813,14 +813,54 @@ python scripts/migrate_highlight_events.py --gamertag JGtm
 python scripts/migrate_player_match_stats.py --gamertag JGtm
 ```
 
-#### Sprint 4.7.4 : Nettoyage ⏳
+#### Sprint 4.7.4 : Nettoyage ✅
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S4.7.4.1 | Marquer obsolète | `src/db/loaders.py`, `loaders_cached.py` | ⏳ |
-| S4.7.4.2 | Supprimer du workflow auto | `migrate_to_cache.py`, `migrate_to_parquet.py` | ⏳ |
-| S4.7.4.3 | MAJ documentation | `ARCHITECTURE_ROADMAP.md`, `thought_log.md` | ⏳ |
-| S4.7.4.4 | Supprimer ShadowRepository | `src/data/repositories/shadow.py` | ⏳ |
+| S4.7.4.1 | Marquer obsolète | `src/db/loaders.py`, `loaders_cached.py` | ✅ |
+| S4.7.4.2 | Archiver scripts obsolètes | `scripts/_obsolete/migrate_to_*.py` | ✅ |
+| S4.7.4.3 | MAJ documentation | `ARCHITECTURE_ROADMAP.md`, `thought_log.md` | ✅ |
+| S4.7.4.4 | Déprécier ShadowRepository | `src/data/repositories/shadow.py` | ⚠️ (encore utilisé) |
+
+**Notes S4.7.4.4** : `ShadowRepository` est encore utilisé par 10+ fichiers (factory, sync, tests...).
+Plan de dépréciation : marquer obsolète dans Sprint 4.8, supprimer après migration complète des usages vers `DuckDBRepository`.
+
+#### Sprint 4.8 : Suppression ShadowRepository ⏳
+
+**Objectif** : Éliminer `ShadowRepository` et finaliser la migration vers `DuckDBRepository`.
+
+**Prérequis** : Sprint 4.7.4 (Nettoyage) terminé.
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.8.1 | Migrer factory.py vers DuckDBRepository | `src/data/repositories/factory.py` | ⏳ |
+| S4.8.2 | Migrer sync.py vers DuckDBRepository | `scripts/sync.py` | ⏳ |
+| S4.8.3 | Migrer streamlit_bridge.py | `src/data/integration/streamlit_bridge.py` | ⏳ |
+| S4.8.4 | Migrer settings.py | `src/ui/pages/settings.py` | ⏳ |
+| S4.8.5 | Supprimer HybridRepository | `src/data/repositories/hybrid.py` | ⏳ |
+| S4.8.6 | Supprimer ShadowRepository | `src/data/repositories/shadow.py` | ⏳ |
+| S4.8.7 | Supprimer LegacyRepository | `src/data/repositories/legacy.py` | ⏳ |
+| S4.8.8 | Nettoyer __init__.py exports | `src/data/repositories/__init__.py` | ⏳ |
+| S4.8.9 | MAJ tests (supprimer tests obsolètes) | `tests/test_hybrid_benchmark.py`, etc. | ⏳ |
+| S4.8.10 | Supprimer ParquetWriter | `src/data/infrastructure/parquet/` | ⏳ |
+
+**Fichiers à supprimer après migration** :
+
+```
+src/data/repositories/shadow.py      # ShadowRepository
+src/data/repositories/hybrid.py      # HybridRepository  
+src/data/repositories/legacy.py      # LegacyRepository
+src/data/infrastructure/parquet/     # ParquetWriter, ParquetReader
+src/db/loaders.py                    # Loaders SQLite legacy
+src/db/loaders_cached.py             # Loaders cache SQLite
+```
+
+**Validation** :
+- [ ] Tous les tests passent avec DuckDBRepository uniquement
+- [ ] L'app Streamlit fonctionne sans imports legacy
+- [ ] Aucun `DeprecationWarning` restant
+
+---
 
 #### Décisions Architecturales (Sprint 4.7)
 

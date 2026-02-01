@@ -1,9 +1,24 @@
-"""Loaders optimisés utilisant les tables de cache.
+"""Loaders optimisés utilisant les tables de cache SQLite.
+
+.. deprecated:: 4.7.4
+    Ce module est OBSOLÈTE et sera supprimé dans une version future.
+    Utiliser `src.data.repositories.duckdb.DuckDBRepository` pour l'architecture v4.
+
+    Le cache SQLite (MatchCache) est remplacé par les vues matérialisées DuckDB
+    qui offrent de meilleures performances sans maintenance manuelle.
+
+    Migration :
+    - load_matches_cached() -> DuckDBRepository.load_matches()
+    - load_sessions_cached() -> DuckDBRepository.load_sessions()
+    - has_cache_tables() -> N/A (DuckDB gère automatiquement)
 
 Ce module fournit des fonctions de chargement qui :
 1. Utilisent MatchCache au lieu de parser MatchStats JSON
 2. Supportent un fallback vers les loaders originaux si le cache n'existe pas
 3. Sont compatibles avec l'API existante (mêmes signatures)
+
+WARNING: Ce module est maintenu uniquement pour la compatibilité ascendante
+pendant la période de transition. Ne pas utiliser pour les nouveaux développements.
 
 Usage:
     from src.db.loaders_cached import load_matches_cached, load_sessions_cached
@@ -14,9 +29,18 @@ Usage:
 
 from __future__ import annotations
 
+import warnings
+
+# Émettre un avertissement à l'import
+warnings.warn(
+    "src.db.loaders_cached est obsolète depuis v4.7.4. "
+    "Utiliser src.data.repositories.duckdb.DuckDBRepository à la place.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import sqlite3
 from datetime import datetime, timezone
-from typing import List, Optional
 
 from src.db.connection import get_connection
 from src.db.parsers import parse_iso_utc
@@ -41,18 +65,18 @@ def load_matches_cached(
     db_path: str,
     xuid: str,
     *,
-    playlist_filter: Optional[str] = None,
-    map_mode_pair_filter: Optional[str] = None,
-    map_filter: Optional[str] = None,
-    game_variant_filter: Optional[str] = None,
+    playlist_filter: str | None = None,
+    map_mode_pair_filter: str | None = None,
+    map_filter: str | None = None,
+    game_variant_filter: str | None = None,
     include_firefight: bool = True,
-) -> List[MatchRow]:
+) -> list[MatchRow]:
     """Charge les matchs depuis MatchCache (optimisé).
-    
+
     Signature compatible avec load_matches() mais utilise le cache pré-parsé.
     Si le cache n'existe pas, retourne une liste vide (pas de fallback auto
     pour éviter les surprises de performance).
-    
+
     Args:
         db_path: Chemin vers le fichier .db.
         xuid: XUID du joueur.
@@ -61,14 +85,14 @@ def load_matches_cached(
         map_filter: Filtre optionnel sur map_id.
         game_variant_filter: Filtre optionnel sur game_variant_id.
         include_firefight: Si False, exclut les matchs PvE.
-        
+
     Returns:
         Liste de MatchRow triée par date croissante.
     """
     with get_connection(db_path) as con:
         if not _has_match_cache(con):
             return []
-        
+
         # Construire la requête avec filtres optionnels
         query = """
             SELECT
@@ -83,49 +107,75 @@ def load_matches_cached(
             WHERE xuid = ?
         """
         params: list = [xuid]
-        
+
         if playlist_filter is not None:
             query += " AND playlist_id = ?"
             params.append(playlist_filter)
-        
+
         if map_mode_pair_filter is not None:
             query += " AND pair_id = ?"
             params.append(map_mode_pair_filter)
-        
+
         if map_filter is not None:
             query += " AND map_id = ?"
             params.append(map_filter)
-        
+
         if game_variant_filter is not None:
             query += " AND game_variant_id = ?"
             params.append(game_variant_filter)
-        
+
         if not include_firefight:
             query += " AND is_firefight = 0"
-        
+
         query += " ORDER BY start_time ASC"
-        
+
         cur = con.cursor()
         cur.execute(query, params)
-        
-        rows: List[MatchRow] = []
+
+        rows: list[MatchRow] = []
         for row in cur.fetchall():
             (
-                match_id, start_time_str, map_id, map_name, playlist_id, playlist_name,
-                pair_id, pair_name, game_variant_id, game_variant_name,
-                outcome, last_team_id, kda, max_spree, headshots,
-                avg_life, time_played, kills, deaths, assists,
-                accuracy, my_team_score, enemy_team_score, team_mmr, enemy_mmr,
-                session_id, session_label, perf_score, is_ff, teammates_sig,
-                known_teammates_count, is_with_friends_int, friends_xuids_str,
+                match_id,
+                start_time_str,
+                map_id,
+                map_name,
+                playlist_id,
+                playlist_name,
+                pair_id,
+                pair_name,
+                game_variant_id,
+                game_variant_name,
+                outcome,
+                last_team_id,
+                kda,
+                max_spree,
+                headshots,
+                avg_life,
+                time_played,
+                kills,
+                deaths,
+                assists,
+                accuracy,
+                my_team_score,
+                enemy_team_score,
+                team_mmr,
+                enemy_mmr,
+                session_id,
+                session_label,
+                perf_score,
+                is_ff,
+                teammates_sig,
+                known_teammates_count,
+                is_with_friends_int,
+                friends_xuids_str,
             ) = row
-            
+
             # Parser le timestamp
             try:
                 start_time = parse_iso_utc(start_time_str)
             except Exception:
                 start_time = datetime.now(timezone.utc)
-            
+
             rows.append(
                 MatchRow(
                     match_id=match_id,
@@ -158,7 +208,7 @@ def load_matches_cached(
                     friends_xuids=friends_xuids_str or "",
                 )
             )
-        
+
         return rows
 
 
@@ -176,20 +226,20 @@ def get_cache_stats(db_path: str, xuid: str) -> dict:
     with get_connection(db_path) as con:
         if not _has_match_cache(con):
             return {"has_cache": False}
-        
+
         cur = con.cursor()
-        
+
         # Nombre de matchs
         cur.execute("SELECT COUNT(*) FROM MatchCache WHERE xuid = ?", (xuid,))
         match_count = cur.fetchone()[0]
-        
+
         # Nombre de sessions
         cur.execute(
             "SELECT COUNT(DISTINCT session_id) FROM MatchCache WHERE xuid = ? AND session_id IS NOT NULL",
             (xuid,),
         )
         session_count = cur.fetchone()[0]
-        
+
         # Version du schéma
         schema_version = None
         try:
@@ -199,14 +249,14 @@ def get_cache_stats(db_path: str, xuid: str) -> dict:
                 schema_version = row[0]
         except sqlite3.OperationalError:
             pass
-        
+
         # Dernière mise à jour
         cur.execute(
             "SELECT MAX(updated_at) FROM MatchCache WHERE xuid = ?",
             (xuid,),
         )
         last_update = cur.fetchone()[0]
-        
+
         return {
             "has_cache": True,
             "match_count": match_count,
@@ -223,14 +273,14 @@ def load_sessions_cached(
     include_firefight: bool = True,
 ) -> list[dict]:
     """Charge les sessions pré-calculées depuis MatchCache.
-    
+
     Returns:
         Liste de dicts avec session_id, session_label, match_count, etc.
     """
     with get_connection(db_path) as con:
         if not _has_match_cache(con):
             return []
-        
+
         query = """
             SELECT
                 session_id,
@@ -248,37 +298,48 @@ def load_sessions_cached(
             WHERE xuid = ? AND session_id IS NOT NULL
         """
         params: list = [xuid]
-        
+
         if not include_firefight:
             query += " AND is_firefight = 0"
-        
+
         query += " GROUP BY session_id ORDER BY first_match DESC"
-        
+
         cur = con.cursor()
         cur.execute(query, params)
-        
+
         sessions = []
         for row in cur.fetchall():
             (
-                session_id, session_label, match_count, first_match, last_match,
-                total_kills, total_deaths, total_assists, avg_perf, wins, losses,
+                session_id,
+                session_label,
+                match_count,
+                first_match,
+                last_match,
+                total_kills,
+                total_deaths,
+                total_assists,
+                avg_perf,
+                wins,
+                losses,
             ) = row
-            
-            sessions.append({
-                "session_id": session_id,
-                "session_label": session_label,
-                "match_count": match_count,
-                "first_match": first_match,
-                "last_match": last_match,
-                "total_kills": total_kills or 0,
-                "total_deaths": total_deaths or 0,
-                "total_assists": total_assists or 0,
-                "avg_performance": round(avg_perf, 1) if avg_perf else None,
-                "wins": wins or 0,
-                "losses": losses or 0,
-                "kd_ratio": (total_kills / total_deaths) if total_deaths else None,
-            })
-        
+
+            sessions.append(
+                {
+                    "session_id": session_id,
+                    "session_label": session_label,
+                    "match_count": match_count,
+                    "first_match": first_match,
+                    "last_match": last_match,
+                    "total_kills": total_kills or 0,
+                    "total_deaths": total_deaths or 0,
+                    "total_assists": total_assists or 0,
+                    "avg_performance": round(avg_perf, 1) if avg_perf else None,
+                    "wins": wins or 0,
+                    "losses": losses or 0,
+                    "kd_ratio": (total_kills / total_deaths) if total_deaths else None,
+                }
+            )
+
         return sessions
 
 
@@ -286,12 +347,12 @@ def load_session_matches_cached(
     db_path: str,
     xuid: str,
     session_id: int,
-) -> List[MatchRow]:
+) -> list[MatchRow]:
     """Charge les matchs d'une session spécifique."""
     with get_connection(db_path) as con:
         if not _has_match_cache(con):
             return []
-        
+
         query = """
             SELECT
                 match_id, start_time, map_id, map_name, playlist_id, playlist_name,
@@ -305,27 +366,53 @@ def load_session_matches_cached(
             WHERE xuid = ? AND session_id = ?
             ORDER BY start_time ASC
         """
-        
+
         cur = con.cursor()
         cur.execute(query, (xuid, session_id))
-        
-        rows: List[MatchRow] = []
+
+        rows: list[MatchRow] = []
         for row in cur.fetchall():
             (
-                match_id, start_time_str, map_id, map_name, playlist_id, playlist_name,
-                pair_id, pair_name, game_variant_id, game_variant_name,
-                outcome, last_team_id, kda, max_spree, headshots,
-                avg_life, time_played, kills, deaths, assists,
-                accuracy, my_team_score, enemy_team_score, team_mmr, enemy_mmr,
-                sess_id, sess_label, perf_score, is_ff, teammates_sig,
-                known_teammates_count, is_with_friends_int, friends_xuids_str,
+                match_id,
+                start_time_str,
+                map_id,
+                map_name,
+                playlist_id,
+                playlist_name,
+                pair_id,
+                pair_name,
+                game_variant_id,
+                game_variant_name,
+                outcome,
+                last_team_id,
+                kda,
+                max_spree,
+                headshots,
+                avg_life,
+                time_played,
+                kills,
+                deaths,
+                assists,
+                accuracy,
+                my_team_score,
+                enemy_team_score,
+                team_mmr,
+                enemy_mmr,
+                sess_id,
+                sess_label,
+                perf_score,
+                is_ff,
+                teammates_sig,
+                known_teammates_count,
+                is_with_friends_int,
+                friends_xuids_str,
             ) = row
-            
+
             try:
                 start_time = parse_iso_utc(start_time_str)
             except Exception:
                 start_time = datetime.now(timezone.utc)
-            
+
             rows.append(
                 MatchRow(
                     match_id=match_id,
@@ -358,7 +445,7 @@ def load_session_matches_cached(
                     friends_xuids=friends_xuids_str or "",
                 )
             )
-        
+
         return rows
 
 
@@ -368,7 +455,7 @@ def load_top_teammates_cached(
     limit: int = 20,
 ) -> list[tuple[str, str | None, int, int, int]]:
     """Charge les top coéquipiers depuis TeammatesAggregate.
-    
+
     Returns:
         Liste de tuples (teammate_xuid, gamertag, matches_together, wins, losses)
     """
@@ -385,17 +472,14 @@ def load_top_teammates_cached(
                 """,
                 (xuid, limit),
             )
-            return [
-                (row[0], row[1], row[2], row[3], row[4])
-                for row in cur.fetchall()
-            ]
+            return [(row[0], row[1], row[2], row[3], row[4]) for row in cur.fetchall()]
         except sqlite3.OperationalError:
             return []
 
 
 def load_friends(db_path: str, owner_xuid: str) -> list[dict]:
     """Charge la liste des amis depuis la table Friends.
-    
+
     Returns:
         Liste de dicts avec friend_xuid, friend_gamertag, nickname.
     """
@@ -440,7 +524,7 @@ def get_match_session_info(db_path: str, match_id: str) -> dict | None:
             row = cur.fetchone()
             if not row:
                 return None
-            
+
             return {
                 "session_id": row[0],
                 "session_label": row[1],

@@ -17,6 +17,61 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 4.7.4 COMPLETE - Nettoyage Code Legacy
+
+**Contexte** :
+Sprint 4.7.3 (Migration Historique) terminé. Passage au Sprint 4.7.4 : Nettoyage du code legacy après migration DuckDB.
+
+**Analyse** :
+
+Avant de supprimer le code legacy, vérification des dépendances :
+
+| Module | Usages actifs | Action |
+|--------|---------------|--------|
+| `loaders.py` | 4 modules (killer_victim, match_view_players, legacy.py) | Warnings de dépréciation |
+| `loaders_cached.py` | 2 modules (legacy.py, __init__.py) | Warnings de dépréciation |
+| `ShadowRepository` | 10+ fichiers (factory, sync, settings, tests) | Report à Sprint 4.8 |
+| `migrate_to_cache.py` | Aucun | Archivé |
+| `migrate_to_parquet.py` | Dépend de ShadowRepository | Archivé |
+
+**Actions réalisées** :
+
+1. **S4.7.4.1** : Ajout d'avertissements de dépréciation (`warnings.warn()`) dans `loaders.py` et `loaders_cached.py`
+   - Les imports émettent maintenant un `DeprecationWarning`
+   - Documentation mise à jour avec instructions de migration vers `DuckDBRepository`
+
+2. **S4.7.4.2** : Scripts de migration obsolètes archivés dans `scripts/_obsolete/`
+   - `migrate_to_cache.py` → `scripts/_obsolete/`
+   - `migrate_to_parquet.py` → `scripts/_obsolete/`
+   - README explicatif ajouté
+
+3. **S4.7.4.3** : Documentation mise à jour
+   - ARCHITECTURE_ROADMAP.md : statuts mis à jour
+   - thought_log.md : cette entrée
+
+4. **S4.7.4.4** : `ShadowRepository` - Analyse et report
+   - Encore utilisé par : `factory.py`, `sync.py`, `streamlit_bridge.py`, `settings.py`, tests
+   - Plan : marquer obsolète dans Sprint 4.8, supprimer après migration complète
+
+**Décisions** :
+
+- Parquet n'est plus utilisé comme format intermédiaire (DuckDB suffit)
+- Le cache SQLite (`MatchCache`) est remplacé par les vues matérialisées DuckDB
+- Scripts obsolètes conservés pour référence historique
+
+**Suivi** :
+- Sprint 4.8 : Suppression complète de `ShadowRepository` et des repositories legacy
+- Phase 5 : Enrichissement visuel (Career Rank, Weapon Stats)
+
+**Sprint 4.8 planifié** (10 tâches) :
+1. Migrer `factory.py`, `sync.py`, `streamlit_bridge.py`, `settings.py` vers DuckDBRepository
+2. Supprimer `ShadowRepository`, `HybridRepository`, `LegacyRepository`
+3. Supprimer `ParquetWriter` et infrastructure Parquet
+4. Supprimer `loaders.py`, `loaders_cached.py`
+5. Nettoyer les exports et tests obsolètes
+
+---
+
 ### [2026-02-01] - Sprint 4.7.3 COMPLETE - Migration Historique
 
 **Contexte** :
