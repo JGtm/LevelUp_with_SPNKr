@@ -17,6 +17,205 @@
 
 ## Journal
 
+### [2026-02-01] - Architecture Multi-Agent Orchestration
+
+**Contexte** :
+L'utilisateur partage des recommandations avancées de la communauté pour l'orchestration multi-agents :
+- Sub-agents spécialisés (TDD, Security, Devil's Advocate, etc.)
+- Hiérarchie PM (Opus) + Workers (Sonnet)
+- Fagan multi-rounds (6 agents × 4 rounds)
+- Micro-sprints pour parallélisation maximale
+- Context management (rapports finaux uniquement dans chat principal)
+
+**Source** : Recommandations Reddit/Claude Code community
+
+**Actions réalisées** :
+
+1. **Règle d'orchestration** (`.cursor/rules/multi-agent-orchestration.md`) :
+   - Architecture hiérarchique PM + sub-agents
+   - 6 sub-agents spécialisés documentés
+   - Workflow micro-sprints complet
+   - Templates de prompts sub-agents
+   - Context management strategy
+
+2. **Structure de dossiers** :
+   - `.ai/sprints/` : Plans d'exécution
+   - `.ai/sprints/micro-sprints/` : Sprints atomiques
+   - `.ai/reports/` : Rapports des sub-agents
+   - `.ai/references/` : Docs best practices vérifiées
+
+3. **Commandes d'orchestration** :
+   - `/orchestrate-audit` : Audit multi-rounds (6 agents × 4 rounds)
+   - `/orchestrate-implement` : Exécution parallèle des sprints
+   - `/orchestrate-full` : Cycle complet Audit → Plan → Execute → Validate
+
+**Raisonnement** :
+- L'approche hiérarchique évite le context overflow
+- Les micro-sprints permettent une parallélisation maximale
+- Les multi-rounds Fagan détectent plus d'issues qu'une seule review
+- Les docs de référence locales évitent les résultats blackbox non vérifiables
+
+**Suivi** :
+- [x] Architecture documentée
+- [x] Sub-agents spécialisés définis
+- [x] Commandes d'orchestration créées
+- [x] Structure de dossiers créée
+- [ ] Tester `/orchestrate-audit` sur le projet
+- [ ] Valider le workflow complet avec un vrai cas
+
+---
+
+### [2026-02-01] - Ajout Output Style et Fagan Inspection Reviewer
+
+**Contexte** :
+L'utilisateur souhaite implémenter deux concepts de prompt engineering pour améliorer la qualité des interactions IA :
+1. **Output Style** : Style de communication concis et orienté action
+2. **Fagan Inspection** : Méthodologie de revue de code formelle (IBM, 1976)
+
+**Source d'inspiration** :
+- Gist CaptainCrouton89 : [main.md](https://gist.github.com/CaptainCrouton89/6a0a451e3c0fa8fbe759e2fdc9dd38c6)
+- Méthodologie Fagan (Michael Fagan, IBM, 1976)
+
+**Actions réalisées** :
+
+1. **Création `.cursor/rules/output-style.md`** :
+   - Communication concise (1-4 lignes max)
+   - Approche "analyse d'abord, implémente après"
+   - Arbre de décision pour sélection d'outils/agents
+   - Standards de code spécifiques OpenSpartan
+   - Anti-patterns à éviter
+
+2. **Création `.cursor/rules/fagan-reviewer.md`** :
+   - Adaptation des 6 rôles Fagan pour agent IA
+   - Processus en 6 étapes (Planning → Follow-up)
+   - Checklists par catégorie (Logique, Sécurité, Performance, etc.)
+   - Format de rapport structuré avec scoring /50
+   - Métriques (Défauts/KLOC, seuils Pass/Fail)
+   - Commandes d'invocation (`--fagan`, `--quick`, `--focus`)
+
+3. **Mise à jour `.cursorrules`** :
+   - Ajout section "OUTPUT STYLE" avec résumé
+   - Modification commande `/review` → référence Fagan
+
+4. **Mise à jour `.cursor/commands/review.md`** :
+   - Nouvelles options CLI (--fagan, --quick, --focus)
+   - Section "Mode Fagan Complet" avec métriques
+   - Intégration avec workflow OpenSpartan
+
+**Raisonnement** :
+- L'Output Style améliore l'efficacité des interactions (moins de tokens, plus d'action)
+- La méthodologie Fagan apporte une rigueur formelle aux revues de code
+- Les deux concepts sont complémentaires : style concis pour le quotidien, Fagan pour les revues critiques
+
+**Suivi** :
+- [x] Output Style implémenté
+- [x] Fagan Reviewer implémenté
+- [x] Intégration dans `.cursorrules`
+- [x] Mise à jour commande `/review`
+- [ ] Tester avec `/review --fagan --staged` sur du vrai code
+- [ ] Valider le scoring sur un cas réel
+
+---
+
+### [2026-02-01] - Implémentation RAG Local avec ChromaDB
+
+**Contexte** :
+L'utilisateur souhaite implémenter des techniques IA avancées :
+1. Self-Evolving Codebase (Git Hooks + IA)
+2. Architecture Multi-LLM via Router
+3. RAG Local (Retrieval-Augmented Generation)
+4. Agents Long-Running (24/7)
+
+Décision de commencer par le RAG local car impact le plus immédiat.
+
+**Source principale ajoutée** :
+- https://github.com/dend/grunt (devenu public récemment)
+- Wrapper non-officiel pour l'API Halo Infinite
+- Contient endpoints, modèles, authentification
+
+**Actions réalisées** :
+
+1. **Module RAG créé** (`src/ai/rag.py`) :
+   - `HaloKnowledgeBase` : Base vectorielle avec ChromaDB
+   - `TextChunker` : Découpage intelligent (texte + code Python)
+   - `GitHubIndexer` : Indexation de repos GitHub
+   - `SearchResult` : Résultats de recherche avec scores
+   - Méthodes : `index_file()`, `index_directory()`, `index_github_repo()`, `search()`
+
+2. **Script d'indexation** (`scripts/index_knowledge_base.py`) :
+   - CLI pour indexer sources locales et GitHub
+   - Options : `--github`, `--directory`, `--rebuild`, `--stats`
+   - Indexe par défaut : `docs/`, `.ai/`, `src/`, + repo Grunt
+
+3. **Serveur MCP** (`src/ai/mcp_server.py`) :
+   - Expose le RAG via protocole MCP (JSON-RPC)
+   - Outils : `search_knowledge`, `get_api_doc`, `get_context`, `index_file`, `get_stats`
+   - Configuration ajoutée à `.cursor/mcp.json` (désactivé par défaut)
+
+4. **Roadmap concepts avancés** (`.ai/ADVANCED_AI_ROADMAP.md`) :
+   - Documentation complète des 3 autres concepts
+   - Modèles 2026 recommandés (Claude Sonnet 4, Opus 4.5, Qwen2.5-Coder)
+   - Plans d'implémentation avec effort estimé
+
+5. **Dépendances ajoutées** :
+   - `chromadb>=0.5.0`
+   - `httpx>=0.27.0`
+
+**Raisonnement** :
+- ChromaDB choisi car local, gratuit, simple à intégrer
+- Le RAG améliore immédiatement la qualité des réponses IA sur l'API Halo
+- Le serveur MCP permet l'intégration native dans Cursor
+- Le repo Grunt est indexé automatiquement (source officieuse de référence)
+
+**Suivi** :
+- [x] Module RAG implémenté
+- [x] Script d'indexation créé
+- [x] Serveur MCP créé
+- [x] Tests unitaires créés
+- [x] Roadmap des concepts avancés documentée
+- [ ] Installer dépendances : `pip install chromadb httpx`
+- [ ] Indexer la base : `python scripts/index_knowledge_base.py`
+- [ ] Activer le MCP dans `.cursor/mcp.json` (`"disabled": false`)
+- [ ] Tester avec `/query-halo` ou `CallMcpTool("halo-rag", "search_knowledge", ...)`
+
+---
+
+### [2026-01-31] - Roadmap Architecture SQLite/DuckDB/Parquet
+
+**Contexte** :
+L'utilisateur demande si SQLite et DuckDB sont complémentaires ou en concurrence, et souhaite une roadmap de simplification.
+
+**Analyse** :
+L'architecture actuelle (v1) a de la redondance volontaire :
+- `MatchCache` (SQLite) ≈ `match_facts/` (Parquet) → mêmes données, 2 formats
+- `MedalsAggregate` (SQLite) pourrait être calculé via DuckDB
+
+Cette redondance est intentionnelle pour :
+1. Permettre une migration progressive (pattern Shadow)
+2. Avoir un fallback si Parquet échoue
+3. Supporter les deux modes (LEGACY et HYBRID)
+
+**Décision** :
+Créer une roadmap en 4 phases dans `.ai/ARCHITECTURE_ROADMAP.md` :
+- **Phase 1** : Stabilisation (actuelle) - mise en prod v1
+- **Phase 2** : Validation Hybrid - mode SHADOW_COMPARE
+- **Phase 3** : Bascule Hybrid (v2) - supprimer MatchCache
+- **Phase 4** : Optimisations (v3) - Delta Lake, DuckDB persisté
+
+**Recommandation** :
+Garder l'architecture v1 pour la mise en prod. La redondance est acceptable car :
+- Espace disque négligeable
+- Robustesse (fallback)
+- Complexité de maintenance faible
+
+**Suivi** :
+- [x] Roadmap documentée dans `.ai/ARCHITECTURE_ROADMAP.md`
+- [ ] Mise en prod v1
+- [ ] Benchmarks de performance
+- [ ] Planifier v2 après stabilisation
+
+---
+
 ### [2026-01-31] - Optimisation Performance Section "Mes coéquipiers"
 
 **Contexte** :

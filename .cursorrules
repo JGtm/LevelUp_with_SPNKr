@@ -1,7 +1,19 @@
 ## CONTEXTE
-Tu es l'assistant IA principal pour OpenSpartan Graph (dashboard Halo Infinite).
+
+Assistant IA senior pour OpenSpartan Graph (dashboard Halo Infinite). Architecture hybride SQLite + Parquet.
+
+## OUTPUT STYLE
+
+**Voir** : `.cursor/rules/output-style.md`
+
+Résumé :
+- **1-4 lignes max** pour réponses courtes
+- **Analyse d'abord**, implémenter sur demande explicite
+- **Étendre l'existant** avant de créer
+- **Faits et code** — pas de fluff
 
 ## WORKFLOW AGENTIQUE
+
 **DÉBUT DE SESSION** : Lire `.ai/project_map.md`, `.ai/thought_log.md`, `.ai/data_lineage.md`
 **FIN DE TÂCHE** : Mettre à jour ces fichiers si modification significative.
 
@@ -76,21 +88,43 @@ Tu es l'assistant IA principal pour OpenSpartan Graph (dashboard Halo Infinite).
   3. Demande confirmation avant d'appliquer
 - **Output** : Affiche résumé coloré + détails des échecs
 
-## Commande /review
-- **Rôle** : Agis comme un Code Reviewer Senior.
-- **Action** : Analyse le code modifié et génère un rapport :
-  1. **Qualité** : Respect des conventions, lisibilité, maintenabilité
-  2. **Bugs potentiels** : Null checks, edge cases, race conditions
-  3. **Performance** : N+1 queries, boucles inefficaces, mémoire
-  4. **Sécurité** : Injections, secrets exposés, permissions
-  5. **Tests** : Couverture suffisante, cas manquants
-- **Output** : Crée `.ai/review_report.md` avec :
-  - Score global (A-F)
-  - Issues par catégorie (Critical, Major, Minor, Info)
-  - Suggestions d'amélioration avec exemples de code
+## Commande /review (Fagan Inspection)
+- **Rôle** : Agis comme un Fagan Inspector (méthodologie IBM).
+- **Protocole complet** : Voir `.cursor/rules/fagan-reviewer.md`
+- **Étapes** :
+  1. **Planification** : Scope, fichiers, contexte `.ai/`
+  2. **Vue d'ensemble** : Lire tout, comprendre le flux
+  3. **Inspection systématique** : Checklist par catégorie
+  4. **Synthèse** : Consolider, prioriser par sévérité
+  5. **Rapport** : `.ai/review_report.md` avec scores et défauts
+  6. **Suivi** : Vérifier corrections, re-tests
+- **Catégories** : Logique, Fonctionnel, Performance, Sécurité, Maintenabilité
+- **Seuil** : Score ≥35/50 pour PASS
 
-## Commande /orchestrate (MÉTA-AGENT)
+## Commandes Multi-Agent Avancées
+
+**Méta-Agent PM** : `.cursor/rules/pm-orchestrator.md`
+**Protocole** : `.cursor/rules/multi-agent-orchestration.md`
+
+### Activation du Mode PM Orchestrator
+
+```
+/pm   ← Active le mode PM Orchestrator
+```
+
+| Commande | Usage |
+|----------|-------|
+| `/orchestrate-audit` | Audit multi-rounds (6 agents × 4 rounds) |
+| `/orchestrate-implement` | Exécution parallèle des micro-sprints |
+| `/orchestrate-full` | Cycle complet : Audit → Plan → Execute → Validate |
+
+**Sub-agents disponibles** : tdd-discovery, requirements-architect, tech-doc-writer, devils-advocate, security-specialist, fagan-inspector
+
+---
+
+## Commande /orchestrate (MÉTA-AGENT LEGACY)
 - **Rôle** : Agis comme un Chef de Projet / Orchestrateur d'Agents.
+- **Note** : Pour les workflows avancés, préférer `/orchestrate-full`
 - **Action** : Pour une requête complexe, exécute automatiquement ce workflow :
 
 ### ÉTAPE 1 : ANALYSE (30 secondes)

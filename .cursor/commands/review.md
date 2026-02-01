@@ -1,11 +1,19 @@
-# Commande /review
+# Commande /review (Fagan Inspection)
 
-Effectue une revue de code systématique avec critères de qualité.
+Revue de code systématique basée sur la méthodologie Fagan (IBM, 1976).
+
+**Protocole complet** : `.cursor/rules/fagan-reviewer.md`
 
 ## Usage
-`/review [fichier ou dossier à revoir]`
-`/review --staged` (fichiers git staged)
-`/review --recent` (derniers fichiers modifiés)
+
+```bash
+/review [fichier ou dossier]     # Revue standard
+/review --staged                  # Fichiers git staged
+/review --recent                  # Derniers fichiers modifiés
+/review --fagan --staged          # Inspection Fagan complète
+/review --quick src/              # Revue rapide (pas de rapport)
+/review --focus security          # Focus sécurité uniquement
+```
 
 ## Critères de Revue
 
@@ -105,4 +113,23 @@ Pour chaque fichier :
 - [ ] Tous les fichiers analysés
 - [ ] Problèmes critiques identifiés
 - [ ] Suggestions d'amélioration listées
-- [ ] Rapport généré
+- [ ] Rapport généré dans `.ai/review_report.md`
+
+---
+
+## Mode Fagan Complet
+
+Pour une inspection Fagan formelle avec scoring :
+
+1. Lire `.cursor/rules/fagan-reviewer.md`
+2. Suivre les 6 étapes du processus
+3. Générer le rapport structuré avec scores /50
+4. Verdict : PASS (≥35) / FAIL (<35) / CONDITIONNEL
+
+### Métriques Fagan
+
+| Métrique | Seuil Acceptable |
+|----------|------------------|
+| Défauts/KLOC | < 15 |
+| Défauts Critiques | 0 |
+| Score Total | ≥ 35/50 |
