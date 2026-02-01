@@ -17,6 +17,56 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 3.1 COMPLETE - Stabilisation Algorithme Antagonistes
+
+**Contexte** :
+Le calcul des frags (Némésis/Souffre-douleur) via les highlight events était instable quand plusieurs événements se produisaient à la même milliseconde.
+
+**Problème identifié** :
+- Avec des événements simultanés, l'attribution killer→victim est ambiguë
+- L'heuristique actuelle (privilégier le plus fréquent, puis plus petit XUID) n'était pas optimale
+- Besoin de validation avec les stats officielles du match
+
+**Solution implémentée** :
+
+1. **`load_match_players_stats()`** (`src/db/loaders.py`) :
+   - Charge les stats officielles (kills, deaths, assists) de tous les joueurs
+   - Calcule le rang de chaque joueur dans le match (basé sur le score)
+   - Retourne une liste de `MatchPlayerStats` triée par rang
+
+2. **`validate_and_adjust_pairs()`** (`src/analysis/killer_victim.py`) :
+   - Compare les totaux reconstitués vs officiels pour chaque joueur
+   - Retourne `ValidationResult` avec les écarts et un flag de cohérence globale
+
+3. **Tie-breaker par rang** dans `compute_personal_antagonists()` :
+   - En cas d'égalité sur le score "certain", le meilleur rang prime
+   - Fallback sur le plus petit XUID si pas de stats officielles
+
+4. **Flags de confiance** dans `AntagonistsResult` :
+   - `is_validated: bool` : True si les totaux reconstitués = officiels
+   - `validation_notes: str` : Explication des écarts éventuels
+
+**Tests ajoutés** :
+- `test_tiebreaker_uses_rank_when_equal_score` : Vérifie le tie-breaker
+- `test_validation_with_official_stats` : Vérifie la validation cohérente
+- `test_validation_detects_inconsistency` : Vérifie la détection d'écarts
+- `TestValidateAndAdjustPairs` : Tests de la fonction de validation
+
+**Fichiers modifiés** :
+- `src/db/loaders.py` : Ajout `MatchPlayerStats` + `load_match_players_stats()`
+- `src/analysis/killer_victim.py` : Ajout validation + tie-breaker + flags
+- `tests/test_killer_victim_antagonists.py` : Nouveaux tests Sprint 3.1
+
+**Suivi** :
+- [x] S3.1.1 : `load_match_players_stats()` créé
+- [x] S3.1.2 : `validate_and_adjust_pairs()` créé
+- [x] S3.1.3 : Tie-breaker par rang implémenté
+- [x] S3.1.4 : Tests mis à jour
+- [x] Roadmap mise à jour
+- [x] Thought_log documenté
+
+---
+
 ### [2026-02-01] - Phase 3 Planifiée - Stabilisation Antagonistes
 
 **Contexte** :

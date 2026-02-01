@@ -3,9 +3,11 @@
 import json
 import re
 import sqlite3
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
 
 from src.config import BOT_MAP, TEAM_MAP
+from src.db import queries
 from src.db.connection import get_connection
 from src.db.parsers import (
     coerce_duration_seconds,
@@ -13,8 +15,25 @@ from src.db.parsers import (
     parse_iso_utc,
     parse_xuid_input,
 )
-from src.db import queries
-from src.models import MatchRow, FriendMatch
+from src.models import FriendMatch, MatchRow
+
+
+@dataclass
+class MatchPlayerStats:
+    """Statistiques officielles d'un joueur pour un match.
+
+    Utilisé pour valider la cohérence des frags reconstitués
+    via les highlight events.
+    """
+
+    xuid: str
+    gamertag: str
+    kills: int
+    deaths: int
+    assists: int
+    team_id: int | None
+    rank: int  # Rang dans le match (1 = meilleur score)
+    score: int | None  # Score personnel (optionnel)
 
 
 _CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -103,7 +122,7 @@ def _sanitize_gamertag(value: Any) -> Any:
 
 def get_players_from_db(db_path: str) -> list[dict[str, Any]]:
     """Récupère la liste des joueurs depuis la table Players (DB fusionnée).
-    
+
     Returns:
         Liste de dicts avec xuid, gamertag, label, match_count.
         Liste vide si la table n'existe pas ou DB vide.
@@ -189,7 +208,7 @@ def load_highlight_events_for_match(db_path: str, match_id: str) -> list[dict[st
     return out
 
 
-def load_match_player_gamertags(db_path: str, match_id: str) -> Dict[str, str]:
+def load_match_player_gamertags(db_path: str, match_id: str) -> dict[str, str]:
     """Retourne un mapping XUID -> Gamertag pour un match.
 
     Les gamertags des HighlightEvents peuvent être absents ou mal encodés.
@@ -217,7 +236,7 @@ def load_match_player_gamertags(db_path: str, match_id: str) -> Dict[str, str]:
     if not isinstance(players, list) or not players:
         return {}
 
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
 
     def _extract_from_player_obj(p: Any) -> tuple[str | None, str | None]:
         if not isinstance(p, dict):
@@ -261,7 +280,7 @@ def load_match_rosters(
     db_path: str,
     match_id: str,
     xuid: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Retourne les rosters du match (mon équipe vs équipe adverse).
 
     Source: table MatchStats (Players[] / LastTeamId).
@@ -439,10 +458,10 @@ def load_match_rosters(
 def load_top_medals(
     db_path: str,
     xuid: str,
-    match_ids: List[str],
+    match_ids: list[str],
     *,
     top_n: int | None = 25,
-) -> List[tuple[int, int]]:
+) -> list[tuple[int, int]]:
     """Retourne les médailles les plus fréquentes (NameId -> total).
 
     Agrège uniquement sur la liste de MatchIds fournie (utile pour respecter
@@ -459,7 +478,7 @@ def load_top_medals(
         return []
 
     # Normalise et déduplique en gardant l'ordre
-    norm: List[str] = []
+    norm: list[str] = []
     seen: set[str] = set()
     for mid in match_ids:
         if not isinstance(mid, str):
@@ -474,7 +493,7 @@ def load_top_medals(
         return []
 
     me_id = f"xuid({xuid})"
-    totals: Dict[int, int] = {}
+    totals: dict[int, int] = {}
     chunk_size = 800
 
     with get_connection(db_path) as con:
@@ -518,7 +537,7 @@ def load_player_match_result(
     db_path: str,
     match_id: str,
     xuid: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Charge le résultat PlayerMatchStats pour un match et un joueur.
 
     On s'appuie sur la table PlayerMatchStats (join via colonne MatchId).
@@ -545,7 +564,7 @@ def load_player_match_result(
         if not isinstance(values, list) or not values:
             return None
 
-        entry: Optional[Dict[str, Any]] = None
+        entry: dict[str, Any] | None = None
         for v in values:
             if not isinstance(v, dict):
                 continue
@@ -566,14 +585,14 @@ def load_player_match_result(
 
         # MMRs par équipe (dict {"0": float, "1": float})
         team_mmrs_raw = result.get("TeamMmrs")
-        team_mmrs: Dict[str, float] = {}
+        team_mmrs: dict[str, float] = {}
         if isinstance(team_mmrs_raw, dict):
             for k, v in team_mmrs_raw.items():
                 fv = coerce_number(v)
                 if fv is not None and isinstance(k, str):
                     team_mmrs[k] = float(fv)
 
-        enemy_mmr: Optional[float] = None
+        enemy_mmr: float | None = None
         if team_id_i is not None and team_mmrs:
             my_key = str(team_id_i)
             for k, v in team_mmrs.items():
@@ -588,7 +607,7 @@ def load_player_match_result(
             deaths = statp.get("Deaths") if isinstance(statp.get("Deaths"), dict) else None
             assists = statp.get("Assists") if isinstance(statp.get("Assists"), dict) else None
 
-        def _perf(d: Optional[Dict[str, Any]]) -> Dict[str, Optional[float]]:
+        def _perf(d: dict[str, Any] | None) -> dict[str, float | None]:
             if not isinstance(d, dict):
                 return {"count": None, "expected": None, "stddev": None}
             return {
@@ -643,7 +662,7 @@ def load_match_medals_for_player(
     if not isinstance(players, list) or not players:
         return []
 
-    me: Optional[Dict[str, Any]] = None
+    me: dict[str, Any] | None = None
     for p in players:
         if not isinstance(p, dict):
             continue
@@ -662,11 +681,7 @@ def load_match_medals_for_player(
     for ts in pts:
         if not isinstance(ts, dict):
             continue
-        medals = (
-            ts.get("Stats", {})
-            .get("CoreStats", {})
-            .get("Medals")
-        )
+        medals = ts.get("Stats", {}).get("CoreStats", {}).get("Medals")
         if not isinstance(medals, list):
             continue
         for m in medals:
@@ -684,13 +699,13 @@ def load_match_medals_for_player(
     return out
 
 
-def load_asset_name_map(con: sqlite3.Connection, table: str) -> Dict[str, str]:
+def load_asset_name_map(con: sqlite3.Connection, table: str) -> dict[str, str]:
     """Charge la table de correspondance AssetId -> Nom.
-    
+
     Args:
         con: Connexion SQLite ouverte.
         table: Nom de la table (Maps, Playlists, PlaylistMapModePairs).
-        
+
     Returns:
         Dictionnaire {asset_id: nom}.
     """
@@ -699,7 +714,7 @@ def load_asset_name_map(con: sqlite3.Connection, table: str) -> Dict[str, str]:
         cur.execute(f"SELECT ResponseBody FROM {table}")
     except sqlite3.OperationalError:
         return {}
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for (body,) in cur.fetchall():
         try:
             obj = json.loads(body)
@@ -712,7 +727,7 @@ def load_asset_name_map(con: sqlite3.Connection, table: str) -> Dict[str, str]:
     return out
 
 
-def _find_player(players: List[Dict[str, Any]], xuid: str) -> Optional[Dict[str, Any]]:
+def _find_player(players: list[dict[str, Any]], xuid: str) -> dict[str, Any] | None:
     """Trouve un joueur dans la liste par son XUID."""
     for pl in players:
         pid = pl.get("PlayerId")
@@ -723,14 +738,17 @@ def _find_player(players: List[Dict[str, Any]], xuid: str) -> Optional[Dict[str,
     return None
 
 
-def _find_player_core_stats_dict(player_obj: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _find_player_core_stats_dict(player_obj: dict[str, Any]) -> dict[str, Any] | None:
     """Trouve le dictionnaire contenant les stats Kills/Deaths/Assists."""
     targets = {"Kills", "Deaths", "Assists", "ShotsFired", "ShotsHit", "Accuracy"}
 
-    def find_stats_dict(x: Any) -> Optional[Dict[str, Any]]:
+    def find_stats_dict(x: Any) -> dict[str, Any] | None:
         if isinstance(x, dict):
             if "Kills" in x and "Deaths" in x and any(k in x for k in targets):
-                if coerce_number(x.get("Kills")) is not None or coerce_number(x.get("Deaths")) is not None:
+                if (
+                    coerce_number(x.get("Kills")) is not None
+                    or coerce_number(x.get("Deaths")) is not None
+                ):
                     return x
             for v in x.values():
                 r = find_stats_dict(v)
@@ -746,7 +764,7 @@ def _find_player_core_stats_dict(player_obj: Dict[str, Any]) -> Optional[Dict[st
     return find_stats_dict(player_obj.get("PlayerTeamStats"))
 
 
-def _extract_player_stats(player_obj: Dict[str, Any]) -> tuple[int, int, int, Optional[float]]:
+def _extract_player_stats(player_obj: dict[str, Any]) -> tuple[int, int, int, float | None]:
     """Extrait kills, deaths, assists, accuracy d'un joueur."""
     stats_dict = _find_player_core_stats_dict(player_obj)
     if stats_dict is None:
@@ -759,7 +777,7 @@ def _extract_player_stats(player_obj: Dict[str, Any]) -> tuple[int, int, int, Op
     return kills, deaths, assists, accuracy
 
 
-def _extract_player_outcome_team(player_obj: Dict[str, Any]) -> tuple[Optional[int], Optional[int]]:
+def _extract_player_outcome_team(player_obj: dict[str, Any]) -> tuple[int | None, int | None]:
     """Extrait outcome et team_id d'un joueur."""
     outcome = player_obj.get("Outcome")
     last_team_id = player_obj.get("LastTeamId")
@@ -768,7 +786,7 @@ def _extract_player_outcome_team(player_obj: Dict[str, Any]) -> tuple[Optional[i
     return outcome_i, team_i
 
 
-def _extract_player_kda(player_obj: Dict[str, Any]) -> Optional[float]:
+def _extract_player_kda(player_obj: dict[str, Any]) -> float | None:
     """Extrait le KDA d'un joueur."""
     stats_dict = _find_player_core_stats_dict(player_obj)
     if stats_dict is not None:
@@ -776,7 +794,7 @@ def _extract_player_kda(player_obj: Dict[str, Any]) -> Optional[float]:
         if v is not None:
             return v
 
-    def find_kda(x: Any) -> Optional[float]:
+    def find_kda(x: Any) -> float | None:
         if isinstance(x, dict):
             if "KDA" in x:
                 v = coerce_number(x.get("KDA"))
@@ -796,7 +814,7 @@ def _extract_player_kda(player_obj: Dict[str, Any]) -> Optional[float]:
     return find_kda(player_obj.get("PlayerTeamStats"))
 
 
-def _extract_player_spree_headshots(player_obj: Dict[str, Any]) -> tuple[Optional[int], Optional[int]]:
+def _extract_player_spree_headshots(player_obj: dict[str, Any]) -> tuple[int | None, int | None]:
     """Extrait max_killing_spree et headshot_kills."""
     stats_dict = _find_player_core_stats_dict(player_obj)
     if stats_dict is None:
@@ -809,7 +827,7 @@ def _extract_player_spree_headshots(player_obj: Dict[str, Any]) -> tuple[Optiona
     )
 
 
-def _extract_player_average_life_seconds(player_obj: Dict[str, Any]) -> Optional[float]:
+def _extract_player_average_life_seconds(player_obj: dict[str, Any]) -> float | None:
     """Extrait la durée de vie moyenne."""
     stats_dict = _find_player_core_stats_dict(player_obj)
     if stats_dict is not None:
@@ -817,7 +835,7 @@ def _extract_player_average_life_seconds(player_obj: Dict[str, Any]) -> Optional
         if v is not None:
             return v
 
-    def find_avg_life(x: Any) -> Optional[float]:
+    def find_avg_life(x: Any) -> float | None:
         if isinstance(x, dict):
             if "AverageLifeDuration" in x:
                 v = coerce_duration_seconds(x.get("AverageLifeDuration"))
@@ -837,7 +855,7 @@ def _extract_player_average_life_seconds(player_obj: Dict[str, Any]) -> Optional
     return find_avg_life(player_obj.get("PlayerTeamStats"))
 
 
-def _extract_player_time_played_seconds(player_obj: Dict[str, Any]) -> Optional[float]:
+def _extract_player_time_played_seconds(player_obj: dict[str, Any]) -> float | None:
     """Extrait le temps de jeu."""
     pi = player_obj.get("ParticipationInfo")
     if not isinstance(pi, dict):
@@ -845,7 +863,9 @@ def _extract_player_time_played_seconds(player_obj: Dict[str, Any]) -> Optional[
     return coerce_duration_seconds(pi.get("TimePlayed"))
 
 
-def _extract_team_scores(match_obj: Dict[str, Any], my_team_id: Optional[int]) -> tuple[Optional[int], Optional[int]]:
+def _extract_team_scores(
+    match_obj: dict[str, Any], my_team_id: int | None
+) -> tuple[int | None, int | None]:
     """Extrait les scores d'équipe depuis MatchStats.
 
     Dans les payloads OpenSpartan/Halo, le score de chaque équipe est typiquement
@@ -865,11 +885,7 @@ def _extract_team_scores(match_obj: Dict[str, Any], my_team_id: Optional[int]) -
         tid = t.get("TeamId")
         if not isinstance(tid, int):
             continue
-        score_raw = (
-            t.get("Stats", {})
-            .get("CoreStats", {})
-            .get("Score")
-        )
+        score_raw = t.get("Stats", {}).get("CoreStats", {}).get("Score")
         score = coerce_number(score_raw)
         if score is None:
             continue
@@ -881,8 +897,8 @@ def _extract_team_scores(match_obj: Dict[str, Any], my_team_id: Optional[int]) -
     if not team_scores:
         return None, None
 
-    my_score: Optional[int] = None
-    enemy_score: Optional[int] = None
+    my_score: int | None = None
+    enemy_score: int | None = None
 
     if my_team_id is not None:
         my_score = team_scores.get(int(my_team_id))
@@ -894,7 +910,9 @@ def _extract_team_scores(match_obj: Dict[str, Any], my_team_id: Optional[int]) -
     return my_score, enemy_score
 
 
-def _extract_player_mmrs(player: Dict[str, Any], my_team_id: Optional[int]) -> tuple[Optional[float], Optional[float]]:
+def _extract_player_mmrs(
+    player: dict[str, Any], my_team_id: int | None
+) -> tuple[float | None, float | None]:
     """Extrait les MMRs depuis les stats du joueur.
 
     Le payload contient typiquement:
@@ -908,8 +926,8 @@ def _extract_player_mmrs(player: Dict[str, Any], my_team_id: Optional[int]) -> t
     if not isinstance(team_stats, list):
         return None, None
 
-    team_mmr: Optional[float] = None
-    enemy_mmr: Optional[float] = None
+    team_mmr: float | None = None
+    enemy_mmr: float | None = None
 
     for ts in team_stats:
         if not isinstance(ts, dict):
@@ -948,7 +966,7 @@ def _extract_player_mmrs(player: Dict[str, Any], my_team_id: Optional[int]) -> t
 def _load_all_mmrs_from_player_match_stats(
     con: sqlite3.Connection,
     xuid: str,
-) -> Dict[str, tuple[Optional[float], Optional[float]]]:
+) -> dict[str, tuple[float | None, float | None]]:
     """Charge tous les MMR (team, enemy) depuis PlayerMatchStats.
 
     Args:
@@ -961,7 +979,7 @@ def _load_all_mmrs_from_player_match_stats(
     cur = con.cursor()
     cur.execute(queries.LOAD_ALL_PLAYER_MATCH_STATS)
 
-    result: Dict[str, tuple[Optional[float], Optional[float]]] = {}
+    result: dict[str, tuple[float | None, float | None]] = {}
     for match_id, body in cur.fetchall():
         if not isinstance(body, str) or not match_id:
             continue
@@ -975,7 +993,7 @@ def _load_all_mmrs_from_player_match_stats(
             continue
 
         # Trouver l'entrée du joueur
-        entry: Optional[Dict[str, Any]] = None
+        entry: dict[str, Any] | None = None
         for v in values:
             if not isinstance(v, dict):
                 continue
@@ -996,7 +1014,7 @@ def _load_all_mmrs_from_player_match_stats(
 
         # MMRs par équipe (dict {"0": float, "1": float})
         team_mmrs_raw = res.get("TeamMmrs")
-        enemy_mmr: Optional[float] = None
+        enemy_mmr: float | None = None
         if isinstance(team_mmrs_raw, dict) and team_id_i is not None:
             my_key = str(team_id_i)
             for k, v in team_mmrs_raw.items():
@@ -1018,20 +1036,20 @@ def load_matches(
     db_path: str,
     xuid: str,
     *,
-    playlist_filter: Optional[str] = None,
-    map_mode_pair_filter: Optional[str] = None,
-    map_filter: Optional[str] = None,
-    game_variant_filter: Optional[str] = None,
-) -> List[MatchRow]:
+    playlist_filter: str | None = None,
+    map_mode_pair_filter: str | None = None,
+    map_filter: str | None = None,
+    game_variant_filter: str | None = None,
+) -> list[MatchRow]:
     """Charge tous les matchs d'un joueur depuis la DB.
-    
+
     Args:
         db_path: Chemin vers le fichier .db.
         xuid: XUID du joueur.
         playlist_filter: Filtre optionnel sur playlist_id.
         map_mode_pair_filter: Filtre optionnel sur map_mode_pair_id.
         map_filter: Filtre optionnel sur map_id.
-        
+
     Returns:
         Liste de MatchRow triée par date croissante.
     """
@@ -1047,7 +1065,7 @@ def load_matches(
         cur = con.cursor()
         cur.execute(queries.LOAD_MATCH_STATS)
 
-        rows: List[MatchRow] = []
+        rows: list[MatchRow] = []
         for (body,) in cur.fetchall():
             try:
                 obj = json.loads(body)
@@ -1097,7 +1115,10 @@ def load_matches(
             # Applique les filtres
             if playlist_filter is not None and (playlist_id or "") != playlist_filter:
                 continue
-            if map_mode_pair_filter is not None and (map_mode_pair_id or "") != map_mode_pair_filter:
+            if (
+                map_mode_pair_filter is not None
+                and (map_mode_pair_id or "") != map_mode_pair_filter
+            ):
                 continue
             if map_filter is not None and (map_id or "") != map_filter:
                 continue
@@ -1170,7 +1191,6 @@ def load_matches(
                     deaths=deaths,
                     assists=assists,
                     accuracy=accuracy,
-
                     my_team_score=my_team_score,
                     enemy_team_score=enemy_team_score,
                     team_mmr=team_mmr,
@@ -1186,14 +1206,14 @@ def query_matches_with_friend(
     db_path: str,
     self_xuid: str,
     friend_xuid: str,
-) -> List[FriendMatch]:
+) -> list[FriendMatch]:
     """Retourne les matchs partagés avec un autre joueur.
-    
+
     Args:
         db_path: Chemin vers le fichier .db.
         self_xuid: XUID du joueur principal.
         friend_xuid: XUID de l'ami.
-        
+
     Returns:
         Liste de FriendMatch triée par date décroissante.
     """
@@ -1205,10 +1225,20 @@ def query_matches_with_friend(
         me_id = f"xuid({self_xuid})"
         fr_id = f"xuid({friend_xuid})"
         cur.execute(queries.QUERY_MATCHES_WITH_FRIEND, (me_id, fr_id))
-        
-        out: List[FriendMatch] = []
+
+        out: list[FriendMatch] = []
         for row in cur.fetchall():
-            match_id, start_time_raw, playlist_id, pair_id, my_team, my_out, fr_team, fr_out, same_team = row
+            (
+                match_id,
+                start_time_raw,
+                playlist_id,
+                pair_id,
+                my_team,
+                my_out,
+                fr_team,
+                fr_out,
+                same_team,
+            ) = row
             if not isinstance(match_id, str) or not isinstance(start_time_raw, str):
                 continue
             start_time = parse_iso_utc(start_time_raw)
@@ -1230,14 +1260,14 @@ def query_matches_with_friend(
         return out
 
 
-def list_other_player_xuids(db_path: str, self_xuid: str, limit: int = 500) -> List[str]:
+def list_other_player_xuids(db_path: str, self_xuid: str, limit: int = 500) -> list[str]:
     """Liste les XUID des autres joueurs rencontrés.
-    
+
     Args:
         db_path: Chemin vers le fichier .db.
         self_xuid: XUID du joueur principal (à exclure).
         limit: Nombre maximum de résultats.
-        
+
     Returns:
         Liste de XUID (chaînes numériques).
     """
@@ -1256,14 +1286,14 @@ def list_other_player_xuids(db_path: str, self_xuid: str, limit: int = 500) -> L
         return sorted(xuids)
 
 
-def list_top_teammates(db_path: str, self_xuid: str, limit: int = 20) -> List[tuple[str, int]]:
+def list_top_teammates(db_path: str, self_xuid: str, limit: int = 20) -> list[tuple[str, int]]:
     """Liste les coéquipiers les plus fréquents.
-    
+
     Args:
         db_path: Chemin vers le fichier .db.
         self_xuid: XUID du joueur principal.
         limit: Nombre maximum de résultats.
-        
+
     Returns:
         Liste de tuples (xuid, nombre_de_matchs) triée par fréquence.
     """
@@ -1271,7 +1301,7 @@ def list_top_teammates(db_path: str, self_xuid: str, limit: int = 20) -> List[tu
     with get_connection(db_path) as con:
         cur = con.cursor()
         cur.execute(queries.LIST_TOP_TEAMMATES, (me_id, me_id, int(limit)))
-        out: List[tuple[str, int]] = []
+        out: list[tuple[str, int]] = []
         for pid, matches in cur.fetchall():
             if not isinstance(pid, str):
                 continue
@@ -1282,12 +1312,12 @@ def list_top_teammates(db_path: str, self_xuid: str, limit: int = 20) -> List[tu
         return out
 
 
-def get_sync_metadata(db_path: str) -> Dict[str, Any]:
+def get_sync_metadata(db_path: str) -> dict[str, Any]:
     """Récupère les métadonnées de synchronisation depuis la table SyncMeta.
-    
+
     Args:
         db_path: Chemin vers le fichier .db.
-        
+
     Returns:
         Dictionnaire contenant:
         - last_sync_at: datetime du dernier sync (ou None)
@@ -1295,28 +1325,26 @@ def get_sync_metadata(db_path: str) -> Dict[str, Any]:
         - total_matches: nombre total de matchs (ou 0)
         - player_xuid: XUID du joueur principal (ou None)
     """
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "last_sync_at": None,
         "last_match_time": None,
         "total_matches": 0,
         "player_xuid": None,
     }
-    
+
     try:
         with get_connection(db_path) as con:
             cur = con.cursor()
-            
+
             # Vérifier si la table existe
-            cur.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='SyncMeta'"
-            )
+            cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='SyncMeta'")
             if not cur.fetchone():
                 # Fallback: compter les matchs depuis MatchStats
                 cur.execute("SELECT COUNT(*) FROM MatchStats")
                 row = cur.fetchone()
                 result["total_matches"] = row[0] if row else 0
                 return result
-            
+
             # Récupérer toutes les métadonnées
             cur.execute("SELECT Key, Value, UpdatedAt FROM SyncMeta")
             for key, value, updated_at in cur.fetchall():
@@ -1331,14 +1359,146 @@ def get_sync_metadata(db_path: str) -> Dict[str, Any]:
                         pass
                 elif key == "player_xuid" and value:
                     result["player_xuid"] = str(value).strip()
-            
+
             # Si total_matches n'est pas dans SyncMeta, compter depuis MatchStats
             if result["total_matches"] == 0:
                 cur.execute("SELECT COUNT(*) FROM MatchStats")
                 row = cur.fetchone()
                 result["total_matches"] = row[0] if row else 0
-                
+
     except Exception:
         pass
-    
+
     return result
+
+
+def load_match_players_stats(db_path: str, match_id: str) -> list[MatchPlayerStats]:
+    """Charge les statistiques officielles de tous les joueurs d'un match.
+
+    Utilisé pour valider la cohérence des frags reconstitués via les
+    highlight events. Les kills/deaths officiels proviennent de
+    MatchStats.Players[].PlayerTeamStats[].Stats.CoreStats.
+
+    Args:
+        db_path: Chemin vers le fichier .db.
+        match_id: ID du match.
+
+    Returns:
+        Liste de MatchPlayerStats triée par rang (meilleur score en premier).
+    """
+    if not match_id:
+        return []
+
+    with get_connection(db_path) as con:
+        cur = con.cursor()
+        cur.execute(queries.LOAD_MATCH_STATS_BY_MATCH_ID, (match_id,))
+        row = cur.fetchone()
+        if not row or not isinstance(row[0], str) or not row[0]:
+            return []
+
+        try:
+            payload = json.loads(row[0])
+        except Exception:
+            return []
+
+    players = payload.get("Players")
+    if not isinstance(players, list) or not players:
+        return []
+
+    results: list[dict[str, Any]] = []
+
+    for p in players:
+        if not isinstance(p, dict):
+            continue
+
+        # Extraction identité
+        pid = p.get("PlayerId")
+        xuid_val: Any = None
+        gt_val: Any = None
+
+        if isinstance(pid, dict):
+            xuid_val = pid.get("Xuid") or pid.get("xuid")
+            gt_val = pid.get("Gamertag") or pid.get("gamertag")
+        elif isinstance(pid, str):
+            xuid_val = pid
+            gt_val = p.get("Gamertag") or p.get("gamertag")
+
+        if xuid_val is None:
+            xuid_val = p.get("Xuid") or p.get("xuid")
+        if gt_val is None:
+            gt_val = p.get("Gamertag") or p.get("gamertag")
+
+        xuid_s = str(xuid_val or "").strip()
+        xuid_norm = parse_xuid_input(xuid_s) or xuid_s
+        gt_s = _sanitize_gamertag(gt_val)
+        if not isinstance(gt_s, str):
+            gt_s = str(gt_s or "").strip()
+        gt_s = gt_s.strip()
+
+        if not xuid_norm:
+            continue
+
+        # Extraction stats
+        stats_dict = _find_player_core_stats_dict(p)
+        if stats_dict is None:
+            kills, deaths, assists = 0, 0, 0
+            score = None
+        else:
+            kills = int(coerce_number(stats_dict.get("Kills")) or 0)
+            deaths = int(coerce_number(stats_dict.get("Deaths")) or 0)
+            assists = int(coerce_number(stats_dict.get("Assists")) or 0)
+            score = coerce_number(stats_dict.get("PersonalScore"))
+            if score is None:
+                score = coerce_number(stats_dict.get("Score"))
+
+        # Team ID
+        team_raw = p.get("LastTeamId")
+        if team_raw is None:
+            team_raw = p.get("TeamId")
+
+        team_id: int | None = None
+        try:
+            if team_raw is not None and team_raw == team_raw:
+                team_id = int(team_raw)
+        except Exception:
+            team_id = None
+
+        # Rang dans le match (sera calculé après tri)
+        results.append(
+            {
+                "xuid": str(xuid_norm),
+                "gamertag": gt_s or xuid_norm,
+                "kills": kills,
+                "deaths": deaths,
+                "assists": assists,
+                "team_id": team_id,
+                "score": int(score) if score is not None else None,
+            }
+        )
+
+    # Trier par score décroissant (meilleur score = rang 1)
+    # Si score est None, on utilise kills comme fallback
+    def sort_key(r: dict[str, Any]) -> tuple[int, int]:
+        s = r.get("score")
+        k = r.get("kills", 0)
+        return (-(s if s is not None else k * 100), -k)
+
+    results.sort(key=sort_key)
+
+    # Assigner les rangs
+    out: list[MatchPlayerStats] = []
+    for rank_idx, r in enumerate(results, start=1):
+        out.append(
+            MatchPlayerStats(
+                xuid=r["xuid"],
+                gamertag=r["gamertag"],
+                kills=r["kills"],
+                deaths=r["deaths"],
+                assists=r["assists"],
+                team_id=r["team_id"],
+                rank=rank_idx,
+                score=r["score"],
+            )
+        )
+
+    return out

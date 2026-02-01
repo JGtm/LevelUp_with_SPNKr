@@ -189,7 +189,7 @@ data/
 
 ## Sprint Actuel : Phase 3 - Enrichissement
 
-### Sprint 3.1 : Stabilisation Algorithme Antagonistes 🚧
+### Sprint 3.1 : Stabilisation Algorithme Antagonistes ✅ COMPLETE
 
 **Problème identifié** : Le calcul des frags peut être instable avec des événements simultanés.
 
@@ -197,10 +197,10 @@ data/
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S3.1.1 | Créer `load_match_players_stats()` | `src/db/loaders.py` | ⏳ |
-| S3.1.2 | Créer `validate_and_adjust_pairs()` | `src/analysis/killer_victim.py` | ⏳ |
-| S3.1.3 | Modifier `compute_personal_antagonists()` | `src/analysis/killer_victim.py` | ⏳ |
-| S3.1.4 | Mettre à jour les tests | `tests/test_killer_victim_antagonists.py` | ⏳ |
+| S3.1.1 | Créer `load_match_players_stats()` | `src/db/loaders.py` | ✅ |
+| S3.1.2 | Créer `validate_and_adjust_pairs()` | `src/analysis/killer_victim.py` | ✅ |
+| S3.1.3 | Modifier `compute_personal_antagonists()` | `src/analysis/killer_victim.py` | ✅ |
+| S3.1.4 | Mettre à jour les tests | `tests/test_killer_victim_antagonists.py` | ✅ |
 
 **Algorithme amélioré** :
 ```
@@ -211,8 +211,14 @@ data/
    - Si écart : marquer comme "incertain"
 3. Pour les cas ambigus (égalité de frags par plusieurs adversaires) :
    - Tie-breaker = rang dans le match (meilleur classement = priorité)
-4. Retourner résultat avec flag de confiance
+4. Retourner résultat avec flag de confiance (is_validated, validation_notes)
 ```
+
+**Nouvelles fonctions** :
+- `load_match_players_stats(db_path, match_id)` : Charge kills/deaths/rank de tous les joueurs
+- `validate_and_adjust_pairs(pairs, official_stats)` : Valide cohérence reconstitué vs officiel
+- `AntagonistsResult.is_validated` : Flag de confiance
+- `AntagonistsResult.validation_notes` : Notes explicatives sur la validation
 
 ### Sprint 3.2 : Agrégation et Persistance 📋
 
@@ -374,20 +380,21 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Phase 2 COMPLETE | Sprints 2.1-2.3 terminés |
 | 2026-02-01 | Stabilisation antagonistes (Phase 3) | Événements simultanés instables |
 | 2026-02-01 | Tie-breaker par rang | Si égalité frags, le mieux classé gagne |
+| 2026-02-01 | Sprint 3.1 COMPLETE | Validation + tie-breaker implémentés |
 
 ---
 
 ## Prochaine Action
 
-**Sprint 3.1 : Stabilisation Algorithme Antagonistes**
+**Sprint 3.2 : Agrégation et Persistance**
 
-Priorité immédiate : corriger l'instabilité du calcul des frags lors d'événements simultanés.
+Priorité : Persister les antagonistes dans la table DuckDB.
 
 **Tâches** :
-1. Créer `load_match_players_stats()` pour obtenir kills/deaths officiels
-2. Implémenter `validate_and_adjust_pairs()` pour valider la cohérence
-3. Ajouter tie-breaker par rang dans `compute_personal_antagonists()`
-4. Tests unitaires pour cas d'événements simultanés
+1. Créer `aggregate_antagonists()` pour agréger les données sur tous les matchs
+2. Créer script `scripts/populate_antagonists.py` pour peupler la table
+3. Ajouter méthode `save_antagonists()` dans `DuckDBRepository`
+4. Tests d'intégration
 
 ```python
 # Utilisation du nouveau système :
@@ -402,4 +409,4 @@ repo = get_repository_for_player("JGtm")
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Phase 3 planifiée - Sprint 3.1 en cours)*
+*Dernière mise à jour : 2026-02-01 (Sprint 3.1 COMPLETE - Sprint 3.2 en attente)*

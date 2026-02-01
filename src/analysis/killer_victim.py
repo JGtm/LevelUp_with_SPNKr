@@ -8,16 +8,25 @@ killer→victim. L'approche consiste à joindre:
 avec |t - t'| <= tolérance.
 
 Référence: discussions den.dev / SPNKr (jointure kill/death ~ 5ms).
+
+Sprint 3.1 - Améliorations:
+- Validation par totaux officiels (kills/deaths depuis MatchStats)
+- Tie-breaker par rang dans le match (meilleur classement = priorité)
+- Flag de confiance sur les résultats
 """
 
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from src.db.loaders import MatchPlayerStats
 
 
 @dataclass(frozen=True)
@@ -59,6 +68,35 @@ class OpponentDuel:
 
 
 @dataclass(frozen=True)
+class ValidationResult:
+    """Résultat de validation des paires killer→victim.
+
+    Contient les écarts entre les totaux reconstitués et officiels.
+    """
+
+    xuid: str
+    kills_reconstituted: int
+    kills_official: int
+    deaths_reconstituted: int
+    deaths_official: int
+
+    @property
+    def kills_diff(self) -> int:
+        """Écart entre kills reconstitués et officiels."""
+        return self.kills_reconstituted - self.kills_official
+
+    @property
+    def deaths_diff(self) -> int:
+        """Écart entre deaths reconstituées et officielles."""
+        return self.deaths_reconstituted - self.deaths_official
+
+    @property
+    def is_consistent(self) -> bool:
+        """Retourne True si les totaux sont cohérents."""
+        return self.kills_diff == 0 and self.deaths_diff == 0
+
+
+@dataclass(frozen=True)
 class AntagonistsResult:
     """Résultat Némésis / Souffre-douleur pour un match."""
 
@@ -70,6 +108,9 @@ class AntagonistsResult:
     my_kills_total: int
     my_kills_assigned_certain: int
     my_kills_assigned_total: int
+    # Sprint 3.1: Ajout du flag de confiance
+    is_validated: bool = False
+    validation_notes: str = ""
 
 
 def _coerce_int(v: Any) -> int | None:
@@ -88,6 +129,84 @@ def _coerce_str(v: Any) -> str | None:
         return None
     s = str(v).strip()
     return s or None
+
+
+def validate_and_adjust_pairs(
+    pairs: list[KVPair],
+    official_stats: list[MatchPlayerStats],
+) -> tuple[list[ValidationResult], bool]:
+    """Valide la cohérence des paires killer→victim avec les stats officielles.
+
+    Stratégie:
+    1. Pour chaque joueur du match, compter les kills/deaths reconstitués
+    2. Comparer avec les kills/deaths officiels depuis MatchStats
+    3. Retourner les écarts et un flag de cohérence globale
+
+    Args:
+        pairs: Liste des paires killer→victim reconstituées.
+        official_stats: Stats officielles de chaque joueur (depuis load_match_players_stats).
+
+    Returns:
+        Tuple (liste de ValidationResult, is_globally_consistent)
+    """
+    if not official_stats:
+        return [], True  # Pas de validation possible, on considère OK
+
+    # Construire un mapping xuid → stats officielles
+    stats_by_xuid: dict[str, MatchPlayerStats] = {s.xuid: s for s in official_stats}
+
+    # Compter les kills/deaths reconstitués par joueur
+    kills_reconstituted: dict[str, int] = Counter()
+    deaths_reconstituted: dict[str, int] = Counter()
+
+    for p in pairs:
+        if p.killer_xuid:
+            kills_reconstituted[p.killer_xuid] += 1
+        if p.victim_xuid:
+            deaths_reconstituted[p.victim_xuid] += 1
+
+    # Générer les résultats de validation
+    results: list[ValidationResult] = []
+    all_xuids = (
+        set(stats_by_xuid.keys())
+        | set(kills_reconstituted.keys())
+        | set(deaths_reconstituted.keys())
+    )
+
+    for xuid in all_xuids:
+        official = stats_by_xuid.get(xuid)
+        results.append(
+            ValidationResult(
+                xuid=xuid,
+                kills_reconstituted=kills_reconstituted.get(xuid, 0),
+                kills_official=official.kills if official else 0,
+                deaths_reconstituted=deaths_reconstituted.get(xuid, 0),
+                deaths_official=official.deaths if official else 0,
+            )
+        )
+
+    # Vérifier la cohérence globale
+    is_globally_consistent = all(r.is_consistent for r in results)
+
+    return results, is_globally_consistent
+
+
+def get_player_rank(xuid: str, official_stats: list[MatchPlayerStats]) -> int:
+    """Retourne le rang d'un joueur dans le match (1 = meilleur).
+
+    Utilisé comme tie-breaker pour les cas ambigus.
+
+    Args:
+        xuid: XUID du joueur.
+        official_stats: Stats officielles avec rangs.
+
+    Returns:
+        Rang du joueur (1 = meilleur), ou 999 si non trouvé.
+    """
+    for s in official_stats:
+        if s.xuid == xuid:
+            return s.rank
+    return 999  # Non trouvé → rang très bas
 
 
 def _infer_event_type(event: dict[str, Any]) -> str | None:
@@ -205,14 +324,16 @@ def compute_personal_antagonists(
     *,
     me_xuid: str,
     tolerance_ms: int = 5,
+    official_stats: list[MatchPlayerStats] | None = None,
 ) -> AntagonistsResult:
     """Calcule Némésis et Souffre-douleur à partir des highlight events.
 
-    Stratégie hybride (A+B):
+    Stratégie hybride (A+B) avec validation (Sprint 3.1):
     - Pass 1: on attribue uniquement les duels non ambigus (1 seul candidat).
     - Pass 2: on attribue les cas ambigus via une heuristique déterministe:
         1) privilégie l'adversaire déjà le plus fréquent en "certain" (Pass 1)
-        2) sinon, fallback stable: plus petit XUID (numérique si possible)
+        2) NEW: tie-breaker par rang dans le match (meilleur classement = priorité)
+        3) sinon, fallback stable: plus petit XUID (numérique si possible)
 
     Cette approche évite les résultats "aléatoires" tout en conservant
     une transparence: chaque compteur sépare certain vs estimé.
@@ -221,9 +342,10 @@ def compute_personal_antagonists(
         events: highlight events bruts (dicts) du match.
         me_xuid: XUID du joueur (digits recommandés, ou "xuid(...)" accepté).
         tolerance_ms: fenêtre de jointure en millisecondes.
+        official_stats: Stats officielles des joueurs du match (pour validation et tie-breaker).
 
     Returns:
-        AntagonistsResult.
+        AntagonistsResult avec flag de validation.
     """
 
     if tolerance_ms < 0:
@@ -240,7 +362,15 @@ def compute_personal_antagonists(
             my_kills_total=0,
             my_kills_assigned_certain=0,
             my_kills_assigned_total=0,
+            is_validated=False,
+            validation_notes="XUID manquant",
         )
+
+    # Construire un mapping xuid → rang (pour tie-breaker)
+    rank_by_xuid: dict[str, int] = {}
+    if official_stats:
+        for s in official_stats:
+            rank_by_xuid[s.xuid] = s.rank
 
     kills: list[tuple[int, str, str]] = []
     deaths: list[tuple[int, str, str]] = []
@@ -277,7 +407,19 @@ def compute_personal_antagonists(
             return (1, s)
 
     def _choose_best(candidates: list[str], prefer: dict[str, int]) -> str:
-        # heuristique 2: privilégier ceux déjà fréquents en certain
+        """Choisit le meilleur candidat parmi les ambigus.
+
+        Heuristiques (dans l'ordre):
+        1. Privilégie l'adversaire déjà le plus fréquent en "certain" (Pass 1)
+        2. Tie-breaker par rang dans le match (meilleur classement = priorité)
+        3. Fallback stable: plus petit XUID numérique
+
+        Sprint 3.1: Ajout du tie-breaker par rang.
+        """
+        if not candidates:
+            return ""
+
+        # heuristique 1: privilégier ceux déjà fréquents en certain
         best_score = None
         best = None
         for c in candidates:
@@ -285,12 +427,25 @@ def compute_personal_antagonists(
             if best_score is None or score > best_score:
                 best_score = score
                 best = c
+
         if best is None:
             return ""
-        # si plusieurs candidats ont le même score, on prend le plus petit xuid (stable)
+
+        # si plusieurs candidats ont le même score "certain"
         top_score = int(best_score or 0)
         tied = [c for c in candidates if int(prefer.get(c, 0)) == top_score]
-        tied.sort(key=_xuid_sort_key)
+
+        if len(tied) == 1:
+            return tied[0]
+
+        # Sprint 3.1: Tie-breaker par rang dans le match
+        # Meilleur rang (plus petit numéro) = priorité
+        if rank_by_xuid:
+            tied.sort(key=lambda x: (rank_by_xuid.get(x, 999), _xuid_sort_key(x)))
+        else:
+            # Fallback: plus petit xuid (stable)
+            tied.sort(key=_xuid_sort_key)
+
         return tied[0]
 
     # -----------------
@@ -395,8 +550,19 @@ def compute_personal_antagonists(
         best = None
         best_tuple = None
         for x in keys:
-            t = (int(certain_map.get(x, 0)) + int(est_map.get(x, 0)), int(certain_map.get(x, 0)), _xuid_sort_key(x))
-            if best_tuple is None or t[0] > best_tuple[0] or (t[0] == best_tuple[0] and (t[1] > best_tuple[1] or (t[1] == best_tuple[1] and t[2] < best_tuple[2]))):
+            t = (
+                int(certain_map.get(x, 0)) + int(est_map.get(x, 0)),
+                int(certain_map.get(x, 0)),
+                _xuid_sort_key(x),
+            )
+            if (
+                best_tuple is None
+                or t[0] > best_tuple[0]
+                or (
+                    t[0] == best_tuple[0]
+                    and (t[1] > best_tuple[1] or (t[1] == best_tuple[1] and t[2] < best_tuple[2]))
+                )
+            ):
                 best_tuple = t
                 best = x
         return best
@@ -411,7 +577,9 @@ def compute_personal_antagonists(
         return EstimatedCount(int(map_c.get(key, 0)), int(map_e.get(key, 0)))
 
     # me killed opponent counters are bully_certain/bully_est (victims)
-    def _build_duel(op_xu: str | None, *, killed_me_c: dict[str, int], killed_me_e: dict[str, int]) -> OpponentDuel | None:
+    def _build_duel(
+        op_xu: str | None, *, killed_me_c: dict[str, int], killed_me_e: dict[str, int]
+    ) -> OpponentDuel | None:
         if not op_xu:
             return None
         op_gt = gt_by_xuid.get(op_xu, "")
@@ -425,6 +593,37 @@ def compute_personal_antagonists(
     nemesis = _build_duel(nem_xu, killed_me_c=nem_certain, killed_me_e=nem_est)
     bully = _build_duel(bully_xu, killed_me_c=nem_certain, killed_me_e=nem_est)
 
+    # Sprint 3.1: Validation avec les stats officielles
+    is_validated = False
+    validation_notes = ""
+
+    if official_stats:
+        # Trouver mes stats officielles
+        my_official = next((s for s in official_stats if s.xuid == me), None)
+        if my_official:
+            # Comparer mes kills/deaths reconstitués vs officiels
+            kills_diff = my_kills_assigned_total - my_official.kills
+            deaths_diff = my_deaths_assigned_total - my_official.deaths
+
+            if kills_diff == 0 and deaths_diff == 0:
+                is_validated = True
+                validation_notes = "Cohérent avec stats officielles"
+            else:
+                notes = []
+                if kills_diff != 0:
+                    notes.append(
+                        f"kills: {my_kills_assigned_total} vs {my_official.kills} ({kills_diff:+d})"
+                    )
+                if deaths_diff != 0:
+                    notes.append(
+                        f"deaths: {my_deaths_assigned_total} vs {my_official.deaths} ({deaths_diff:+d})"
+                    )
+                validation_notes = "Écarts: " + ", ".join(notes)
+        else:
+            validation_notes = "Stats officielles du joueur non trouvées"
+    else:
+        validation_notes = "Pas de stats officielles pour validation"
+
     return AntagonistsResult(
         nemesis=nemesis,
         bully=bully,
@@ -434,13 +633,17 @@ def compute_personal_antagonists(
         my_kills_total=int(my_kills_total),
         my_kills_assigned_certain=int(my_kills_assigned_certain),
         my_kills_assigned_total=int(my_kills_assigned_total),
+        is_validated=is_validated,
+        validation_notes=validation_notes,
     )
 
 
 def killer_victim_counts_long(pairs: Iterable[KVPair]) -> pd.DataFrame:
     """Retourne un DF long: killer, victim, count (agrégé)."""
 
-    counter = Counter((p.killer_xuid, p.killer_gamertag, p.victim_xuid, p.victim_gamertag) for p in pairs)
+    counter = Counter(
+        (p.killer_xuid, p.killer_gamertag, p.victim_xuid, p.victim_gamertag) for p in pairs
+    )
     rows = [
         {
             "killer_xuid": kx,
@@ -455,7 +658,9 @@ def killer_victim_counts_long(pairs: Iterable[KVPair]) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    return df.sort_values(["count", "killer_gamertag", "victim_gamertag"], ascending=[False, True, True])
+    return df.sort_values(
+        ["count", "killer_gamertag", "victim_gamertag"], ascending=[False, True, True]
+    )
 
 
 def killer_victim_matrix(pairs: Iterable[KVPair]) -> pd.DataFrame:
