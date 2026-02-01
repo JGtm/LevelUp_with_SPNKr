@@ -335,6 +335,32 @@ python scripts/benchmark_hybrid.py --db data/players/Chocoboflor/stats.duckdb
 
 ---
 
+## Comportements IA
+
+> Instructions à suivre par les agents IA lors du travail sur ce projet.
+
+### Fin de Sprint
+
+Quand un sprint est marqué comme **COMPLETE** :
+
+1. **Mettre à jour cette roadmap** :
+   - Changer le statut du sprint de `🚧` à `✅ COMPLETE`
+   - Mettre à jour les statuts des tâches (`⏳` → `✅`)
+   - Ajouter une entrée dans "Historique des Décisions" si pertinent
+   - Mettre à jour la date "Dernière mise à jour" en fin de fichier
+
+2. **Mettre à jour les fichiers `.ai/`** :
+   - `.ai/thought_log.md` : Documenter les décisions prises
+   - `.ai/project_map.md` : Si nouveaux fichiers créés
+   - `.ai/data_lineage.md` : Si flux de données modifiés
+
+3. **Proposer un commit** :
+   - Proposer à l'utilisateur de créer un commit avec les changements
+   - Inclure dans le commit : roadmap + fichiers `.ai/` modifiés + code du sprint
+   - Format suggéré : `feat(sprint-X.Y): [Description courte du sprint]`
+
+---
+
 ## Historique des Décisions
 
 | Date | Décision | Raison |
