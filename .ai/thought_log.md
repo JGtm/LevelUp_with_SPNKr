@@ -1245,4 +1245,45 @@ data/players/{gamertag}/
 
 ---
 
+### [2026-02-01] - Sprint 4.6 COMPLETE - Audit et Nettoyage Pre-Phase 5
+
+**Contexte** :
+Audit et nettoyage du codebase avant de passer à la Phase 5. Suppression du code mort,
+migration des modules vers DuckDB, et création de modules utilitaires centralisés.
+
+**Tâches réalisées** :
+
+1. **Code mort supprimé** (~30 KB) :
+   - `src/app/navigation.py` : Remplacé par `page_router.py`
+   - `src/data/query/examples.py` : Classe `QueryExamples` jamais utilisée
+
+2. **Modules migrés vers DuckDB** :
+   - `src/ui/multiplayer.py` : Détection auto SQLite/DuckDB
+   - `src/ui/aliases.py` : Support DuckDB pour table `xuid_aliases`
+
+3. **Imports directs corrigés** :
+   - `match_view_players.py` : `load_match_players_stats` retourne [] pour DuckDB
+   - `session_compare.py` : Détection auto du type de DB
+
+4. **Nouveaux modules créés** :
+   - `src/utils/paths.py` : Chemins centralisés (REPO_ROOT, PLAYERS_DIR, etc.)
+   - `src/data/infrastructure/database/duckdb_config.py` : Config DuckDB partagée
+
+5. **Références metadata.db migrées** :
+   - `src/data/query/engine.py` : Priorité metadata.duckdb avec fallback
+   - `src/data/repositories/hybrid.py` et `shadow.py` : Idem
+
+**Raisonnement** :
+- Le code mort encombrait le codebase et causait de la confusion
+- La détection auto SQLite/DuckDB permet une transition en douceur
+- Les modules utilitaires réduisent la duplication de code
+
+**Suivi** :
+- [x] S4.6.1-10 : Toutes les tâches terminées
+- [x] Roadmap mise à jour
+- [x] Thought_log documenté
+- [ ] Phase 5 prête à démarrer
+
+---
+
 <!-- Les entrées sont ajoutées ici, les plus récentes en haut -->

@@ -538,7 +538,7 @@ all_matches = repo.load_all_matches_unified()  # DB + archives
 
 ---
 
-### Sprint 4.6 : Audit et Nettoyage Pre-Phase 5 📋 (Préliminaire)
+### Sprint 4.6 : Audit et Nettoyage Pre-Phase 5 ✅ COMPLETE
 
 **Objectif** : Identifier et nettoyer les reliquats, redondances et code obsolète avant de passer à la Phase 5.
 
@@ -617,16 +617,43 @@ Fichiers avec docstrings/commentaires mentionnant "SQLite" ou "metadata.db" à m
 
 | # | Tâche | Fichier(s) | Priorité | Statut |
 |---|-------|------------|----------|--------|
-| S4.6.1 | Supprimer `navigation.py` (code mort) | `src/app/navigation.py`, `src/app/__init__.py` | Haute | ⏳ |
-| S4.6.2 | Supprimer `examples.py` (code mort) | `src/data/query/examples.py` | Haute | ⏳ |
-| S4.6.3 | Migrer `multiplayer.py` vers DuckDB | `src/ui/multiplayer.py` | Haute | ⏳ |
-| S4.6.4 | Migrer `aliases.py` vers DuckDB | `src/ui/aliases.py` | Haute | ⏳ |
-| S4.6.5 | Corriger `match_view_players.py` | `src/ui/pages/match_view_players.py` | Haute | ⏳ |
-| S4.6.6 | Corriger `session_compare.py` | `src/ui/pages/session_compare.py` | Haute | ⏳ |
-| S4.6.7 | Créer `src/utils/paths.py` | `src/utils/paths.py` | Moyenne | ⏳ |
-| S4.6.8 | Créer `duckdb_config.py` | `src/data/infrastructure/database/duckdb_config.py` | Moyenne | ⏳ |
-| S4.6.9 | Migrer `metadata.db` → `metadata.duckdb` | Multiples fichiers | Moyenne | ⏳ |
-| S4.6.10 | Mettre à jour commentaires obsolètes | 11 fichiers | Basse | ⏳ |
+| S4.6.1 | Supprimer `navigation.py` (code mort) | `src/app/navigation.py`, `src/app/__init__.py` | Haute | ✅ |
+| S4.6.2 | Supprimer `examples.py` (code mort) | `src/data/query/examples.py` | Haute | ✅ |
+| S4.6.3 | Migrer `multiplayer.py` vers DuckDB | `src/ui/multiplayer.py` | Haute | ✅ |
+| S4.6.4 | Migrer `aliases.py` vers DuckDB | `src/ui/aliases.py` | Haute | ✅ |
+| S4.6.5 | Corriger `match_view_players.py` | `src/ui/pages/match_view_players.py` | Haute | ✅ |
+| S4.6.6 | Corriger `session_compare.py` | `src/ui/pages/session_compare.py` | Haute | ✅ |
+| S4.6.7 | Créer `src/utils/paths.py` | `src/utils/paths.py` | Moyenne | ✅ |
+| S4.6.8 | Créer `duckdb_config.py` | `src/data/infrastructure/database/duckdb_config.py` | Moyenne | ✅ |
+| S4.6.9 | Migrer `metadata.db` → `metadata.duckdb` | Multiples fichiers | Moyenne | ✅ |
+| S4.6.10 | Mettre à jour commentaires obsolètes | 11 fichiers | Basse | ✅ |
+
+**Implémentations réalisées** :
+
+1. **Code mort supprimé** (~30 KB) :
+   - `src/app/navigation.py` : Remplacé par `page_router.py`
+   - `src/data/query/examples.py` : Classe `QueryExamples` jamais utilisée
+
+2. **Modules migrés vers DuckDB** :
+   - `src/ui/multiplayer.py` : Détection auto SQLite/DuckDB, fallback gracieux
+   - `src/ui/aliases.py` : Support DuckDB pour table `xuid_aliases`
+
+3. **Imports directs corrigés** :
+   - `match_view_players.py` : `load_match_players_stats` retourne [] pour DuckDB
+   - `session_compare.py` : `get_connection` remplacé par détection auto
+
+4. **Nouveaux modules créés** :
+   - `src/utils/paths.py` : Chemins centralisés (REPO_ROOT, PLAYERS_DIR, etc.)
+   - `src/data/infrastructure/database/duckdb_config.py` : Config DuckDB partagée
+
+5. **Références metadata.db migrées** :
+   - `src/data/query/engine.py` : Priorité metadata.duckdb avec fallback
+   - `src/data/repositories/hybrid.py` : Idem
+   - `src/data/repositories/shadow.py` : Idem
+
+6. **Commentaires mis à jour** :
+   - `src/db/loaders.py` : Docstring indiquant le support DuckDB limité
+   - `src/data/repositories/hybrid.py` : Docstring mis à jour
 
 ---
 
@@ -851,16 +878,19 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 4.5 COMPLETE | Partitionnement temporel : archive_season.py + vue unifiée DB+archives |
 | 2026-02-01 | Phase 4 COMPLETE | Tous les sprints d'optimisation terminés (4.1-4.5) |
 | 2026-02-01 | Audit Pre-Phase 5 | 50+ reliquats SQLite, 2 fichiers code mort, 10 tâches de nettoyage |
+| 2026-02-01 | Sprint 4.6 COMPLETE | Nettoyage pre-Phase 5, code mort supprimé, modules DuckDB-compatibles |
 
 ---
 
 ## Prochaine Action
 
-**Phase 4 COMPLETE** : Optimisations Avancées (Sprints 4.1-4.5 terminés ✅)
+**Phase 4 COMPLETE** : Optimisations Avancées (Sprints 4.1-4.6 terminés ✅)
 
 Prochaine priorité :
-- **Sprint 4.6** : Audit et Nettoyage Pre-Phase 5 (10 tâches identifiées)
-- Puis **Phase 5** : Enrichissement Visuel & Grunt API
+- **Phase 5** : Enrichissement Visuel & Grunt API
+  - Sprint 5.1 : Intégration Grunt API & Stats Armes
+  - Sprint 5.2 : Correctifs Prioritaires
+  - Sprint 5.3 : Graphes Radar & Étiquettes
 
 ```python
 # Utilisation des vues matérialisées dans le code UI :
@@ -893,4 +923,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 4.6 Audit Pre-Phase 5 ajouté)*
+*Dernière mise à jour : 2026-02-01 (Sprint 4.6 COMPLETE - Nettoyage Pre-Phase 5)*

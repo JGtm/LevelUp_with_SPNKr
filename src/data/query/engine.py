@@ -14,10 +14,10 @@ ou via les classes de haut niveau (AnalyticsQueries, TrendAnalyzer).
 
 Exemple de requête avec jointure SQLite + Parquet:
     engine = QueryEngine("data/warehouse")
-    
+
     # DuckDB joint automatiquement SQLite (meta.players) et Parquet (match_facts)
     result = engine.execute('''
-        SELECT 
+        SELECT
             p.gamertag,
             AVG(m.kda) as avg_kda,
             COUNT(*) as matches
@@ -27,6 +27,7 @@ Exemple de requête avec jointure SQLite + Parquet:
         ORDER BY avg_kda DESC
     ''', xuid="1234567890")
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,7 +39,6 @@ import polars as pl
 
 from src.models import MatchRow
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -46,13 +46,13 @@ class QueryEngine:
     """
     Moteur de requête DuckDB pour l'architecture hybride.
     (DuckDB query engine for hybrid architecture)
-    
+
     Fournit une interface unifiée pour :
     - Requêtes SQL sur Parquet
     - Jointures avec SQLite (metadata)
     - Agrégations analytiques haute performance
     """
-    
+
     def __init__(
         self,
         warehouse_path: str | Path,
@@ -63,7 +63,7 @@ class QueryEngine:
         """
         Initialise le moteur de requête.
         (Initialize query engine)
-        
+
         Args:
             warehouse_path: Chemin vers le dossier warehouse
             memory_limit: Limite mémoire DuckDB (défaut: 1GB)
@@ -74,11 +74,11 @@ class QueryEngine:
         self._threads = threads
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._metadata_attached = False
-        
+
         # Vérifier que le warehouse existe
         if not self.warehouse_path.exists():
             logger.warning(f"Warehouse non trouvé: {self.warehouse_path}")
-    
+
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
         """
@@ -88,34 +88,39 @@ class QueryEngine:
         if self._connection is None:
             self._connection = self._create_connection()
         return self._connection
-    
+
     def _create_connection(self) -> duckdb.DuckDBPyConnection:
         """
         Crée et configure une connexion DuckDB.
         (Create and configure a DuckDB connection)
         """
         conn = duckdb.connect(":memory:")
-        
+
         # Configuration pour performance
         conn.execute(f"SET memory_limit = '{self._memory_limit}'")
         if self._threads:
             conn.execute(f"SET threads = {self._threads}")
-        
+
         # Optimisations pour Parquet
         conn.execute("SET enable_object_cache = true")
         conn.execute("SET enable_progress_bar = false")
-        
-        # Attacher la base SQLite metadata si elle existe
-        metadata_db = self.warehouse_path / "metadata.db"
-        if metadata_db.exists():
-            conn.execute(
-                f"ATTACH DATABASE '{metadata_db}' AS meta (TYPE SQLITE, READ_ONLY)"
-            )
+
+        # Attacher la base metadata (DuckDB ou SQLite) si elle existe
+        # Priorité à metadata.duckdb, fallback sur metadata.db (legacy)
+        metadata_duckdb = self.warehouse_path / "metadata.duckdb"
+        metadata_sqlite = self.warehouse_path / "metadata.db"
+
+        if metadata_duckdb.exists():
+            conn.execute(f"ATTACH '{metadata_duckdb}' AS meta (READ_ONLY)")
             self._metadata_attached = True
-            logger.debug(f"SQLite metadata attachée: {metadata_db}")
-        
+            logger.debug(f"DuckDB metadata attachée: {metadata_duckdb}")
+        elif metadata_sqlite.exists():
+            conn.execute(f"ATTACH DATABASE '{metadata_sqlite}' AS meta (TYPE SQLITE, READ_ONLY)")
+            self._metadata_attached = True
+            logger.debug(f"SQLite metadata attachée (legacy): {metadata_sqlite}")
+
         return conn
-    
+
     def get_parquet_glob(
         self,
         table: str,
@@ -126,37 +131,37 @@ class QueryEngine:
         """
         Construit le pattern glob pour les fichiers Parquet.
         (Build glob pattern for Parquet files)
-        
+
         Args:
             table: Nom de la table (match_facts, medals, etc.)
             xuid: Optionnel, filtre par joueur
             year: Optionnel, filtre par année
             month: Optionnel, filtre par mois
-            
+
         Returns:
             Pattern glob pour read_parquet()
         """
         parts = [str(self.warehouse_path / table)]
-        
+
         if xuid:
             parts.append(f"player={xuid}")
         else:
             parts.append("player=*")
-        
+
         if year:
             parts.append(f"year={year}")
         else:
             parts.append("year=*")
-        
+
         if month:
             parts.append(f"month={month:02d}")
         else:
             parts.append("month=*")
-        
+
         parts.append("*.parquet")
-        
+
         return "/".join(parts)
-    
+
     def has_data(self, table: str, xuid: str | None = None) -> bool:
         """
         Vérifie si des données Parquet existent.
@@ -165,15 +170,15 @@ class QueryEngine:
         table_path = self.warehouse_path / table
         if not table_path.exists():
             return False
-        
+
         if xuid:
             player_path = table_path / f"player={xuid}"
             if not player_path.exists():
                 return False
             return bool(list(player_path.glob("**/*.parquet")))
-        
+
         return bool(list(table_path.glob("**/*.parquet")))
-    
+
     @overload
     def execute(
         self,
@@ -182,7 +187,7 @@ class QueryEngine:
         *,
         return_type: Literal["list"] = "list",
     ) -> list[dict[str, Any]]: ...
-    
+
     @overload
     def execute(
         self,
@@ -191,7 +196,7 @@ class QueryEngine:
         *,
         return_type: Literal["polars"],
     ) -> pl.DataFrame: ...
-    
+
     @overload
     def execute(
         self,
@@ -200,7 +205,7 @@ class QueryEngine:
         *,
         return_type: Literal["raw"],
     ) -> duckdb.DuckDBPyRelation: ...
-    
+
     def execute(
         self,
         sql: str,
@@ -211,15 +216,15 @@ class QueryEngine:
         """
         Exécute une requête SQL et retourne les résultats.
         (Execute SQL query and return results)
-        
+
         Args:
             sql: Requête SQL (peut contenir des placeholders $var)
             params: Paramètres pour les placeholders
             return_type: Format de retour ("list", "polars", "raw")
-            
+
         Returns:
             Résultats selon le return_type spécifié
-            
+
         Exemple:
             # Avec placeholders
             result = engine.execute(
@@ -228,16 +233,16 @@ class QueryEngine:
             )
         """
         conn = self.connection
-        
+
         # Préparer les paramètres
         if params:
             # DuckDB utilise $name pour les paramètres nommés
             for key, value in params.items():
                 conn.execute(f"SET VARIABLE {key} = {repr(value)}")
-        
+
         try:
             result = conn.execute(sql)
-            
+
             if return_type == "raw":
                 return result
             elif return_type == "polars":
@@ -245,7 +250,7 @@ class QueryEngine:
             else:  # "list"
                 columns = [desc[0] for desc in result.description]
                 rows = result.fetchall()
-                return [dict(zip(columns, row)) for row in rows]
+                return [dict(zip(columns, row, strict=False)) for row in rows]
         finally:
             # Nettoyer les variables
             if params:
@@ -254,7 +259,7 @@ class QueryEngine:
                         conn.execute(f"RESET VARIABLE {key}")
                     except Exception:
                         pass
-    
+
     def execute_with_parquet(
         self,
         sql_template: str,
@@ -267,15 +272,15 @@ class QueryEngine:
         """
         Exécute une requête SQL avec remplacement automatique de la table Parquet.
         (Execute SQL with automatic Parquet table replacement)
-        
+
         Le placeholder {table} est remplacé par read_parquet('...').
-        
+
         Args:
             sql_template: Template SQL avec {table} comme placeholder
             table: Nom de la table Parquet
             xuid: XUID du joueur
             params: Paramètres additionnels
-            
+
         Exemple:
             result = engine.execute_with_parquet(
                 "SELECT * FROM {table} WHERE kills > 10 ORDER BY start_time DESC",
@@ -285,12 +290,12 @@ class QueryEngine:
         """
         if not self.has_data(table, xuid):
             return [] if return_type == "list" else pl.DataFrame()
-        
+
         parquet_glob = self.get_parquet_glob(table, xuid)
         sql = sql_template.replace("{table}", f"read_parquet('{parquet_glob}')")
-        
+
         return self.execute(sql, params, return_type=return_type)  # type: ignore
-    
+
     def query_match_facts(
         self,
         xuid: str,
@@ -303,14 +308,14 @@ class QueryEngine:
         """
         Requête simplifiée sur la table match_facts.
         (Simplified query on match_facts table)
-        
+
         Args:
             xuid: XUID du joueur
             select: Colonnes à sélectionner
             where: Clause WHERE optionnelle
             order_by: Clause ORDER BY optionnelle
             limit: Limite de résultats
-            
+
         Exemple:
             # Derniers 100 matchs gagnés
             wins = engine.query_match_facts(
@@ -322,17 +327,17 @@ class QueryEngine:
             )
         """
         parts = [f"SELECT {select}", "FROM {table}"]
-        
+
         if where:
             parts.append(f"WHERE {where}")
         if order_by:
             parts.append(f"ORDER BY {order_by}")
         if limit:
             parts.append(f"LIMIT {limit}")
-        
+
         sql = " ".join(parts)
         return self.execute_with_parquet(sql, "match_facts", xuid)  # type: ignore
-    
+
     def query_with_metadata_join(
         self,
         sql_template: str,
@@ -343,17 +348,17 @@ class QueryEngine:
         """
         Requête avec jointure automatique sur les métadonnées SQLite.
         (Query with automatic join on SQLite metadata)
-        
+
         Placeholders disponibles:
         - {match_facts} : Table des faits de match
         - {medals} : Table des médailles
         - {players} : meta.players (SQLite)
         - {playlists} : meta.playlists (SQLite)
         - {maps} : meta.maps (SQLite)
-        
+
         Exemple:
             result = engine.query_with_metadata_join('''
-                SELECT 
+                SELECT
                     p.gamertag,
                     pl.public_name as playlist,
                     AVG(m.kda) as avg_kda
@@ -365,10 +370,10 @@ class QueryEngine:
         """
         if not self._metadata_attached:
             logger.warning("SQLite metadata non attachée, jointures limitées")
-        
+
         # Remplacer les placeholders
         sql = sql_template
-        
+
         if "{match_facts}" in sql:
             if self.has_data("match_facts", xuid):
                 parquet_glob = self.get_parquet_glob("match_facts", xuid)
@@ -376,23 +381,23 @@ class QueryEngine:
             else:
                 logger.warning("Pas de données match_facts")
                 return []
-        
+
         if "{medals}" in sql:
             if self.has_data("medals", xuid):
                 parquet_glob = self.get_parquet_glob("medals", xuid)
                 sql = sql.replace("{medals}", f"read_parquet('{parquet_glob}')")
             else:
                 sql = sql.replace("{medals}", "(SELECT NULL as match_id LIMIT 0)")
-        
+
         # Placeholders SQLite
         sql = sql.replace("{players}", "meta.players")
         sql = sql.replace("{playlists}", "meta.playlists")
         sql = sql.replace("{maps}", "meta.maps")
         sql = sql.replace("{game_variants}", "meta.game_variants")
         sql = sql.replace("{medal_definitions}", "meta.medal_definitions")
-        
+
         return self.execute(sql, params)  # type: ignore
-    
+
     def to_match_rows(self, results: list[dict[str, Any]]) -> list[MatchRow]:
         """
         Convertit les résultats de requête en MatchRow.
@@ -428,16 +433,16 @@ class QueryEngine:
             )
             for r in results
         ]
-    
+
     def close(self) -> None:
         """Ferme la connexion DuckDB. (Close DuckDB connection)"""
         if self._connection is not None:
             self._connection.close()
             self._connection = None
             self._metadata_attached = False
-    
+
     def __enter__(self) -> QueryEngine:
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()

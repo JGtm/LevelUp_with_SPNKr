@@ -20,8 +20,13 @@ from typing import Any
 
 import pandas as pd
 
-from src.data import RepositoryMode, get_repository
-from src.data.repositories.factory import get_repository_from_profile, load_db_profiles
+# Import direct depuis factory pour éviter l'import circulaire avec src.data
+from src.data.repositories.factory import (
+    RepositoryMode,
+    get_repository,
+    get_repository_from_profile,
+    load_db_profiles,
+)
 from src.data.repositories.protocol import DataRepository
 from src.models import MatchRow
 

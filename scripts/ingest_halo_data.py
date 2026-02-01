@@ -18,6 +18,7 @@ Usage:
 Instructions de test:
     pytest scripts/ingest_halo_data.py -v  # Lance les tests intégrés
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,11 +27,10 @@ import logging
 import sqlite3
 import sys
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Configuration du logging
 # (Logging configuration)
@@ -47,7 +47,10 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 STATIC_DIR = PROJECT_ROOT / "static"
 WAREHOUSE_DIR = DATA_DIR / "warehouse"
-METADATA_DB = WAREHOUSE_DIR / "metadata.db"
+# Priorité à metadata.duckdb, fallback sur metadata.db (legacy SQLite)
+METADATA_DB_DUCKDB = WAREHOUSE_DIR / "metadata.duckdb"
+METADATA_DB_SQLITE = WAREHOUSE_DIR / "metadata.db"
+METADATA_DB = METADATA_DB_SQLITE  # Ce script ingère vers SQLite (migration séparée vers DuckDB)
 
 
 # =============================================================================
@@ -55,13 +58,15 @@ METADATA_DB = WAREHOUSE_DIR / "metadata.db"
 # (Pydantic models for reference data)
 # =============================================================================
 
+
 class PlaylistTranslation(BaseModel):
     """
     Traduction d'une playlist.
     (Playlist translation)
     """
+
     model_config = ConfigDict(extra="ignore")
-    
+
     uuid: str | None = Field(default=None, description="UUID de la playlist")
     en: str = Field(..., min_length=1, description="Nom anglais")
     fr: str = Field(..., min_length=1, description="Nom français")
@@ -72,8 +77,9 @@ class GameModeTranslation(BaseModel):
     Traduction d'un mode de jeu.
     (Game mode translation)
     """
+
     model_config = ConfigDict(extra="ignore")
-    
+
     en: str = Field(..., min_length=1, description="Nom anglais")
     fr: str = Field(..., min_length=1, description="Nom français")
     category: str = Field(..., description="Catégorie du mode")
@@ -84,12 +90,13 @@ class MedalDefinition(BaseModel):
     Définition d'une médaille.
     (Medal definition)
     """
+
     model_config = ConfigDict(extra="ignore")
-    
+
     name_id: int = Field(..., description="ID numérique de la médaille")
     name_fr: str = Field(..., min_length=1, description="Nom français")
     name_en: str | None = Field(default=None, description="Nom anglais")
-    
+
     @field_validator("name_id", mode="before")
     @classmethod
     def parse_name_id(cls, v: Any) -> int:
@@ -104,8 +111,9 @@ class PlaylistModesData(BaseModel):
     Structure complète du fichier Playlist_modes_translations.json.
     (Complete structure of Playlist_modes_translations.json)
     """
+
     model_config = ConfigDict(extra="ignore")
-    
+
     playlists: list[PlaylistTranslation] = Field(default_factory=list)
     modes: list[GameModeTranslation] = Field(default_factory=list)
     categories: dict[str, str] = Field(default_factory=dict)
@@ -116,14 +124,16 @@ class PlaylistModesData(BaseModel):
 # (Ingestion result)
 # =============================================================================
 
+
 @dataclass
 class IngestionResult:
     """Résultat d'une opération d'ingestion."""
+
     success: bool
     table_name: str
     rows_inserted: int
     errors: list[str]
-    
+
     def __str__(self) -> str:
         status = "[OK]" if self.success else "[FAIL]"
         return f"{status} {self.table_name}: {self.rows_inserted} lignes"
@@ -134,26 +144,27 @@ class IngestionResult:
 # (Ingestion to SQLite)
 # =============================================================================
 
+
 class MetadataIngester:
     """
     Ingère les données de référentiel dans SQLite.
     (Ingests reference data into SQLite)
     """
-    
+
     def __init__(self, db_path: Path | None = None) -> None:
         """
         Initialise l'ingester.
-        
+
         Args:
             db_path: Chemin vers la base SQLite (défaut: data/warehouse/metadata.db)
         """
         self.db_path = db_path or METADATA_DB
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Créer les tables si nécessaires
         # (Create tables if needed)
         self._init_schema()
-    
+
     def _init_schema(self) -> None:
         """
         Crée le schéma SQLite.
@@ -169,7 +180,7 @@ class MetadataIngester:
                     name_fr TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
-                
+
                 -- Table des modes de jeu
                 -- (Game modes table)
                 CREATE TABLE IF NOT EXISTS game_modes (
@@ -179,14 +190,14 @@ class MetadataIngester:
                     category TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
-                
+
                 -- Table des catégories
                 -- (Categories table)
                 CREATE TABLE IF NOT EXISTS categories (
                     name_en TEXT PRIMARY KEY,
                     name_fr TEXT NOT NULL
                 );
-                
+
                 -- Table des définitions de médailles
                 -- (Medal definitions table)
                 CREATE TABLE IF NOT EXISTS medal_definitions (
@@ -195,7 +206,7 @@ class MetadataIngester:
                     name_fr TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
-                
+
                 -- Index pour les recherches
                 -- (Indexes for lookups)
                 CREATE INDEX IF NOT EXISTS idx_playlists_name_en ON playlists(name_en);
@@ -203,7 +214,7 @@ class MetadataIngester:
                 CREATE INDEX IF NOT EXISTS idx_medal_definitions_name_fr ON medal_definitions(name_fr);
             """)
             conn.commit()
-    
+
     def ingest_playlists(self, json_path: Path | None = None) -> IngestionResult:
         """
         Ingère les playlists depuis le JSON.
@@ -212,15 +223,15 @@ class MetadataIngester:
         json_path = json_path or (PROJECT_ROOT / "Playlist_modes_translations.json")
         errors: list[str] = []
         rows_inserted = 0
-        
+
         try:
-            with open(json_path, "r", encoding="utf-8") as f:
+            with open(json_path, encoding="utf-8") as f:
                 raw_data = json.load(f)
-            
+
             # Valider avec Pydantic
             # (Validate with Pydantic)
             data = PlaylistModesData.model_validate(raw_data)
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 # Insérer les playlists
                 # (Insert playlists)
@@ -230,12 +241,12 @@ class MetadataIngester:
                             conn.execute(
                                 """INSERT OR REPLACE INTO playlists (uuid, name_en, name_fr)
                                    VALUES (?, ?, ?)""",
-                                (playlist.uuid, playlist.en, playlist.fr)
+                                (playlist.uuid, playlist.en, playlist.fr),
                             )
                             rows_inserted += 1
                         except Exception as e:
                             errors.append(f"Playlist {playlist.en}: {e}")
-                
+
                 # Insérer les modes
                 # (Insert modes)
                 for mode in data.modes:
@@ -243,12 +254,12 @@ class MetadataIngester:
                         conn.execute(
                             """INSERT OR REPLACE INTO game_modes (name_en, name_fr, category)
                                VALUES (?, ?, ?)""",
-                            (mode.en, mode.fr, mode.category)
+                            (mode.en, mode.fr, mode.category),
                         )
                         rows_inserted += 1
                     except Exception as e:
                         errors.append(f"Mode {mode.en}: {e}")
-                
+
                 # Insérer les catégories
                 # (Insert categories)
                 for cat_en, cat_fr in data.categories.items():
@@ -256,14 +267,14 @@ class MetadataIngester:
                         conn.execute(
                             """INSERT OR REPLACE INTO categories (name_en, name_fr)
                                VALUES (?, ?)""",
-                            (cat_en, cat_fr)
+                            (cat_en, cat_fr),
                         )
                         rows_inserted += 1
                     except Exception as e:
                         errors.append(f"Catégorie {cat_en}: {e}")
-                
+
                 conn.commit()
-            
+
             logger.info(f"Playlists ingérées: {rows_inserted} entrées")
             return IngestionResult(
                 success=len(errors) == 0,
@@ -271,7 +282,7 @@ class MetadataIngester:
                 rows_inserted=rows_inserted,
                 errors=errors,
             )
-            
+
         except Exception as e:
             logger.error(f"Erreur lors de l'ingestion des playlists: {e}")
             return IngestionResult(
@@ -280,7 +291,7 @@ class MetadataIngester:
                 rows_inserted=0,
                 errors=[str(e)],
             )
-    
+
     def ingest_medals(
         self,
         json_path_fr: Path | None = None,
@@ -294,23 +305,23 @@ class MetadataIngester:
         json_path_en = json_path_en or (STATIC_DIR / "medals" / "medals_en.json")
         errors: list[str] = []
         rows_inserted = 0
-        
+
         try:
             # Charger les traductions FR
             # (Load FR translations)
-            with open(json_path_fr, "r", encoding="utf-8") as f:
+            with open(json_path_fr, encoding="utf-8") as f:
                 medals_fr: dict[str, str] = json.load(f)
-            
+
             # Charger les traductions EN si disponibles
             # (Load EN translations if available)
             medals_en: dict[str, str] = {}
             if json_path_en.exists():
                 try:
-                    with open(json_path_en, "r", encoding="utf-8") as f:
+                    with open(json_path_en, encoding="utf-8") as f:
                         medals_en = json.load(f)
                 except Exception as e:
                     logger.warning(f"Impossible de charger medals_en.json: {e}")
-            
+
             # Valider et insérer
             # (Validate and insert)
             validated_medals: list[MedalDefinition] = []
@@ -324,22 +335,22 @@ class MetadataIngester:
                     validated_medals.append(medal)
                 except Exception as e:
                     errors.append(f"Médaille {name_id_str}: {e}")
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 for medal in validated_medals:
                     try:
                         conn.execute(
-                            """INSERT OR REPLACE INTO medal_definitions 
+                            """INSERT OR REPLACE INTO medal_definitions
                                (name_id, name_en, name_fr)
                                VALUES (?, ?, ?)""",
-                            (medal.name_id, medal.name_en, medal.name_fr)
+                            (medal.name_id, medal.name_en, medal.name_fr),
                         )
                         rows_inserted += 1
                     except Exception as e:
                         errors.append(f"Médaille {medal.name_id}: {e}")
-                
+
                 conn.commit()
-            
+
             logger.info(f"Médailles ingérées: {rows_inserted} entrées")
             return IngestionResult(
                 success=len(errors) == 0,
@@ -347,7 +358,7 @@ class MetadataIngester:
                 rows_inserted=rows_inserted,
                 errors=errors,
             )
-            
+
         except Exception as e:
             logger.error(f"Erreur lors de l'ingestion des médailles: {e}")
             return IngestionResult(
@@ -356,12 +367,12 @@ class MetadataIngester:
                 rows_inserted=0,
                 errors=[str(e)],
             )
-    
+
     def verify_with_duckdb(self) -> dict[str, Any]:
         """
         Vérifie que les données sont lisibles avec DuckDB.
         (Verify that data is readable with DuckDB)
-        
+
         Returns:
             Dict avec les stats de chaque table
         """
@@ -370,43 +381,41 @@ class MetadataIngester:
         except ImportError:
             logger.error("DuckDB n'est pas installé. Installez-le avec: pip install duckdb")
             return {"error": "DuckDB not installed"}
-        
+
         results: dict[str, Any] = {
             "db_path": str(self.db_path),
             "tables": {},
         }
-        
+
         try:
             # Connexion DuckDB avec attachement SQLite
             # (DuckDB connection with SQLite attachment)
             conn = duckdb.connect(":memory:")
             conn.execute(f"ATTACH '{self.db_path}' AS meta (TYPE sqlite)")
-            
+
             # Vérifier chaque table
             # (Check each table)
             tables = ["playlists", "game_modes", "categories", "medal_definitions"]
-            
+
             for table in tables:
                 try:
                     result = conn.execute(f"SELECT COUNT(*) FROM meta.{table}").fetchone()
                     count = result[0] if result else 0
-                    
+
                     # Exemple de données
                     # (Sample data)
-                    sample = conn.execute(
-                        f"SELECT * FROM meta.{table} LIMIT 3"
-                    ).fetchall()
-                    
+                    sample = conn.execute(f"SELECT * FROM meta.{table} LIMIT 3").fetchall()
+
                     results["tables"][table] = {
                         "count": count,
                         "sample": sample[:3] if sample else [],
                     }
                     logger.info(f"  [OK] {table}: {count} lignes")
-                    
+
                 except Exception as e:
                     results["tables"][table] = {"error": str(e)}
                     logger.error(f"  [FAIL] {table}: {e}")
-            
+
             # Vérifier les fichiers Parquet s'ils existent
             # (Check Parquet files if they exist)
             parquet_dir = WAREHOUSE_DIR / "match_facts"
@@ -423,7 +432,7 @@ class MetadataIngester:
                                    MAX(start_time) as last_match
                             FROM read_parquet('{parquet_dir}/**/*.parquet')
                         """).fetchone()
-                        
+
                         results["parquet"] = {
                             "files": len(parquet_files),
                             "total_matches": result[0] if result else 0,
@@ -431,24 +440,29 @@ class MetadataIngester:
                             "first_match": str(result[2]) if result and result[2] else None,
                             "last_match": str(result[3]) if result and result[3] else None,
                         }
-                        logger.info(f"  [OK] Parquet: {len(parquet_files)} fichiers, {result[0]} matchs")
+                        logger.info(
+                            f"  [OK] Parquet: {len(parquet_files)} fichiers, {result[0]} matchs"
+                        )
                     except Exception as e:
                         results["parquet"] = {"error": str(e)}
                         logger.warning(f"  [WARN] Parquet: {e}")
             else:
-                results["parquet"] = {"status": "no_data", "message": "Pas encore de matchs Parquet"}
+                results["parquet"] = {
+                    "status": "no_data",
+                    "message": "Pas encore de matchs Parquet",
+                }
                 logger.info("  [INFO] Parquet: Pas encore de donnees")
-            
+
             conn.close()
             results["success"] = True
-            
+
         except Exception as e:
             logger.error(f"Erreur DuckDB: {e}")
             results["error"] = str(e)
             results["success"] = False
-        
+
         return results
-    
+
     def get_summary(self) -> dict[str, int]:
         """
         Retourne un résumé des données ingérées.
@@ -470,6 +484,7 @@ class MetadataIngester:
 # POINT D'ENTRÉE
 # (Entry point)
 # =============================================================================
+
 
 def main() -> int:
     """Point d'entrée principal."""
@@ -495,32 +510,32 @@ def main() -> int:
         action="store_true",
         help="Mode verbeux",
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     ingester = MetadataIngester(db_path=args.db_path)
     results: list[IngestionResult] = []
-    
+
     logger.info("=" * 60)
     logger.info("Ingestion des données Halo")
     logger.info(f"Base SQLite: {ingester.db_path}")
     logger.info("=" * 60)
-    
+
     if args.action in ("all", "playlists"):
         logger.info("\n[1/3] Ingestion des playlists et modes...")
         result = ingester.ingest_playlists()
         results.append(result)
         print(f"  {result}")
-    
+
     if args.action in ("all", "medals"):
         logger.info("\n[2/3] Ingestion des médailles...")
         result = ingester.ingest_medals()
         results.append(result)
         print(f"  {result}")
-    
+
     if args.action in ("all", "verify"):
         logger.info("\n[3/3] Vérification avec DuckDB...")
         verification = ingester.verify_with_duckdb()
@@ -531,26 +546,26 @@ def main() -> int:
                     print(f"    - {table}: {stats.get('count', 0)} lignes")
         else:
             print(f"  [FAIL] Erreur: {verification.get('error', 'Unknown')}")
-    
+
     if args.action == "summary":
         summary = ingester.get_summary()
         print("\nRésumé des données:")
         for table, count in summary.items():
             print(f"  - {table}: {count} lignes")
-    
+
     # Résumé final
     # (Final summary)
     logger.info("\n" + "=" * 60)
     logger.info("RÉSUMÉ")
     logger.info("=" * 60)
-    
+
     success_count = sum(1 for r in results if r.success)
     total_rows = sum(r.rows_inserted for r in results)
-    
+
     print(f"\n[OK] {success_count}/{len(results)} operations reussies")
     print(f"[OK] {total_rows} lignes inserees au total")
     print(f"[OK] Base: {ingester.db_path}")
-    
+
     # Retourner 0 si tout est OK, 1 sinon
     # (Return 0 if OK, 1 otherwise)
     return 0 if all(r.success for r in results) else 1

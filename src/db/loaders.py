@@ -1,4 +1,12 @@
-"""Chargement des données depuis la base SQLite."""
+"""Chargement des données depuis les bases legacy (SQLite).
+
+Ce module gère la lecture des données depuis les DBs SQLite legacy
+(spnkr_gt_*.db, halo_unified.db). Pour l'architecture v4 (DuckDB),
+utiliser DuckDBRepository à la place.
+
+NOTE: Les fonctions de ce module détectent automatiquement le type de DB
+et retournent une liste vide si le fichier est un .duckdb (non supporté).
+"""
 
 import json
 import re
@@ -1380,13 +1388,22 @@ def load_match_players_stats(db_path: str, match_id: str) -> list[MatchPlayerSta
     MatchStats.Players[].PlayerTeamStats[].Stats.CoreStats.
 
     Args:
-        db_path: Chemin vers le fichier .db.
+        db_path: Chemin vers le fichier .db ou .duckdb.
         match_id: ID du match.
 
     Returns:
         Liste de MatchPlayerStats triée par rang (meilleur score en premier).
+
+    Note:
+        Pour les DBs DuckDB v4, cette fonction retourne une liste vide car
+        les stats de tous les joueurs d'un match ne sont pas disponibles
+        dans la même structure (seul le joueur principal est stocké).
     """
     if not match_id:
+        return []
+
+    # Les DBs DuckDB v4 n'ont pas le payload JSON brut avec tous les joueurs
+    if db_path.endswith(".duckdb"):
         return []
 
     with get_connection(db_path) as con:

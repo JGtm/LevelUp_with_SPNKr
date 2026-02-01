@@ -1,16 +1,19 @@
 """
-Repository Hybride : Nouveau système SQLite + Parquet + DuckDB.
-(Hybrid Repository: New SQLite + Parquet + DuckDB system)
+Repository Hybride : Système Parquet + DuckDB.
+(Hybrid Repository: Parquet + DuckDB system)
 
 HOW IT WORKS:
 Ce repository utilise l'architecture hybride :
-1. SQLite (metadata.db) : Données chaudes (joueurs, playlists, sessions)
+1. Métadonnées (metadata.duckdb ou metadata.db) : Référentiels partagés
 2. Parquet : Données froides (matchs, médailles)
 3. DuckDB : Moteur de requête pour joindre les deux
 
 Les données sont lues depuis Parquet via DuckDB pour les performances.
-Les métadonnées sont lues depuis SQLite.
+Les métadonnées sont lues depuis metadata.duckdb (ou metadata.db en fallback).
+
+NOTE: Pour l'architecture v4 (DuckDB natif), utiliser DuckDBRepository.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -27,13 +30,13 @@ class HybridRepository:
     """
     Repository utilisant l'architecture hybride.
     (Repository using hybrid architecture)
-    
+
     Combine :
     - SQLite pour les métadonnées (via SQLiteMetadataStore)
     - Parquet pour les faits (via ParquetReader / DuckDBEngine)
     - DuckDB pour les requêtes complexes
     """
-    
+
     def __init__(
         self,
         warehouse_path: str | Path,
@@ -44,7 +47,7 @@ class HybridRepository:
         """
         Initialise le repository hybride.
         (Initialize hybrid repository)
-        
+
         Args:
             warehouse_path: Chemin vers le dossier warehouse
             xuid: XUID du joueur principal
@@ -53,34 +56,40 @@ class HybridRepository:
         self._warehouse_path = Path(warehouse_path)
         self._xuid = xuid
         self._legacy_db_path = legacy_db_path
-        
+
         # Composants de l'architecture hybride
-        self._metadata_db_path = self._warehouse_path / "metadata.db"
+        # Priorité à metadata.duckdb, fallback sur metadata.db (legacy)
+        metadata_duckdb = self._warehouse_path / "metadata.duckdb"
+        metadata_sqlite = self._warehouse_path / "metadata.db"
+        if metadata_duckdb.exists():
+            self._metadata_db_path = metadata_duckdb
+        else:
+            self._metadata_db_path = metadata_sqlite
         self._metadata_store = SQLiteMetadataStore(self._metadata_db_path)
         self._parquet_reader = ParquetReader(self._warehouse_path)
         self._duckdb_engine: DuckDBEngine | None = None
-    
+
     @property
     def xuid(self) -> str:
         """XUID du joueur principal."""
         return self._xuid
-    
+
     @property
     def db_path(self) -> str:
         """Chemin vers la base de données metadata."""
         return str(self._metadata_db_path)
-    
+
     def _get_duckdb(self) -> DuckDBEngine:
         """Retourne le moteur DuckDB (lazy loading)."""
         if self._duckdb_engine is None:
             self._duckdb_engine = DuckDBEngine(self._warehouse_path)
             self._duckdb_engine.attach_sqlite(self._metadata_db_path, "meta")
         return self._duckdb_engine
-    
+
     # =========================================================================
     # Chargement des matchs
     # =========================================================================
-    
+
     def load_matches(
         self,
         *,
@@ -97,13 +106,13 @@ class HybridRepository:
         # Vérifier si des données Parquet existent
         if not self._parquet_reader.has_data(self._xuid):
             return []
-        
+
         return self._get_duckdb().load_matches(
             self._xuid,
             playlist_filter=playlist_filter,
             map_filter=map_filter,
         )
-    
+
     def load_matches_in_range(
         self,
         start_date: datetime,
@@ -116,15 +125,15 @@ class HybridRepository:
             end_date=end_date,
         )
         return self._parquet_reader.to_match_rows(df)
-    
+
     def get_match_count(self) -> int:
         """Retourne le nombre total de matchs."""
         return self._parquet_reader.count_rows(self._xuid)
-    
+
     # =========================================================================
     # Médailles
     # =========================================================================
-    
+
     def load_top_medals(
         self,
         match_ids: list[str],
@@ -134,39 +143,40 @@ class HybridRepository:
         """Charge les médailles les plus fréquentes."""
         if not self._parquet_reader.has_data(self._xuid, "medals"):
             return []
-        
+
         df = self._parquet_reader.read_medals(self._xuid, match_ids=match_ids)
         if df.is_empty():
             return []
-        
+
         # Agrégation
         import polars as pl
+
         agg = (
             df.group_by("medal_name_id")
             .agg(pl.col("count").sum().alias("total"))
             .sort("total", descending=True)
         )
-        
+
         if top_n:
             agg = agg.head(top_n)
-        
+
         return [(row["medal_name_id"], row["total"]) for row in agg.iter_rows(named=True)]
-    
+
     def load_match_medals(self, match_id: str) -> list[dict[str, int]]:
         """Charge les médailles pour un match spécifique."""
         df = self._parquet_reader.read_medals(self._xuid, match_ids=[match_id])
         if df.is_empty():
             return []
-        
+
         return [
             {"name_id": row["medal_name_id"], "count": row["count"]}
             for row in df.iter_rows(named=True)
         ]
-    
+
     # =========================================================================
     # Coéquipiers
     # =========================================================================
-    
+
     def list_top_teammates(
         self,
         limit: int = 20,
@@ -174,17 +184,17 @@ class HybridRepository:
         """
         Liste les coéquipiers les plus fréquents.
         (List most frequent teammates)
-        
+
         Note: Requiert une table teammates_aggregate dans les métadonnées.
         Pour l'instant, retourne une liste vide.
         """
         # TODO: Implémenter avec une table d'agrégation des coéquipiers
         return []
-    
+
     # =========================================================================
     # Métadonnées
     # =========================================================================
-    
+
     def get_sync_metadata(self) -> dict[str, Any]:
         """Récupère les métadonnées de synchronisation."""
         sync_status = self._metadata_store.get_sync_status(self._xuid)
@@ -195,17 +205,17 @@ class HybridRepository:
             "player_xuid": self._xuid,
             "storage_type": "hybrid",
         }
-    
+
     # =========================================================================
     # Méthodes de diagnostic
     # =========================================================================
-    
+
     def get_storage_info(self) -> dict[str, Any]:
         """Retourne des informations sur le stockage."""
         from src.data.infrastructure.parquet.writer import ParquetWriter
-        
+
         writer = ParquetWriter(self._warehouse_path)
-        
+
         return {
             "type": "hybrid",
             "warehouse_path": str(self._warehouse_path),
@@ -216,19 +226,19 @@ class HybridRepository:
             "has_parquet_data": self._parquet_reader.has_data(self._xuid),
             "parquet_row_count": self._parquet_reader.count_rows(self._xuid),
         }
-    
+
     def is_hybrid_available(self) -> bool:
         """Vérifie si les données hybrides sont disponibles."""
         return self._parquet_reader.has_data(self._xuid)
-    
+
     def close(self) -> None:
         """Ferme les connexions."""
         if self._duckdb_engine is not None:
             self._duckdb_engine.close()
             self._duckdb_engine = None
-    
+
     def __enter__(self) -> HybridRepository:
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
