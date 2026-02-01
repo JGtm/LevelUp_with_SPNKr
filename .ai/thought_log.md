@@ -17,6 +17,39 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 4.7.3 COMPLETE - Migration Historique
+
+**Contexte** :
+Sprint 4.7.2 (Intégration Sync) terminé. Passage au Sprint 4.7.3 : Migration des données historiques vers DuckDB.
+
+**Analyse** :
+
+Les tables SQLite suivantes doivent être migrées vers DuckDB :
+1. `HighlightEvents` → `highlight_events` (events de film/replay)
+2. `PlayerMatchStats` → `player_match_stats` (données MMR/skill)
+3. `XuidAliases` → `xuid_aliases` (correspondances XUID → Gamertag)
+
+**Implémentations** :
+
+| Script | Description |
+|--------|-------------|
+| `migrate_highlight_events.py` | Migre les events de film (kills/deaths avec timestamps) |
+| `migrate_player_match_stats.py` | Migre les données MMR/skill par match |
+| `migrate_all_to_duckdb.py` | Script unifié incluant XuidAliases |
+
+**Décisions techniques** :
+
+1. **Extraction des XuidAliases** : Recherche dans plusieurs sources (table dédiée, Players, MatchStats)
+2. **Format raw_json** : Conservation du JSON brut dans `highlight_events` pour analyse future
+3. **Script unifié** : Préférer `migrate_all_to_duckdb.py` pour une migration complète en une commande
+4. **Compatibilité** : Les scripts détectent automatiquement les DBs legacy (spnkr_gt_*.db, halo_unified.db)
+
+**Suivi** :
+- Sprint 4.7.4 (Nettoyage) à faire : marquer obsolètes les anciens scripts/modules
+- Tester les migrations sur les DBs réelles avant de supprimer le code legacy
+
+---
+
 ### [2026-02-01] - Phase 4 Démarrée - Optimisations Avancées
 
 **Contexte** :

@@ -766,14 +766,52 @@ data/players/{gamertag}/stats.duckdb
    - `sync_player_duckdb_async()` : Version async native
    - `sync_player_auto()` : Détection automatique DuckDB vs legacy
 
-#### Sprint 4.7.3 : Migration Historique ⏳
+#### Sprint 4.7.3 : Migration Historique ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S4.7.3.1 | Migrer HighlightEvents → DuckDB | `scripts/migrate_highlight_events.py` | ⏳ |
-| S4.7.3.2 | Migrer PlayerMatchStats → DuckDB | `scripts/migrate_player_match_stats.py` | ⏳ |
-| S4.7.3.3 | Migrer XuidAliases → DuckDB | Inclus dans les précédents | ⏳ |
-| S4.7.3.4 | Script unifié | `scripts/migrate_all_to_duckdb.py` | ⏳ |
+| S4.7.3.1 | Migrer HighlightEvents → DuckDB | `scripts/migrate_highlight_events.py` | ✅ |
+| S4.7.3.2 | Migrer PlayerMatchStats → DuckDB | `scripts/migrate_player_match_stats.py` | ✅ |
+| S4.7.3.3 | Migrer XuidAliases → DuckDB | Inclus dans `migrate_all_to_duckdb.py` | ✅ |
+| S4.7.3.4 | Script unifié | `scripts/migrate_all_to_duckdb.py` | ✅ |
+
+**Implémentations réalisées** :
+
+1. **`scripts/migrate_highlight_events.py`** :
+   - Lit la table `HighlightEvents` (MatchId + ResponseBody JSON) depuis SQLite
+   - Parse chaque event JSON et extrait : event_type, time_ms, xuid, gamertag, type_hint
+   - Insère dans la table DuckDB `highlight_events` avec raw_json pour les données complètes
+   - Options : `--gamertag`, `--all`, `--dry-run`, `--verbose`
+
+2. **`scripts/migrate_player_match_stats.py`** :
+   - Lit la table `PlayerMatchStats` depuis SQLite
+   - Extrait les données MMR/skill pour le joueur : team_mmr, enemy_mmr, kills/deaths/assists expected/stddev
+   - Insère dans la table DuckDB `player_match_stats`
+   - Options : `--gamertag`, `--all`, `--dry-run`, `--verbose`
+
+3. **`scripts/migrate_all_to_duckdb.py`** :
+   - Script unifié qui exécute toutes les migrations en une seule commande
+   - Migre : HighlightEvents, PlayerMatchStats, XuidAliases
+   - Extrait les XuidAliases depuis plusieurs sources : table XuidAliases, table Players, MatchStats
+   - Met à jour `sync_meta` avec les métadonnées de migration
+   - Options : `--gamertag`, `--all`, `--dry-run`, `--skip-matchcache`, `--verbose`
+
+**Usage** :
+
+```bash
+# Migrer toutes les données d'un joueur
+python scripts/migrate_all_to_duckdb.py --gamertag Chocoboflor
+
+# Migrer tous les joueurs
+python scripts/migrate_all_to_duckdb.py --all
+
+# Dry-run pour vérifier avant migration
+python scripts/migrate_all_to_duckdb.py --all --dry-run
+
+# Migrations individuelles
+python scripts/migrate_highlight_events.py --gamertag JGtm
+python scripts/migrate_player_match_stats.py --gamertag JGtm
+```
 
 #### Sprint 4.7.4 : Nettoyage ⏳
 
@@ -1151,6 +1189,7 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 4.6 COMPLETE | Nettoyage pre-Phase 5, code mort supprimé, modules DuckDB-compatibles |
 | 2026-02-01 | Sprint 4.7.1 COMPLETE | Core Sync Engine : DuckDBSyncEngine, SPNKrAPIClient, transformers |
 | 2026-02-01 | Sprint 4.7.2 COMPLETE | Intégration : scripts/sync.py et src/ui/sync.py adaptés |
+| 2026-02-01 | Sprint 4.7.3 COMPLETE | Migration historique : HighlightEvents, PlayerMatchStats, XuidAliases |
 
 ---
 
@@ -1195,4 +1234,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 4.7.2 COMPLETE - Intégration Sync)*
+*Dernière mise à jour : 2026-02-01 (Sprint 4.7.3 COMPLETE - Migration Historique)*
