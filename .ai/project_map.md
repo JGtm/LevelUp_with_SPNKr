@@ -13,6 +13,7 @@
   - Vues matérialisées (mv_map_stats, mv_mode_category_stats, mv_global_stats, mv_session_stats)
   - Lazy loading et pagination (load_recent_matches, load_matches_paginated)
   - Backup/Restore Parquet avec compression Zstd
+  - Partitionnement temporel (archive_season.py, vue unifiée DB+archives)
 
 ### Architecture Cible v4
 
@@ -20,11 +21,14 @@
 data/
 ├── players/                    # Données par joueur
 │   └── {gamertag}/
-│       └── stats.duckdb       # DB DuckDB persistée
+│       ├── stats.duckdb       # DB DuckDB persistée
+│       └── archive/           # Archives temporelles
+│           ├── matches_2023.parquet
+│           └── archive_index.json
 ├── warehouse/
 │   └── metadata.duckdb        # Référentiels partagés
 └── archive/
-    └── parquet/               # Cold storage (backup)
+    └── parquet/               # Cold storage (backup global)
 ```
 
 ## Architecture des Données
@@ -79,6 +83,7 @@ data/
 | `scripts/sync.py` | Synchronisation SPNKr + refresh vues matérialisées |
 | `scripts/backup_player.py` | Export Parquet avec compression Zstd |
 | `scripts/restore_player.py` | Import depuis backup Parquet |
+| `scripts/archive_season.py` | Archivage temporel des matchs anciens |
 | `scripts/migrate_player_to_duckdb.py` | Migration SQLite → DuckDB |
 | `scripts/populate_antagonists.py` | Calcul des antagonistes |
 
@@ -96,4 +101,4 @@ data/
 | `docs/DATA_ARCHITECTURE.md` | Architecture des données |
 
 ## Dernière Mise à Jour
-- **2026-02-01** : Phase 4 terminée (vues matérialisées, lazy loading, backup/restore)
+- **2026-02-01** : Phase 4 terminée (vues matérialisées, lazy loading, backup/restore, partitionnement temporel)

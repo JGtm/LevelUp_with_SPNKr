@@ -1192,4 +1192,57 @@ Demande de l'utilisateur de compléter les sprints restants de la Phase 4 :
 
 ---
 
+### [2026-02-01] - Sprint 4.5 COMPLETE - Partitionnement Temporel
+
+**Contexte** :
+Dernier sprint de la Phase 4 : Partitionnement Temporel. Ce sprint est optionnel et s'applique aux joueurs ayant > 5000 matchs ou > 1 an d'historique.
+
+**Implémentations réalisées** :
+
+1. **Script `scripts/archive_season.py`** :
+   - Archivage des matchs anciens vers Parquet compressé (Zstd)
+   - Options : `--cutoff` (date), `--older-than-days` (N jours), `--dry-run`, `--delete`
+   - Archivage automatique par année si plusieurs années de données
+   - Index des archives (`archive_index.json`) pour traçabilité
+   - Option `--list-archives` pour voir les statistiques et recommandations
+
+2. **Méthodes `DuckDBRepository`** :
+   - `get_archive_info()` : Retourne les infos sur les archives (count, size, files)
+   - `load_matches_from_archives()` : Charge depuis les fichiers Parquet archivés
+   - `load_all_matches_unified()` : Vue unifiée DB + archives avec déduplication
+   - `get_total_match_count_with_archives()` : Compte total (DB + archives)
+
+3. **Tests `tests/test_season_archive.py`** :
+   - Tests de création d'archives (dry-run, fichiers réels)
+   - Tests de chargement depuis archives avec filtres de dates
+   - Tests de vue unifiée avec déduplication
+   - Tests d'intégrité de l'index
+
+**Raisonnement** :
+- Le partitionnement temporel améliore les performances pour les joueurs avec beaucoup d'historique
+- La vue unifiée permet de maintenir l'accès à toutes les données sans charger tout en mémoire
+- La déduplication évite les problèmes si un match apparaît à la fois dans la DB et les archives
+- Le format Parquet avec Zstd offre une excellente compression pour le cold storage
+
+**Structure finale** :
+```
+data/players/{gamertag}/
+├── stats.duckdb          # Données récentes (saison courante)
+└── archive/
+    ├── matches_2023.parquet    # Matchs 2023 archivés
+    ├── matches_2024.parquet    # Matchs 2024 archivés
+    └── archive_index.json      # Index avec métadonnées
+```
+
+**Suivi** :
+- [x] S4.5.1 : Script archive_season.py
+- [x] S4.5.2 : Vue unifiée DB + archives
+- [x] S4.5.3 : Tests partitionnement temporel
+- [x] Roadmap mise à jour (Phase 4 COMPLETE)
+- [x] Thought_log documenté
+
+**Phase 4 terminée** ✅ - Toutes les optimisations avancées sont en place.
+
+---
+
 <!-- Les entrées sont ajoutées ici, les plus récentes en haut -->

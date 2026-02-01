@@ -477,25 +477,156 @@ COPY match_stats TO 'backup/match_stats.parquet'
 COPY match_stats FROM 'backup/match_stats.parquet';
 ```
 
-### Sprint 4.5 : Partitionnement Temporel (Optionnel) ⏳
+### Sprint 4.5 : Partitionnement Temporel ✅ COMPLETE
 
 **Seuil** : Implémenter si > 5000 matchs ou > 1 an d'historique.
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S4.5.1 | Script archivage saison | `scripts/archive_season.py` | ⏳ |
-| S4.5.2 | Vue unifiée stats + archives | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.5.1 | Script archivage saison | `scripts/archive_season.py` | ✅ |
+| S4.5.2 | Vue unifiée stats + archives | `src/data/repositories/duckdb_repo.py` | ✅ |
+| S4.5.3 | Tests partitionnement temporel | `tests/test_season_archive.py` | ✅ |
 
-**Structure cible** :
+**Implémentations réalisées** :
+
+1. **Script `archive_season.py`** :
+   - Archivage par année ou par date de cutoff vers Parquet compressé Zstd
+   - Options : `--cutoff`, `--older-than-days`, `--dry-run`, `--delete`
+   - Archivage automatique par année si plusieurs années de données
+   - Index des archives (`archive_index.json`) pour traçabilité
+   - Statistiques et recommandations intégrées
+
+2. **Méthodes `DuckDBRepository`** :
+   - `get_archive_info()` : Informations sur les archives existantes
+   - `load_matches_from_archives()` : Charge les matchs depuis Parquet
+   - `load_all_matches_unified()` : Vue unifiée DB + archives (avec déduplication)
+   - `get_total_match_count_with_archives()` : Compte total (DB + archives)
+
+3. **Tests** :
+   - Tests d'archivage (dry-run, création fichiers, par année)
+   - Tests de chargement depuis archives
+   - Tests de vue unifiée avec déduplication
+   - Tests de filtrage par dates
+
+**Structure créée** :
 
 ```
 data/players/{gamertag}/
 ├── stats.duckdb          # Données récentes (saison courante)
 └── archive/
-    ├── season_1.parquet  # Saison 1 (cold storage)
-    ├── season_2.parquet  # Saison 2
-    └── season_3.parquet  # Saison 3
+    ├── matches_2023.parquet    # Matchs 2023 archivés
+    ├── matches_2024.parquet    # Matchs 2024 archivés
+    └── archive_index.json      # Index avec métadonnées
 ```
+
+**Usage** :
+
+```bash
+# Lister les statistiques et archives existantes
+python scripts/archive_season.py --gamertag Chocoboflor --list-archives
+
+# Archiver les matchs avant 2024 (dry-run)
+python scripts/archive_season.py --gamertag Chocoboflor --cutoff 2024-01-01 --dry-run
+
+# Archiver les matchs de plus d'un an
+python scripts/archive_season.py --gamertag Chocoboflor --older-than-days 365
+
+# Vue unifiée dans le code
+repo = DuckDBRepository(db_path, xuid)
+all_matches = repo.load_all_matches_unified()  # DB + archives
+```
+
+---
+
+### Sprint 4.6 : Audit et Nettoyage Pre-Phase 5 📋 (Préliminaire)
+
+**Objectif** : Identifier et nettoyer les reliquats, redondances et code obsolète avant de passer à la Phase 5.
+
+#### Audit Réalisé (2026-02-01)
+
+Exploration exhaustive du codebase pour vérifier l'adoption de l'architecture DuckDB/Parquet.
+
+##### 1. Reliquats SQLite à Migrer (50+ occurrences)
+
+| Module | Problème | Priorité | Action |
+|--------|----------|----------|--------|
+| `src/ui/multiplayer.py` | 4 connexions SQLite directes | Haute | Migrer vers `DuckDBRepository` |
+| `src/ui/aliases.py` | Lit `XuidAliases` via SQLite | Haute | Migrer vers DuckDB |
+| `src/data/query/engine.py` | Référence `metadata.db` | Haute | Changer en `metadata.duckdb` |
+| `src/data/repositories/hybrid.py` | Utilise `SQLiteMetadataStore` | Moyenne | Créer `DuckDBMetadataStore` |
+| `scripts/ingest_halo_data.py` | Ingestion vers SQLite | Moyenne | Migrer vers DuckDB |
+| `scripts/compute_historical_performance.py` | Accès SQLite direct | Moyenne | Migrer vers repository |
+| `scripts/refetch_film_roster.py` | Accès SQLite direct | Basse | Migrer vers repository |
+| `scripts/generate_medals_fr.py` | Accès SQLite direct | Basse | Migrer vers DuckDB |
+
+**Fichiers legacy à conserver** (rétrocompatibilité) :
+- `src/db/loaders.py`, `loaders_cached.py` — Legacy repository
+- `scripts/sync.py`, `merge_databases.py`, `spnkr_import_db.py` — Scripts legacy
+- `openspartan_launcher.py` — Support des anciennes DBs
+
+##### 2. Redondances de Code Identifiées
+
+| Pattern | Occurrences | Solution |
+|---------|-------------|----------|
+| `load_matches()` | 5 implémentations | Extraire construction filtres SQL → `filters.py` |
+| `get_player_db_path()` | 4 scripts | Créer `src/utils/paths.py` |
+| Config DuckDB (`memory_limit`, `attach`) | 4 endroits | Créer `duckdb_config.py` |
+| Constantes de session | 2 définitions | Importer depuis `sessions.py` |
+| Chemins hardcodés | 10+ occurrences | Centraliser dans `src/config/paths.py` |
+
+**Nouveaux modules à créer** :
+```
+src/utils/paths.py                                  # Chemins centralisés
+src/data/infrastructure/database/duckdb_config.py  # Config DuckDB partagée
+src/data/query/filters.py                          # Construction filtres WHERE
+src/config/defaults.py                             # Constantes par défaut
+```
+
+##### 3. État d'Adoption Architecture DuckDB/Parquet
+
+| Catégorie | Conformité | Problèmes |
+|-----------|------------|-----------|
+| Repositories | ✅ 100% | Aucun |
+| UI Pages | ⚠️ 85% | 2 pages avec accès directs |
+| UI Cache | ✅ 95% | Bon |
+| Analysis | ✅ 100% | Fonctions pures, aucun accès direct |
+| Scripts | ⚠️ 60% | Beaucoup d'accès directs (certains légitimes) |
+
+**Pages UI non-conformes** :
+- `src/ui/pages/match_view_players.py` → Import direct `load_match_players_stats`
+- `src/ui/pages/session_compare.py` → Import direct `get_connection`
+
+##### 4. Code Mort à Supprimer
+
+| Fichier | Lignes | Raison |
+|---------|--------|--------|
+| `src/app/navigation.py` | 292 | Remplacé par `page_router.py` |
+| `src/data/query/examples.py` | 443 | Classe `QueryExamples` jamais importée |
+
+##### 5. Commentaires Obsolètes (11 occurrences)
+
+Fichiers avec docstrings/commentaires mentionnant "SQLite" ou "metadata.db" à mettre à jour :
+- `src/db/loaders.py` (ligne 1)
+- `src/data/__init__.py` (ligne 2)
+- `src/data/repositories/hybrid.py` (lignes 2, 7)
+- `src/data/infrastructure/database/sqlite_metadata.py` (lignes 2, 6)
+- `scripts/ingest_halo_data.py` (lignes 3, 133, 139, 159)
+- `scripts/sync.py` (ligne 1003)
+
+#### Plan de Nettoyage
+
+| # | Tâche | Fichier(s) | Priorité | Statut |
+|---|-------|------------|----------|--------|
+| S4.6.1 | Supprimer `navigation.py` (code mort) | `src/app/navigation.py`, `src/app/__init__.py` | Haute | ⏳ |
+| S4.6.2 | Supprimer `examples.py` (code mort) | `src/data/query/examples.py` | Haute | ⏳ |
+| S4.6.3 | Migrer `multiplayer.py` vers DuckDB | `src/ui/multiplayer.py` | Haute | ⏳ |
+| S4.6.4 | Migrer `aliases.py` vers DuckDB | `src/ui/aliases.py` | Haute | ⏳ |
+| S4.6.5 | Corriger `match_view_players.py` | `src/ui/pages/match_view_players.py` | Haute | ⏳ |
+| S4.6.6 | Corriger `session_compare.py` | `src/ui/pages/session_compare.py` | Haute | ⏳ |
+| S4.6.7 | Créer `src/utils/paths.py` | `src/utils/paths.py` | Moyenne | ⏳ |
+| S4.6.8 | Créer `duckdb_config.py` | `src/data/infrastructure/database/duckdb_config.py` | Moyenne | ⏳ |
+| S4.6.9 | Migrer `metadata.db` → `metadata.duckdb` | Multiples fichiers | Moyenne | ⏳ |
+| S4.6.10 | Mettre à jour commentaires obsolètes | 11 fichiers | Basse | ⏳ |
 
 ---
 
@@ -717,16 +848,19 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 4.1.6 COMPLETE | Appel refresh_materialized_views() après sync (delta/full) |
 | 2026-02-01 | Sprint 4.3 COMPLETE | Lazy loading + pagination (load_recent_matches, load_matches_paginated) |
 | 2026-02-01 | Sprint 4.4 COMPLETE | Scripts backup/restore Parquet + compression Zstd + documentation |
+| 2026-02-01 | Sprint 4.5 COMPLETE | Partitionnement temporel : archive_season.py + vue unifiée DB+archives |
+| 2026-02-01 | Phase 4 COMPLETE | Tous les sprints d'optimisation terminés (4.1-4.5) |
+| 2026-02-01 | Audit Pre-Phase 5 | 50+ reliquats SQLite, 2 fichiers code mort, 10 tâches de nettoyage |
 
 ---
 
 ## Prochaine Action
 
-**Phase 4 COMPLETE** : Optimisations Avancées (Sprints 4.1-4.4 terminés ✅)
+**Phase 4 COMPLETE** : Optimisations Avancées (Sprints 4.1-4.5 terminés ✅)
 
-Prochaines priorités :
-1. **Sprint 4.5** : Partitionnement temporel (optionnel, si > 5000 matchs)
-2. **Phase 5** : Enrichissement Visuel & Grunt API
+Prochaine priorité :
+- **Sprint 4.6** : Audit et Nettoyage Pre-Phase 5 (10 tâches identifiées)
+- Puis **Phase 5** : Enrichissement Visuel & Grunt API
 
 ```python
 # Utilisation des vues matérialisées dans le code UI :
@@ -759,4 +893,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Phase 4 Sprints 4.1-4.4 terminés)*
+*Dernière mise à jour : 2026-02-01 (Sprint 4.6 Audit Pre-Phase 5 ajouté)*
