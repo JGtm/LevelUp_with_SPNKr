@@ -1004,23 +1004,35 @@ CREATE TABLE weapon_match_stats (
 
 **Objectif citations** : Permettre des citations contextuelles comme "Tu as fait X kills avec le BR cette session".
 
-#### Sprint 5.2 : Correctifs Prioritaires
+#### Sprint 5.2 : Correctifs Prioritaires ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S5.2.1 | Corriger modes/playlists (Madina97294) | `src/data/parsers/` | ⏳ |
-| S5.2.2 | Réparer synchro via app | `src/api/sync.py` | ⏳ |
-| S5.2.3 | Association matchs ↔ vidéos capturées | `src/ui/pages/match_view.py` | ⏳ |
-| S5.2.4 | Script thumbnails animés pour vidéos | `scripts/generate_thumbnails.py` | ⏳ |
+| S5.2.1 | Corriger modes/playlists (Madina97294) | `src/data/sync/transformers.py` | ✅ |
+| S5.2.2 | Réparer synchro via app | `src/ui/sync.py`, `src/app/sidebar.py` | ✅ |
+| S5.2.3 | Association matchs ↔ vidéos capturées | `src/ui/pages/media_library.py` | ✅ |
+| S5.2.4 | Script thumbnails animés pour vidéos | `scripts/generate_thumbnails.py` | ✅ |
 
-#### Sprint 5.3 : Graphes Radar & Étiquettes
+**Détails S5.2:**
+- S5.2.1 : `_determine_mode_category()` utilise maintenant `infer_custom_category_from_pair_name()` pour aligner avec les catégories UI (Assassin/Fiesta/BTB/Ranked/Firefight/Other).
+- S5.2.2 : Nouvelle fonction `sync_all_players_auto()` qui détecte automatiquement DuckDB vs SPNKr legacy via `db_profiles.json`.
+- S5.2.3 : Amélioration `_associate_media_to_matches()` avec `direction="nearest"` pour capturer les médias pris avant/après le match.
+- S5.2.4 : Script complet avec mode watch, génération GIF via ffmpeg en 2 passes.
+
+#### Sprint 5.3 : Graphes Radar & Étiquettes ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S5.3.1 | Graphe radar "Stats par minute" | `src/ui/pages/teammates.py` | ⏳ |
-| S5.3.2 | Graphe radar Objectif/Frags/Morts/Assists | `src/ui/components/radar_chart.py` | ⏳ |
-| S5.3.3 | Étiquettes valeurs extrêmes sur graphes | `src/ui/components/charts.py` | ⏳ |
-| S5.3.4 | Intégrer note de performance (TrueSkill) | `src/analysis/performance.py` | ⏳ |
+| S5.3.1 | Graphe radar "Stats par minute" | `src/ui/pages/teammates.py` | ✅ |
+| S5.3.2 | Graphe radar Objectif/Frags/Morts/Assists | `src/ui/components/radar_chart.py` | ✅ |
+| S5.3.3 | Étiquettes valeurs extrêmes sur graphes | `src/ui/components/chart_annotations.py` | ✅ |
+| S5.3.4 | Intégrer note de performance (TrueSkill) | `src/analysis/performance_score.py` | ✅ |
+
+**Détails S5.3:**
+- S5.3.1 : Graphe radar affiché à côté du tableau "Stats par minute" dans la page coéquipiers.
+- S5.3.2 : Nouveau module `radar_chart.py` avec `create_stats_per_minute_radar()` et `create_performance_radar()`.
+- S5.3.3 : Nouveau module `chart_annotations.py` avec `add_extreme_annotations()` intégré dans `plot_timeseries()`.
+- S5.3.4 : Nouvelle composante `_compute_mmr_performance_component()` qui calcule Expected Win Rate (formule Elo) et compare à l'actual.
 
 **Source** : [Reddit - Halo Query MMR](https://www.reddit.com/r/CompetitiveHalo/comments/19f97ir/halo_query_a_new_stats_site_to_see_your_mmr/)
 
@@ -1279,18 +1291,21 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 4.7.2 COMPLETE | Intégration : scripts/sync.py et src/ui/sync.py adaptés |
 | 2026-02-01 | Sprint 4.7.3 COMPLETE | Migration historique : HighlightEvents, PlayerMatchStats, XuidAliases |
 | 2026-02-01 | Sprint 5.1 COMPLETE | Career Rank, Weapon Stats, Spartan ID endpoints + tables DuckDB |
+| 2026-02-01 | Sprint 5.2 COMPLETE | Correctifs modes/playlists, synchro auto DuckDB, association vidéos, script thumbnails |
+| 2026-02-01 | Sprint 5.3 COMPLETE | Graphe radar, annotations extrêmes, composante MMR Performance (style Elo) |
 
 ---
 
 ## Prochaine Action
 
-**Sprint 5.1 COMPLETE** : Career Rank & Stats Armes (✅)
+**Sprint 5.2 & 5.3 COMPLETE** : Correctifs Prioritaires + Graphes Radar (✅)
 
 Prochaine priorité :
-- **Phase 5** (suite) : Enrichissement Visuel
-  - Sprint 5.0 : Validation Post-Refactoring (benchmarks optionnels)
-  - Sprint 5.2 : Correctifs Prioritaires (modes/playlists, synchro app)
-  - Sprint 5.3 : Graphes Radar & Étiquettes
+- **Phase 5** (suite) : Sprint 5.4 - Nouvelles Représentations Statistiques
+  - Stacked columns (win/loss/tie par carte/mode)
+  - Distributions (win ratio, dégâts, scores)
+  - Heatmaps (win ratio par jour/heure)
+- **Phase 6** : Documentation & Branding "LevelUp"
 
 ```python
 # Utilisation des vues matérialisées dans le code UI :
@@ -1323,4 +1338,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 5.1 COMPLETE - Career Rank & Stats Armes)*
+*Dernière mise à jour : 2026-02-01 (Sprints 5.2 & 5.3 COMPLETE - Correctifs + Graphes Radar)*

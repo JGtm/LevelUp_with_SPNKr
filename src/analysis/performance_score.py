@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 
 from src.analysis.performance_config import (
-    RELATIVE_WEIGHTS,
     MIN_MATCHES_FOR_RELATIVE,
-    SCORE_THRESHOLDS,
+    RELATIVE_WEIGHTS,
 )
 
 
@@ -20,7 +20,7 @@ def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
 # =============================================================================
 # Score de performance RELATIF par match (0-100)
 # =============================================================================
-# 
+#
 # Ce score compare la performance du match à l'historique personnel du joueur.
 # - 50 = match dans ta moyenne
 # - 100 = meilleur match de ton historique
@@ -41,17 +41,17 @@ def _compute_per_minute(value: float | None, duration_seconds: float | None) -> 
 
 def _percentile_rank(value: float, series: pd.Series) -> float:
     """Calcule le percentile d'une valeur dans une série (0-100).
-    
+
     Args:
         value: Valeur à évaluer.
         series: Série de référence (historique).
-        
+
     Returns:
         Percentile 0-100 où 50 = médiane.
     """
     if series.empty or len(series) < 2:
         return 50.0  # Pas assez de données, on retourne la moyenne
-    
+
     # Nombre de valeurs inférieures ou égales
     below_or_equal = (series <= value).sum()
     # Pourcentage
@@ -71,37 +71,43 @@ def _percentile_rank_inverse(value: float, series: pd.Series) -> float:
 
 def _prepare_history_metrics(df_history: pd.DataFrame) -> pd.DataFrame:
     """Prépare les métriques normalisées par minute pour l'historique.
-    
+
     Args:
         df_history: DataFrame de l'historique des matchs.
-        
+
     Returns:
         DataFrame avec colonnes kpm, dpm, apm, kda, accuracy.
     """
     if df_history.empty:
         return pd.DataFrame(columns=["kpm", "dpm", "apm", "kda", "accuracy"])
-    
+
     df = df_history.copy()
-    
+
     # Durée du match en secondes
     duration_col = None
     for col in ["time_played_seconds", "duration_seconds", "match_duration_seconds"]:
         if col in df.columns:
             duration_col = col
             break
-    
+
     if duration_col is None:
         # Fallback: estimer 10 minutes par défaut
         df["_duration"] = 600.0
     else:
         df["_duration"] = pd.to_numeric(df[duration_col], errors="coerce").fillna(600.0)
         df.loc[df["_duration"] <= 0, "_duration"] = 600.0
-    
+
     # Calcul des métriques par minute
-    df["kpm"] = pd.to_numeric(df.get("kills", 0), errors="coerce").fillna(0) / (df["_duration"] / 60.0)
-    df["dpm"] = pd.to_numeric(df.get("deaths", 0), errors="coerce").fillna(0) / (df["_duration"] / 60.0)
-    df["apm"] = pd.to_numeric(df.get("assists", 0), errors="coerce").fillna(0) / (df["_duration"] / 60.0)
-    
+    df["kpm"] = pd.to_numeric(df.get("kills", 0), errors="coerce").fillna(0) / (
+        df["_duration"] / 60.0
+    )
+    df["dpm"] = pd.to_numeric(df.get("deaths", 0), errors="coerce").fillna(0) / (
+        df["_duration"] / 60.0
+    )
+    df["apm"] = pd.to_numeric(df.get("assists", 0), errors="coerce").fillna(0) / (
+        df["_duration"] / 60.0
+    )
+
     # FDA (KDA)
     if "kda" in df.columns:
         df["kda"] = pd.to_numeric(df["kda"], errors="coerce")
@@ -111,13 +117,13 @@ def _prepare_history_metrics(df_history: pd.DataFrame) -> pd.DataFrame:
         d = pd.to_numeric(df.get("deaths", 0), errors="coerce").fillna(0)
         a = pd.to_numeric(df.get("assists", 0), errors="coerce").fillna(0)
         df["kda"] = (k + a) / d.clip(lower=1)
-    
+
     # Accuracy
     if "accuracy" in df.columns:
         df["accuracy"] = pd.to_numeric(df["accuracy"], errors="coerce")
     else:
         df["accuracy"] = None
-    
+
     return df[["kpm", "dpm", "apm", "kda", "accuracy"]].copy()
 
 
@@ -126,27 +132,27 @@ def compute_relative_performance_score(
     df_history: pd.DataFrame,
 ) -> float | None:
     """Calcule le score de performance RELATIF d'un match.
-    
+
     Compare le match à l'historique personnel du joueur.
-    
+
     Args:
         row: Ligne du match avec kills, deaths, assists, kda, accuracy, time_played_seconds.
         df_history: DataFrame de l'historique complet du joueur.
-        
+
     Returns:
         Score 0-100 où 50 = performance moyenne, 100 = meilleure perf, 0 = pire perf.
         None si pas assez de données.
     """
     if df_history is None or df_history.empty:
         return None
-    
+
     if len(df_history) < MIN_MATCHES_FOR_RELATIVE:
         # Pas assez de matchs, on ne peut pas calculer un score relatif fiable
         return None
-    
+
     # Préparer l'historique
     history_metrics = _prepare_history_metrics(df_history)
-    
+
     # Extraire les valeurs du match actuel
     try:
         # Durée du match
@@ -161,16 +167,16 @@ def compute_relative_performance_score(
                     pass
         if duration is None or duration <= 0:
             duration = 600.0  # 10 min par défaut
-        
+
         kills = float(row.get("kills") or 0)
         deaths = float(row.get("deaths") or 0)
         assists = float(row.get("assists") or 0)
-        
+
         # Métriques par minute
         kpm = kills / (duration / 60.0)
         dpm = deaths / (duration / 60.0)
         apm = assists / (duration / 60.0)
-        
+
         # KDA
         kda = row.get("kda")
         if kda is not None:
@@ -180,7 +186,7 @@ def compute_relative_performance_score(
                 kda = (kills + assists) / max(1, deaths)
         else:
             kda = (kills + assists) / max(1, deaths)
-        
+
         # Accuracy
         accuracy = row.get("accuracy")
         if accuracy is not None:
@@ -188,55 +194,55 @@ def compute_relative_performance_score(
                 accuracy = float(accuracy)
             except (ValueError, TypeError):
                 accuracy = None
-        
+
     except Exception:
         return None
-    
+
     # Calculer les percentiles pour chaque métrique
     percentiles = {}
     weights_used = {}
-    
+
     # KPM - plus c'est haut, mieux c'est
     kpm_series = history_metrics["kpm"].dropna()
     if not kpm_series.empty:
         percentiles["kpm"] = _percentile_rank(kpm, kpm_series)
         weights_used["kpm"] = RELATIVE_WEIGHTS["kpm"]
-    
+
     # DPM - moins c'est haut, mieux c'est (inversé)
     dpm_series = history_metrics["dpm"].dropna()
     if not dpm_series.empty:
         percentiles["dpm"] = _percentile_rank_inverse(dpm, dpm_series)
         weights_used["dpm"] = RELATIVE_WEIGHTS["dpm"]
-    
+
     # APM - plus c'est haut, mieux c'est
     apm_series = history_metrics["apm"].dropna()
     if not apm_series.empty:
         percentiles["apm"] = _percentile_rank(apm, apm_series)
         weights_used["apm"] = RELATIVE_WEIGHTS["apm"]
-    
+
     # KDA - plus c'est haut, mieux c'est
     kda_series = history_metrics["kda"].dropna()
     if not kda_series.empty:
         percentiles["kda"] = _percentile_rank(kda, kda_series)
         weights_used["kda"] = RELATIVE_WEIGHTS["kda"]
-    
+
     # Accuracy - plus c'est haut, mieux c'est
     if accuracy is not None:
         acc_series = history_metrics["accuracy"].dropna()
         if not acc_series.empty:
             percentiles["accuracy"] = _percentile_rank(accuracy, acc_series)
             weights_used["accuracy"] = RELATIVE_WEIGHTS["accuracy"]
-    
+
     if not percentiles:
         return None
-    
+
     # Moyenne pondérée des percentiles
     total_weight = sum(weights_used.values())
     if total_weight <= 0:
         return None
-    
+
     score = sum(percentiles[k] * weights_used[k] for k in percentiles) / total_weight
-    
+
     return round(score, 1)
 
 
@@ -245,14 +251,14 @@ def compute_match_performance_from_row(
     df_history: pd.DataFrame | None = None,
 ) -> float | None:
     """Calcule le score de performance à partir d'une ligne de DataFrame.
-    
+
     Si df_history est fourni et suffisant, calcule un score RELATIF.
     Sinon, retourne None (pas de score absolu fallback).
-    
+
     Args:
         row: Ligne avec colonnes kills, deaths, assists, accuracy, kda, time_played_seconds.
         df_history: DataFrame de l'historique du joueur (optionnel mais recommandé).
-        
+
     Returns:
         Score entre 0 et 100, ou None si historique insuffisant.
     """
@@ -266,37 +272,38 @@ def compute_performance_series(
     df_history: pd.DataFrame | None = None,
 ) -> pd.Series:
     """Calcule le score de performance pour chaque match d'un DataFrame.
-    
+
     Args:
         df: DataFrame des matchs à évaluer.
         df_history: Historique complet pour le calcul relatif.
                     Si None, utilise df comme historique.
-        
+
     Returns:
         Series avec les scores de performance.
     """
     if df.empty:
         return pd.Series(dtype=float)
-    
+
     # Si pas d'historique fourni, on utilise le DataFrame lui-même
     history = df_history if df_history is not None else df
-    
+
     if len(history) < MIN_MATCHES_FOR_RELATIVE:
         # Pas assez de matchs
         return pd.Series([None] * len(df), index=df.index)
-    
+
     # Calculer le score pour chaque ligne
     scores = df.apply(
         lambda row: compute_relative_performance_score(row, history),
         axis=1,
     )
-    
+
     return scores
 
 
 # =============================================================================
 # Helpers internes
 # =============================================================================
+
 
 def _clamp_internal(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, value))
@@ -442,7 +449,11 @@ def _compute_objective_component(df: pd.DataFrame) -> tuple[float | None, dict[s
         total_points += mean_val * w
 
     if not used:
-        return None, {"objective_score": None, "objective_points_per_match": None, "objective_columns": []}
+        return None, {
+            "objective_score": None,
+            "objective_points_per_match": None,
+            "objective_columns": [],
+        }
 
     # Calibration : ~2.1 points/match ~50 pts.
     score = _saturation_score(total_points, scale=3.0)
@@ -454,6 +465,71 @@ def _compute_objective_component(df: pd.DataFrame) -> tuple[float | None, dict[s
             "objective_columns": sorted(used.keys()),
         },
     )
+
+
+def _compute_mmr_performance_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+    """Calcule un score basé sur la performance vs l'écart MMR attendu.
+
+    Utilise une formule style Elo pour calculer le "Expected Win Rate"
+    basé sur l'écart MMR entre les équipes, puis compare au vrai Win Rate.
+
+    Si le joueur gagne plus que prévu (surperformance), le score augmente.
+    Si le joueur gagne moins que prévu (sous-performance), le score diminue.
+
+    Returns:
+        Tuple (score 0-100, métadonnées).
+    """
+    team_mmr = _mean_numeric(df, "team_mmr")
+    enemy_mmr = _mean_numeric(df, "enemy_mmr")
+
+    if team_mmr is None or enemy_mmr is None:
+        return None, {
+            "expected_win_rate": None,
+            "actual_win_rate": None,
+            "performance_vs_expected": None,
+        }
+
+    # Calculer l'Expected Win Rate (formule Elo-like)
+    # 400 est le facteur d'échelle standard (comme aux échecs)
+    mmr_diff = team_mmr - enemy_mmr
+    expected_win_rate = 1.0 / (1.0 + math.pow(10, -mmr_diff / 400.0))
+
+    # Calculer le vrai Win Rate
+    if "outcome" not in df.columns:
+        return None, {
+            "expected_win_rate": round(expected_win_rate * 100, 1),
+            "actual_win_rate": None,
+            "performance_vs_expected": None,
+        }
+
+    n = len(df)
+    if n <= 0:
+        return None, {
+            "expected_win_rate": round(expected_win_rate * 100, 1),
+            "actual_win_rate": None,
+            "performance_vs_expected": None,
+        }
+
+    wins = int((pd.to_numeric(df["outcome"], errors="coerce") == 2).sum())
+    actual_win_rate = wins / n
+
+    # Performance vs Expected : différence normalisée
+    # +1.0 = 100% surperformance, -1.0 = 100% sous-performance
+    performance_diff = actual_win_rate - expected_win_rate
+
+    # Convertir en score 0-100 :
+    # 50 = performance exacte selon l'expected
+    # 100 = surperformance maximale (+50% win rate vs expected)
+    # 0 = sous-performance maximale (-50% win rate vs expected)
+    score = 50.0 + (performance_diff * 100.0)
+    score = _clamp(score, 0.0, 100.0)
+
+    return score, {
+        "expected_win_rate": round(expected_win_rate * 100, 1),
+        "actual_win_rate": round(actual_win_rate * 100, 1),
+        "performance_vs_expected": round(performance_diff * 100, 1),
+        "mmr_diff": round(mmr_diff, 1),
+    }
 
 
 def _compute_mmr_aggregates(df: pd.DataFrame) -> dict[str, float | None]:
@@ -615,12 +691,22 @@ def compute_session_performance_score_v2(
     mmr = _compute_mmr_aggregates(df_session)
 
     components: list[ScoreComponent] = [
-        ScoreComponent(key="kd", label="K/D", weight=0.25, compute=_compute_kd_component),
-        ScoreComponent(key="win", label="Victoires", weight=0.20, compute=_compute_win_component),
-        ScoreComponent(key="acc", label="Précision", weight=0.15, compute=_compute_accuracy_component),
+        ScoreComponent(key="kd", label="K/D", weight=0.20, compute=_compute_kd_component),
+        ScoreComponent(key="win", label="Victoires", weight=0.15, compute=_compute_win_component),
+        ScoreComponent(
+            key="acc", label="Précision", weight=0.15, compute=_compute_accuracy_component
+        ),
         ScoreComponent(key="kpm", label="Kills/min", weight=0.15, compute=_compute_kpm_component),
         ScoreComponent(key="life", label="Survie", weight=0.10, compute=_compute_life_component),
-        ScoreComponent(key="obj", label="Objectif", weight=0.15, compute=_compute_objective_component),
+        ScoreComponent(
+            key="obj", label="Objectif", weight=0.10, compute=_compute_objective_component
+        ),
+        ScoreComponent(
+            key="mmr_perf",
+            label="MMR Performance",
+            weight=0.15,
+            compute=_compute_mmr_performance_component,
+        ),
     ]
 
     computed_scores: dict[str, float] = {}

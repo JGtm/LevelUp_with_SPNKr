@@ -4,9 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from src.config import HALO_COLORS, PLOT_CONFIG
-from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 from src.analysis.performance_config import SCORE_THRESHOLDS
+from src.config import HALO_COLORS, PLOT_CONFIG
+from src.ui.components.chart_annotations import add_extreme_annotations
+from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
 
 def _rolling_mean(series: pd.Series, window: int = 10) -> pd.Series:
@@ -16,11 +17,11 @@ def _rolling_mean(series: pd.Series, window: int = 10) -> pd.Series:
 
 def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> go.Figure:
     """Graphique principal: Kills/Deaths/Ratio dans le temps.
-    
+
     Args:
         df: DataFrame avec colonnes kills, deaths, assists, accuracy, ratio, start_time.
         title: Titre du graphique.
-        
+
     Returns:
         Figure Plotly.
     """
@@ -42,6 +43,7 @@ def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> g
             d["assists"],
             pd.to_numeric(d["accuracy"], errors="coerce").fillna(0).round(2),
             d["ratio"],
+            strict=False,
         )
     )
 
@@ -115,17 +117,29 @@ def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> g
         tickvals=tickvals,
         ticktext=ticktext,
     )
-    
+
+    # Annotations sur les valeurs extrêmes du ratio
+    add_extreme_annotations(
+        fig,
+        x_idx,
+        d["ratio"].tolist(),
+        metric_name="ratio",
+        show_max=True,
+        show_min=False,
+        max_color="#FFD700",  # Or
+        secondary_y=True,
+    )
+
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
 
 
 def plot_assists_timeseries(df: pd.DataFrame, title: str = "Assistances") -> go.Figure:
     """Graphique des assistances dans le temps.
-    
+
     Args:
         df: DataFrame avec colonnes assists, start_time, etc.
         title: Titre du graphique.
-        
+
     Returns:
         Figure Plotly.
     """
@@ -145,6 +159,7 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str = "Assistances") -> go.
             d["map_name"].fillna(""),
             d["playlist_name"].fillna(""),
             d["match_id"],
+            strict=False,
         )
     )
     hover = (
@@ -196,13 +211,15 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str = "Assistances") -> go.
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
-def plot_per_minute_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Assistances par minute") -> go.Figure:
+def plot_per_minute_timeseries(
+    df: pd.DataFrame, title: str = "Frags / Morts / Assistances par minute"
+) -> go.Figure:
     """Graphique des stats par minute.
-    
+
     Args:
         df: DataFrame avec colonnes kills_per_min, deaths_per_min, assists_per_min.
         title: Titre du graphique.
-        
+
     Returns:
         Figure Plotly.
     """
@@ -219,6 +236,7 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / A
             d["deaths"],
             d["assists"],
             d["match_id"],
+            strict=False,
         )
     )
 
@@ -324,17 +342,17 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / A
 
 def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
     """Graphique de précision sur les N derniers matchs.
-    
+
     Args:
         df: DataFrame avec colonne accuracy.
         n: Nombre de matchs à afficher.
-        
+
     Returns:
         Figure Plotly.
     """
     colors = HALO_COLORS.as_dict()
     d = df.dropna(subset=["accuracy"]).tail(n)
-    
+
     fig = go.Figure(
         data=[
             go.Scatter(
@@ -349,22 +367,27 @@ def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
     )
     fig.update_layout(height=PLOT_CONFIG.short_height, margin=dict(l=40, r=20, t=30, b=40))
     fig.update_yaxes(title_text="%", rangemode="tozero")
-    
+
     return apply_halo_plot_style(fig, height=PLOT_CONFIG.short_height)
 
 
 def plot_average_life(df: pd.DataFrame, title: str = "Durée de vie moyenne") -> go.Figure:
     """Graphique de la durée de vie moyenne.
-    
+
     Args:
         df: DataFrame avec colonne average_life_seconds.
         title: Titre du graphique.
-        
+
     Returns:
         Figure Plotly.
     """
     colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=["average_life_seconds"]).sort_values("start_time").reset_index(drop=True).copy()
+    d = (
+        df.dropna(subset=["average_life_seconds"])
+        .sort_values("start_time")
+        .reset_index(drop=True)
+        .copy()
+    )
     x_idx = list(range(len(d)))
     labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
     step = max(1, len(labels) // 10) if len(labels) > 1 else 1
@@ -375,6 +398,7 @@ def plot_average_life(df: pd.DataFrame, title: str = "Durée de vie moyenne") ->
             d["deaths"].fillna(0).astype(int),
             d["time_played_seconds"].fillna(float("nan")).astype(float),
             d["match_id"].astype(str),
+            strict=False,
         )
     )
 
@@ -426,10 +450,10 @@ def plot_average_life(df: pd.DataFrame, title: str = "Durée de vie moyenne") ->
 
 def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
     """Graphique combiné: Spree, Tirs à la tête et Précision.
-    
+
     Args:
         df: DataFrame avec colonnes max_killing_spree, headshot_kills, accuracy.
-        
+
     Returns:
         Figure Plotly avec axe Y secondaire pour la précision.
     """
@@ -507,8 +531,10 @@ def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
     )
 
     fig.update_yaxes(title_text="Spree / Tirs à la tête", rangemode="tozero", secondary_y=False)
-    fig.update_yaxes(title_text="Précision (%)", ticksuffix="%", rangemode="tozero", secondary_y=True)
-    
+    fig.update_yaxes(
+        title_text="Précision (%)", ticksuffix="%", rangemode="tozero", secondary_y=True
+    )
+
     return apply_halo_plot_style(fig, height=420)
 
 
@@ -519,13 +545,13 @@ def plot_performance_timeseries(
     show_smooth: bool = True,
 ) -> go.Figure:
     """Graphique du score de performance dans le temps.
-    
+
     Args:
         df: DataFrame avec colonnes performance ou kills/deaths/assists/accuracy/outcome.
         df_history: DataFrame complet pour le calcul du score relatif.
         title: Titre du graphique.
         show_smooth: Afficher la courbe de moyenne lissée.
-        
+
     Returns:
         Figure Plotly.
     """
@@ -557,13 +583,12 @@ def plot_performance_timeseries(
         else:
             return colors.get("red", "#FF4444")
 
-    bar_colors = [_get_perf_color(v) if not pd.isna(v) else colors.get("gray", "#888888") for v in performance]
+    bar_colors = [
+        _get_perf_color(v) if not pd.isna(v) else colors.get("gray", "#888888") for v in performance
+    ]
 
-    hover = (
-        "performance=%{y:.1f}<br>"
-        "date=%{customdata[0]}<extra></extra>"
-    )
-    customdata = list(zip(d["start_time"].dt.strftime("%d/%m/%Y %H:%M")))
+    hover = "performance=%{y:.1f}<br>" "date=%{customdata[0]}<extra></extra>"
+    customdata = list(zip(d["start_time"].dt.strftime("%d/%m/%Y %H:%M"), strict=False))
 
     fig = go.Figure()
     fig.add_trace(
@@ -607,4 +632,3 @@ def plot_performance_timeseries(
     )
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
-

@@ -18,14 +18,13 @@ import os
 import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable
 
 import pandas as pd
 import streamlit as st
 
 from src.ui.formatting import PARIS_TZ, format_datetime_fr_hm
-from src.ui.settings import AppSettings
 from src.ui.pages.match_view_helpers import index_media_dir
+from src.ui.settings import AppSettings
 
 
 @dataclass(frozen=True)
@@ -58,12 +57,12 @@ def _open_match_button(match_id: str) -> None:
     url = _build_app_url("Match", match_id=mid)
     safe_url = html.escape(url, quote=True)
     st.markdown(
-        """
-        <a href="{url}" target="_blank" rel="noopener noreferrer"
+        f"""
+        <a href="{safe_url}" target="_blank" rel="noopener noreferrer"
            style="display:block;text-align:center;padding:6px 10px;border-radius:10px;
                   border:1px solid rgba(255,255,255,0.18);text-decoration:none;"
         >Ouvrir le match</a>
-        """.format(url=safe_url),
+        """,
         unsafe_allow_html=True,
     )
 
@@ -72,7 +71,11 @@ def _epoch_seconds_paris(dt_value: datetime | None) -> float | None:
     if dt_value is None:
         return None
     try:
-        aware = PARIS_TZ.localize(dt_value) if dt_value.tzinfo is None else dt_value.astimezone(PARIS_TZ)
+        aware = (
+            PARIS_TZ.localize(dt_value)
+            if dt_value.tzinfo is None
+            else dt_value.astimezone(PARIS_TZ)
+        )
         return float(aware.timestamp())
     except Exception:
         return None
@@ -125,7 +128,9 @@ def _compute_match_windows(df_full: pd.DataFrame, settings: AppSettings) -> pd.D
     base["start_epoch"] = base["_t0"].apply(_epoch_seconds_paris)
     base["end_epoch"] = base["_t1"].apply(_epoch_seconds_paris)
 
-    out = base[["match_id", "start_epoch", "end_epoch", "_start"]].rename(columns={"_start": "start_time"})
+    out = base[["match_id", "start_epoch", "end_epoch", "_start"]].rename(
+        columns={"_start": "start_time"}
+    )
     out = out.dropna(subset=["match_id", "start_epoch", "end_epoch"]).copy()
     if out.empty:
         return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
@@ -169,9 +174,18 @@ def _index_all_media(settings: AppSettings) -> pd.DataFrame:
 
 
 def _associate_media_to_matches(media_df: pd.DataFrame, windows_df: pd.DataFrame) -> pd.DataFrame:
-    """Associe chaque média à un match (best-effort) via merge_asof + check de fenêtre."""
+    """Associe chaque média à un match (best-effort) via merge_asof + check de fenêtre.
+
+    Amélioration: utilise direction="nearest" pour capturer les médias pris
+    légèrement AVANT le match (ex: pendant le chargement) ou APRÈS.
+    Vérifie ensuite que le média est bien dans la fenêtre [start_epoch, end_epoch].
+    """
     if media_df is None or media_df.empty:
-        return pd.DataFrame(columns=list(media_df.columns) + ["match_id", "match_start_time"]) if media_df is not None else pd.DataFrame()
+        return (
+            pd.DataFrame(columns=list(media_df.columns) + ["match_id", "match_start_time"])
+            if media_df is not None
+            else pd.DataFrame()
+        )
     if windows_df is None or windows_df.empty:
         out = media_df.copy()
         out["match_id"] = None
@@ -185,21 +199,31 @@ def _associate_media_to_matches(media_df: pd.DataFrame, windows_df: pd.DataFrame
     m_sorted = m.sort_values("mtime", ascending=True)
     w_sorted = windows_df.sort_values("start_epoch", ascending=True)
 
+    # Utiliser direction="nearest" pour trouver le match le plus proche
+    # Cela permet de capturer les médias pris avant le début officiel du match
     joined = pd.merge_asof(
         m_sorted,
         w_sorted,
         left_on="mtime",
         right_on="start_epoch",
-        direction="backward",
+        direction="nearest",
         allow_exact_matches=True,
     )
 
-    ok_mask = (joined["end_epoch"].notna()) & (joined["mtime"] <= joined["end_epoch"])
+    # Vérifier que le média est dans la fenêtre [start_epoch, end_epoch]
+    ok_mask = (
+        (joined["start_epoch"].notna())
+        & (joined["end_epoch"].notna())
+        & (joined["mtime"] >= joined["start_epoch"])
+        & (joined["mtime"] <= joined["end_epoch"])
+    )
     joined.loc[~ok_mask, "match_id"] = None
     joined.loc[~ok_mask, "start_time"] = None
 
     joined = joined.rename(columns={"start_time": "match_start_time"})
-    joined = joined.drop(columns=[c for c in ["start_epoch", "end_epoch"] if c in joined.columns], errors="ignore")
+    joined = joined.drop(
+        columns=[c for c in ["start_epoch", "end_epoch"] if c in joined.columns], errors="ignore"
+    )
     return joined.sort_values("mtime", ascending=False).reset_index(drop=True)
 
 
@@ -299,7 +323,9 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
 
     if name_filter.strip():
         nf = name_filter.strip().lower()
-        media_df = media_df.loc[media_df["basename"].astype(str).str.lower().str.contains(nf, na=False)].copy()
+        media_df = media_df.loc[
+            media_df["basename"].astype(str).str.lower().str.contains(nf, na=False)
+        ].copy()
 
     windows_df = _compute_match_windows(df_full, settings)
     assoc_df = _associate_media_to_matches(media_df, windows_df)
@@ -315,9 +341,8 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
     if not assigned.empty:
         # Tri: match le plus récent d'abord, puis médias par ordre chronologique (mtime asc)
         assigned["_match_sort"] = pd.to_datetime(assigned["match_start_time"], errors="coerce")
-        groups = (
-            assigned.sort_values(["_match_sort", "mtime"], ascending=[False, True])
-            .groupby("match_id", sort=False)
+        groups = assigned.sort_values(["_match_sort", "mtime"], ascending=[False, True]).groupby(
+            "match_id", sort=False
         )
 
         for match_id, g in groups:

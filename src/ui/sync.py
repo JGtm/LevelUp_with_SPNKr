@@ -569,3 +569,87 @@ def sync_player_auto(
         )
 
     return False, f"Aucune DB trouvée pour {gamertag}"
+
+
+def sync_all_players_duckdb(
+    *,
+    delta: bool = True,
+    match_type: str = "matchmaking",
+    max_matches: int = 200,
+    with_highlight_events: bool = True,
+    with_aliases: bool = True,
+    repo_root: Path | None = None,
+) -> tuple[bool, str]:
+    """Synchronise tous les joueurs DuckDB v4 via db_profiles.json.
+
+    Args:
+        delta: Mode delta (True) ou full (False).
+        match_type: Type de matchs.
+        max_matches: Nombre max de matchs.
+        with_highlight_events: Récupérer les highlight events.
+        with_aliases: Mettre à jour les aliases.
+        repo_root: Racine du repo.
+
+    Returns:
+        Tuple (success_global, message_résumé).
+    """
+    import json
+
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parent.parent.parent
+
+    db_profiles_path = repo_root / "db_profiles.json"
+    if not db_profiles_path.exists():
+        return False, "Fichier db_profiles.json introuvable."
+
+    try:
+        with open(db_profiles_path, encoding="utf-8") as f:
+            profiles_data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        return False, f"Erreur lecture db_profiles.json: {e}"
+
+    profiles = profiles_data.get("profiles", {})
+    if not profiles:
+        return False, "Aucun profil dans db_profiles.json."
+
+    results: list[tuple[str, bool, str]] = []
+
+    for gamertag, profile in profiles.items():
+        xuid = profile.get("xuid", "")
+        player_db_path = repo_root / profile.get("db_path", "")
+
+        if not player_db_path.exists():
+            results.append((gamertag, False, f"DB introuvable: {player_db_path}"))
+            continue
+
+        ok, msg = sync_player_duckdb(
+            gamertag=gamertag,
+            xuid=xuid,
+            delta=delta,
+            match_type=match_type,
+            max_matches=max_matches,
+            with_highlight_events=with_highlight_events,
+            with_skill=True,
+            with_aliases=with_aliases,
+            repo_root=repo_root,
+        )
+        results.append((gamertag, ok, msg))
+
+    if not results:
+        return False, "Aucun joueur à synchroniser."
+
+    # Résumé
+    success_count = sum(1 for _, ok, _ in results if ok)
+    total = len(results)
+
+    if success_count == total:
+        return (
+            True,
+            f"✅ {total} joueur{'s' if total > 1 else ''} synchronisé{'s' if total > 1 else ''}.",
+        )
+    elif success_count > 0:
+        failed = [label for label, ok, _ in results if not ok]
+        return True, f"⚠️ {success_count}/{total} OK. Échec: {', '.join(failed)}"
+    else:
+        errors = [f"{label}: {msg}" for label, ok, msg in results if not ok]
+        return False, "❌ Échec pour tous les joueurs.\n" + "\n".join(errors[:3])

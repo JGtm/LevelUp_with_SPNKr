@@ -9,20 +9,17 @@ Ce module centralise :
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from src.app.state import get_db_cache_key
-from src.ui.sync import (
-    is_spnkr_db_path,
-    render_sync_indicator,
-    sync_all_players,
-)
 from src.ui.multiplayer import (
-    is_multi_player_db,
     render_player_selector,
-    get_player_display_name,
+)
+from src.ui.sync import (
+    render_sync_indicator,
+    sync_all_players_duckdb,
 )
 
 if TYPE_CHECKING:
@@ -33,7 +30,7 @@ def render_sidebar(
     *,
     db_path: str,
     xuid: str,
-    settings: "AppSettings",
+    settings: AppSettings,
     on_player_change: Callable[[str], None] | None = None,
     on_sync_complete: Callable[[], None] | None = None,
 ) -> str:
@@ -120,20 +117,27 @@ def render_player_selector_sidebar(
 def render_sync_button(
     *,
     db_path: str,
-    settings: "AppSettings",
+    settings: AppSettings,
     on_complete: Callable[[], None] | None = None,
 ) -> bool:
-    """Rend le bouton de synchronisation.
+    """Rend le bouton de synchronisation DuckDB v4.
+
+    Synchronise tous les joueurs définis dans db_profiles.json.
 
     Args:
-        db_path: Chemin vers la base de données.
+        db_path: Ignoré (gardé pour compatibilité API).
         settings: Paramètres de l'application.
         on_complete: Callback appelé après une sync réussie.
 
     Returns:
         True si une sync a été effectuée avec succès.
     """
-    if not (db_path and is_spnkr_db_path(db_path) and os.path.exists(db_path)):
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    db_profiles_path = repo_root / "db_profiles.json"
+
+    if not db_profiles_path.exists():
         return False
 
     if st.button(
@@ -143,20 +147,15 @@ def render_sync_button(
         use_container_width=True,
     ):
         with st.spinner("Synchronisation en cours..."):
-            ok, msg = sync_all_players(
-                db_path=db_path,
+            ok, msg = sync_all_players_duckdb(
                 match_type=str(
-                    getattr(settings, "spnkr_refresh_match_type", "matchmaking")
-                    or "matchmaking"
+                    getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking"
                 ),
-                max_matches=int(
-                    getattr(settings, "spnkr_refresh_max_matches", 200) or 200
-                ),
-                rps=int(getattr(settings, "spnkr_refresh_rps", 5) or 5),
+                max_matches=int(getattr(settings, "spnkr_refresh_max_matches", 200) or 200),
                 with_highlight_events=True,
                 with_aliases=True,
                 delta=True,
-                timeout_seconds=180,
+                repo_root=repo_root,
             )
 
         if ok:

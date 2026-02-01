@@ -8,19 +8,22 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from src.analysis import compute_aggregated_stats, compute_map_breakdown, compute_outcome_rates, compute_global_ratio
+from src.analysis import (
+    compute_aggregated_stats,
+    compute_global_ratio,
+    compute_map_breakdown,
+    compute_outcome_rates,
+)
 from src.ui import display_name_from_xuid
 from src.ui.cache import (
     cached_compute_sessions_db,
     cached_friend_matches_df,
+    cached_has_cache_tables,
     cached_query_matches_with_friend,
     cached_same_team_match_ids_with_friend,
-    cached_has_cache_tables,
     load_df_optimized,
 )
-from src.ui.perf import perf_section
 from src.ui.medals import render_medals_grid
-from src.visualization import plot_map_ratio_with_winloss
 
 # Import des sous-modules extraits
 from src.ui.pages.teammates_charts import (
@@ -31,9 +34,11 @@ from src.ui.pages.teammates_charts import (
 )
 from src.ui.pages.teammates_helpers import (
     _clear_min_matches_maps_friends_auto,
-    render_teammate_cards,
     render_friends_history_table,
+    render_teammate_cards,
 )
+from src.ui.perf import perf_section
+from src.visualization import plot_map_ratio_with_winloss
 
 
 def render_teammates_page(
@@ -85,13 +90,15 @@ def render_teammates_page(
                 icon="⚠️",
             )
             st.session_state["_cache_warning_shown"] = True
-    
+
     apply_current_filters_teammates = st.toggle(
         "Appliquer les filtres actuels (période/sessions + map/playlist)",
         value=True,
         key="apply_current_filters_teammates",
     )
-    same_team_only_teammates = st.checkbox("Même équipe", value=True, key="teammates_same_team_only")
+    same_team_only_teammates = st.checkbox(
+        "Même équipe", value=True, key="teammates_same_team_only"
+    )
 
     show_smooth_teammates = st.toggle(
         "Afficher les courbes lissées",
@@ -101,7 +108,9 @@ def render_teammates_page(
     )
 
     with perf_section("teammates/build_friends_opts_map"):
-        opts_map, default_labels = build_friends_opts_map_fn(db_path, xuid.strip(), db_key, aliases_key)
+        opts_map, default_labels = build_friends_opts_map_fn(
+            db_path, xuid.strip(), db_key, aliases_key
+        )
     picked_labels = st.multiselect(
         "Coéquipiers",
         options=list(opts_map.keys()),
@@ -209,7 +218,9 @@ def _render_single_teammate_view(
         sub = base_for_friend.loc[base_for_friend["match_id"].astype(str).isin(shared_ids)].copy()
 
         if sub.empty:
-            st.info("Aucun match à afficher avec les filtres actuels (période/sessions + map/playlist).")
+            st.info(
+                "Aucun match à afficher avec les filtres actuels (période/sessions + map/playlist)."
+            )
             return
 
         name = display_name_from_xuid(friend_xuid)
@@ -223,7 +234,9 @@ def _render_single_teammate_view(
         k = st.columns(3)
         k[0].metric("Matchs", f"{len(sub)}")
         k[1].metric("Win/Loss", f"{win_rate_sub*100:.1f}% / {loss_rate_sub*100:.1f}%")
-        k[2].metric("Ratio global", f"{global_ratio_sub:.2f}" if global_ratio_sub is not None else "-")
+        k[2].metric(
+            "Ratio global", f"{global_ratio_sub:.2f}" if global_ratio_sub is not None else "-"
+        )
 
         stats_sub = compute_aggregated_stats(sub)
         per_min = st.columns(3)
@@ -319,11 +332,19 @@ def _render_multi_teammate_view(
         trio_latest_label = st.session_state.get("_trio_latest_session_label")
 
         selected_session = None
-        if current_mode == "Sessions" and isinstance(picked_session_labels, list) and len(picked_session_labels) == 1:
+        if (
+            current_mode == "Sessions"
+            and isinstance(picked_session_labels, list)
+            and len(picked_session_labels) == 1
+        ):
             selected_session = picked_session_labels[0]
 
         is_last_session = bool(selected_session and selected_session == latest_session_label)
-        is_last_trio_session = bool(selected_session and isinstance(trio_latest_label, str) and selected_session == trio_latest_label)
+        is_last_trio_session = bool(
+            selected_session
+            and isinstance(trio_latest_label, str)
+            and selected_session == trio_latest_label
+        )
 
         if is_last_session or is_last_trio_session:
             last_applied = st.session_state.get("_friends_min_matches_last_session_label")
@@ -348,7 +369,12 @@ def _render_multi_teammate_view(
         for fx in picked_xuids:
             ids: set[str] = set()
             if bool(same_team_only):
-                ids = {str(x) for x in cached_same_team_match_ids_with_friend(db_path, xuid.strip(), fx, db_key=db_key)}
+                ids = {
+                    str(x)
+                    for x in cached_same_team_match_ids_with_friend(
+                        db_path, xuid.strip(), fx, db_key=db_key
+                    )
+                }
             else:
                 rows = cached_query_matches_with_friend(db_path, xuid.strip(), fx, db_key=db_key)
                 ids = {str(r.match_id) for r in rows}
@@ -378,7 +404,9 @@ def _render_multi_teammate_view(
         colors_by_name = assign_player_colors_fn([n for n, _ in series])
 
         breakdown_all = compute_map_breakdown(sub_all)
-        breakdown_all = breakdown_all.loc[breakdown_all["matches"] >= int(min_matches_maps_friends)].copy()
+        breakdown_all = breakdown_all.loc[
+            breakdown_all["matches"] >= int(min_matches_maps_friends)
+        ].copy()
 
         if breakdown_all.empty:
             st.info("Pas assez de matchs avec tes coéquipiers (selon le filtre actuel).")
@@ -463,7 +491,9 @@ def _render_trio_view(
     trio_ids = trio_ids & set(base_for_trio["match_id"].astype(str))
 
     if not trio_ids:
-        st.warning("Aucun match trouvé où vous êtes tous les trois dans la même équipe (avec les filtres actuels).")
+        st.warning(
+            "Aucun match trouvé où vous êtes tous les trois dans la même équipe (avec les filtres actuels)."
+        )
         return False
 
     trio_ids_set = {str(x) for x in trio_ids}
@@ -482,7 +512,12 @@ def _render_trio_view(
     latest_label = None
     if not trio_rows.empty:
         latest_sid = int(trio_rows["session_id"].max())
-        latest_labels = trio_rows.loc[trio_rows["session_id"] == latest_sid, "session_label"].dropna().unique().tolist()
+        latest_labels = (
+            trio_rows.loc[trio_rows["session_id"] == latest_sid, "session_label"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
         latest_label = latest_labels[0] if latest_labels else None
 
     st.session_state["_trio_latest_session_label"] = latest_label
@@ -506,33 +541,119 @@ def _render_trio_view(
         [
             {
                 "Joueur": me_name,
-                "Frags/min": round(float(me_stats.kills_per_minute), 2) if me_stats.kills_per_minute else None,
-                "Morts/min": round(float(me_stats.deaths_per_minute), 2) if me_stats.deaths_per_minute else None,
-                "Assists/min": round(float(me_stats.assists_per_minute), 2) if me_stats.assists_per_minute else None,
+                "Frags/min": round(float(me_stats.kills_per_minute), 2)
+                if me_stats.kills_per_minute
+                else None,
+                "Morts/min": round(float(me_stats.deaths_per_minute), 2)
+                if me_stats.deaths_per_minute
+                else None,
+                "Assists/min": round(float(me_stats.assists_per_minute), 2)
+                if me_stats.assists_per_minute
+                else None,
             },
             {
                 "Joueur": f1_name,
-                "Frags/min": round(float(f1_stats.kills_per_minute), 2) if f1_stats.kills_per_minute else None,
-                "Morts/min": round(float(f1_stats.deaths_per_minute), 2) if f1_stats.deaths_per_minute else None,
-                "Assists/min": round(float(f1_stats.assists_per_minute), 2) if f1_stats.assists_per_minute else None,
+                "Frags/min": round(float(f1_stats.kills_per_minute), 2)
+                if f1_stats.kills_per_minute
+                else None,
+                "Morts/min": round(float(f1_stats.deaths_per_minute), 2)
+                if f1_stats.deaths_per_minute
+                else None,
+                "Assists/min": round(float(f1_stats.assists_per_minute), 2)
+                if f1_stats.assists_per_minute
+                else None,
             },
             {
                 "Joueur": f2_name,
-                "Frags/min": round(float(f2_stats.kills_per_minute), 2) if f2_stats.kills_per_minute else None,
-                "Morts/min": round(float(f2_stats.deaths_per_minute), 2) if f2_stats.deaths_per_minute else None,
-                "Assists/min": round(float(f2_stats.assists_per_minute), 2) if f2_stats.assists_per_minute else None,
+                "Frags/min": round(float(f2_stats.kills_per_minute), 2)
+                if f2_stats.kills_per_minute
+                else None,
+                "Morts/min": round(float(f2_stats.deaths_per_minute), 2)
+                if f2_stats.deaths_per_minute
+                else None,
+                "Assists/min": round(float(f2_stats.assists_per_minute), 2)
+                if f2_stats.assists_per_minute
+                else None,
             },
         ]
     )
     st.subheader("Stats par minute")
-    st.dataframe(trio_per_min, width="stretch", hide_index=True)
 
-    f1_df = f1_df[["match_id", "kills", "deaths", "assists", "accuracy", "ratio", "average_life_seconds"]].copy()
-    f2_df = f2_df[["match_id", "kills", "deaths", "assists", "accuracy", "ratio", "average_life_seconds"]].copy()
-    merged = me_df[["match_id", "start_time", "kills", "deaths", "assists", "accuracy", "ratio", "average_life_seconds", "time_played_seconds"]].merge(
-        f1_df.add_prefix("f1_"), left_on="match_id", right_on="f1_match_id", how="inner"
-    ).merge(
-        f2_df.add_prefix("f2_"), left_on="match_id", right_on="f2_match_id", how="inner"
+    # Afficher tableau et graphe radar côte à côte
+    col_table, col_radar = st.columns([1, 1])
+
+    with col_table:
+        st.dataframe(trio_per_min, use_container_width=True, hide_index=True)
+
+    with col_radar:
+        from src.ui.components.radar_chart import create_stats_per_minute_radar
+
+        radar_players = [
+            {
+                "name": me_name,
+                "kills_per_min": float(me_stats.kills_per_minute)
+                if me_stats.kills_per_minute
+                else 0,
+                "deaths_per_min": float(me_stats.deaths_per_minute)
+                if me_stats.deaths_per_minute
+                else 0,
+                "assists_per_min": float(me_stats.assists_per_minute)
+                if me_stats.assists_per_minute
+                else 0,
+                "color": colors_by_name.get(me_name, "#636EFA"),
+            },
+            {
+                "name": f1_name,
+                "kills_per_min": float(f1_stats.kills_per_minute)
+                if f1_stats.kills_per_minute
+                else 0,
+                "deaths_per_min": float(f1_stats.deaths_per_minute)
+                if f1_stats.deaths_per_minute
+                else 0,
+                "assists_per_min": float(f1_stats.assists_per_minute)
+                if f1_stats.assists_per_minute
+                else 0,
+                "color": colors_by_name.get(f1_name, "#EF553B"),
+            },
+            {
+                "name": f2_name,
+                "kills_per_min": float(f2_stats.kills_per_minute)
+                if f2_stats.kills_per_minute
+                else 0,
+                "deaths_per_min": float(f2_stats.deaths_per_minute)
+                if f2_stats.deaths_per_minute
+                else 0,
+                "assists_per_min": float(f2_stats.assists_per_minute)
+                if f2_stats.assists_per_minute
+                else 0,
+                "color": colors_by_name.get(f2_name, "#00CC96"),
+            },
+        ]
+        radar_fig = create_stats_per_minute_radar(radar_players, title="", height=300)
+        st.plotly_chart(radar_fig, use_container_width=True)
+
+    f1_df = f1_df[
+        ["match_id", "kills", "deaths", "assists", "accuracy", "ratio", "average_life_seconds"]
+    ].copy()
+    f2_df = f2_df[
+        ["match_id", "kills", "deaths", "assists", "accuracy", "ratio", "average_life_seconds"]
+    ].copy()
+    merged = (
+        me_df[
+            [
+                "match_id",
+                "start_time",
+                "kills",
+                "deaths",
+                "assists",
+                "accuracy",
+                "ratio",
+                "average_life_seconds",
+                "time_played_seconds",
+            ]
+        ]
+        .merge(f1_df.add_prefix("f1_"), left_on="match_id", right_on="f1_match_id", how="inner")
+        .merge(f2_df.add_prefix("f2_"), left_on="match_id", right_on="f2_match_id", how="inner")
     )
     if merged.empty:
         st.warning("Impossible d'aligner les stats des 3 joueurs sur ces matchs.")
@@ -541,8 +662,30 @@ def _render_trio_view(
     from src.analysis.performance_score import compute_performance_series
 
     merged = merged.sort_values("start_time")
-    d_self = merged[["start_time", "kills", "deaths", "assists", "ratio", "accuracy", "average_life_seconds", "time_played_seconds"]].copy()
-    d_f1 = merged[["start_time", "f1_kills", "f1_deaths", "f1_assists", "f1_ratio", "f1_accuracy", "f1_average_life_seconds", "time_played_seconds"]].rename(
+    d_self = merged[
+        [
+            "start_time",
+            "kills",
+            "deaths",
+            "assists",
+            "ratio",
+            "accuracy",
+            "average_life_seconds",
+            "time_played_seconds",
+        ]
+    ].copy()
+    d_f1 = merged[
+        [
+            "start_time",
+            "f1_kills",
+            "f1_deaths",
+            "f1_assists",
+            "f1_ratio",
+            "f1_accuracy",
+            "f1_average_life_seconds",
+            "time_played_seconds",
+        ]
+    ].rename(
         columns={
             "f1_kills": "kills",
             "f1_deaths": "deaths",
@@ -552,7 +695,18 @@ def _render_trio_view(
             "f1_average_life_seconds": "average_life_seconds",
         }
     )
-    d_f2 = merged[["start_time", "f2_kills", "f2_deaths", "f2_assists", "f2_ratio", "f2_accuracy", "f2_average_life_seconds", "time_played_seconds"]].rename(
+    d_f2 = merged[
+        [
+            "start_time",
+            "f2_kills",
+            "f2_deaths",
+            "f2_assists",
+            "f2_ratio",
+            "f2_accuracy",
+            "f2_average_life_seconds",
+            "time_played_seconds",
+        ]
+    ].rename(
         columns={
             "f2_kills": "kills",
             "f2_deaths": "deaths",

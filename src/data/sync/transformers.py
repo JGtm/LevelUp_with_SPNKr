@@ -18,6 +18,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.data.sync.models import (
     HighlightEventRow,
     MatchStatsRow,
@@ -307,33 +308,19 @@ def _is_firefight_match(match_info: dict[str, Any]) -> bool:
     return False
 
 
-def _determine_mode_category(match_info: dict[str, Any]) -> str | None:
-    """Détermine la catégorie de mode de jeu."""
-    game_variant = match_info.get("UgcGameVariant", {})
-    if not isinstance(game_variant, dict):
-        return None
+def _determine_mode_category(pair_name: str | None) -> str:
+    """Détermine la catégorie custom de mode de jeu.
 
-    name = (game_variant.get("PublicName") or "").lower()
+    Utilise la logique de mode_categories.py pour aligner avec les filtres UI.
+    Retourne une des catégories : Assassin, Fiesta, BTB, Ranked, Firefight, Other.
 
-    # Mapping basique des catégories
-    if "slayer" in name:
-        return "Slayer"
-    elif "ctf" in name or "flag" in name:
-        return "CTF"
-    elif "oddball" in name:
-        return "Oddball"
-    elif "stronghold" in name or "zone" in name:
-        return "Strongholds"
-    elif "stockpile" in name:
-        return "Stockpile"
-    elif "extraction" in name:
-        return "Extraction"
-    elif "firefight" in name:
-        return "Firefight"
-    elif "attrition" in name:
-        return "Attrition"
+    Args:
+        pair_name: Nom du PlaylistMapModePair (ex: "Arena:Slayer on Aquarius").
 
-    return None
+    Returns:
+        Catégorie custom (jamais None, "Other" par défaut).
+    """
+    return infer_custom_category_from_pair_name(pair_name)
 
 
 # =============================================================================
@@ -421,7 +408,7 @@ def transform_match_stats(
     # Déterminer les flags
     is_ranked = _is_ranked_playlist(match_info)
     is_firefight = _is_firefight_match(match_info)
-    mode_category = _determine_mode_category(match_info)
+    mode_category = _determine_mode_category(pair_name)
 
     # Déterminer si le joueur a quitté prématurément
     left_early = outcome == 4  # DidNotFinish
