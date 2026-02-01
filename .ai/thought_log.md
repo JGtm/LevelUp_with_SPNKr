@@ -17,6 +17,82 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 3.2 COMPLETE - Agrégation et Persistance Antagonistes
+
+**Contexte** :
+Suite au Sprint 3.1 (stabilisation du calcul des antagonistes), ce sprint implémente l'agrégation des données sur plusieurs matchs et leur persistance dans DuckDB.
+
+**Implémentations réalisées** :
+
+1. **Module `src/analysis/antagonists.py`** :
+   - `AntagonistEntry` : Dataclass représentant un adversaire agrégé
+     - `opponent_xuid`, `opponent_gamertag`
+     - `times_killed`, `times_killed_by` (compteurs agrégés)
+     - `matches_against`, `last_encounter`
+     - `net_kills` (propriété calculée : times_killed - times_killed_by)
+   - `AggregationResult` : Résultat d'agrégation avec méthodes utilitaires
+     - `get_top_nemeses()` : Triés par times_killed_by DESC
+     - `get_top_victims()` : Triés par times_killed DESC
+     - `get_top_rivals()` : Triés par total de duels
+   - `aggregate_antagonists()` : Agrège les résultats de plusieurs matchs
+     - Supporte `min_encounters` pour filtrer les rencontres uniques
+
+2. **Script `scripts/populate_antagonists.py`** :
+   - CLI pour peupler la table antagonists
+   - Options : `--gamertag`, `--all`, `--force`, `--tolerance`, `--min-encounters`
+   - Lit les highlight events depuis les DBs SQLite legacy
+   - Charge les stats officielles pour la validation
+   - Persiste via `DuckDBRepository.save_antagonists()`
+
+3. **Méthodes `DuckDBRepository`** :
+   - `save_antagonists(entries, replace=False)` : Upsert avec ON CONFLICT
+   - `load_antagonists(limit, order_by)` : Chargement avec tri configurable
+   - `get_top_nemeses(limit)` : Helper pour les nemesis
+   - `get_top_victims(limit)` : Helper pour les victimes
+   - Création automatique de la table si inexistante
+
+4. **Tests `tests/test_antagonists_persistence.py`** :
+   - Tests unitaires pour AntagonistEntry et AggregationResult
+   - Tests d'intégration pour aggregate_antagonists()
+   - Tests DuckDB avec fixtures temporaires
+   - Tests upsert, replace, tables vides
+
+**Schéma de la table antagonists** :
+```sql
+CREATE TABLE antagonists (
+    opponent_xuid VARCHAR PRIMARY KEY,
+    opponent_gamertag VARCHAR,
+    times_killed INTEGER DEFAULT 0,
+    times_killed_by INTEGER DEFAULT 0,
+    matches_against INTEGER DEFAULT 0,
+    last_encounter TIMESTAMP,
+    net_kills INTEGER GENERATED ALWAYS AS (times_killed - times_killed_by)
+);
+```
+
+**Raisonnement** :
+- L'agrégation par match (via AntagonistsResult) puis globale (via aggregate_antagonists) permet de valider les données à chaque étape
+- Le script lit les DBs legacy car les highlight events n'ont pas encore été migrés vers DuckDB
+- L'upsert (ON CONFLICT DO UPDATE) permet des mises à jour incrémentales
+- Le filtre min_encounters évite d'encombrer la table avec des adversaires vus une seule fois
+
+**Fichiers créés/modifiés** :
+- `src/analysis/antagonists.py` (NOUVEAU)
+- `scripts/populate_antagonists.py` (NOUVEAU)
+- `src/data/repositories/duckdb_repo.py` (MODIFIÉ)
+- `src/analysis/__init__.py` (MODIFIÉ - exports)
+- `tests/test_antagonists_persistence.py` (NOUVEAU)
+
+**Suivi** :
+- [x] S3.2.1 : `aggregate_antagonists()` créé
+- [x] S3.2.2 : Script `populate_antagonists.py` créé
+- [x] S3.2.3 : `save_antagonists()` ajouté au repository
+- [x] S3.2.4 : Tests d'intégration créés
+- [x] Roadmap mise à jour
+- [x] Thought_log documenté
+
+---
+
 ### [2026-02-01] - Sprint 3.1 COMPLETE - Stabilisation Algorithme Antagonistes
 
 **Contexte** :

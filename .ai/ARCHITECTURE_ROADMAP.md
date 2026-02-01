@@ -220,33 +220,110 @@ data/
 - `AntagonistsResult.is_validated` : Flag de confiance
 - `AntagonistsResult.validation_notes` : Notes explicatives sur la validation
 
-### Sprint 3.2 : Agrégation et Persistance 📋
+### Sprint 3.2 : Agrégation et Persistance ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S3.2.1 | Créer `aggregate_antagonists()` | `src/analysis/antagonists.py` | ⏳ |
-| S3.2.2 | Créer script `populate_antagonists.py` | `scripts/populate_antagonists.py` | ⏳ |
-| S3.2.3 | Ajouter méthode `save_antagonists()` | `src/data/repositories/duckdb_repo.py` | ⏳ |
-| S3.2.4 | Tests d'intégration | `tests/test_antagonists_persistence.py` | ⏳ |
+| S3.2.1 | Créer `aggregate_antagonists()` | `src/analysis/antagonists.py` | ✅ |
+| S3.2.2 | Créer script `populate_antagonists.py` | `scripts/populate_antagonists.py` | ✅ |
+| S3.2.3 | Ajouter méthode `save_antagonists()` | `src/data/repositories/duckdb_repo.py` | ✅ |
+| S3.2.4 | Tests d'intégration | `tests/test_antagonists_persistence.py` | ✅ |
 
-### Sprint 3.3 : UI Rivalités 📋
+**Implémentations réalisées** :
+- `AntagonistEntry` : Dataclass pour une entrée agrégée (opponent_xuid, times_killed, times_killed_by, etc.)
+- `AggregationResult` : Résultat avec méthodes `get_top_nemeses()`, `get_top_victims()`, `get_top_rivals()`
+- `aggregate_antagonists()` : Agrège les résultats de `compute_personal_antagonists()` sur plusieurs matchs
+- `DuckDBRepository.save_antagonists()` : Upsert dans la table antagonists avec gestion du replace
+- `DuckDBRepository.load_antagonists()` : Chargement avec tri configurable
+- `DuckDBRepository.get_top_nemeses()` / `get_top_victims()` : Helpers pour les requêtes fréquentes
+
+### Sprint 3.3 : Enrichissement Mode Debug 📋
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S3.3.1 | Créer page "Mes Rivalités" | `src/ui/pages/rivalries.py` | ⏳ |
-| S3.3.2 | Améliorer mode debug | `src/ui/pages/match_view_players.py` | ⏳ |
-| S3.3.3 | Documentation | `.ai/thought_log.md` | ⏳ |
+| S3.3.1 | Afficher validation antagonistes en mode debug | `src/ui/pages/match_view_players.py` | ⏳ |
+| S3.3.2 | Afficher is_validated + validation_notes | `src/ui/components/debug_panel.py` | ⏳ |
+| S3.3.3 | Indicateur visuel de confiance (✓/⚠) | `src/ui/pages/match_view_players.py` | ⏳ |
+
+> **Note** : La page "Mes Rivalités" initialement prévue est reportée (faible priorité).
 
 ---
 
 ### Phase 4 : Optimisations Avancées 📋 (Futur)
 
-| Fonctionnalité | Description | Impact |
-|----------------|-------------|--------|
-| Vues matérialisées | Pré-calculer agrégations fréquentes | -50% temps requête |
-| Compression Zstd | Natif DuckDB | -30% espace disque |
-| Lazy loading | Charger données à la demande | -80% RAM initiale |
-| Partitionnement temporel | Tables par année | Requêtes historiques rapides |
+**Objectif** : Améliorer la performance et l'efficacité de l'architecture DuckDB.
+
+| Fonctionnalité | Description | Impact | Priorité |
+|----------------|-------------|--------|----------|
+| Vues matérialisées | Pré-calculer agrégations fréquentes | -50% temps requête | Haute |
+| Compression Zstd | Natif DuckDB pour export/backup | -30% espace disque | Moyenne |
+| Lazy loading | Charger données à la demande | -80% RAM initiale | Haute |
+| Partitionnement temporel | Tables par année/saison | Requêtes historiques rapides | Basse |
+
+#### 4.1 Vues Matérialisées
+
+DuckDB ne supporte pas nativement les materialized views. Solution : tables de cache rafraîchies.
+
+```sql
+-- Exemple : stats agrégées par mode de jeu
+CREATE OR REPLACE TABLE mv_stats_by_mode AS
+SELECT game_mode_id, 
+       COUNT(*) as matches_played,
+       AVG(kills) as avg_kills,
+       AVG(deaths) as avg_deaths,
+       SUM(medals_total) as total_medals
+FROM match_stats
+GROUP BY game_mode_id;
+
+-- Rafraîchissement après sync
+INSERT OR REPLACE INTO mv_stats_by_mode SELECT ...;
+```
+
+**Tables candidates** :
+- `mv_stats_by_mode` : Stats par mode de jeu
+- `mv_stats_by_map` : Stats par carte
+- `mv_weekly_summary` : Résumé hebdomadaire
+
+#### 4.2 Compression Zstd
+
+```sql
+-- Export avec compression optimale
+COPY match_stats TO 'backup.parquet' (COMPRESSION 'zstd', COMPRESSION_LEVEL 9);
+
+-- Import depuis Parquet compressé
+COPY match_stats FROM 'backup.parquet';
+```
+
+#### 4.3 Lazy Loading
+
+Stratégie pour réduire la consommation RAM :
+
+1. **Au démarrage** : Charger uniquement les métadonnées légères
+2. **Navigation** : Charger les matchs à la demande (pagination)
+3. **Cache Streamlit** : Utiliser `@st.cache_data` avec TTL adapté
+
+```python
+@st.cache_data(ttl=300)  # 5 min
+def load_recent_matches(gamertag: str, limit: int = 50):
+    """Charge les N derniers matchs (lazy)."""
+    repo = get_repository_for_player(gamertag)
+    return repo.get_recent_matches(limit=limit)
+```
+
+#### 4.4 Partitionnement Temporel
+
+Structure cible pour gros volumes (> 5000 matchs) :
+
+```
+data/players/{gamertag}/
+├── stats.duckdb          # Données récentes (saison courante)
+└── archive/
+    ├── season_1.parquet  # Saison 1 (cold storage)
+    ├── season_2.parquet  # Saison 2
+    └── season_3.parquet  # Saison 3
+```
+
+**Seuil recommandé** : Archiver les matchs > 1 an ou > 2000 matchs.
 
 ---
 
@@ -381,32 +458,36 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Stabilisation antagonistes (Phase 3) | Événements simultanés instables |
 | 2026-02-01 | Tie-breaker par rang | Si égalité frags, le mieux classé gagne |
 | 2026-02-01 | Sprint 3.1 COMPLETE | Validation + tie-breaker implémentés |
+| 2026-02-01 | Sprint 3.2 COMPLETE | Agrégation + persistance antagonistes |
+| 2026-02-01 | Sprint 3.3 recentré sur debug | Page Rivalités reportée (faible priorité) |
+| 2026-02-01 | Phase 4 détaillée | Documentation des 4 axes d'optimisation |
 
 ---
 
 ## Prochaine Action
 
-**Sprint 3.2 : Agrégation et Persistance**
+**Sprint 3.3 : Enrichissement Mode Debug**
 
-Priorité : Persister les antagonistes dans la table DuckDB.
+Priorité : Afficher les informations de validation antagonistes en mode debug.
 
 **Tâches** :
-1. Créer `aggregate_antagonists()` pour agréger les données sur tous les matchs
-2. Créer script `scripts/populate_antagonists.py` pour peupler la table
-3. Ajouter méthode `save_antagonists()` dans `DuckDBRepository`
-4. Tests d'intégration
+1. Afficher validation antagonistes en mode debug
+2. Afficher is_validated + validation_notes
+3. Indicateur visuel de confiance (✓/⚠)
 
 ```python
-# Utilisation du nouveau système :
-# Mode recommandé (auto-détection depuis db_profiles.json v2.1)
+# Utilisation du nouveau système (Sprint 3.2) :
 from src.data.repositories.factory import get_repository_from_profile
 repo = get_repository_from_profile("JGtm")
 
-# Ou depuis Streamlit
-from src.data.integration.streamlit_bridge import get_repository_for_player
-repo = get_repository_for_player("JGtm")
+# Peupler les antagonistes (depuis la DB legacy)
+# python scripts/populate_antagonists.py --gamertag JGtm
+
+# Charger les rivalités
+nemeses = repo.get_top_nemeses(limit=20)  # Qui m'a le plus tué
+victims = repo.get_top_victims(limit=20)   # Qui j'ai le plus tué
 ```
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 3.1 COMPLETE - Sprint 3.2 en attente)*
+*Dernière mise à jour : 2026-02-01 (Sprint 3.2 COMPLETE - Sprint 3.3 en attente)*
