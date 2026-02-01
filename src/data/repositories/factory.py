@@ -6,19 +6,23 @@ HOW IT WORKS:
 Ce module fournit une interface simple pour créer le bon repository
 selon le mode de fonctionnement souhaité.
 
-Usage:
+Architecture v2.1 (recommandée):
+    Le mode DUCKDB est maintenant le mode par défaut pour les profils v2.0+.
+    Utiliser get_repository_from_profile() pour auto-détection.
+
+Usage recommandé (v2.1+):
+    from src.data.repositories.factory import get_repository_from_profile
+
+    # Auto-détection depuis db_profiles.json (recommandé)
+    repo = get_repository_from_profile("JGtm")
+
+Usage legacy (compatibilité):
     from src.data import get_repository, RepositoryMode
 
-    # Utiliser le système legacy (par défaut)
+    # Utiliser le système legacy (déprécié)
     repo = get_repository(db_path, xuid, mode=RepositoryMode.LEGACY)
 
-    # Utiliser le mode shadow pour migration progressive
-    repo = get_repository(db_path, xuid, mode=RepositoryMode.SHADOW)
-
-    # Utiliser le nouveau système hybrid (Parquet)
-    repo = get_repository(db_path, xuid, mode=RepositoryMode.HYBRID)
-
-    # Utiliser DuckDB natif (v4 architecture)
+    # Utiliser DuckDB natif (architecture v4)
     repo = get_repository(
         "data/players/JGtm/stats.duckdb",
         xuid,

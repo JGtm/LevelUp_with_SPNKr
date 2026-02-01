@@ -155,13 +155,19 @@ data/
 - `get_repository_from_profile(gamertag)` : Création auto depuis `db_profiles.json`
 - `get_repository_for_player(gamertag)` : Bridge Streamlit simplifié
 
-### Sprint 2.3 : Nettoyage
+### Sprint 2.3 : Nettoyage ✅ COMPLETE
 
-| # | Tâche | Notes |
-|---|-------|-------|
-| S2.3.1 | Archiver les DBs legacy | Déplacer vers `data/archive/legacy/` |
-| S2.3.2 | Supprimer `halo_unified.db` | Obsolète après migration |
-| S2.3.3 | Nettoyer le code legacy | Supprimer `LegacyRepository` si plus utilisé |
+| # | Tâche | Statut | Notes |
+|---|-------|--------|-------|
+| S2.3.1 | Nettoyer `db_profiles.json` | ✅ | Version 2.1, legacy_db_path supprimés |
+| S2.3.2 | Créer dossiers joueurs manquants | ✅ | JGtm, Madina97294, Chocoboflor |
+| S2.3.3 | Documenter code legacy | ✅ | Conservé pour rétrocompatibilité |
+
+**Résumé des changements** :
+- `db_profiles.json` passé en version 2.1 sans références legacy
+- Dossiers `data/players/{gamertag}/` créés pour tous les joueurs
+- `LegacyRepository` et factory documentés comme optionnels/dépréciés
+- Les DBs legacy (`halo_unified.db`, `spnkr_gt_*.db`) étaient déjà absentes du repo
 
 ---
 
@@ -298,23 +304,25 @@ python scripts/benchmark_hybrid.py --db data/players/Chocoboflor/stats.duckdb
 
 ## Prochaine Action
 
-**Sprint 2.3 : Nettoyage et finalisation**
+**Phase 3 : Enrichissement des Données**
 
-1. Archiver les DBs legacy vers `data/archive/legacy/`
-2. Supprimer `halo_unified.db` (obsolète)
-3. Nettoyer le code legacy si plus utilisé
-4. Migrer les pages UI vers `get_repository_for_player()`
+Maintenant que l'architecture DuckDB est en place (Phase 2 complète), la prochaine étape est d'enrichir les données :
+
+1. Ajouter la table `antagonists` (top killers/victimes)
+2. Ajouter la table `weapon_stats` (statistiques par arme)
+3. Ajouter la table `skill_history` (historique CSR)
 
 ```bash
-# Migrations terminées :
-python scripts/migrate_metadata_to_duckdb.py  # ✅ 769 lignes
-python scripts/migrate_player_to_duckdb.py --all  # ✅ 1372 matchs
+# Utilisation du nouveau système :
+# Mode recommandé (auto-détection depuis db_profiles.json v2.1)
+from src.data.repositories.factory import get_repository_from_profile
+repo = get_repository_from_profile("JGtm")
 
-# Nouveau système :
-# Utiliser get_repository_from_profile("JGtm") pour créer un repo
-# ou get_repository_for_player("JGtm") depuis Streamlit
+# Ou depuis Streamlit
+from src.data.integration.streamlit_bridge import get_repository_for_player
+repo = get_repository_for_player("JGtm")
 ```
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 2.2 complété)*
+*Dernière mise à jour : 2026-02-01 (Sprint 2.3 complété - Phase 2 terminée)*

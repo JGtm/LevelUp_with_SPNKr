@@ -17,6 +17,49 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 2.3 COMPLETE - Nettoyage Architecture v2.1
+
+**Contexte** :
+Finalisation de la Phase 2 (Migration DuckDB Unifiée) avec le Sprint 2.3 dédié au nettoyage.
+
+**Actions réalisées** :
+
+1. **Nettoyage `db_profiles.json`** :
+   - Version passée de 2.0 à 2.1
+   - Suppression des références `legacy_db_path` (obsolètes)
+   - Les DBs legacy (`spnkr_gt_*.db`, `halo_unified.db`) n'existaient déjà plus dans le repo
+
+2. **Création des dossiers joueurs manquants** :
+   - `data/players/JGtm/`
+   - `data/players/Madina97294/`
+   - `data/players/Chocoboflor/`
+   - Seul `XxDaemonGamerxX/stats.duckdb` existait déjà
+
+3. **Documentation du code legacy** :
+   - `LegacyRepository` marqué comme DEPRECATED (v2.1)
+   - Conservé pour rétrocompatibilité et migrations
+   - Factory documenté avec usage recommandé (v2.1+)
+
+**Raisonnement** :
+- Le code legacy est conservé car il sert encore de fallback et pour les tests de migration
+- Les références legacy dans db_profiles étaient inutiles puisque les DBs n'existent plus
+- La version 2.1 signale que l'architecture v4 (DuckDB natif) est maintenant la norme
+
+**État final Phase 2** :
+```
+✅ Sprint 2.1 : Scripts de migration (métadonnées + joueurs)
+✅ Sprint 2.2 : Adaptation du code (DuckDBRepository, factory, bridge)
+✅ Sprint 2.3 : Nettoyage (profiles, dossiers, documentation)
+```
+
+**Prochaines étapes (Phase 3)** :
+- [ ] Ajouter table `antagonists` (top killers/victimes)
+- [ ] Ajouter table `weapon_stats` (statistiques par arme)
+- [ ] Ajouter table `skill_history` (historique CSR)
+- [ ] Migrer les pages UI vers `get_repository_for_player()`
+
+---
+
 ### [2026-02-01] - Sprint 2.2 COMPLETE - Adaptation Code DuckDB Natif
 
 **Contexte** :
