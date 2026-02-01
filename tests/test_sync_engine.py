@@ -520,3 +520,183 @@ class TestIntegrationLight:
         msg3 = r3.to_message()
         assert "❌" in msg3
         assert "Erreur 1" in msg3
+
+
+# =============================================================================
+# Tests Phase 5 : Career Rank
+# =============================================================================
+
+
+class TestCareerRankModels:
+    """Tests pour les modèles Career Rank (Phase 5)."""
+
+    def test_career_rank_data_basic(self):
+        """Vérifie la création de CareerRankData."""
+        from src.data.sync.models import CareerRankData
+
+        data = CareerRankData(
+            xuid="2535423456789",
+            current_rank=150,
+            current_rank_name="Diamond 5 (III)",
+            current_rank_tier="Diamond",
+            current_xp=15000,
+            xp_for_next_rank=20000,
+            xp_total=500000,
+        )
+
+        assert data.xuid == "2535423456789"
+        assert data.current_rank == 150
+        assert data.current_rank_tier == "Diamond"
+        assert data.is_max_rank is False
+
+    def test_career_rank_progress_calculation(self):
+        """Vérifie le calcul du pourcentage de progression."""
+        from src.data.sync.models import CareerRankData
+
+        # 50% de progression
+        data1 = CareerRankData(
+            xuid="123",
+            current_xp=10000,
+            xp_for_next_rank=20000,
+        )
+        assert data1.progress_to_next_rank == 50.0
+
+        # Rang max
+        data2 = CareerRankData(
+            xuid="123",
+            is_max_rank=True,
+            current_xp=0,
+            xp_for_next_rank=0,
+        )
+        assert data2.progress_to_next_rank == 100.0
+
+        # XP requis = 0 (edge case)
+        data3 = CareerRankData(
+            xuid="123",
+            current_xp=5000,
+            xp_for_next_rank=0,
+        )
+        assert data3.progress_to_next_rank == 100.0
+
+    def test_career_rank_row(self):
+        """Vérifie CareerRankRow pour DuckDB."""
+        from src.data.sync.models import CareerRankRow
+
+        row = CareerRankRow(
+            xuid="2535423456789",
+            rank=150,
+            rank_name="Diamond 5",
+            rank_tier="Diamond",
+            current_xp=15000,
+            xp_for_next_rank=20000,
+            xp_total=500000,
+            is_max_rank=False,
+        )
+
+        assert row.rank == 150
+        assert row.rank_tier == "Diamond"
+        assert row.recorded_at is None  # Default
+
+    def test_career_rank_max_rank(self):
+        """Vérifie le comportement au rang max."""
+        from src.data.sync.models import CareerRankData
+
+        data = CareerRankData(
+            xuid="123",
+            current_rank=272,
+            current_rank_name="Hero Legend",
+            current_rank_tier="Hero",
+            is_max_rank=True,
+        )
+
+        assert data.is_max_rank is True
+        assert data.progress_to_next_rank == 100.0
+
+
+class TestCareerRankApiParsing:
+    """Tests pour le parsing du Career Rank dans api_client."""
+
+    def test_rank_info_bronze(self):
+        """Vérifie les infos pour un rang Bronze."""
+        from src.data.sync.api_client import SPNKrAPIClient
+
+        # Créer un client mock pour tester les méthodes internes
+        client = SPNKrAPIClient.__new__(SPNKrAPIClient)
+        client._tokens = None
+
+        info = client._get_rank_info(1)
+        assert info["tier"] == "Bronze"
+        assert "Bronze 1" in info["name"]
+
+    def test_rank_info_silver(self):
+        """Vérifie les infos pour un rang Silver."""
+        from src.data.sync.api_client import SPNKrAPIClient
+
+        client = SPNKrAPIClient.__new__(SPNKrAPIClient)
+        info = client._get_rank_info(6)
+        assert info["tier"] == "Silver"
+
+    def test_rank_info_high_tier(self):
+        """Vérifie les infos pour un rang élevé."""
+        from src.data.sync.api_client import SPNKrAPIClient
+
+        client = SPNKrAPIClient.__new__(SPNKrAPIClient)
+        info = client._get_rank_info(100)
+        # Devrait avoir un grade comme I, II, III, etc.
+        assert info["tier"] in ["Bronze", "Silver", "Gold", "Platinum", "Diamond", "Onyx"]
+
+    def test_rank_info_hero(self):
+        """Vérifie les infos pour le rang Hero."""
+        from src.data.sync.api_client import SPNKrAPIClient
+
+        client = SPNKrAPIClient.__new__(SPNKrAPIClient)
+
+        info_hero = client._get_rank_info(271)
+        assert info_hero["tier"] == "Hero"
+        assert info_hero["name"] == "Hero"
+
+        info_legend = client._get_rank_info(272)
+        assert info_legend["tier"] == "Hero"
+        assert info_legend["name"] == "Hero Legend"
+
+    def test_parse_career_rank(self):
+        """Vérifie le parsing des données brutes Career Rank."""
+        from src.data.sync.api_client import SPNKrAPIClient
+
+        client = SPNKrAPIClient.__new__(SPNKrAPIClient)
+
+        # Simule une réponse API
+        api_response = {
+            "CurrentProgress": {
+                "Rank": 50,
+                "PartialProgress": 5000,
+            },
+            "Result": {
+                "AdornmentPath": "test/path/adornment.png",
+            },
+        }
+
+        data = client._parse_career_rank("2535423456789", api_response)
+
+        assert data.xuid == "2535423456789"
+        assert data.current_rank == 50
+        assert data.current_xp == 5000
+        assert data.adornment_path == "test/path/adornment.png"
+        assert data.is_max_rank is False
+
+    def test_parse_career_rank_max(self):
+        """Vérifie le parsing au rang max."""
+        from src.data.sync.api_client import SPNKrAPIClient
+
+        client = SPNKrAPIClient.__new__(SPNKrAPIClient)
+
+        api_response = {
+            "CurrentProgress": {
+                "Rank": 272,
+                "PartialProgress": 0,
+            },
+        }
+
+        data = client._parse_career_rank("123", api_response)
+        assert data.is_max_rank is True
+        assert data.current_rank == 272

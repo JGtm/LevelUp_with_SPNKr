@@ -261,3 +261,107 @@ class XuidAliasRow:
     gamertag: str
     last_seen: datetime | None = None
     source: str = "sync"
+
+
+# =============================================================================
+# Données Career Rank (Phase 5)
+# =============================================================================
+
+
+@dataclass
+class CareerRankData:
+    """Données de progression du rang carrière.
+
+    Correspond à l'endpoint economy/rewardtracks/careerranks.
+    """
+
+    xuid: str
+    current_rank: int = 0
+    current_rank_name: str = ""
+    current_rank_tier: str = ""
+    current_xp: int = 0
+    xp_for_next_rank: int = 0
+    xp_total: int = 0
+    is_max_rank: bool = False
+    adornment_path: str | None = None
+    spartan_id: str | None = None
+    raw_json: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def progress_to_next_rank(self) -> float:
+        """Pourcentage de progression vers le prochain rang (0-100)."""
+        if self.is_max_rank or self.xp_for_next_rank == 0:
+            return 100.0
+        return min(100.0, (self.current_xp / self.xp_for_next_rank) * 100)
+
+
+@dataclass
+class CareerRankRow:
+    """Ligne pour la table career_progression dans DuckDB."""
+
+    xuid: str
+    rank: int
+    rank_name: str
+    rank_tier: str
+    current_xp: int
+    xp_for_next_rank: int
+    xp_total: int
+    is_max_rank: bool
+    adornment_path: str | None = None
+    recorded_at: datetime | None = None
+
+
+# =============================================================================
+# Données Weapon Stats (Phase 5)
+# =============================================================================
+
+
+@dataclass
+class WeaponStatsRow:
+    """Ligne pour la table weapon_match_stats dans DuckDB.
+
+    Stats d'armes par match pour un joueur.
+    """
+
+    match_id: str
+    xuid: str
+    weapon_id: str
+    weapon_name: str
+    kills: int = 0
+    deaths: int = 0
+    headshot_kills: int = 0
+    shots_fired: int = 0
+    shots_hit: int = 0
+    damage_dealt: float = 0.0
+    time_held_seconds: float = 0.0
+
+
+@dataclass
+class WeaponAggregateRow:
+    """Ligne pour la table weapon_stats (agrégée sur tous les matchs)."""
+
+    xuid: str
+    weapon_id: str
+    weapon_name: str
+    total_kills: int = 0
+    total_deaths: int = 0
+    headshot_kills: int = 0
+    total_shots_fired: int = 0
+    total_shots_hit: int = 0
+    total_damage_dealt: float = 0.0
+    total_time_held_seconds: float = 0.0
+    matches_used: int = 0
+
+    @property
+    def accuracy(self) -> float:
+        """Précision globale de l'arme."""
+        if self.total_shots_fired == 0:
+            return 0.0
+        return (self.total_shots_hit / self.total_shots_fired) * 100
+
+    @property
+    def headshot_ratio(self) -> float:
+        """Ratio de headshots sur kills."""
+        if self.total_kills == 0:
+            return 0.0
+        return (self.headshot_kills / self.total_kills) * 100

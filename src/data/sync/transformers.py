@@ -22,6 +22,7 @@ from src.data.sync.models import (
     HighlightEventRow,
     MatchStatsRow,
     PlayerMatchStatsRow,
+    WeaponStatsRow,
     XuidAliasRow,
 )
 
@@ -796,3 +797,170 @@ def extract_xuids_from_match(match_json: dict[str, Any]) -> list[int]:
             continue
 
     return xuids
+
+
+# =============================================================================
+# Transformers Phase 5 : Weapon Stats
+# =============================================================================
+
+
+def _find_weapon_stats_dict(player_obj: dict[str, Any]) -> list[dict[str, Any]]:
+    """Trouve les stats d'armes dans le PlayerTeamStats.
+
+    Les données d'armes sont dans Stats.WeaponStats ou Stats.weapon_core
+    selon la version de l'API.
+
+    Returns:
+        Liste de dicts avec les stats par arme.
+    """
+    weapon_stats = []
+
+    def find_weapons(x: Any) -> None:
+        if isinstance(x, dict):
+            # Chercher WeaponStats ou weapon_core
+            for key in ("WeaponStats", "weapon_core", "Weapons"):
+                if key in x and isinstance(x[key], list):
+                    for weapon in x[key]:
+                        if isinstance(weapon, dict):
+                            weapon_stats.append(weapon)
+                    return
+            # Continuer la recherche récursive
+            for v in x.values():
+                find_weapons(v)
+        elif isinstance(x, list):
+            for v in x:
+                find_weapons(v)
+
+    find_weapons(player_obj.get("PlayerTeamStats"))
+    return weapon_stats
+
+
+def extract_weapon_stats(
+    match_json: dict[str, Any],
+    xuid: str,
+    match_id: str,
+) -> list[WeaponStatsRow]:
+    """Extrait les stats d'armes d'un joueur pour un match.
+
+    L'API Halo Infinite fournit des stats détaillées par arme :
+    - Kills, Deaths par arme
+    - Headshot kills
+    - Shots fired/hit
+    - Damage dealt
+    - Time held
+
+    Args:
+        match_json: JSON brut du match.
+        xuid: XUID du joueur.
+        match_id: ID du match.
+
+    Returns:
+        Liste de WeaponStatsRow (une par arme utilisée).
+    """
+    players = match_json.get("Players")
+    if not isinstance(players, list):
+        return []
+
+    # Trouver le joueur
+    me = _find_player(players, xuid)
+    if me is None:
+        return []
+
+    # Trouver les stats d'armes
+    weapon_dicts = _find_weapon_stats_dict(me)
+    if not weapon_dicts:
+        return []
+
+    rows = []
+    for weapon in weapon_dicts:
+        # Extraire les identifiants de l'arme
+        weapon_id = (
+            _safe_str(weapon.get("WeaponId"))
+            or _safe_str(weapon.get("weapon_id"))
+            or _safe_str(weapon.get("Id"))
+        )
+        weapon_name = (
+            _safe_str(weapon.get("WeaponName"))
+            or _safe_str(weapon.get("weapon_name"))
+            or _safe_str(weapon.get("Name"))
+            or weapon_id
+        )
+
+        if not weapon_id:
+            continue
+
+        # Extraire les stats
+        kills = _safe_int(weapon.get("Kills")) or _safe_int(weapon.get("kills")) or 0
+        deaths = _safe_int(weapon.get("Deaths")) or _safe_int(weapon.get("deaths")) or 0
+        headshot_kills = (
+            _safe_int(weapon.get("HeadshotKills")) or _safe_int(weapon.get("headshot_kills")) or 0
+        )
+        shots_fired = (
+            _safe_int(weapon.get("ShotsFired"))
+            or _safe_int(weapon.get("shots_fired"))
+            or _safe_int(weapon.get("RoundsFired"))
+            or 0
+        )
+        shots_hit = (
+            _safe_int(weapon.get("ShotsHit"))
+            or _safe_int(weapon.get("shots_hit"))
+            or _safe_int(weapon.get("RoundsHit"))
+            or 0
+        )
+        damage_dealt = (
+            _safe_float(weapon.get("DamageDealt")) or _safe_float(weapon.get("damage_dealt")) or 0.0
+        )
+
+        # Time held peut être en secondes ou format ISO duration
+        time_held = 0.0
+        time_raw = (
+            weapon.get("TimeHeld") or weapon.get("time_held") or weapon.get("TimeHeldSeconds")
+        )
+        if isinstance(time_raw, str):
+            time_held = float(_parse_duration_to_seconds(time_raw) or 0)
+        else:
+            time_held = _safe_float(time_raw) or 0.0
+
+        # Ne garder que les armes avec au moins une stat
+        if kills > 0 or deaths > 0 or shots_fired > 0:
+            rows.append(
+                WeaponStatsRow(
+                    match_id=match_id,
+                    xuid=xuid,
+                    weapon_id=weapon_id,
+                    weapon_name=weapon_name,
+                    kills=kills,
+                    deaths=deaths,
+                    headshot_kills=headshot_kills,
+                    shots_fired=shots_fired,
+                    shots_hit=shots_hit,
+                    damage_dealt=damage_dealt,
+                    time_held_seconds=time_held,
+                )
+            )
+
+    return rows
+
+
+def has_weapon_stats(match_json: dict[str, Any], xuid: str) -> bool:
+    """Vérifie si les stats d'armes sont disponibles pour ce match.
+
+    Utile pour déterminer si on doit appeler extract_weapon_stats().
+
+    Args:
+        match_json: JSON brut du match.
+        xuid: XUID du joueur.
+
+    Returns:
+        True si des données d'armes sont présentes.
+    """
+    players = match_json.get("Players")
+    if not isinstance(players, list):
+        return False
+
+    me = _find_player(players, xuid)
+    if me is None:
+        return False
+
+    weapon_dicts = _find_weapon_stats_dict(me)
+    return len(weapon_dicts) > 0

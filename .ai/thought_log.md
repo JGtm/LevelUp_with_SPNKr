@@ -17,6 +17,55 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 5.1 COMPLETE - Career Rank & Stats Armes
+
+**Contexte** :
+Phase 4 terminée (optimisations). Passage à la Phase 5 : Enrichissement Visuel & API Complémentaires.
+Début par le Sprint 5.1 : Career Rank & Stats Armes.
+
+**Objectif** :
+Ajouter les endpoints pour récupérer la progression de rang carrière et les stats d'armes.
+
+**Analyse réalisée** :
+1. Revue de la comparaison SPNKr vs Grunt (`.ai/features/API_COMPARISON_SPNKR_GRUNT.md`)
+2. Décision de continuer avec SPNKr et d'étendre les endpoints manquants
+3. Identification des structures de données pour career rank et weapon stats
+
+**Actions réalisées** :
+
+| Tâche | Fichier(s) | Description |
+|-------|------------|-------------|
+| S5.1.1 | `api_client.py` | Ajout `get_career_rank_progression()`, `get_match_count()`, `get_player_customization()` |
+| S5.1.2 | `api_client.py` | Parsing des rangs 1-272 (Bronze → Hero Legend), extraction adornment_path |
+| S5.1.3 | `transformers.py` | Ajout `extract_weapon_stats()`, `has_weapon_stats()` |
+| S5.1.4 | `engine.py` | Table `career_progression`, méthode `sync_career_rank()` |
+
+**Nouveaux modèles** (`models.py`) :
+- `CareerRankData` : Données complètes avec `progress_to_next_rank` calculé
+- `CareerRankRow` : Ligne pour la table DuckDB `career_progression`
+- `WeaponStatsRow` : Stats d'armes par match
+- `WeaponAggregateRow` : Stats agrégées par arme (avec `accuracy` et `headshot_ratio`)
+
+**Décisions architecturales** :
+
+| Question | Décision | Justification |
+|----------|----------|---------------|
+| API Grunt | Reporté | SPNKr suffit pour les besoins actuels |
+| Career Rank endpoint | Implémenté nativement | Extension de SPNKrAPIClient |
+| Weapon stats | Extraction depuis match JSON | Données disponibles dans WeaponStats/weapon_core |
+| Table career_progression | Historique (snapshots) | Permet de suivre la progression dans le temps |
+
+**Tests ajoutés** (`test_sync_engine.py`) :
+- `TestCareerRankModels` : Validation des modèles CareerRankData, CareerRankRow
+- `TestCareerRankApiParsing` : Parsing des rangs, validation Bronze → Hero
+
+**Suivi** :
+- Sprint 5.0 (Validation) : Optionnel, peut être fait plus tard
+- Sprint 5.2 : Correctifs Prioritaires (modes/playlists, synchro app)
+- Sprint 5.3 : Graphes Radar & Étiquettes
+
+---
+
 ### [2026-02-01] - Sprint 4.8 COMPLETE - Suppression ShadowRepository
 
 **Contexte** :

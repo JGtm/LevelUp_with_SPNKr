@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.data.sync.models import MatchData, MatchHistoryItem
+from src.data.sync.models import CareerRankData, MatchData, MatchHistoryItem
 
 logger = logging.getLogger(__name__)
 
@@ -546,3 +546,252 @@ class SPNKrAPIClient:
         except Exception:
             # Asset manquant ou supprimé
             return None
+
+    # =========================================================================
+    # Endpoints Phase 5 : Career Rank & Stats supplémentaires
+    # =========================================================================
+
+    async def get_career_rank_progression(self, xuid: str) -> CareerRankData | None:
+        """Récupère la progression du rang carrière d'un joueur.
+
+        Args:
+            xuid: XUID du joueur (format numérique).
+
+        Returns:
+            CareerRankData ou None si indisponible.
+        """
+        # Normaliser le XUID (enlever préfixes éventuels)
+        xuid_clean = str(xuid).strip()
+        if xuid_clean.startswith("xuid("):
+            xuid_clean = xuid_clean[5:-1]
+
+        async def _fetch():
+            # Endpoint economy pour la progression de rang
+            url = (
+                f"https://economy.svc.halowaypoint.com/hi/players/"
+                f"xuid({xuid_clean})/rewardtracks/careerranks/careerrank1"
+            )
+
+            if self._session is None:
+                raise RuntimeError("Session non initialisée")
+
+            headers = {
+                "x-343-authorization-spartan": self._tokens.spartan_token,
+                "343-clearance": self._tokens.clearance_token,
+                "Accept": "application/json",
+            }
+
+            async with self._session.get(url, headers=headers) as resp:
+                if resp.status == 404:
+                    return None
+                resp.raise_for_status()
+                return await resp.json()
+
+        try:
+            json_data = await request_with_retries(_fetch)
+            if json_data is None:
+                return None
+
+            return self._parse_career_rank(xuid_clean, json_data)
+
+        except Exception as e:
+            logger.warning(f"Erreur get_career_rank_progression({xuid}): {e}")
+            return None
+
+    def _parse_career_rank(self, xuid: str, data: dict[str, Any]) -> CareerRankData:
+        """Parse les données brutes de career rank en CareerRankData."""
+        # Structure typique du JSON retourné par l'API
+        # {
+        #   "RewardTrackPath": "RewardTracks/CareerRanks/careerRank1.json",
+        #   "TrackType": "CareerRank",
+        #   "CurrentProgress": { "Rank": 150, "PartialProgress": 25000 },
+        #   "PreviousProgress": {...}
+        # }
+
+        current = data.get("CurrentProgress", {})
+        rank = current.get("Rank", 0)
+        partial_xp = current.get("PartialProgress", 0)
+
+        # Vérifier si rang max atteint (rang 272 = Hero max)
+        is_max = rank >= 272
+
+        # Récupérer les infos sur le rang depuis le track
+        rank_info = self._get_rank_info(rank)
+
+        return CareerRankData(
+            xuid=xuid,
+            current_rank=rank,
+            current_rank_name=rank_info.get("name", f"Rank {rank}"),
+            current_rank_tier=rank_info.get("tier", ""),
+            current_xp=partial_xp,
+            xp_for_next_rank=rank_info.get("xp_required", 0),
+            xp_total=self._compute_total_xp(rank, partial_xp),
+            is_max_rank=is_max,
+            adornment_path=data.get("Result", {}).get("AdornmentPath"),
+            raw_json=data,
+        )
+
+    def _get_rank_info(self, rank: int) -> dict[str, Any]:
+        """Retourne les infos d'un rang carrière.
+
+        Les rangs suivent une progression par tiers :
+        - Rangs 1-30: Bronze, Silver, Gold, Platinum, Diamond, Onyx (5 chacun)
+        - Rangs 31-270: Répétition avec grades I à V dans chaque tier
+        - Rangs 271-272: Hero
+        """
+        # Mapping des tiers et niveaux
+        base_tiers = ["Bronze", "Silver", "Gold", "Platinum", "Diamond", "Onyx"]
+        hero_ranks = {271: "Hero", 272: "Hero Legend"}
+
+        if rank in hero_ranks:
+            return {
+                "name": hero_ranks[rank],
+                "tier": "Hero",
+                "xp_required": 0,
+            }
+
+        # Calcul du tier et niveau
+        # Rangs 1-30 : 5 rangs par tier, 6 tiers = 30
+        if rank <= 30:
+            tier_idx = (rank - 1) // 5
+            level = ((rank - 1) % 5) + 1
+            tier = base_tiers[tier_idx] if tier_idx < len(base_tiers) else "Unknown"
+            return {
+                "name": f"{tier} {level}",
+                "tier": tier,
+                "xp_required": 10000 + (rank * 500),  # Estimation
+            }
+
+        # Rangs 31-270 : cycles de 30 rangs
+        cycle = (rank - 31) // 30
+        pos_in_cycle = (rank - 31) % 30
+        tier_idx = pos_in_cycle // 5
+        level = (pos_in_cycle % 5) + 1
+        tier = base_tiers[tier_idx] if tier_idx < len(base_tiers) else "Unknown"
+        grade = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"][min(cycle, 7)]
+
+        return {
+            "name": f"{tier} {level} ({grade})",
+            "tier": tier,
+            "xp_required": 15000 + (cycle * 2000) + (rank * 100),  # Estimation
+        }
+
+    def _compute_total_xp(self, rank: int, partial_xp: int) -> int:
+        """Calcule l'XP total basé sur le rang et l'XP partiel."""
+        # Estimation simplifiée (les vrais calculs sont plus complexes)
+        base_xp = 0
+        for r in range(1, rank):
+            info = self._get_rank_info(r)
+            base_xp += info.get("xp_required", 10000)
+        return base_xp + partial_xp
+
+    async def get_match_count(self, xuid: str) -> dict[str, int] | None:
+        """Récupère le nombre total de matchs d'un joueur.
+
+        Args:
+            xuid: XUID du joueur.
+
+        Returns:
+            Dict avec les compteurs de matchs ou None.
+        """
+        xuid_clean = str(xuid).strip()
+        if xuid_clean.startswith("xuid("):
+            xuid_clean = xuid_clean[5:-1]
+
+        async def _fetch():
+            url = (
+                f"https://halostats.svc.halowaypoint.com/hi/players/"
+                f"xuid({xuid_clean})/matches/count"
+            )
+
+            if self._session is None:
+                raise RuntimeError("Session non initialisée")
+
+            headers = {
+                "x-343-authorization-spartan": self._tokens.spartan_token,
+                "343-clearance": self._tokens.clearance_token,
+                "Accept": "application/json",
+            }
+
+            async with self._session.get(url, headers=headers) as resp:
+                if resp.status == 404:
+                    return None
+                resp.raise_for_status()
+                return await resp.json()
+
+        try:
+            json_data = await request_with_retries(_fetch)
+            if json_data is None:
+                return None
+
+            # Parser les compteurs
+            return {
+                "matchmaking": json_data.get("MatchmadeMatchesPlayedCount", 0),
+                "custom": json_data.get("CustomMatchesPlayedCount", 0),
+                "local": json_data.get("LocalMatchesPlayedCount", 0),
+                "total": json_data.get("MatchesPlayedCount", 0),
+            }
+
+        except Exception as e:
+            logger.warning(f"Erreur get_match_count({xuid}): {e}")
+            return None
+
+    async def get_player_customization(self, xuid: str) -> dict[str, Any] | None:
+        """Récupère les données de personnalisation Spartan (armure, couleurs).
+
+        Args:
+            xuid: XUID du joueur.
+
+        Returns:
+            JSON de personnalisation ou None.
+        """
+        xuid_clean = str(xuid).strip()
+        if xuid_clean.startswith("xuid("):
+            xuid_clean = xuid_clean[5:-1]
+
+        async def _fetch():
+            resp = await self.client.economy.get_player_customization(f"xuid({xuid_clean})")
+            return await resp.json()
+
+        try:
+            result = await request_with_retries(_fetch)
+            return result if isinstance(result, dict) else None
+        except Exception as e:
+            logger.warning(f"Erreur get_player_customization({xuid}): {e}")
+            return None
+
+    async def get_spartan_token_xuid(self) -> str | None:
+        """Récupère le XUID du joueur authentifié depuis le token Spartan.
+
+        Returns:
+            XUID ou None si non disponible.
+        """
+        if self._tokens is None:
+            return None
+
+        # Le XUID est souvent encodé dans le token ou récupérable via un appel
+        # Essayer de parser le token JWT si possible
+        try:
+            import base64
+            import json as json_module
+
+            # Le Spartan token peut contenir le XUID
+            parts = self._tokens.spartan_token.split(".")
+            if len(parts) >= 2:
+                # Décoder la partie payload (base64url)
+                payload_b64 = parts[1]
+                # Ajouter le padding si nécessaire
+                padding = 4 - len(payload_b64) % 4
+                if padding != 4:
+                    payload_b64 += "=" * padding
+                payload = base64.urlsafe_b64decode(payload_b64)
+                data = json_module.loads(payload)
+
+                # Chercher le XUID dans les claims
+                xuid = data.get("xid") or data.get("xuid") or data.get("sub")
+                if xuid:
+                    return str(xuid)
+        except Exception:
+            pass
+
+        return None

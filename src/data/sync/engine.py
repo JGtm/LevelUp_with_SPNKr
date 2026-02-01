@@ -33,6 +33,7 @@ import duckdb
 
 from src.data.sync.api_client import SPNKrAPIClient, Tokens, get_tokens_from_env
 from src.data.sync.models import (
+    CareerRankData,
     MatchStatsRow,
     PlayerMatchStatsRow,
     SyncOptions,
@@ -99,6 +100,23 @@ CREATE TABLE IF NOT EXISTS sync_meta (
     value VARCHAR,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Table career_progression (Phase 5 - Rang carrière)
+CREATE TABLE IF NOT EXISTS career_progression (
+    id INTEGER PRIMARY KEY,
+    xuid VARCHAR NOT NULL,
+    rank INTEGER NOT NULL,
+    rank_name VARCHAR,
+    rank_tier VARCHAR,
+    current_xp INTEGER,
+    xp_for_next_rank INTEGER,
+    xp_total INTEGER,
+    is_max_rank BOOLEAN DEFAULT FALSE,
+    adornment_path VARCHAR,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_career_xuid ON career_progression(xuid);
+CREATE INDEX IF NOT EXISTS idx_career_date ON career_progression(recorded_at);
 """
 
 
@@ -691,6 +709,125 @@ class DuckDBSyncEngine:
             }
         except Exception as e:
             return {"error": str(e)}
+
+    # =========================================================================
+    # Méthodes Phase 5 : Career Rank
+    # =========================================================================
+
+    async def sync_career_rank(self) -> CareerRankData | None:
+        """Synchronise la progression du rang carrière.
+
+        Récupère les données depuis l'API et les sauvegarde en BDD.
+        Crée un snapshot historique pour suivre la progression.
+
+        Returns:
+            CareerRankData ou None si erreur.
+        """
+        try:
+            # Récupérer les tokens si nécessaire
+            if self._tokens is None:
+                self._tokens = await get_tokens_from_env()
+
+            async with SPNKrAPIClient(tokens=self._tokens) as client:
+                career_data = await client.get_career_rank_progression(self._xuid)
+
+                if career_data is None:
+                    logger.warning(f"Career rank non disponible pour {self._gamertag}")
+                    return None
+
+                # Sauvegarder en BDD
+                self._save_career_rank(career_data)
+
+                logger.info(
+                    f"Career rank sync: {self._gamertag} → "
+                    f"Rang {career_data.current_rank} ({career_data.current_rank_name})"
+                )
+
+                return career_data
+
+        except Exception as e:
+            logger.error(f"Erreur sync_career_rank: {e}")
+            return None
+
+    def _save_career_rank(self, data: CareerRankData) -> None:
+        """Sauvegarde un snapshot de la progression de rang."""
+        conn = self._get_connection()
+        now = datetime.now(timezone.utc)
+
+        conn.execute(
+            """INSERT INTO career_progression (
+                xuid, rank, rank_name, rank_tier,
+                current_xp, xp_for_next_rank, xp_total,
+                is_max_rank, adornment_path, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data.xuid,
+                data.current_rank,
+                data.current_rank_name,
+                data.current_rank_tier,
+                data.current_xp,
+                data.xp_for_next_rank,
+                data.xp_total,
+                data.is_max_rank,
+                data.adornment_path,
+                now,
+            ),
+        )
+        conn.commit()
+
+        # Mettre à jour sync_meta
+        self._update_sync_meta("last_career_sync_at", now.isoformat())
+        self._update_sync_meta("current_rank", str(data.current_rank))
+
+    def get_career_rank_history(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Récupère l'historique de progression de rang.
+
+        Args:
+            limit: Nombre maximum d'entrées.
+
+        Returns:
+            Liste des snapshots de progression.
+        """
+        try:
+            conn = self._get_connection()
+            result = conn.execute(
+                """SELECT rank, rank_name, rank_tier, current_xp,
+                          xp_for_next_rank, xp_total, is_max_rank,
+                          adornment_path, recorded_at
+                   FROM career_progression
+                   WHERE xuid = ?
+                   ORDER BY recorded_at DESC
+                   LIMIT ?""",
+                (self._xuid, limit),
+            ).fetchall()
+
+            return [
+                {
+                    "rank": r[0],
+                    "rank_name": r[1],
+                    "rank_tier": r[2],
+                    "current_xp": r[3],
+                    "xp_for_next_rank": r[4],
+                    "xp_total": r[5],
+                    "is_max_rank": r[6],
+                    "adornment_path": r[7],
+                    "recorded_at": r[8],
+                }
+                for r in result
+            ]
+
+        except Exception as e:
+            logger.warning(f"Erreur get_career_rank_history: {e}")
+            return []
+
+    def get_latest_career_rank(self) -> dict[str, Any] | None:
+        """Récupère le dernier rang carrière enregistré.
+
+        Returns:
+            Dict avec les infos du rang ou None.
+        """
+        history = self.get_career_rank_history(limit=1)
+        return history[0] if history else None
 
     def close(self) -> None:
         """Ferme la connexion DuckDB."""

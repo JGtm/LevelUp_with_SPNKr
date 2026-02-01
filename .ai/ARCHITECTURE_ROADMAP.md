@@ -932,32 +932,73 @@ src/db/loaders_cached.py             # Gardé pour scripts utilitaires
 - Token refresh 100% OK
 - Données manquantes < 5%
 
-#### Sprint 5.1 : Career Rank & Stats Armes ⏳
+#### Sprint 5.1 : Career Rank & Stats Armes ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S5.1.1 | Endpoint Career Rank via SPNKr | `src/data/sync/api_client.py` | ⏳ |
-| S5.1.2 | Récupérer Spartan ID + adornment | `src/data/sync/api_client.py` | ⏳ |
-| S5.1.3 | Explorer weapon_core dans match stats | Investigation | ⏳ |
-| S5.1.4 | Persister career_progression en BDD | `src/data/repositories/duckdb_repo.py` | ⏳ |
-| S5.1.5 | (Optionnel) Bridge Grunt pour Service Record | `scripts/grunt_bridge.py` | ⏳ |
+| S5.1.1 | Endpoint Career Rank via SPNKr | `src/data/sync/api_client.py` | ✅ |
+| S5.1.2 | Récupérer Spartan ID + adornment | `src/data/sync/api_client.py` | ✅ |
+| S5.1.3 | Explorer weapon_core dans match stats | `src/data/sync/transformers.py` | ✅ |
+| S5.1.4 | Persister career_progression en BDD | `src/data/sync/engine.py` | ✅ |
+| S5.1.5 | (Optionnel) Bridge Grunt pour Service Record | `scripts/grunt_bridge.py` | ⏳ (Reporté) |
 
-**Table cible** : `weapon_stats` (déjà dans le schéma v4)
+**Implémentations réalisées** :
+
+1. **Endpoint Career Rank** (`api_client.py`) :
+   - `get_career_rank_progression(xuid)` : Récupère les données depuis l'API economy
+   - `get_match_count(xuid)` : Récupère le nombre total de matchs
+   - `get_player_customization(xuid)` : Récupère les données Spartan (armure, couleurs)
+   - Parsing automatique des rangs (Bronze → Hero Legend, rangs 1-272)
+
+2. **Modèles CareerRank** (`models.py`) :
+   - `CareerRankData` : Données complètes avec progression calculée
+   - `CareerRankRow` : Ligne pour la table DuckDB
+   - `WeaponStatsRow` : Stats d'armes par match
+   - `WeaponAggregateRow` : Stats agrégées par arme
+
+3. **Engine Sync Career Rank** (`engine.py`) :
+   - Table `career_progression` créée dans le schéma
+   - `sync_career_rank()` : Récupère et sauvegarde la progression
+   - `get_career_rank_history()` : Historique de progression
+   - `get_latest_career_rank()` : Dernier rang enregistré
+
+4. **Extraction Stats Armes** (`transformers.py`) :
+   - `extract_weapon_stats()` : Extrait les stats d'armes d'un match
+   - `has_weapon_stats()` : Vérifie la disponibilité des données
+   - Support des formats WeaponStats, weapon_core, Weapons
+
+**Tables cibles** :
 
 ```sql
--- Schéma weapon_stats
-CREATE TABLE weapon_stats (
-    gamertag VARCHAR,
+-- career_progression (historique des rangs)
+CREATE TABLE career_progression (
+    id INTEGER PRIMARY KEY,
+    xuid VARCHAR NOT NULL,
+    rank INTEGER NOT NULL,
+    rank_name VARCHAR,
+    rank_tier VARCHAR,
+    current_xp INTEGER,
+    xp_for_next_rank INTEGER,
+    xp_total INTEGER,
+    is_max_rank BOOLEAN,
+    adornment_path VARCHAR,
+    recorded_at TIMESTAMP
+);
+
+-- weapon_match_stats (stats par match)
+CREATE TABLE weapon_match_stats (
+    match_id VARCHAR,
+    xuid VARCHAR,
     weapon_id VARCHAR,
     weapon_name VARCHAR,
     kills INTEGER,
     deaths INTEGER,
-    headshots INTEGER,
+    headshot_kills INTEGER,
     shots_fired INTEGER,
     shots_hit INTEGER,
     damage_dealt DOUBLE,
     time_held_seconds DOUBLE,
-    updated_at TIMESTAMP
+    PRIMARY KEY (match_id, xuid, weapon_id)
 );
 ```
 
@@ -1237,17 +1278,18 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 4.7.1 COMPLETE | Core Sync Engine : DuckDBSyncEngine, SPNKrAPIClient, transformers |
 | 2026-02-01 | Sprint 4.7.2 COMPLETE | Intégration : scripts/sync.py et src/ui/sync.py adaptés |
 | 2026-02-01 | Sprint 4.7.3 COMPLETE | Migration historique : HighlightEvents, PlayerMatchStats, XuidAliases |
+| 2026-02-01 | Sprint 5.1 COMPLETE | Career Rank, Weapon Stats, Spartan ID endpoints + tables DuckDB |
 
 ---
 
 ## Prochaine Action
 
-**Phase 4 COMPLETE** : Optimisations Avancées (Sprints 4.1-4.6 terminés ✅)
+**Sprint 5.1 COMPLETE** : Career Rank & Stats Armes (✅)
 
 Prochaine priorité :
-- **Phase 5** : Enrichissement Visuel & Grunt API
-  - Sprint 5.1 : Intégration Grunt API & Stats Armes
-  - Sprint 5.2 : Correctifs Prioritaires
+- **Phase 5** (suite) : Enrichissement Visuel
+  - Sprint 5.0 : Validation Post-Refactoring (benchmarks optionnels)
+  - Sprint 5.2 : Correctifs Prioritaires (modes/playlists, synchro app)
   - Sprint 5.3 : Graphes Radar & Étiquettes
 
 ```python
@@ -1281,4 +1323,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 4.7.3 COMPLETE - Migration Historique)*
+*Dernière mise à jour : 2026-02-01 (Sprint 5.1 COMPLETE - Career Rank & Stats Armes)*
