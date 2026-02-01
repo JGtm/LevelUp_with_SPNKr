@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
 import streamlit as st
 
 from src.ui.commendations import render_h5g_commendations_section
 from src.ui.medals import medal_label, render_medals_grid
+from src.visualization.distributions import plot_medals_distribution
 
 
 def render_citations_page(
@@ -18,7 +19,9 @@ def render_citations_page(
     xuid: str | None,
     db_path: str,
     db_key: tuple[int, int] | None,
-    top_medals_fn: Callable[[str, str, list[str], int | None, tuple[int, int] | None], list[tuple[int, int]] | None],
+    top_medals_fn: Callable[
+        [str, str, list[str], int | None, tuple[int, int] | None], list[tuple[int, int]] | None
+    ],
 ) -> None:
     """Rend la page Citations (Commendations H5G + Médailles HI).
 
@@ -79,18 +82,20 @@ def render_citations_page(
             if col not in df_full.columns:
                 continue
             try:
-                stats_totals_full[col] = int(pd.to_numeric(df_full[col], errors="coerce").fillna(0).sum())
+                stats_totals_full[col] = int(
+                    pd.to_numeric(df_full[col], errors="coerce").fillna(0).sum()
+                )
             except Exception:
                 stats_totals_full[col] = 0
 
-    # Calcul des deltas.
+    # Calcul des deltas (conservés pour usage futur).
     total_medals_filtered = sum(counts_by_medal.values())
-    total_medals_full = sum(counts_by_medal_full.values())
-    delta_medals = total_medals_filtered  # Delta = ce qui est dans le filtre.
+    _total_medals_full = sum(counts_by_medal_full.values())  # noqa: F841
+    _delta_medals = total_medals_filtered  # noqa: F841
 
     total_citations_filtered = sum(stats_totals.values()) + total_medals_filtered
-    total_citations_full = sum(stats_totals_full.values()) + total_medals_full
-    delta_citations = total_citations_filtered
+    _total_citations_full = sum(stats_totals_full.values()) + _total_medals_full  # noqa: F841
+    _delta_citations = total_citations_filtered  # noqa: F841
 
     # Détermine si on est en mode "filtré" (pas tous les matchs).
     is_filtered = len(dff) < len(df_full) if not df_full.empty else False
@@ -120,6 +125,23 @@ def render_citations_page(
             md = pd.DataFrame(top, columns=["name_id", "count"])
             md["label"] = md["name_id"].apply(lambda x: medal_label(int(x)))
             md_desc = md.sort_values("count", ascending=False)
+
+            # === Graphique de distribution des médailles (Sprint 5.4.9) ===
+            st.subheader("Distribution des médailles")
+
+            # Préparer les données pour le graphique
+            medal_names_dict = {int(nid): medal_label(int(nid)) for nid, _ in top}
+            fig_medals = plot_medals_distribution(
+                top,
+                medal_names_dict,
+                title=None,
+                top_n=25,
+            )
+            st.plotly_chart(fig_medals, use_container_width=True)
+
+            st.divider()
+            st.subheader("Toutes les médailles")
+
             # Passer les deltas par médaille si filtré
             deltas = None
             if is_filtered:

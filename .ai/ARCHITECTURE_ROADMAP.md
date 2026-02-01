@@ -1036,20 +1036,41 @@ CREATE TABLE weapon_match_stats (
 
 **Source** : [Reddit - Halo Query MMR](https://www.reddit.com/r/CompetitiveHalo/comments/19f97ir/halo_query_a_new_stats_site_to_see_your_mmr/)
 
-#### Sprint 5.4 : Nouvelles Représentations Statistiques
+#### Sprint 5.4 : Nouvelles Représentations Statistiques 🚧 (Partiellement Complet)
 
 | # | Tâche | Description | Statut |
 |---|-------|-------------|--------|
-| S5.4.1 | Frags parfaits sur graphe Précision | Compter médailles "Perfect" | ⏳ |
-| S5.4.2 | Stacked columns matchs par carte/mode | Win/Loss/Tie/Left | ⏳ |
-| S5.4.3 | Distributions : Win ratio, dégâts, scores | Histogrammes | ⏳ |
-| S5.4.4 | Distribution timestamps 1er kill/death | Par map ou match | ⏳ |
-| S5.4.5 | Corrélations durée vie / kills / outcomes | Scatter plots | ⏳ |
-| S5.4.6 | Win Ratio par jour/heure de la semaine | Heatmap | ⏳ |
-| S5.4.7 | Matches at Top vs Total par semaine | Comparaison | ⏳ |
-| S5.4.8 | Top 3 armes par session avec kills | Cards ou bar chart | ⏳ |
-| S5.4.9 | Médailles gagnées (distribution) | Treemap ou bar | ⏳ |
-| S5.4.10 | Shots Fired/Hit + Callout Assists | Sur graphes précision | ⏳ |
+| S5.4.1 | Frags parfaits sur graphe Précision | Compter médailles "Perfect" | ⏳ (jointure medals_earned) |
+| S5.4.2 | Stacked columns matchs par carte/mode | Win/Loss/Tie/Left | ✅ |
+| S5.4.3 | Distributions : Win ratio, dégâts, scores | Histogrammes | ✅ |
+| S5.4.4 | Distribution timestamps 1er kill/death | Par map ou match | ⏳ (highlight_events) |
+| S5.4.5 | Corrélations durée vie / kills / outcomes | Scatter plots | ✅ |
+| S5.4.6 | Win Ratio par jour/heure de la semaine | Heatmap | ✅ |
+| S5.4.7 | Matches at Top vs Total par semaine | Comparaison | ✅ |
+| S5.4.8 | Top 3 armes par session avec kills | Cards ou bar chart | ⏳ (weapon_match_stats) |
+| S5.4.9 | Médailles gagnées (distribution) | Treemap ou bar | ✅ |
+| S5.4.10 | Shots Fired/Hit + Callout Assists | Sur graphes précision | ⏳ (extension schéma) |
+
+**Implémentations réalisées (Sprint 5.4) :**
+
+1. **Nouvelles fonctions de visualisation** (`src/visualization/distributions.py`) :
+   - `plot_stacked_outcomes_by_category()` : Colonnes empilées Win/Loss/Tie par carte ou mode
+   - `plot_win_ratio_heatmap()` : Heatmap jour × heure avec Win Rate
+   - `plot_histogram()` : Histogramme générique avec option KDE
+   - `plot_medals_distribution()` : Distribution des médailles (barres horizontales)
+   - `plot_correlation_scatter()` : Scatter plot avec ligne de tendance et R²
+   - `plot_matches_at_top_by_week()` : Matchs Top vs Total par semaine avec taux
+
+2. **Intégrations UI** :
+   - Page `win_loss.py` : Stacked columns par carte/mode, heatmap jour/heure, Top vs Total
+   - Page `timeseries.py` : Histogrammes (précision, kills, durée de vie, performance) + scatter corrélations
+   - Page `citations.py` : Graphique de distribution des médailles
+
+**Tâches reportées** (nécessitent extension schéma/données) :
+- S5.4.1 : Médailles "Perfect" par match (ID 1512363953) → jointure avec `medals_earned`
+- S5.4.4 : Timestamps kill/death → méthode `load_highlight_events()` dans repository
+- S5.4.8 : Stats armes → table `weapon_match_stats` non créée
+- S5.4.10 : Shots fired/hit → colonnes absentes de `match_stats`
 
 **Source notebooks** : [OpenSpartan Hero Stats](https://github.com/OpenSpartan/notebooks/blob/main/src/hero/Hero%20Stats.ipynb)
 
@@ -1308,18 +1329,30 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 5.1 COMPLETE | Career Rank, Weapon Stats, Spartan ID endpoints + tables DuckDB |
 | 2026-02-01 | Sprint 5.2 COMPLETE | Correctifs modes/playlists, synchro auto DuckDB, association vidéos, script thumbnails |
 | 2026-02-01 | Sprint 5.3 COMPLETE | Graphe radar, annotations extrêmes, composante MMR Performance (style Elo) |
+| 2026-02-01 | Sprint 5.4 PARTIEL | 6/10 tâches : Stacked columns, histogrammes, heatmap, scatter, Top/Total, médailles |
 
 ---
 
 ## Prochaine Action
 
-**Sprint 5.2 & 5.3 COMPLETE** : Correctifs Prioritaires + Graphes Radar (✅)
+**Sprint 5.4 PARTIELLEMENT COMPLET** : Nouvelles Représentations Statistiques (6/10 ✅)
+
+Tâches complétées :
+- ✅ Stacked columns Win/Loss/Tie par carte et mode
+- ✅ Histogrammes (précision, kills, durée de vie, score de performance)
+- ✅ Heatmap Win Rate par jour/heure de la semaine
+- ✅ Scatter plots corrélations (durée vie vs kills, précision vs FDA)
+- ✅ Matches at Top vs Total par semaine
+- ✅ Distribution des médailles gagnées
+
+Tâches reportées (nécessitent extension schéma) :
+- ⏳ S5.4.1 : Perfect kills (jointure medals_earned)
+- ⏳ S5.4.4 : Timestamps 1er kill/death (highlight_events)
+- ⏳ S5.4.8 : Top 3 armes par session (weapon_match_stats)
+- ⏳ S5.4.10 : Shots Fired/Hit (extension match_stats)
 
 Prochaine priorité :
-- **Phase 5** (suite) : Sprint 5.4 - Nouvelles Représentations Statistiques
-  - Stacked columns (win/loss/tie par carte/mode)
-  - Distributions (win ratio, dégâts, scores)
-  - Heatmaps (win ratio par jour/heure)
+- **Phase 5.5** : Compléter les données manquantes (médailles par match, highlight_events, weapon_stats)
 - **Phase 6** : Documentation & Branding "LevelUp"
 
 ```python
@@ -1353,4 +1386,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprints 5.2 & 5.3 COMPLETE - Correctifs + Graphes Radar)*
+*Dernière mise à jour : 2026-02-01 (Sprint 5.4 PARTIEL - Nouvelles Représentations Statistiques 6/10)*

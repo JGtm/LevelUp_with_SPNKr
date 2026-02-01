@@ -5,15 +5,20 @@ Analyse des victoires et défaites par période et par carte.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import pandas as pd
 import streamlit as st
 
-from src.config import HALO_COLORS, SESSION_CONFIG
 from src.analysis import compute_map_breakdown
-from src.visualization import plot_outcomes_over_time, plot_map_comparison, plot_map_ratio_with_winloss
+from src.config import HALO_COLORS, SESSION_CONFIG
 from src.ui.cache import cached_same_team_match_ids_with_friend
+from src.visualization import (
+    plot_map_comparison,
+    plot_map_ratio_with_winloss,
+    plot_matches_at_top_by_week,
+    plot_outcomes_over_time,
+    plot_stacked_outcomes_by_category,
+    plot_win_ratio_heatmap,
+)
 
 
 def _clear_min_matches_maps_auto() -> None:
@@ -29,7 +34,7 @@ def _styler_map(styler, func, subset):
         return styler.applymap(func, subset=subset)
 
 
-def _to_float(v: object) -> Optional[float]:
+def _to_float(v: object) -> float | None:
     """Convertit une valeur en float, ou None si impossible."""
     try:
         if v is None:
@@ -46,27 +51,27 @@ def _style_map_table_row(row: pd.Series) -> pd.Series:
     red = str(getattr(HALO_COLORS, "red", "#E74C3C"))
     violet = "#8E6CFF"
 
-    w = _to_float(row.get("Taux victoire (%)"))
-    l = _to_float(row.get("Taux défaite (%)"))
-    r = _to_float(row.get("Ratio global"))
+    win_pct = _to_float(row.get("Taux victoire (%)"))
+    loss_pct = _to_float(row.get("Taux défaite (%)"))
+    ratio_val = _to_float(row.get("Ratio global"))
 
     styles: dict[str, str] = {str(c): "" for c in row.index}
 
-    if w is not None and l is not None:
-        if w > l:
+    if win_pct is not None and loss_pct is not None:
+        if win_pct > loss_pct:
             styles["Taux victoire (%)"] = f"color: {green}; font-weight: 800;"
             styles["Taux défaite (%)"] = f"color: {red}; font-weight: 800;"
-        elif w < l:
+        elif win_pct < loss_pct:
             styles["Taux victoire (%)"] = f"color: {red}; font-weight: 800;"
             styles["Taux défaite (%)"] = f"color: {green}; font-weight: 800;"
         else:
             styles["Taux victoire (%)"] = f"color: {violet}; font-weight: 800;"
             styles["Taux défaite (%)"] = f"color: {violet}; font-weight: 800;"
 
-    if r is not None:
-        if r > 1.0:
+    if ratio_val is not None:
+        if ratio_val > 1.0:
             styles["Ratio global"] = f"color: {green}; font-weight: 800;"
-        elif r < 1.0:
+        elif ratio_val < 1.0:
             styles["Ratio global"] = f"color: {red}; font-weight: 800;"
         else:
             styles["Ratio global"] = f"color: {violet}; font-weight: 800;"
@@ -102,6 +107,92 @@ def render_win_loss_page(
         )
         st.plotly_chart(fig_out, width="stretch")
 
+        # === Nouvelles visualisations Sprint 5.4 ===
+        st.divider()
+        st.subheader("Résultats par carte et mode")
+
+        col_by_map, col_by_mode = st.columns(2)
+
+        with col_by_map:
+            st.markdown("##### Par carte")
+            if "map_name" in dff.columns and "outcome" in dff.columns:
+                fig_map = plot_stacked_outcomes_by_category(
+                    dff,
+                    "map_name",
+                    title=None,
+                    min_matches=2,
+                    sort_by="total",
+                    max_categories=12,
+                )
+                st.plotly_chart(fig_map, use_container_width=True)
+            else:
+                st.info("Données insuffisantes.")
+
+        with col_by_mode:
+            st.markdown("##### Par mode")
+            # Utiliser mode_category si disponible, sinon pair_name
+            mode_col = "mode_category" if "mode_category" in dff.columns else "pair_name"
+            if mode_col in dff.columns and "outcome" in dff.columns:
+                fig_mode = plot_stacked_outcomes_by_category(
+                    dff,
+                    mode_col,
+                    title=None,
+                    min_matches=2,
+                    sort_by="total",
+                    max_categories=10,
+                )
+                st.plotly_chart(fig_mode, use_container_width=True)
+            else:
+                st.info("Données insuffisantes.")
+
+        # Heatmap jour/heure
+        st.divider()
+        st.subheader("Win Rate par jour et heure")
+        st.caption(
+            "Identifie les créneaux horaires où tu performes le mieux. "
+            "Les cellules affichent le nombre de matchs."
+        )
+
+        if "start_time" in dff.columns and "outcome" in dff.columns:
+            fig_heat = plot_win_ratio_heatmap(
+                dff,
+                title=None,
+                min_matches=2,
+            )
+            st.plotly_chart(fig_heat, use_container_width=True)
+        else:
+            st.info("Données temporelles manquantes.")
+
+        # Matches at Top vs Total par semaine (Sprint 5.4.7)
+        st.divider()
+        st.subheader("Matchs Top vs Total par semaine")
+        st.caption(
+            "Compare le nombre de matchs où tu as terminé en tête (rang 1) par rapport au total. "
+            'La ligne indique le taux de "Top 1".'
+        )
+
+        if "start_time" in dff.columns:
+            # Utiliser rank si disponible, sinon outcome (victoire = top)
+            rank_col = "rank" if "rank" in dff.columns else None
+            if rank_col:
+                fig_top = plot_matches_at_top_by_week(
+                    dff,
+                    title=None,
+                    rank_col=rank_col,
+                    top_n_ranks=1,
+                )
+            else:
+                fig_top = plot_matches_at_top_by_week(
+                    dff,
+                    title=None,
+                    rank_col="outcome",  # Fallback
+                    top_n_ranks=1,
+                )
+            st.plotly_chart(fig_top, use_container_width=True)
+        else:
+            st.info("Données temporelles manquantes.")
+
+        st.divider()
         st.subheader("Par période")
         d = dff.dropna(subset=["outcome"]).copy()
         if d.empty:
@@ -117,7 +208,9 @@ def render_win_loss_page(
             else:
                 tmin = pd.to_datetime(d["start_time"], errors="coerce").min()
                 tmax = pd.to_datetime(d["start_time"], errors="coerce").max()
-                dt_range = (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
+                dt_range = (
+                    (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
+                )
                 days = float(dt_range.total_seconds() / 86400.0) if dt_range is not None else 999.0
                 cfg = SESSION_CONFIG
                 if days < cfg.bucket_threshold_hourly:
@@ -143,7 +236,9 @@ def render_win_loss_page(
             out_tbl["Défaites"] = pivot[3] if 3 in pivot.columns else 0
             out_tbl["Égalités"] = pivot[1] if 1 in pivot.columns else 0
             out_tbl["Non terminés"] = pivot[4] if 4 in pivot.columns else 0
-            out_tbl["Total"] = out_tbl[["Victoires", "Défaites", "Égalités", "Non terminés"]].sum(axis=1)
+            out_tbl["Total"] = out_tbl[["Victoires", "Défaites", "Égalités", "Non terminés"]].sum(
+                axis=1
+            )
             out_tbl["Taux de victoires"] = (
                 100.0 * (out_tbl["Victoires"] / out_tbl["Total"].where(out_tbl["Total"] > 0))
             ).fillna(0.0)
@@ -158,12 +253,18 @@ def render_win_loss_page(
                 return "color: #E0E0E0; font-weight: 700;"
 
             win_rate_col = next(
-                (c for c in ("Taux de victoires", "Win rate", "Taux de victoire") if c in out_tbl.columns),
+                (
+                    c
+                    for c in ("Taux de victoires", "Win rate", "Taux de victoire")
+                    if c in out_tbl.columns
+                ),
                 None,
             )
             if win_rate_col:
                 out_styled = _styler_map(out_tbl.style, _style_pct, subset=[win_rate_col])
-                col_cfg = {win_rate_col: st.column_config.NumberColumn(win_rate_col, format="%.1f%%")}
+                col_cfg = {
+                    win_rate_col: st.column_config.NumberColumn(win_rate_col, format="%.1f%%")
+                }
             else:
                 out_styled = out_tbl.style
                 col_cfg = {}
@@ -176,7 +277,12 @@ def render_win_loss_page(
 
         scope = st.radio(
             "Scope",
-            options=["Moi (filtres actuels)", "Moi (toutes les parties)", "Avec Madina972", "Avec Chocoboflor"],
+            options=[
+                "Moi (filtres actuels)",
+                "Moi (toutes les parties)",
+                "Avec Madina972",
+                "Avec Chocoboflor",
+            ],
             horizontal=True,
         )
         min_matches = st.slider(
@@ -279,6 +385,7 @@ def _render_map_table(breakdown: pd.DataFrame, base_scope: pd.DataFrame) -> None
 
     def _normalize_mode_label(p: str | None) -> str | None:
         from src.ui.translations import translate_pair_name
+
         return translate_pair_name(p) if p else None
 
     if "playlist_ui" in base_scope.columns:
@@ -329,7 +436,9 @@ def _render_map_table(breakdown: pd.DataFrame, base_scope: pd.DataFrame) -> None
         hide_index=True,
         column_config={
             "Parties": st.column_config.NumberColumn("Parties", format="%d"),
-            "Précision moy. (%)": st.column_config.NumberColumn("Précision moy. (%)", format="%.2f"),
+            "Précision moy. (%)": st.column_config.NumberColumn(
+                "Précision moy. (%)", format="%.2f"
+            ),
             "Performance moy.": st.column_config.NumberColumn("Performance moy.", format="%.1f"),
             "Taux victoire (%)": st.column_config.NumberColumn("Taux victoire (%)", format="%.1f"),
             "Taux défaite (%)": st.column_config.NumberColumn("Taux défaite (%)", format="%.1f"),
