@@ -824,21 +824,43 @@ def sync_delta(
     max_matches: int = 200,
     with_highlight_events: bool = True,
     with_aliases: bool = True,
+    force_duckdb: bool = False,
 ) -> tuple[bool, str]:
     """Effectue une synchronisation incrémentale via SPNKr.
 
+    Utilise automatiquement le nouveau pipeline DuckDB (Sprint 4.7) si le joueur
+    a une DB DuckDB v4. Sinon, fallback sur le pipeline legacy.
+
     Args:
         db_path: Chemin vers la base de données.
+        player: Joueur à synchroniser (gamertag ou XUID).
         match_type: Type de matchs à récupérer.
         max_matches: Nombre maximum de matchs.
         with_highlight_events: Inclure les highlight events.
         with_aliases: Mettre à jour les alias XUID.
+        force_duckdb: Forcer l'utilisation du pipeline DuckDB.
 
     Returns:
         Tuple (success, message).
     """
     logger.info("Synchronisation incrémentale (delta)...")
 
+    # Essayer le nouveau pipeline DuckDB si applicable
+    if player:
+        duckdb_result = _try_sync_duckdb(
+            player=player,
+            db_path=db_path,
+            delta=True,
+            match_type=match_type,
+            max_matches=max_matches,
+            with_highlight_events=with_highlight_events,
+            with_aliases=with_aliases,
+            force=force_duckdb,
+        )
+        if duckdb_result is not None:
+            return duckdb_result
+
+    # Fallback: pipeline legacy
     try:
         from src.ui.sync import refresh_spnkr_db_via_api, sync_all_players
 
@@ -905,6 +927,66 @@ def sync_delta(
         return False, msg
 
 
+def _try_sync_duckdb(
+    player: str,
+    db_path: str,
+    *,
+    delta: bool,
+    match_type: str,
+    max_matches: int,
+    with_highlight_events: bool,
+    with_aliases: bool,
+    force: bool = False,
+) -> tuple[bool, str] | None:
+    """Essaie de synchroniser via le nouveau pipeline DuckDB.
+
+    Returns:
+        Tuple (success, message) si DuckDB utilisé, None sinon.
+    """
+    try:
+        from src.ui.sync import is_duckdb_player, sync_player_duckdb
+
+        # Résoudre le joueur
+        player_id, resolved_xuid, display_label = _resolve_player_in_db(db_path, player)
+        gamertag = display_label or player
+
+        # Vérifier si le joueur a une DB DuckDB
+        if not force and not is_duckdb_player(gamertag):
+            return None
+
+        if not resolved_xuid:
+            logger.warning(f"XUID non trouvé pour {gamertag}, fallback legacy")
+            return None
+
+        mode = "delta" if delta else "full"
+        logger.info(f"[DuckDB] Sync {mode} pour {gamertag} via nouveau pipeline")
+
+        ok, msg = sync_player_duckdb(
+            gamertag=gamertag,
+            xuid=resolved_xuid,
+            delta=delta,
+            match_type=match_type,
+            max_matches=max_matches,
+            with_highlight_events=with_highlight_events,
+            with_skill=True,
+            with_aliases=with_aliases,
+        )
+
+        if ok:
+            logger.info(f"[DuckDB] {msg}")
+        else:
+            logger.error(f"[DuckDB] {msg}")
+
+        return ok, msg
+
+    except ImportError:
+        # Module sync pas disponible, fallback legacy
+        return None
+    except Exception as e:
+        logger.warning(f"[DuckDB] Erreur: {e}, fallback legacy")
+        return None
+
+
 def sync_full(
     db_path: str,
     *,
@@ -913,21 +995,43 @@ def sync_full(
     max_matches: int = 1000,
     with_highlight_events: bool = True,
     with_aliases: bool = True,
+    force_duckdb: bool = False,
 ) -> tuple[bool, str]:
     """Effectue une synchronisation complète via SPNKr.
 
+    Utilise automatiquement le nouveau pipeline DuckDB (Sprint 4.7) si le joueur
+    a une DB DuckDB v4. Sinon, fallback sur le pipeline legacy.
+
     Args:
         db_path: Chemin vers la base de données.
+        player: Joueur à synchroniser (gamertag ou XUID).
         match_type: Type de matchs à récupérer.
         max_matches: Nombre maximum de matchs.
         with_highlight_events: Inclure les highlight events.
         with_aliases: Mettre à jour les alias XUID.
+        force_duckdb: Forcer l'utilisation du pipeline DuckDB.
 
     Returns:
         Tuple (success, message).
     """
     logger.info("Synchronisation complète...")
 
+    # Essayer le nouveau pipeline DuckDB si applicable
+    if player:
+        duckdb_result = _try_sync_duckdb(
+            player=player,
+            db_path=db_path,
+            delta=False,
+            match_type=match_type,
+            max_matches=max_matches,
+            with_highlight_events=with_highlight_events,
+            with_aliases=with_aliases,
+            force=force_duckdb,
+        )
+        if duckdb_result is not None:
+            return duckdb_result
+
+    # Fallback: pipeline legacy
     try:
         from src.ui.sync import refresh_spnkr_db_via_api, sync_all_players
 

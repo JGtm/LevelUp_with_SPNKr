@@ -701,24 +701,70 @@ data/players/{gamertag}/stats.duckdb
 └── sync_meta
 ```
 
-#### Sprint 4.7.1 : Core Sync Engine ⏳
+#### Sprint 4.7.1 : Core Sync Engine ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S4.7.1.1 | Créer structure `src/data/sync/` | `__init__.py`, `models.py` | ⏳ |
-| S4.7.1.2 | Implémenter `SPNKrAPIClient` | `api_client.py` | ⏳ |
-| S4.7.1.3 | Implémenter transformers | `transformers.py` | ⏳ |
-| S4.7.1.4 | Implémenter `DuckDBSyncEngine` | `engine.py` | ⏳ |
-| S4.7.1.5 | Tests unitaires | `tests/test_sync_engine.py` | ⏳ |
+| S4.7.1.1 | Créer structure `src/data/sync/` | `__init__.py`, `models.py` | ✅ |
+| S4.7.1.2 | Implémenter `SPNKrAPIClient` | `api_client.py` | ✅ |
+| S4.7.1.3 | Implémenter transformers | `transformers.py` | ✅ |
+| S4.7.1.4 | Implémenter `DuckDBSyncEngine` | `engine.py` | ✅ |
+| S4.7.1.5 | Tests unitaires | `tests/test_sync_engine.py` | ✅ |
 
-#### Sprint 4.7.2 : Intégration ⏳
+**Implémentations réalisées** :
+
+1. **`src/data/sync/models.py`** :
+   - `SyncOptions` : Options de synchronisation (match_type, max_matches, with_skill, etc.)
+   - `SyncResult` : Résultat avec compteurs, erreurs, et méthode `to_message()`
+   - `MatchStatsRow`, `PlayerMatchStatsRow`, `HighlightEventRow`, `XuidAliasRow` : Dataclasses pour DuckDB
+
+2. **`src/data/sync/api_client.py`** :
+   - `SPNKrAPIClient` : Wrapper async avec rate limiting, retry, et gestion des tokens
+   - `get_tokens_from_env()` : Récupération des tokens depuis env (manuel ou OAuth Azure)
+   - Support des highlight events via `spnkr.film`
+
+3. **`src/data/sync/transformers.py`** :
+   - `transform_match_stats()` : JSON API → MatchStatsRow
+   - `transform_skill_stats()` : JSON skill → PlayerMatchStatsRow
+   - `transform_highlight_events()` : Events → [HighlightEventRow]
+   - `extract_aliases()` : JSON match → [XuidAliasRow]
+   - Helpers de parsing : `_safe_float`, `_safe_int`, `_parse_iso_utc`
+
+4. **`src/data/sync/engine.py`** :
+   - `DuckDBSyncEngine` : Orchestrateur complet API → DuckDB
+   - `sync_delta()` : Synchronisation incrémentale (arrêt au premier match connu)
+   - `sync_full()` : Synchronisation complète avec backfill
+   - Insertion directe dans DuckDB (match_stats, player_match_stats, highlight_events, xuid_aliases)
+   - Refresh automatique des vues matérialisées après sync
+
+5. **`tests/test_sync_engine.py`** :
+   - Tests pour SyncOptions, SyncResult
+   - Tests pour tous les transformers
+   - Tests des helpers de parsing
+   - Pipeline complet de transformation
+
+#### Sprint 4.7.2 : Intégration ✅ COMPLETE
 
 | # | Tâche | Fichier(s) | Statut |
 |---|-------|------------|--------|
-| S4.7.2.1 | Adapter `scripts/sync.py` CLI | `scripts/sync.py` | ⏳ |
-| S4.7.2.2 | Adapter `src/ui/sync.py` | `src/ui/sync.py` | ⏳ |
-| S4.7.2.3 | Adapter `openspartan_launcher.py` | `openspartan_launcher.py` | ⏳ |
-| S4.7.2.4 | Tests d'intégration | `tests/test_sync_integration.py` | ⏳ |
+| S4.7.2.1 | Adapter `scripts/sync.py` CLI | `scripts/sync.py` | ✅ |
+| S4.7.2.2 | Adapter `src/ui/sync.py` | `src/ui/sync.py` | ✅ |
+| S4.7.2.3 | Adapter `openspartan_launcher.py` | `openspartan_launcher.py` | ⏳ (Optionnel) |
+| S4.7.2.4 | Tests d'intégration | `tests/test_sync_integration.py` | ⏳ (Optionnel) |
+
+**Implémentations réalisées** :
+
+1. **`scripts/sync.py`** :
+   - `sync_delta()` et `sync_full()` détectent automatiquement si le joueur a une DB DuckDB v4
+   - Nouvelle fonction `_try_sync_duckdb()` pour basculer vers le nouveau pipeline
+   - Fallback transparent vers le pipeline legacy si DuckDB non disponible
+
+2. **`src/ui/sync.py`** :
+   - `is_duckdb_player()` : Détecte si un joueur utilise l'architecture v4
+   - `get_player_duckdb_path()` : Retourne le chemin vers stats.duckdb
+   - `sync_player_duckdb()` : Synchronisation via DuckDBSyncEngine (sync wrapper)
+   - `sync_player_duckdb_async()` : Version async native
+   - `sync_player_auto()` : Détection automatique DuckDB vs legacy
 
 #### Sprint 4.7.3 : Migration Historique ⏳
 
@@ -1103,6 +1149,8 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Phase 4 COMPLETE | Tous les sprints d'optimisation terminés (4.1-4.5) |
 | 2026-02-01 | Audit Pre-Phase 5 | 50+ reliquats SQLite, 2 fichiers code mort, 10 tâches de nettoyage |
 | 2026-02-01 | Sprint 4.6 COMPLETE | Nettoyage pre-Phase 5, code mort supprimé, modules DuckDB-compatibles |
+| 2026-02-01 | Sprint 4.7.1 COMPLETE | Core Sync Engine : DuckDBSyncEngine, SPNKrAPIClient, transformers |
+| 2026-02-01 | Sprint 4.7.2 COMPLETE | Intégration : scripts/sync.py et src/ui/sync.py adaptés |
 
 ---
 
@@ -1147,4 +1195,4 @@ python scripts/restore_player.py --gamertag Chocoboflor --backup ./data/backups/
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 4.6 COMPLETE - Nettoyage Pre-Phase 5)*
+*Dernière mise à jour : 2026-02-01 (Sprint 4.7.2 COMPLETE - Intégration Sync)*
