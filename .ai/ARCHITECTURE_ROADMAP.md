@@ -140,14 +140,20 @@ data/
 # 6. Créer tables vides: antagonists, weapon_stats, skill_history
 ```
 
-### Sprint 2.2 : Adapter le Code
+### Sprint 2.2 : Adapter le Code ✅ COMPLETE
 
-| # | Tâche | Fichier(s) | Notes |
-|---|-------|------------|-------|
-| S2.2.1 | Refactorer `HybridRepository` | `src/data/repositories/hybrid.py` | DuckDB natif |
-| S2.2.2 | Mettre à jour `DuckDBEngine` | `src/data/infrastructure/database/` | Attacher player DB |
-| S2.2.3 | Adapter le bridge Streamlit | `src/data/integration/streamlit_bridge.py` | Nouveaux chemins |
-| S2.2.4 | Tests de non-régression | `tests/` | Valider l'UI |
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S2.2.1 | Créer `DuckDBRepository` | `src/data/repositories/duckdb_repo.py` | ✅ |
+| S2.2.2 | Ajouter mode DUCKDB au factory | `src/data/repositories/factory.py` | ✅ |
+| S2.2.3 | Adapter le bridge Streamlit | `src/data/integration/streamlit_bridge.py` | ✅ |
+| S2.2.4 | Tests de non-régression | `tests/test_duckdb_repository.py` | ✅ |
+
+**Nouvelles fonctions** :
+- `DuckDBRepository` : Repository natif lisant depuis `stats.duckdb`
+- `RepositoryMode.DUCKDB` : Nouveau mode pour l'architecture v4
+- `get_repository_from_profile(gamertag)` : Création auto depuis `db_profiles.json`
+- `get_repository_for_player(gamertag)` : Bridge Streamlit simplifié
 
 ### Sprint 2.3 : Nettoyage
 
@@ -292,18 +298,23 @@ python scripts/benchmark_hybrid.py --db data/players/Chocoboflor/stats.duckdb
 
 ## Prochaine Action
 
-**Sprint 2.2 : Adapter le code pour utiliser DuckDB natif**
+**Sprint 2.3 : Nettoyage et finalisation**
 
-1. Refactorer `HybridRepository` (`src/data/repositories/hybrid.py`)
-2. Mettre à jour `DuckDBEngine` pour attacher les DBs joueur
-3. Adapter `streamlit_bridge.py` pour les nouveaux chemins
+1. Archiver les DBs legacy vers `data/archive/legacy/`
+2. Supprimer `halo_unified.db` (obsolète)
+3. Nettoyer le code legacy si plus utilisé
+4. Migrer les pages UI vers `get_repository_for_player()`
 
 ```bash
 # Migrations terminées :
 python scripts/migrate_metadata_to_duckdb.py  # ✅ 769 lignes
 python scripts/migrate_player_to_duckdb.py --all  # ✅ 1372 matchs
+
+# Nouveau système :
+# Utiliser get_repository_from_profile("JGtm") pour créer un repo
+# ou get_repository_for_player("JGtm") depuis Streamlit
 ```
 
 ---
 
-*Dernière mise à jour : 2026-02-01*
+*Dernière mise à jour : 2026-02-01 (Sprint 2.2 complété)*

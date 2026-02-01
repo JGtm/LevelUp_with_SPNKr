@@ -11,6 +11,7 @@ Ce module fournit des fonctions qui :
 Les fonctions retournent des types compatibles avec l'UI existante
 (pd.DataFrame, list, dict) plutôt que les nouveaux types (MatchRow, etc.)
 """
+
 from __future__ import annotations
 
 import os
@@ -19,10 +20,10 @@ from typing import Any
 
 import pandas as pd
 
-from src.data import get_repository, RepositoryMode
+from src.data import RepositoryMode, get_repository
+from src.data.repositories.factory import get_repository_from_profile, load_db_profiles
 from src.data.repositories.protocol import DataRepository
 from src.models import MatchRow
-
 
 # Timezone Paris (identique à cache.py)
 PARIS_TZ_NAME = "Europe/Paris"
@@ -32,29 +33,39 @@ def get_repository_mode_from_settings() -> RepositoryMode:
     """
     Récupère le mode de repository depuis les settings ou l'environnement.
     (Get repository mode from settings or environment)
-    
+
     Priorité:
     1. Variable d'environnement OPENSPARTAN_REPOSITORY_MODE
     2. Paramètre dans st.session_state.app_settings.repository_mode
-    3. Défaut: LEGACY
+    3. Auto-détection depuis db_profiles.json (version >= 2.0 = DUCKDB)
+    4. Défaut: LEGACY
     """
     # 1. Variable d'environnement
     env_mode = os.environ.get("OPENSPARTAN_REPOSITORY_MODE", "").lower()
-    if env_mode in ("legacy", "hybrid", "shadow"):
+    if env_mode in ("legacy", "hybrid", "shadow", "duckdb"):
         return RepositoryMode(env_mode)
-    
+
     # 2. Settings Streamlit (si disponible)
     try:
         import streamlit as st
+
         settings = st.session_state.get("app_settings")
         if settings and hasattr(settings, "repository_mode"):
             mode_str = str(settings.repository_mode).lower()
-            if mode_str in ("legacy", "hybrid", "shadow"):
+            if mode_str in ("legacy", "hybrid", "shadow", "duckdb"):
                 return RepositoryMode(mode_str)
     except Exception:
         pass
-    
-    # 3. Défaut
+
+    # 3. Auto-détection depuis db_profiles.json
+    try:
+        profiles = load_db_profiles()
+        if profiles.get("version", "1.0") >= "2.0":
+            return RepositoryMode.DUCKDB
+    except Exception:
+        pass
+
+    # 4. Défaut
     return RepositoryMode.LEGACY
 
 
@@ -62,7 +73,7 @@ def get_warehouse_path(db_path: str) -> Path:
     """
     Détermine le chemin du warehouse à partir du chemin de la DB.
     (Determine warehouse path from DB path)
-    
+
     Convention: warehouse est dans le même dossier que la DB.
     """
     return Path(db_path).parent / "warehouse"
@@ -73,42 +84,79 @@ def get_repository_for_ui(
     xuid: str,
     *,
     mode: RepositoryMode | None = None,
+    gamertag: str | None = None,
 ) -> DataRepository:
     """
     Crée un repository configuré pour l'UI.
     (Create a repository configured for UI)
-    
+
     Args:
         db_path: Chemin vers la base de données
         xuid: XUID du joueur
         mode: Mode explicite (sinon récupéré depuis settings)
-        
+        gamertag: Gamertag du joueur (optionnel)
+
     Returns:
         Instance de DataRepository
     """
     if mode is None:
         mode = get_repository_mode_from_settings()
-    
+
+    # Pour le mode DUCKDB, le db_path doit pointer vers stats.duckdb
+    if mode == RepositoryMode.DUCKDB:
+        return get_repository(
+            db_path,
+            xuid,
+            mode=mode,
+            gamertag=gamertag,
+        )
+
     warehouse_path = get_warehouse_path(db_path)
-    
+
     return get_repository(
         db_path,
         xuid,
         mode=mode,
         warehouse_path=warehouse_path,
+        gamertag=gamertag,
     )
+
+
+def get_repository_for_player(
+    gamertag: str,
+    *,
+    mode: RepositoryMode | None = None,
+) -> DataRepository:
+    """
+    Crée un repository à partir du gamertag via db_profiles.json.
+    (Create repository from gamertag using db_profiles.json)
+
+    C'est la méthode recommandée pour l'UI Streamlit car elle
+    gère automatiquement les chemins et le mode de repository.
+
+    Args:
+        gamertag: Gamertag du joueur
+        mode: Mode explicite (sinon auto-détecté)
+
+    Returns:
+        Instance de DataRepository
+
+    Raises:
+        ValueError: Si le gamertag n'est pas trouvé dans db_profiles.json
+    """
+    return get_repository_from_profile(gamertag, mode=mode)
 
 
 def matches_to_dataframe(matches: list[MatchRow]) -> pd.DataFrame:
     """
     Convertit une liste de MatchRow en DataFrame Pandas.
     (Convert list of MatchRow to Pandas DataFrame)
-    
+
     Format identique à load_df_optimized() pour compatibilité.
     """
     if not matches:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(
         {
             "match_id": [m.match_id for m in matches],
@@ -138,22 +186,20 @@ def matches_to_dataframe(matches: list[MatchRow]) -> pd.DataFrame:
             "enemy_mmr": [m.enemy_mmr for m in matches],
         }
     )
-    
+
     # Conversions standard (identiques à cache.py)
     df["start_time"] = (
-        pd.to_datetime(df["start_time"], utc=True)
-        .dt.tz_convert(PARIS_TZ_NAME)
-        .dt.tz_localize(None)
+        pd.to_datetime(df["start_time"], utc=True).dt.tz_convert(PARIS_TZ_NAME).dt.tz_localize(None)
     )
     df["date"] = df["start_time"].dt.date
-    
+
     # Stats par minute
     minutes = (pd.to_numeric(df["time_played_seconds"], errors="coerce") / 60.0).astype(float)
     minutes = minutes.where(minutes > 0)
     df["kills_per_min"] = pd.to_numeric(df["kills"], errors="coerce") / minutes
     df["deaths_per_min"] = pd.to_numeric(df["deaths"], errors="coerce") / minutes
     df["assists_per_min"] = pd.to_numeric(df["assists"], errors="coerce") / minutes
-    
+
     return df
 
 
@@ -169,10 +215,10 @@ def load_matches_df(
     """
     Charge les matchs en DataFrame via le DataRepository.
     (Load matches as DataFrame via DataRepository)
-    
+
     Fonction principale d'intégration, remplaçant load_df_optimized()
     pour les cas où on veut utiliser le nouveau système.
-    
+
     Args:
         db_path: Chemin vers la base de données
         xuid: XUID du joueur
@@ -180,12 +226,12 @@ def load_matches_df(
         playlist_filter: Filtre sur playlist_id
         map_filter: Filtre sur map_id
         mode: Mode de repository (défaut: depuis settings)
-        
+
     Returns:
         DataFrame Pandas compatible avec l'UI existante
     """
     repo = get_repository_for_ui(db_path, xuid, mode=mode)
-    
+
     try:
         matches = repo.load_matches(
             playlist_filter=playlist_filter,
@@ -206,16 +252,16 @@ def get_analytics_for_ui(
     """
     Crée une instance d'AnalyticsQueries pour l'UI.
     (Create AnalyticsQueries instance for UI)
-    
+
     Returns:
         Tuple (engine, analytics) à fermer après utilisation
     """
-    from src.data.query import QueryEngine, AnalyticsQueries
-    
+    from src.data.query import AnalyticsQueries, QueryEngine
+
     warehouse_path = get_warehouse_path(db_path)
     engine = QueryEngine(warehouse_path)
     analytics = AnalyticsQueries(engine, xuid)
-    
+
     return engine, analytics
 
 
@@ -226,16 +272,16 @@ def get_trends_for_ui(
     """
     Crée une instance de TrendAnalyzer pour l'UI.
     (Create TrendAnalyzer instance for UI)
-    
+
     Returns:
         Tuple (engine, trends) à fermer après utilisation
     """
     from src.data.query import QueryEngine, TrendAnalyzer
-    
+
     warehouse_path = get_warehouse_path(db_path)
     engine = QueryEngine(warehouse_path)
     trends = TrendAnalyzer(engine, xuid)
-    
+
     return engine, trends
 
 
@@ -246,10 +292,10 @@ def check_hybrid_available(db_path: str, xuid: str) -> bool:
     """
     warehouse_path = get_warehouse_path(db_path)
     parquet_path = warehouse_path / "match_facts" / f"player={xuid}"
-    
+
     if not parquet_path.exists():
         return False
-    
+
     return bool(list(parquet_path.glob("**/*.parquet")))
 
 
@@ -258,10 +304,10 @@ def get_migration_status(db_path: str, xuid: str) -> dict[str, Any]:
     Retourne l'état de la migration pour un joueur.
     (Return migration status for a player)
     """
-    from src.data.repositories.shadow import ShadowRepository, ShadowMode
-    
+    from src.data.repositories.shadow import ShadowMode, ShadowRepository
+
     warehouse_path = get_warehouse_path(db_path)
-    
+
     try:
         shadow = ShadowRepository(
             db_path,

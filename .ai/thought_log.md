@@ -17,6 +17,72 @@
 
 ## Journal
 
+### [2026-02-01] - Sprint 2.2 COMPLETE - Adaptation Code DuckDB Natif
+
+**Contexte** :
+Suite au Sprint 2.1 (scripts de migration), implémentation du Sprint 2.2 pour adapter le code à l'architecture DuckDB v4.
+
+**Actions réalisées** :
+
+1. **Création `DuckDBRepository`** (`src/data/repositories/duckdb_repo.py`) :
+   - Repository natif lisant depuis `stats.duckdb` (joueur) + `metadata.duckdb` (référentiels)
+   - Attachement automatique de la DB metadata via `ATTACH ... AS meta`
+   - Implémente toutes les méthodes du protocol `DataRepository`
+   - Méthodes avancées : `query()`, `query_df()` pour requêtes SQL arbitraires
+   - Support Polars natif via `.pl()` sur les résultats DuckDB
+
+2. **Mise à jour Factory** (`src/data/repositories/factory.py`) :
+   - Nouveau mode `RepositoryMode.DUCKDB`
+   - Nouvelle fonction `load_db_profiles()` : charge `db_profiles.json`
+   - Nouvelle fonction `get_repository_from_profile(gamertag)` : création auto depuis profil
+   - Auto-détection du mode selon la version du profil (v2.0 = DUCKDB)
+
+3. **Adaptation Bridge Streamlit** (`src/data/integration/streamlit_bridge.py`) :
+   - Mise à jour `get_repository_mode_from_settings()` avec support "duckdb"
+   - Auto-détection du mode depuis `db_profiles.json` si version >= 2.0
+   - Nouvelle fonction `get_repository_for_player(gamertag)` : simplifie l'intégration UI
+
+4. **Tests de non-régression** (`tests/test_duckdb_repository.py`) :
+   - Tests d'import et de structure
+   - Tests d'initialisation
+   - Tests de sélection du mode
+   - Tests avec données réelles (XxDaemonGamerxX)
+   - Tests de requêtes avancées
+
+**Raisonnement** :
+- `DuckDBRepository` est distinct de `HybridRepository` car les sources sont différentes (DuckDB persisté vs Parquet)
+- L'attachement de `metadata.duckdb` permet les jointures cross-DB (ex: enrichir playlist_id → playlist_name)
+- `get_repository_from_profile()` simplifie l'usage en lisant automatiquement `db_profiles.json`
+- L'auto-détection du mode évite les changements dans le code appelant
+
+**Usage** :
+```python
+# Méthode recommandée (auto-détection)
+from src.data import get_repository_from_profile
+repo = get_repository_from_profile("JGtm")
+matches = repo.load_matches()
+
+# Depuis Streamlit
+from src.data.integration import get_repository_for_player
+repo = get_repository_for_player("JGtm")
+
+# Mode explicite
+from src.data import get_repository, RepositoryMode
+repo = get_repository(
+    "data/players/JGtm/stats.duckdb",
+    "2533274823110022",
+    mode=RepositoryMode.DUCKDB,
+)
+```
+
+**Prochaines étapes (Sprint 2.3)** :
+- [ ] Archiver les DBs legacy vers `data/archive/legacy/`
+- [ ] Nettoyer le code legacy (`LegacyRepository`) si plus utilisé
+- [ ] Migrer les pages UI vers `get_repository_for_player()`
+- [ ] Supprimer `halo_unified.db`
+
+---
+
 ### [2026-02-01] - Migration DuckDB - Sprint 2.1 COMPLETE
 
 **Contexte** :
