@@ -1,7 +1,7 @@
 # Roadmap Architecture - Migration DuckDB Unifiée
 
 > Ce document trace l'évolution planifiée de l'architecture de données.
-> Mis à jour : 2026-02-01 (Phase 3 planifiée)
+> Mis à jour : 2026-02-01 (Phase 4 en cours)
 
 ---
 
@@ -255,70 +255,210 @@ data/
 
 ---
 
-### Phase 4 : Optimisations Avancées 📋 (Futur)
+### Phase 4 : Optimisations Avancées 🚧 (En cours)
 
 **Objectif** : Améliorer la performance et l'efficacité de l'architecture DuckDB.
 
 | Fonctionnalité | Description | Impact | Priorité |
 |----------------|-------------|--------|----------|
 | Vues matérialisées | Pré-calculer agrégations fréquentes | -50% temps requête | Haute |
-| Compression Zstd | Natif DuckDB pour export/backup | -30% espace disque | Moyenne |
+| Optimisation N+1 | Corriger boucles de requêtes | -90% temps page | Haute |
 | Lazy loading | Charger données à la demande | -80% RAM initiale | Haute |
+| Compression Zstd | Natif DuckDB pour export/backup | -30% espace disque | Moyenne |
 | Partitionnement temporel | Tables par année/saison | Requêtes historiques rapides | Basse |
 
-#### 4.1 Vues Matérialisées
+---
 
-DuckDB ne supporte pas nativement les materialized views. Solution : tables de cache rafraîchies.
+## Sprint Actuel : Phase 4 - Optimisations
 
-```sql
--- Exemple : stats agrégées par mode de jeu
-CREATE OR REPLACE TABLE mv_stats_by_mode AS
-SELECT game_mode_id, 
-       COUNT(*) as matches_played,
-       AVG(kills) as avg_kills,
-       AVG(deaths) as avg_deaths,
-       SUM(medals_total) as total_medals
-FROM match_stats
-GROUP BY game_mode_id;
+### Sprint 4.1 : Vues Matérialisées ⏳
 
--- Rafraîchissement après sync
-INSERT OR REPLACE INTO mv_stats_by_mode SELECT ...;
-```
+**Problème identifié** : Les agrégations (stats par carte, par mode, par session) sont recalculées à chaque affichage.
 
-**Tables candidates** :
-- `mv_stats_by_mode` : Stats par mode de jeu
-- `mv_stats_by_map` : Stats par carte
-- `mv_weekly_summary` : Résumé hebdomadaire
+**Solution** : Créer des tables de cache rafraîchies après chaque sync.
 
-#### 4.2 Compression Zstd
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.1.1 | Créer table `mv_map_stats` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.1.2 | Créer table `mv_mode_category_stats` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.1.3 | Créer table `mv_session_stats` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.1.4 | Créer table `mv_global_stats` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.1.5 | Méthode `refresh_materialized_views()` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.1.6 | Appeler refresh après sync | `scripts/sync_player.py` | ⏳ |
+| S4.1.7 | Tests de performance | `tests/test_materialized_views.py` | ⏳ |
+
+**Schémas SQL** :
 
 ```sql
--- Export avec compression optimale
-COPY match_stats TO 'backup.parquet' (COMPRESSION 'zstd', COMPRESSION_LEVEL 9);
+-- mv_map_stats : Stats par carte
+CREATE TABLE IF NOT EXISTS mv_map_stats (
+    map_id VARCHAR PRIMARY KEY,
+    map_name VARCHAR,
+    matches_played INTEGER,
+    wins INTEGER,
+    losses INTEGER,
+    ties INTEGER,
+    avg_kills DOUBLE,
+    avg_deaths DOUBLE,
+    avg_assists DOUBLE,
+    avg_accuracy DOUBLE,
+    avg_kda DOUBLE,
+    win_rate DOUBLE,
+    updated_at TIMESTAMP
+);
 
--- Import depuis Parquet compressé
-COPY match_stats FROM 'backup.parquet';
+-- mv_mode_category_stats : Stats par catégorie de mode
+CREATE TABLE IF NOT EXISTS mv_mode_category_stats (
+    mode_category VARCHAR PRIMARY KEY,
+    matches_played INTEGER,
+    avg_kills DOUBLE,
+    avg_deaths DOUBLE,
+    avg_assists DOUBLE,
+    avg_ratio DOUBLE,
+    updated_at TIMESTAMP
+);
+
+-- mv_session_stats : Stats par session (pré-calculées)
+CREATE TABLE IF NOT EXISTS mv_session_stats (
+    session_id INTEGER PRIMARY KEY,
+    match_count INTEGER,
+    start_time TIMESTAMP,
+    end_time TIMESTAMP,
+    kd_ratio DOUBLE,
+    win_rate DOUBLE,
+    avg_accuracy DOUBLE,
+    avg_life_seconds DOUBLE,
+    is_with_friends BOOLEAN,
+    updated_at TIMESTAMP
+);
+
+-- mv_global_stats : Stats globales du joueur
+CREATE TABLE IF NOT EXISTS mv_global_stats (
+    stat_key VARCHAR PRIMARY KEY,
+    stat_value DOUBLE,
+    updated_at TIMESTAMP
+);
 ```
 
-#### 4.3 Lazy Loading
-
-Stratégie pour réduire la consommation RAM :
-
-1. **Au démarrage** : Charger uniquement les métadonnées légères
-2. **Navigation** : Charger les matchs à la demande (pagination)
-3. **Cache Streamlit** : Utiliser `@st.cache_data` avec TTL adapté
+**Implémentation** :
 
 ```python
-@st.cache_data(ttl=300)  # 5 min
-def load_recent_matches(gamertag: str, limit: int = 50):
-    """Charge les N derniers matchs (lazy)."""
-    repo = get_repository_for_player(gamertag)
-    return repo.get_recent_matches(limit=limit)
+def refresh_materialized_views(self) -> None:
+    """Rafraîchit toutes les vues matérialisées après sync."""
+    with self._get_connection() as conn:
+        # mv_map_stats
+        conn.execute("""
+            INSERT OR REPLACE INTO mv_map_stats
+            SELECT 
+                map_id, map_name, COUNT(*) as matches_played,
+                SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN outcome = 3 THEN 1 ELSE 0 END) as losses,
+                SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) as ties,
+                AVG(kills), AVG(deaths), AVG(assists), AVG(accuracy),
+                AVG(kda), 
+                SUM(CASE WHEN outcome = 2 THEN 1.0 ELSE 0.0 END) / COUNT(*),
+                CURRENT_TIMESTAMP
+            FROM match_stats
+            GROUP BY map_id, map_name
+        """)
+        # ... autres tables
 ```
 
-#### 4.4 Partitionnement Temporel
+### Sprint 4.2 : Optimisation Requêtes N+1 ⏳
 
-Structure cible pour gros volumes (> 5000 matchs) :
+**Problème identifié** : `match_history.py` fait une requête DB par match pour charger le MMR (boucle N+1).
+
+**Impact** : Pour 500 matchs = 500 requêtes → très lent.
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.2.1 | Créer `load_match_mmr_batch()` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.2.2 | Modifier `match_history.py` pour batch | `src/ui/pages/match_history.py` | ⏳ |
+| S4.2.3 | Optimiser chargement coéquipiers | `src/ui/pages/teammates.py` | ⏳ |
+| S4.2.4 | Tests de performance batch vs N+1 | `tests/test_batch_optimization.py` | ⏳ |
+
+**Implémentation** :
+
+```python
+# Avant (N+1) - match_history.py ligne 132-140
+for idx, row in df.iterrows():
+    mmr = cached_load_player_match_result(match_id)  # 1 requête par match
+
+# Après (batch)
+match_ids = df['match_id'].tolist()
+mmr_data = repo.load_match_mmr_batch(match_ids)  # 1 seule requête
+df = df.merge(mmr_data, on='match_id', how='left')
+```
+
+**Nouvelle méthode** :
+
+```python
+def load_match_mmr_batch(self, match_ids: list[str]) -> pl.DataFrame:
+    """Charge le MMR pour plusieurs matchs en une seule requête."""
+    placeholders = ', '.join(['?'] * len(match_ids))
+    query = f"""
+        SELECT match_id, team_mmr, opponent_mmr
+        FROM match_stats
+        WHERE match_id IN ({placeholders})
+    """
+    return self.query_df(query, match_ids)
+```
+
+### Sprint 4.3 : Lazy Loading et Pagination ⏳
+
+**Problème identifié** : `load_matches()` charge tous les matchs en mémoire (~2000 matchs × 50 colonnes).
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.3.1 | Ajouter `limit`/`offset` à `load_matches()` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.3.2 | Créer `load_recent_matches(limit)` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S4.3.3 | Pagination dans `match_history.py` | `src/ui/pages/match_history.py` | ⏳ |
+| S4.3.4 | Chargement par chunks temporels | `src/ui/cache.py` | ⏳ |
+| S4.3.5 | Tests de mémoire avant/après | `tests/test_lazy_loading.py` | ⏳ |
+
+**Stratégie** :
+
+1. **Au démarrage** : Charger uniquement les métadonnées légères + 50 derniers matchs
+2. **Navigation** : Charger les matchs à la demande (pagination par 50)
+3. **Cache Streamlit** : Utiliser `@st.cache_data` avec TTL adapté (5 min)
+
+```python
+@st.cache_data(ttl=300)
+def load_recent_matches(gamertag: str, limit: int = 50, offset: int = 0):
+    """Charge les N matchs avec pagination lazy."""
+    repo = get_repository_for_player(gamertag)
+    return repo.load_matches(limit=limit, offset=offset)
+```
+
+### Sprint 4.4 : Compression Zstd et Export ⏳
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.4.1 | Script backup Zstd | `scripts/backup_player.py` | ⏳ |
+| S4.4.2 | Script restore depuis Parquet | `scripts/restore_player.py` | ⏳ |
+| S4.4.3 | Documentation export/import | `docs/BACKUP_RESTORE.md` | ⏳ |
+
+**Export avec compression optimale** :
+
+```sql
+-- Export compressé (compression 9 = max)
+COPY match_stats TO 'backup/match_stats.parquet' 
+    (FORMAT PARQUET, COMPRESSION 'zstd', COMPRESSION_LEVEL 9);
+
+-- Import depuis Parquet compressé
+COPY match_stats FROM 'backup/match_stats.parquet';
+```
+
+### Sprint 4.5 : Partitionnement Temporel (Optionnel) ⏳
+
+**Seuil** : Implémenter si > 5000 matchs ou > 1 an d'historique.
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S4.5.1 | Script archivage saison | `scripts/archive_season.py` | ⏳ |
+| S4.5.2 | Vue unifiée stats + archives | `src/data/repositories/duckdb_repo.py` | ⏳ |
+
+**Structure cible** :
 
 ```
 data/players/{gamertag}/
@@ -328,8 +468,6 @@ data/players/{gamertag}/
     ├── season_2.parquet  # Saison 2
     └── season_3.parquet  # Saison 3
 ```
-
-**Seuil recommandé** : Archiver les matchs > 1 an ou > 2000 matchs.
 
 ---
 
@@ -543,32 +681,39 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Phase 4 détaillée | Documentation des 4 axes d'optimisation |
 | 2026-02-01 | Phase 5 créée | Grunt API + Stats armes + Visualisations avancées |
 | 2026-02-01 | Sprint 3.3 COMPLETE | Mode debug enrichi avec validation antagonistes |
+| 2026-02-01 | Phase 4 démarrée | Optimisations avancées (vues matérialisées, N+1, lazy loading) |
+| 2026-02-01 | Analyse bottlenecks | Identifié : boucle N+1 MMR, agrégations répétitives, chargement complet |
 
 ---
 
 ## Prochaine Action
 
-**Phase 4 : Optimisations Avancées** ou **Phase 5 : Enrichissement Visuel & Grunt API**
+**Phase 4 en cours** : Optimisations Avancées
 
-La Phase 3 (Enrichissement des Données) est maintenant complète. Deux options :
-
-**Option A - Phase 4** : Optimisations performance (vues matérialisées, lazy loading)
-**Option B - Phase 5** : Nouvelles fonctionnalités (Grunt API, stats armes, graphes radar)
+Priorités pour cette phase :
+1. **Sprint 4.1** : Vues matérialisées (quick wins, -50% temps requête)
+2. **Sprint 4.2** : Corriger le problème N+1 dans match_history.py (impact majeur)
+3. **Sprint 4.3** : Lazy loading pour réduire la consommation RAM
 
 ```python
-# Utilisation du système actuel :
-from src.data.repositories.factory import get_repository_from_profile
-repo = get_repository_from_profile("JGtm")
+# Commencer par Sprint 4.1 - Vues Matérialisées
+# Fichier principal : src/data/repositories/duckdb_repo.py
 
-# Charger les rivalités (Sprint 3.2)
-nemeses = repo.get_top_nemeses(limit=20)  # Qui m'a le plus tué
-victims = repo.get_top_victims(limit=20)   # Qui j'ai le plus tué
+# Ajouter les tables de cache
+def refresh_materialized_views(self) -> None:
+    """Rafraîchit les vues matérialisées après sync."""
+    self._refresh_mv_map_stats()
+    self._refresh_mv_mode_category_stats()
+    self._refresh_mv_global_stats()
 
-# Mode debug antagonistes (Sprint 3.3)
-# Ajouter ?debug=1 à l'URL ou OPENSPARTAN_DEBUG=1
-# Affiche ✓/⚠ + validation_notes sur la page Match View
+# Puis Sprint 4.2 - Fix N+1
+# Fichier : src/ui/pages/match_history.py
+# Remplacer la boucle par un batch
+
+# Enfin Sprint 4.3 - Lazy Loading
+# Ajouter pagination à load_matches()
 ```
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 3.3 COMPLETE - Mode debug antagonistes enrichi)*
+*Dernière mise à jour : 2026-02-01 (Phase 4 démarrée - Optimisations Avancées)*

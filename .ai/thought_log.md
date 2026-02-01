@@ -17,6 +17,65 @@
 
 ## Journal
 
+### [2026-02-01] - Phase 4 Démarrée - Optimisations Avancées
+
+**Contexte** :
+Phase 3 (Enrichissement des Données) terminée. L'utilisateur lance la Phase 4 : Optimisations Avancées.
+
+**Analyse effectuée** :
+
+1. **Exploration du code source** :
+   - `DuckDBRepository` : Connexion lazy, ATTACH metadata.duckdb, config mémoire 512MB
+   - `src/ui/cache.py` : Cache Streamlit 3 niveaux (Parquet → DB → @st.cache_data)
+   - Pages UI : Nombreuses agrégations répétitives identifiées
+
+2. **Bottlenecks identifiés** :
+
+   | Problème | Impact | Solution |
+   |----------|--------|----------|
+   | Boucle N+1 MMR (`match_history.py`) | Très élevé | Requête batch |
+   | Agrégations répétitives (map, mode) | Élevé | Vues matérialisées |
+   | Chargement complet des matchs | Moyen | Lazy loading + pagination |
+   | DataFrames coéquipiers complets | Moyen | Filtrer par match_id avant chargement |
+
+3. **Requêtes candidates pour vues matérialisées** :
+   - `mv_map_stats` : Stats par carte (wins, losses, avg_kda, win_rate)
+   - `mv_mode_category_stats` : Stats par catégorie de mode
+   - `mv_session_stats` : Stats pré-calculées par session
+   - `mv_global_stats` : Stats globales du joueur
+
+**Plan Phase 4** :
+
+| Sprint | Tâches | Priorité |
+|--------|--------|----------|
+| 4.1 | Vues matérialisées (4 tables de cache) | Haute |
+| 4.2 | Optimisation N+1 (batch MMR, batch coéquipiers) | Haute |
+| 4.3 | Lazy loading et pagination | Haute |
+| 4.4 | Compression Zstd et export/backup | Moyenne |
+| 4.5 | Partitionnement temporel (optionnel) | Basse |
+
+**Fichiers à modifier** :
+- `src/data/repositories/duckdb_repo.py` : Vues matérialisées + méthodes batch
+- `src/ui/pages/match_history.py` : Corriger boucle N+1
+- `src/ui/pages/teammates.py` : Optimiser chargement DataFrames
+- `src/ui/cache.py` : Lazy loading avec pagination
+
+**Raisonnement** :
+- Les vues matérialisées sont des "quick wins" : ~50% de temps gagné sur les requêtes fréquentes
+- Le fix N+1 dans match_history.py a un impact majeur (500 requêtes → 1 requête)
+- Le lazy loading réduit la RAM de 80% mais nécessite plus de refactoring
+
+**Suivi** :
+- [x] Analyse des bottlenecks
+- [x] Plan Phase 4 créé dans ARCHITECTURE_ROADMAP.md
+- [x] Thought_log documenté
+- [ ] Sprint 4.1 : Vues matérialisées
+- [ ] Sprint 4.2 : Optimisation N+1
+- [ ] Sprint 4.3 : Lazy loading
+- [ ] Sprint 4.4 : Compression Zstd
+
+---
+
 ### [2026-02-01] - Sprint 3.3 COMPLETE - Mode Debug Antagonistes Enrichi
 
 **Contexte** :
