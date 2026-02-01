@@ -1053,6 +1053,21 @@ CREATE TABLE weapon_match_stats (
 
 **Source notebooks** : [OpenSpartan Hero Stats](https://github.com/OpenSpartan/notebooks/blob/main/src/hero/Hero%20Stats.ipynb)
 
+#### Sprint 5.5 : Watcher/Daemon Thumbnails (Synology) ✅ COMPLETE
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S5.5.1 | Daemon inotify/watchdog pour surveillance temps réel | `scripts/generate_thumbnails.py` | ✅ |
+| S5.5.2 | Script de service systemd compatible Linux/Synology | `scripts/thumbnails-watcher.service` | ✅ |
+| S5.5.3 | Guide d'installation Synology (Task Scheduler / systemd) | `docs/THUMBNAILS_WATCHER.md` | ✅ |
+| S5.5.4 | Support Docker pour le watcher | (inclus dans le guide) | ✅ |
+
+**Objectif** : Générer automatiquement des thumbnails GIF dès qu'une nouvelle vidéo est détectée dans le dossier configuré.
+
+**Modes disponibles** :
+- `--watch` : Polling toutes les 30s (compatible montages réseau NFS/SMB)
+- `--daemon` : Watchdog temps réel (inotify/FSEvents, requiert `pip install watchdog`)
+
 ---
 
 ### Phase 6 : Documentation & Branding "LevelUp" 📋 (Après Phase 5)

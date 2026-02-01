@@ -1,0 +1,46 @@
+# Service systemd pour le watcher de thumbnails LevelUp
+#
+# Installation:
+#   sudo cp scripts/thumbnails-watcher.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable thumbnails-watcher
+#   sudo systemctl start thumbnails-watcher
+#
+# Logs:
+#   journalctl -u thumbnails-watcher -f
+#   tail -f /var/log/thumbnails-watcher.log
+
+[Unit]
+Description=LevelUp Thumbnails Watcher
+Documentation=https://github.com/your-repo/levelup
+After=network.target
+
+[Service]
+Type=simple
+
+# Modifier ces valeurs selon votre configuration
+User=guillaume
+Group=users
+WorkingDirectory=/volume1/docker/levelup
+
+# Commande de démarrage
+# Modifier --videos-dir selon votre configuration
+ExecStart=/usr/local/bin/python3 scripts/generate_thumbnails.py --videos-dir /volume1/video/Xbox --daemon
+
+# Redémarrage automatique en cas de crash
+Restart=always
+RestartSec=10
+
+# Timeout pour l'arrêt propre
+TimeoutStopSec=30
+
+# Logs vers fichier
+StandardOutput=append:/var/log/thumbnails-watcher.log
+StandardError=append:/var/log/thumbnails-watcher.log
+
+# Variables d'environnement (optionnel)
+# Environment=LEVELUP_GIF_WIDTH=320
+# Environment=LEVELUP_GIF_DURATION=4
+
+[Install]
+WantedBy=multi-user.target

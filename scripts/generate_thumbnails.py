@@ -261,13 +261,13 @@ def scan_and_generate(videos_dir: Path, *, force: bool = False) -> tuple[int, in
 
 
 def watch_mode(videos_dir: Path, interval: int = 30) -> None:
-    """Mode surveillance continue.
+    """Mode surveillance continue avec polling.
 
     Args:
         videos_dir: Dossier à surveiller.
         interval: Intervalle entre les scans en secondes.
     """
-    print(f"Mode surveillance: {videos_dir}")
+    print(f"Mode surveillance (polling): {videos_dir}")
     print(f"Intervalle: {interval}s (Ctrl+C pour arrêter)")
 
     while True:
@@ -275,6 +275,83 @@ def watch_mode(videos_dir: Path, interval: int = 30) -> None:
         if generated > 0 or errors > 0:
             print(f"Scan terminé: {generated} généré(s), {errors} erreur(s)")
         time.sleep(interval)
+
+
+def daemon_mode(videos_dir: Path) -> None:
+    """Mode daemon avec watchdog (surveillance temps réel).
+
+    Utilise inotify (Linux) ou FSEvents (macOS) pour détecter
+    les nouveaux fichiers instantanément.
+
+    Args:
+        videos_dir: Dossier à surveiller.
+    """
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler, FileCreatedEvent
+    except ImportError:
+        print("ERREUR: watchdog n'est pas installé.")
+        print("Installez-le avec: pip install watchdog")
+        print("Fallback sur le mode polling...")
+        watch_mode(videos_dir, interval=30)
+        return
+
+    thumbs_dir = videos_dir / "thumbs"
+    thumbs_dir.mkdir(exist_ok=True)
+
+    class VideoHandler(FileSystemEventHandler):
+        """Handler pour les événements de création de fichiers vidéo."""
+
+        def on_created(self, event: FileCreatedEvent) -> None:
+            if event.is_directory:
+                return
+
+            file_path = Path(event.src_path)
+            if file_path.suffix.lower() not in VIDEO_EXTENSIONS:
+                return
+
+            # Attendre que le fichier soit complètement écrit
+            print(f"Nouveau fichier détecté: {file_path.name}")
+            time.sleep(2)  # Attendre 2s pour s'assurer que l'écriture est terminée
+
+            # Vérifier que le fichier existe toujours et a une taille > 0
+            if not file_path.exists() or file_path.stat().st_size == 0:
+                print(f"  Fichier incomplet ou supprimé, ignoré.")
+                return
+
+            thumb_path = get_thumbnail_path(file_path, thumbs_dir)
+            if thumb_path.exists():
+                print(f"  Thumbnail existe déjà: {thumb_path.name}")
+                return
+
+            print(f"  Génération du thumbnail...")
+            if generate_thumbnail_gif(file_path, thumb_path):
+                print(f"  OK: {thumb_path.name}")
+            else:
+                print("  ERREUR: échec de la génération")
+
+    # Scanner les fichiers existants d'abord
+    print(f"Scan initial de {videos_dir}...")
+    generated, errors = scan_and_generate(videos_dir)
+    print(f"Scan initial terminé: {generated} généré(s), {errors} erreur(s)")
+
+    # Démarrer la surveillance
+    event_handler = VideoHandler()
+    observer = Observer()
+    observer.schedule(event_handler, str(videos_dir), recursive=False)
+    observer.start()
+
+    print(f"\nMode daemon (watchdog): {videos_dir}")
+    print("Surveillance temps réel active (Ctrl+C pour arrêter)")
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nArrêt du daemon...")
+        observer.stop()
+    observer.join()
+    print("Daemon arrêté.")
 
 
 def main() -> int:
@@ -302,6 +379,11 @@ def main() -> int:
         action="store_true",
         help="Régénérer tous les thumbnails même s'ils existent",
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Mode daemon avec watchdog (surveillance temps réel)",
+    )
 
     args = parser.parse_args()
 
@@ -326,7 +408,13 @@ def main() -> int:
         print(f"ERREUR: Dossier introuvable: {videos_path}")
         return 1
 
-    if args.watch:
+    if args.daemon:
+        try:
+            daemon_mode(videos_path)
+        except KeyboardInterrupt:
+            print("\nArrêt demandé.")
+            return 0
+    elif args.watch:
         try:
             watch_mode(videos_path, interval=args.interval)
         except KeyboardInterrupt:
