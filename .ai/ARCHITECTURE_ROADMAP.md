@@ -292,11 +292,16 @@ python scripts/benchmark_hybrid.py --db data/players/Chocoboflor/stats.duckdb
 
 ## Prochaine Action
 
-**Créer `scripts/migrate_metadata_to_duckdb.py`** pour migrer les référentiels.
+**Sprint 2.2 : Adapter le code pour utiliser DuckDB natif**
+
+1. Refactorer `HybridRepository` (`src/data/repositories/hybrid.py`)
+2. Mettre à jour `DuckDBEngine` pour attacher les DBs joueur
+3. Adapter `streamlit_bridge.py` pour les nouveaux chemins
 
 ```bash
-# Prêt à exécuter :
-python scripts/migrate_metadata_to_duckdb.py
+# Migrations terminées :
+python scripts/migrate_metadata_to_duckdb.py  # ✅ 769 lignes
+python scripts/migrate_player_to_duckdb.py --all  # ✅ 1372 matchs
 ```
 
 ---
