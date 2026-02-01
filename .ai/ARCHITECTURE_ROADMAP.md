@@ -42,8 +42,17 @@ Redondance : MatchCache ↔ match_facts/ (~même données, 2 formats)
 - [x] Tables de cache SQLite fonctionnelles
 - [x] Migration Parquet automatique après sync
 - [x] Fallback si Parquet indisponible
-- [ ] Tests de non-régression UI
-- [ ] Benchmarks de performance documentés
+- [x] Tests de non-régression UI → `tests/test_hybrid_benchmark.py`
+- [x] Benchmarks de performance documentés → `scripts/benchmark_hybrid.py`
+
+**Outils de validation** :
+```bash
+# Benchmark CLI (génère rapport comparatif)
+python scripts/benchmark_hybrid.py --db data/spnkr_gt_Chocoboflor.db --iterations 5
+
+# Tests pytest (cohérence + performance)
+pytest tests/test_hybrid_benchmark.py -v -s
+```
 
 **Critères de succès** :
 - UI fonctionne en mode LEGACY et HYBRID
@@ -188,12 +197,82 @@ Options avancées :
 
 ---
 
-## Prochaines étapes immédiates
+## Plan d'Orchestration des Sprints
 
-1. **Mise en prod v1** : Tester en conditions réelles
-2. **Mesurer** : Collecter métriques de performance (perf_section)
-3. **Documenter** : Noter les pain points observés
-4. **Planifier v2** : Quand la v1 est stable, planifier la migration
+> Mis à jour le 2026-02-01
+
+### Sprint 1 : Clôturer Phase 1 (Stabilisation)
+
+**Statut** : ✅ Outils créés
+
+| # | Tâche | Statut | Livrable |
+|---|-------|--------|----------|
+| 1.1 | Script benchmark CLI | ✅ | `scripts/benchmark_hybrid.py` |
+| 1.2 | Tests E2E cohérence | ✅ | `tests/test_hybrid_benchmark.py` |
+| 1.3 | Exécuter benchmarks en prod | ⏳ | `.ai/reports/benchmark_v1.md` |
+| 1.4 | Documenter pain points | ⏳ | `thought_log.md` |
+
+**Commandes** :
+```bash
+# Benchmark complet avec export JSON
+python scripts/benchmark_hybrid.py --db data/spnkr_gt_Chocoboflor.db --output .ai/reports/benchmark_v1.json
+
+# Tests unitaires
+pytest tests/test_hybrid_benchmark.py -v
+```
+
+---
+
+### Sprint 2 : Phase 2 - Validation Shadow Compare
+
+**Statut** : 📋 Planifié
+
+| # | Tâche | Statut | Livrable |
+|---|-------|--------|----------|
+| 2.1 | Activer SHADOW_COMPARE en dev | ⏳ | Config `app_settings.json` |
+| 2.2 | Logger divergences Legacy/Hybrid | ⏳ | Logs structurés |
+| 2.3 | Script comparaison automatisée | ⏳ | `scripts/compare_shadow.py` |
+| 2.4 | Corriger les écarts détectés | ⏳ | Commits de fix |
+
+**Critère de sortie** : 0 divergence sur requêtes critiques
+
+---
+
+### Sprint 3 : Phase 3 - Bascule Hybrid (v2)
+
+**Statut** : 📋 Backlog
+
+| # | Tâche | Statut |
+|---|-------|--------|
+| 3.1 | Migrer toutes requêtes UI vers `load_df_hybrid()` | ⏳ |
+| 3.2 | Supprimer dépendances à `MatchCache` | ⏳ |
+| 3.3 | Supprimer table `MatchCache` du schéma | ⏳ |
+| 3.4 | Calculer médailles via DuckDB | ⏳ |
+
+**Critère de sortie** : UI fonctionne sans `MatchCache`, espace -50%
+
+---
+
+### Sprint 4 : Phase 4 - Optimisations (v3)
+
+**Statut** : 📋 Future
+
+- Évaluer Delta Lake vs Parquet pur
+- Vues matérialisées DuckDB
+- Migrer `TeammatesAggregate` vers `metadata.db`
+- Archiver `MatchStats` (cold storage)
+
+---
+
+## Dépendances entre Sprints
+
+```
+Sprint 1 ──► Sprint 2 ──► Sprint 3 ──► Sprint 4
+   │            │            │
+   ▼            ▼            ▼
+Tests OK   0 divergence   MatchCache
++ Benchmarks              supprimé
+```
 
 ---
 
@@ -202,3 +281,5 @@ Options avancées :
 - `docs/DATA_ARCHITECTURE.md` : Architecture technique détaillée
 - `.ai/data_lineage.md` : Traçabilité des flux de données
 - `src/data/repositories/shadow.py` : Pattern Shadow pour migration
+- `scripts/benchmark_hybrid.py` : Benchmark Legacy vs Hybrid
+- `tests/test_hybrid_benchmark.py` : Tests E2E de cohérence

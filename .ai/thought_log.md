@@ -501,4 +501,39 @@ Créer `scripts/ingest_halo_data.py` qui :
 
 ---
 
+### [2026-02-01] - Benchmark Legacy vs Hybrid - FINDING CRITIQUE
+
+**Contexte** :
+Premier benchmark réel avec données Parquet (407 matchs JGtm) après migration.
+
+**Résultats** :
+| Benchmark | Legacy | Hybrid | Speedup |
+|-----------|--------|--------|---------|
+| load_matches_all | 4.5 ms | 39.8 ms | 0.11x |
+| load_matches_ranked | 0.9 ms | 10.0 ms | 0.09x |
+| get_match_count | 0.8 ms | 9.2 ms | 0.09x |
+| get_storage_info | 2.7 ms | 14.5 ms | 0.19x |
+
+**Observation** : Hybrid est **~10x plus lent** que Legacy actuellement.
+
+**Causes probables** :
+1. **Cold start DuckDB** : Première exécution 408ms, suivantes 40ms → cache interne
+2. **Overhead connexion** : DuckDB crée une connexion par requête
+3. **Lecture Parquet complète** : Pas de pruning de partitions efficace
+4. **Conversion types** : Conversion vers MatchRow coûteuse
+
+**Décision** :
+Le mode HYBRID_FIRST n'est pas encore prêt pour production.
+Rester en LEGACY pour l'UI, utiliser Hybrid pour analytics batch uniquement.
+
+**Suivi** :
+- [ ] Investiguer le cache DuckDB (connexion persistante)
+- [ ] Profiler `HybridRepository.load_matches()` pour identifier le goulot
+- [ ] Évaluer si Polars natif serait plus rapide que DuckDB pour ce use case
+- [ ] Documenter dans Sprint 2 (SHADOW_COMPARE)
+
+**Rapport** : `.ai/reports/benchmark_v1.json`
+
+---
+
 <!-- Les entrées sont ajoutées ici, les plus récentes en haut -->

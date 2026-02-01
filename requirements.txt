@@ -17,7 +17,13 @@ polars>=0.20.0
 # Moteur de requête OLAP (jointures SQLite + Parquet)
 duckdb>=0.10.0
 
+# Timezone support (requis par DuckDB pour les timestamps)
+pytz>=2024.1
+
 # Note: pyarrow est une dépendance de Polars et DuckDB, pas besoin de l'installer séparément
+
+# Tests
+pytest>=8.0.0
 
 # RAG (Retrieval-Augmented Generation)
 lancedb>=0.6.0

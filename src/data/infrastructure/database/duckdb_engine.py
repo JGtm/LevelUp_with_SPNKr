@@ -11,7 +11,7 @@ HOW IT WORKS:
 Exemple d'utilisation:
     engine = DuckDBEngine(warehouse_path="data/warehouse")
     engine.attach_sqlite("data/warehouse/metadata.db", "meta")
-    
+
     # Jointure entre SQLite (players) et Parquet (match_facts)
     df = engine.query('''
         SELECT p.gamertag, AVG(m.kda) as avg_kda
@@ -20,9 +20,9 @@ Exemple d'utilisation:
         GROUP BY p.gamertag
     ''')
 """
+
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -35,14 +35,14 @@ class DuckDBEngine:
     """
     Moteur de requête DuckDB pour l'architecture hybride.
     (DuckDB query engine for hybrid architecture)
-    
+
     Permet :
     - Requêtes SQL sur fichiers Parquet
     - Attachement de bases SQLite
     - Jointures entre Parquet et SQLite
     - Agrégations haute performance
     """
-    
+
     def __init__(
         self,
         warehouse_path: str | Path,
@@ -54,7 +54,7 @@ class DuckDBEngine:
         """
         Initialise le moteur DuckDB.
         (Initialize DuckDB engine)
-        
+
         Args:
             warehouse_path: Chemin vers le dossier warehouse
             read_only: Si True, connexion en lecture seule
@@ -65,11 +65,11 @@ class DuckDBEngine:
         self.read_only = read_only
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._attached_dbs: dict[str, str] = {}  # alias -> path
-        
+
         # Configuration DuckDB
         self._memory_limit = memory_limit
         self._threads = threads
-    
+
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
         """
         Retourne une connexion DuckDB (créée à la demande).
@@ -78,22 +78,22 @@ class DuckDBEngine:
         if self._connection is None:
             # Connexion en mémoire pour les requêtes
             self._connection = duckdb.connect(":memory:")
-            
+
             # Configuration pour performance
             self._connection.execute(f"SET memory_limit = '{self._memory_limit}'")
             if self._threads:
                 self._connection.execute(f"SET threads = {self._threads}")
-            
+
             # Configuration pour Parquet
             self._connection.execute("SET enable_object_cache = true")
-        
+
         return self._connection
-    
+
     def attach_sqlite(self, db_path: str | Path, alias: str = "meta") -> None:
         """
         Attache une base SQLite pour les jointures.
         (Attach a SQLite database for joins)
-        
+
         Args:
             db_path: Chemin vers le fichier SQLite
             alias: Alias pour accéder aux tables (ex: meta.players)
@@ -101,74 +101,68 @@ class DuckDBEngine:
         db_path = Path(db_path)
         if not db_path.exists():
             raise FileNotFoundError(f"SQLite database not found: {db_path}")
-        
+
         conn = self._get_connection()
-        
+
         # Détacher si déjà attaché
         if alias in self._attached_dbs:
             conn.execute(f"DETACH DATABASE {alias}")
-        
+
         # Attacher la base SQLite
         conn.execute(f"ATTACH DATABASE '{db_path}' AS {alias} (TYPE SQLITE, READ_ONLY)")
         self._attached_dbs[alias] = str(db_path)
-    
+
     def query(self, sql: str, params: tuple | None = None) -> list[dict[str, Any]]:
         """
         Exécute une requête SQL et retourne les résultats.
         (Execute SQL query and return results)
-        
+
         Args:
             sql: Requête SQL (peut utiliser read_parquet, tables attachées, etc.)
             params: Paramètres optionnels pour la requête
-            
+
         Returns:
             Liste de dictionnaires (une ligne = un dict)
         """
         conn = self._get_connection()
-        if params:
-            result = conn.execute(sql, params)
-        else:
-            result = conn.execute(sql)
-        
+        result = conn.execute(sql, params) if params else conn.execute(sql)
+
         columns = [desc[0] for desc in result.description]
         rows = result.fetchall()
-        
-        return [dict(zip(columns, row)) for row in rows]
-    
+
+        return [dict(zip(columns, row, strict=False)) for row in rows]
+
     def query_df(self, sql: str, params: tuple | None = None):
         """
         Exécute une requête SQL et retourne un DataFrame Polars.
         (Execute SQL query and return Polars DataFrame)
         """
         conn = self._get_connection()
-        if params:
-            result = conn.execute(sql, params)
-        else:
-            result = conn.execute(sql)
-        
+        result = conn.execute(sql, params) if params else conn.execute(sql)
+
         return result.pl()  # Retourne un Polars DataFrame
-    
+
     def get_parquet_path(self, table: str, xuid: str | None = None) -> str:
         """
         Construit le chemin Parquet avec pattern glob.
         (Build Parquet path with glob pattern)
-        
+
         Args:
             table: Nom de la table (match_facts, medals, etc.)
             xuid: Optionnel, filtre par joueur
-            
+
         Returns:
             Chemin avec pattern glob pour read_parquet()
         """
         base_path = self.warehouse_path / table
-        
+
         if xuid:
             # Parquet partitionné par joueur
             return str(base_path / f"player={xuid}" / "**" / "*.parquet")
         else:
             # Tous les joueurs
             return str(base_path / "**" / "*.parquet")
-    
+
     def load_matches(
         self,
         xuid: str,
@@ -180,31 +174,31 @@ class DuckDBEngine:
         """
         Charge les matchs depuis Parquet.
         (Load matches from Parquet)
-        
+
         Équivalent à load_matches() mais depuis Parquet via DuckDB.
         """
         parquet_path = self.get_parquet_path("match_facts", xuid)
-        
+
         # Vérifier si des fichiers Parquet existent
         if not list(self.warehouse_path.glob(f"match_facts/player={xuid}/**/*.parquet")):
             return []
-        
+
         where_clauses = ["xuid = ?"]
         params = [xuid]
-        
+
         if playlist_filter:
-            where_clauses.append("playlist_id = ?")
+            where_clauses.append("playlist_name = ?")
             params.append(playlist_filter)
-        
+
         if map_filter:
-            where_clauses.append("map_id = ?")
+            where_clauses.append("map_name = ?")
             params.append(map_filter)
-        
+
         where_sql = " AND ".join(where_clauses)
         limit_sql = f"LIMIT {limit}" if limit else ""
-        
+
         sql = f"""
-            SELECT 
+            SELECT
                 match_id, start_time, map_id, map_name,
                 playlist_id, playlist_name,
                 game_variant_id, game_variant_name,
@@ -219,9 +213,9 @@ class DuckDBEngine:
             ORDER BY start_time ASC
             {limit_sql}
         """
-        
+
         rows = self.query(sql, tuple(params))
-        
+
         return [
             MatchRow(
                 match_id=r["match_id"],
@@ -252,34 +246,34 @@ class DuckDBEngine:
             )
             for r in rows
         ]
-    
+
     def get_kd_evolution_by_weapon(
         self,
-        xuid: str,
-        last_n_matches: int = 500,
+        _xuid: str,
+        _last_n_matches: int = 500,
     ) -> list[dict[str, Any]]:
         """
         Exemple de requête analytique complexe.
         (Example of complex analytical query)
-        
+
         Calcule l'évolution du ratio K/D moyen par arme sur les N derniers matchs.
         Note: Requiert les données d'armes dans weapon_stats (à implémenter).
         """
         # TODO: Implémenter quand les données d'armes seront disponibles
         # Pour l'instant, retourne une liste vide
         return []
-    
+
     def close(self) -> None:
         """Ferme la connexion DuckDB. (Close DuckDB connection)"""
         if self._connection is not None:
             self._connection.close()
             self._connection = None
             self._attached_dbs.clear()
-    
+
     def __enter__(self) -> DuckDBEngine:
         """Context manager entry."""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Context manager exit."""
         self.close()

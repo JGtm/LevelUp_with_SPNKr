@@ -1,180 +1,148 @@
-# Plan d'Implémentation : Migration DuckDB/Parquet + Validation Refresh
+# Plan Courant : Sprint 1 - Clôturer Phase 1 (Stabilisation)
 
-> Généré par `/orchestrate` le 2026-01-31
-> Requête : "Finalise la migration vers DuckDB/Parquet et vérifie que le refresh full et delta fonctionnent bien, que ce soit sur l'app ou par ligne de commande"
+> Généré par `/pm` le 2026-02-01
+> Objectif : Finaliser la Phase 1 avec validation et benchmarks
 
-## Objectif
-Compléter la migration vers l'architecture hybride SQLite + DuckDB + Parquet et valider les fonctionnalités de synchronisation (full refresh et delta sync).
+## Statut Global
 
-## Statut
-✅ Complété
-
----
-
-## Résumé des Modifications
-
-### 1. Bug Fix - ParquetWriter (✅)
-**Fichier**: `src/data/infrastructure/parquet/writer.py`
-- Corrigé bug ligne 90 : `group_by().agg(pl.all())` → `select().unique()`
-- Aligné avec la méthode `write_medals()` qui utilise déjà le pattern correct
-
-### 2. Script sync.py Unifié (✅)
-**Fichier**: `scripts/sync.py`
-- Ajouté fonction `migrate_to_parquet()` pour migration automatique vers Parquet
-- Ajouté options CLI:
-  - `--migrate-parquet` : Migre explicitement vers Parquet
-  - `--warehouse` : Chemin personnalisé vers le warehouse
-- La migration Parquet est automatiquement appelée après `--delta` ou `--full`
-
-### 3. Dépendances (✅)
-**Fichier**: `pyproject.toml`
-- Ajouté dépendances manquantes:
-  - `polars>=0.20.0`
-  - `duckdb>=0.10.0`
-  - `pydantic>=2.5.0`
+| Phase | Statut | Progression |
+|-------|--------|-------------|
+| Phase 1 - Stabilisation | 🟡 En cours | 80% |
+| Phase 2 - Shadow Compare | ⏳ Planifié | 0% |
+| Phase 3 - Bascule Hybrid | ⏳ Backlog | 0% |
+| Phase 4 - Optimisations | ⏳ Future | 0% |
 
 ---
 
-## Architecture Implémentée
+## Sprint 1 : Tâches
 
-### Flux de Synchronisation Unifié
-```
-API Halo Infinite (SPNKr)
-        ↓
-scripts/sync.py --delta ou --full
-        ↓
-   ┌────────────┐
-   │ SQLite DB  │  (MatchStats, PlayerMatchStats, etc.)
-   └────────────┘
-        ↓
-   rebuild_match_cache()
-        ↓
-   migrate_to_parquet()
-        ↓
-   ┌────────────────────────┐
-   │ data/warehouse/        │
-   │ ├── metadata.db        │  (SQLite - référentiels)
-   │ └── match_facts/       │  (Parquet - faits de match)
-   │     └── player={xuid}/ │
-   │         └── year=*/    │
-   │             └── month=/│
-   └────────────────────────┘
-        ↓
-   DuckDB QueryEngine
-        ↓
-   Streamlit UI / CLI
-```
+### 1.1 Script Benchmark CLI ✅
 
-### Modes de Synchronisation
+**Fichier** : `scripts/benchmark_hybrid.py`
 
-| Mode | Commande CLI | Comportement |
-|------|--------------|--------------|
-| Delta | `python scripts/sync.py --delta` | Arrêt au premier match connu |
-| Full | `python scripts/sync.py --full` | Traite tous les matchs jusqu'à la limite |
-| Delta (UI) | Bouton "Synchroniser" | Sync delta de tous les joueurs |
+Compare les performances Legacy vs Hybrid sur les opérations clés :
+- `load_matches()` (tous les matchs)
+- `load_matches(playlist_filter=...)` (requête filtrée)
+- `get_match_count()`
+- `get_storage_info()`
 
----
-
-## Commandes de Test
-
-### CLI - Synchronisation
+**Usage** :
 ```bash
+# Benchmark avec 5 itérations
+python scripts/benchmark_hybrid.py --db data/spnkr_gt_Chocoboflor.db --iterations 5
+
+# Export JSON
+python scripts/benchmark_hybrid.py --db data/spnkr_gt_Chocoboflor.db --output .ai/reports/benchmark_v1.json
+
 # Aide
-python scripts/sync.py --help
-
-# Delta sync (rapide, nouveaux matchs)
-python scripts/sync.py --delta
-
-# Delta sync pour un joueur
-python scripts/sync.py --delta --player Chocoboflor
-
-# Full sync avec limite
-python scripts/sync.py --full --max-matches 500
-
-# Full sync pour un joueur
-python scripts/sync.py --full --player Madina97294
-
-# Migration Parquet uniquement
-python scripts/sync.py --migrate-parquet
-
-# Afficher les statistiques
-python scripts/sync.py --stats
+python scripts/benchmark_hybrid.py --help
 ```
 
-### CLI - Tests
-```bash
-# Tests architecture données
-pytest tests/test_data_architecture.py -v
-
-# Tests delta sync
-pytest tests/test_delta_sync.py -v
-
-# Suite complète
-pytest tests/ -v
+**Output** :
 ```
-
-### UI - Streamlit
-```bash
-streamlit run streamlit_app.py
-# → Bouton "Synchroniser" dans la sidebar (delta sync auto)
+======================================================================
+BENCHMARK LEGACY vs HYBRID
+======================================================================
+Benchmark                 Legacy (ms)     Hybrid (ms)     Speedup   Winner
+----------------------------------------------------------------------
+load_matches_all               45.2 ms        38.1 ms     1.19x    Hybrid ✓
+load_matches_ranked            12.3 ms         8.7 ms     1.41x    Hybrid ✓
+get_match_count                 2.1 ms         1.8 ms     1.17x    Hybrid ✓
+----------------------------------------------------------------------
 ```
 
 ---
 
-## Infrastructure Vérifiée
+### 1.2 Tests E2E Cohérence ✅
 
-### SQLiteMetadataStore (✅)
-- Table `sync_meta` avec colonnes: `xuid`, `last_sync_at`, `last_match_id`, `total_matches`, `sync_status`
-- Méthodes: `get_sync_status()`, `update_sync_status()`
-- Schéma créé automatiquement à l'initialisation
+**Fichier** : `tests/test_hybrid_benchmark.py`
 
-### ParquetWriter (✅ corrigé)
-- Partitionnement: `player={xuid}/year={yyyy}/month={mm}/`
-- Déduplication sur `match_id`
-- Bug corrigé ligne 90
+Tests pytest validant :
+- **Cohérence** : Legacy et Hybrid retournent les mêmes données
+- **Performance** : Hybrid au moins aussi rapide que Legacy
+- **Shadow Compare** : Mode SHADOW_COMPARE détecte les divergences
 
-### ParquetReader (✅)
-- Lecture avec pruning de partitions
-- Support date range filter
-- Méthodes: `has_data()`, `count_rows()`, `read_match_facts()`
+**Classes de test** :
+- `TestHybridConsistency` : Vérifie que les deux modes retournent les mêmes résultats
+- `TestHybridPerformance` : Mesure et compare les temps d'exécution
+- `TestShadowCompareMode` : Valide le comportement du mode SHADOW_COMPARE
 
-### QueryEngine DuckDB (✅)
-- Jointures SQLite + Parquet via ATTACH
-- Placeholders: `{match_facts}`, `{medals}`, `{players}`, etc.
-- Gestion cas "pas de données Parquet"
+**Usage** :
+```bash
+# Exécuter tous les tests
+pytest tests/test_hybrid_benchmark.py -v
 
-### ShadowRepository (✅)
-- Modes: SHADOW_READ, SHADOW_COMPARE, HYBRID_FIRST
-- Méthode `migrate_matches_to_parquet()`
-- Pattern Shadow Module pour migration progressive
+# Avec affichage des prints (timing)
+pytest tests/test_hybrid_benchmark.py -v -s
+
+# Un test spécifique
+pytest tests/test_hybrid_benchmark.py::TestHybridConsistency::test_match_count_consistency -v
+```
 
 ---
 
-## Points d'Attention
+### 1.3 Exécuter Benchmarks en Prod ⏳
 
-### Installation des Dépendances
-Avant utilisation, installer les dépendances :
+**À faire** :
+1. Exécuter le benchmark sur une vraie DB de joueur
+2. Sauvegarder le rapport JSON dans `.ai/reports/benchmark_v1.json`
+3. Analyser les résultats
+
+**Commande** :
 ```bash
-pip install polars duckdb pydantic
-# Ou via pyproject.toml
-pip install -e ".[dev,spnkr]"
+python scripts/benchmark_hybrid.py \
+  --db data/players/Chocoboflor.db \
+  --iterations 5 \
+  --output .ai/reports/benchmark_v1.json
 ```
-
-### Tokens SPNKr Requis
-Les syncs nécessitent les tokens Halo Waypoint :
-```bash
-# Dans .env.local ou variables d'environnement
-SPNKR_SPARTAN_TOKEN=v4=...
-SPNKR_CLEARANCE_TOKEN=eyJ...
-```
-
-### Migration Progressive
-Le système supporte une migration progressive :
-1. Les données legacy (SQLite JSON) continuent de fonctionner
-2. `ShadowRepository` lit depuis legacy, écrit vers Parquet
-3. `HybridRepository` lit depuis Parquet si disponible
 
 ---
 
-*Dernière mise à jour : 2026-01-31 22:00*
-*Statut : Implémentation complète, tests non exécutés (environnement sans dépendances)*
+### 1.4 Documenter Pain Points ⏳
+
+**À faire** :
+1. Noter les problèmes rencontrés dans `.ai/thought_log.md`
+2. Identifier les requêtes lentes ou problématiques
+3. Lister les améliorations pour Phase 2
+
+---
+
+## Infrastructure Existante
+
+### Repositories
+
+| Mode | Classe | Source | Utilisation |
+|------|--------|--------|-------------|
+| LEGACY | `LegacyRepository` | SQLite (MatchCache) | Production actuelle |
+| HYBRID | `HybridRepository` | Parquet + DuckDB | Cible |
+| SHADOW | `ShadowRepository` | Les deux | Migration |
+
+### Modes Shadow
+
+| Mode | Comportement |
+|------|--------------|
+| `SHADOW_READ` | Lit Legacy, peut écrire Hybrid |
+| `SHADOW_COMPARE` | Lit les deux, compare, log divergences |
+| `HYBRID_FIRST` | Préfère Hybrid, fallback Legacy |
+
+---
+
+## Prochaines Étapes
+
+Après Sprint 1 :
+1. **Sprint 2** : Activer SHADOW_COMPARE en dev pour détecter les divergences
+2. **Sprint 3** : Migrer toutes les requêtes UI vers Hybrid
+3. **Sprint 4** : Supprimer MatchCache, optimiser avec Delta Lake
+
+---
+
+## Références
+
+- `ARCHITECTURE_ROADMAP.md` : Roadmap complète des phases
+- `docs/DATA_ARCHITECTURE.md` : Architecture technique
+- `src/data/repositories/shadow.py` : Pattern Shadow
+- `src/data/repositories/factory.py` : Factory de repositories
+
+---
+
+*Dernière mise à jour : 2026-02-01*
