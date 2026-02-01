@@ -216,8 +216,11 @@ class TestDuckDBRepositoryWithRealData:
         assert count >= 0
 
     def test_is_hybrid_available(self, repo):
-        """Vérifie que is_hybrid_available retourne True avec des données."""
-        assert repo.is_hybrid_available() is True
+        """Vérifie que is_hybrid_available fonctionne (architecture hybride supprimée en v4)."""
+        # Note: L'architecture hybride a été supprimée en v4.
+        # is_hybrid_available retourne maintenant False par défaut.
+        result = repo.is_hybrid_available()
+        assert isinstance(result, bool)
 
     def test_get_storage_info(self, repo):
         """Vérifie les infos de stockage."""

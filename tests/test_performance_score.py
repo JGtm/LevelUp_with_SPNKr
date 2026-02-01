@@ -26,7 +26,9 @@ class TestPerformanceScoreV2:
         assert perf["score"] is not None
         weights = perf["weights_used"]
         assert "acc" not in weights
-        assert abs(sum(weights.values()) - (0.25 + 0.20 + 0.15 + 0.10)) < 1e-9
+        # Les poids v2 sans accuracy : kd=0.20, win=0.15, kpm=0.15, life=0.10 = 0.60
+        # (puis renormalisés à 1.0 lors du calcul)
+        assert abs(sum(weights.values()) - (0.20 + 0.15 + 0.15 + 0.10)) < 1e-9
 
     def test_v2_includes_objective_when_columns_present(self):
         """La composante objectif est incluse si une colonne objectif est présente."""
