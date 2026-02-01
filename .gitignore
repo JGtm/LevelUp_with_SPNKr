@@ -26,6 +26,9 @@ data/spnkr_JGtm.db
 data/investigation/
 data/cache/*
 
+# RAG LanceDB (base vectorielle locale)
+data/rag/
+
 # Fichiers temporaires d'import SPNKr
 *.tmp.*.db
 data/*.tmp.*

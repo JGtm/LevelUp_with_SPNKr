@@ -53,19 +53,34 @@ Il coordonne le flux de travail et assure la cohérence entre les étapes.
 □ Lire .ai/project_map.md (architecture actuelle)
 □ Lire .ai/thought_log.md (décisions récentes)
 □ Lire .ai/current_plan.md (travail en cours)
+□ Consulter RAG si question API Halo (via MCP halo-rag)
 ```
+
+### 1b. Enrichissement RAG (si MCP halo-rag activé)
+
+Pour les demandes liées à l'API Halo ou à des patterns du projet :
+
+```
+CallMcpTool("halo-rag", "get_context", {
+    "query": "[résumé de la demande]",
+    "max_tokens": 2000
+})
+```
+
+Cela permet d'avoir le contexte pertinent AVANT de planifier l'implémentation.
 
 ### 2. Classification de la demande
 
 | Type de demande | Mots-clés | Agent(s) à invoquer |
 |-----------------|-----------|---------------------|
-| Nouvelle feature | "ajouter", "créer", "implémenter" | /plan → /implement → /test → /review |
+| Nouvelle feature | "ajouter", "créer", "implémenter" | /rag-search (contexte) → /plan → /implement → /test → /review |
 | Bug fix | "bug", "erreur", "ne marche pas", "crash" | /debug → /test |
-| Exploration | "comment", "où", "expliquer", "comprendre" | /explore-feature |
+| Exploration | "comment", "où", "expliquer", "comprendre" | /rag-search → /explore-feature |
 | Refactoring | "refactorer", "nettoyer", "optimiser" | /plan → /implement → /test |
 | Données | "sync", "ingestion", "importer" | /ingest ou /query-halo |
 | Vérification | "vérifier", "valider", "tester" | /verify-db ou /test |
 | Question SQL | "requête", "stats", "combien" | /query-halo |
+| Question API Halo | "endpoint", "API", "Grunt", "SPNKr" | /rag-search |
 
 ### 3. Exécution du workflow
 

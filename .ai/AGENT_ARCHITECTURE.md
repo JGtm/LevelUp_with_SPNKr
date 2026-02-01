@@ -283,7 +283,8 @@ Les commandes custom fonctionnent comme des **agents spécialisés** avec workfl
     │   └── /debug          → 🐛 Investigation systématique
     │
     ├── AGENTS DE SUPPORT (Opérations)
-    │   ├── /explore-feature → 🗺️ Documentation feature
+    │   ├── /explore-feature → 🗺️ Documentation feature (+ RAG)
+    │   ├── /rag-search     → 🧠 Recherche base de connaissances (NOUVEAU)
     │   ├── /ingest         → 📥 Ingestion données Halo
     │   ├── /query-halo     → 🔎 Requêtes SQL DuckDB
     │   ├── /verify-db      → ✅ Vérification intégrité
@@ -293,12 +294,35 @@ Les commandes custom fonctionnent comme des **agents spécialisés** avec workfl
         └── /handoff        → 🔄 Passation entre sessions
 ```
 
+### Agent RAG Search (NOUVEAU)
+
+#### `/rag-search` - Recherche Base de Connaissances 🧠
+
+Recherche dans la base vectorielle LanceDB contenant :
+- Documentation locale (`docs/`, `.ai/`, `src/`)
+- Repository GitHub Grunt (API Halo Infinite)
+
+**Outils MCP** :
+- `search_knowledge` : Recherche sémantique générale
+- `get_api_doc` : Documentation API Halo
+- `get_context` : Contexte formaté pour prompts
+- `get_stats` : Statistiques de la base
+
+**Intégration** :
+- Appelé automatiquement par `/orchestrate` pour les features liées à l'API
+- Appelé automatiquement par `/explore-feature` avant l'exploration
+
+---
+
 ### Agent Orchestrateur
 
 #### `/orchestrate` - Chef d'Orchestre 🎯
 
 L'orchestrateur est le **point d'entrée unique** pour toute demande complexe.
 Il analyse la demande en langage naturel et délègue aux agents appropriés.
+
+**Enrichissement RAG** : Avant toute planification, l'orchestrateur peut consulter
+le RAG via `get_context` pour obtenir du contexte pertinent sur l'API Halo.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐

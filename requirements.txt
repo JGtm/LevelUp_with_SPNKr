@@ -18,3 +18,7 @@ polars>=0.20.0
 duckdb>=0.10.0
 
 # Note: pyarrow est une dépendance de Polars et DuckDB, pas besoin de l'installer séparément
+
+# RAG (Retrieval-Augmented Generation)
+lancedb>=0.6.0
+httpx>=0.27.0
