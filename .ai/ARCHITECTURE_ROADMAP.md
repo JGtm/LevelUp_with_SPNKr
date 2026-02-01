@@ -327,6 +327,80 @@ data/players/{gamertag}/
 
 ---
 
+### Phase 5 : Enrichissement Visuel & Grunt API 📋 (Futur)
+
+**Objectif** : Nouvelles sources de données (Grunt API) + visualisations avancées + correctifs.
+
+#### Sprint 5.1 : Intégration Grunt API & Stats Armes
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S5.1.1 | Étudier les possibilités de Grunt API | `docs/API_GRUNT_RESEARCH.md` | ⏳ |
+| S5.1.2 | Récupérer Spartan ID + rang carrière | `src/api/grunt_client.py` | ⏳ |
+| S5.1.3 | Ajouter récupération de l'adornment | `src/api/grunt_client.py` | ⏳ |
+| S5.1.4 | Explorer récupération stats armes | `src/api/grunt_client.py` | ⏳ |
+| S5.1.5 | Persister stats armes en BDD | `src/data/repositories/duckdb_repo.py` | ⏳ |
+
+**Table cible** : `weapon_stats` (déjà dans le schéma v4)
+
+```sql
+-- Schéma weapon_stats
+CREATE TABLE weapon_stats (
+    gamertag VARCHAR,
+    weapon_id VARCHAR,
+    weapon_name VARCHAR,
+    kills INTEGER,
+    deaths INTEGER,
+    headshots INTEGER,
+    shots_fired INTEGER,
+    shots_hit INTEGER,
+    damage_dealt DOUBLE,
+    time_held_seconds DOUBLE,
+    updated_at TIMESTAMP
+);
+```
+
+**Objectif citations** : Permettre des citations contextuelles comme "Tu as fait X kills avec le BR cette session".
+
+#### Sprint 5.2 : Correctifs Prioritaires
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S5.2.1 | Corriger modes/playlists (Madina97294) | `src/data/parsers/` | ⏳ |
+| S5.2.2 | Réparer synchro via app | `src/api/sync.py` | ⏳ |
+| S5.2.3 | Association matchs ↔ vidéos capturées | `src/ui/pages/match_view.py` | ⏳ |
+| S5.2.4 | Script thumbnails animés pour vidéos | `scripts/generate_thumbnails.py` | ⏳ |
+
+#### Sprint 5.3 : Graphes Radar & Étiquettes
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S5.3.1 | Graphe radar "Stats par minute" | `src/ui/pages/teammates.py` | ⏳ |
+| S5.3.2 | Graphe radar Objectif/Frags/Morts/Assists | `src/ui/components/radar_chart.py` | ⏳ |
+| S5.3.3 | Étiquettes valeurs extrêmes sur graphes | `src/ui/components/charts.py` | ⏳ |
+| S5.3.4 | Intégrer note de performance (TrueSkill) | `src/analysis/performance.py` | ⏳ |
+
+**Source** : [Reddit - Halo Query MMR](https://www.reddit.com/r/CompetitiveHalo/comments/19f97ir/halo_query_a_new_stats_site_to_see_your_mmr/)
+
+#### Sprint 5.4 : Nouvelles Représentations Statistiques
+
+| # | Tâche | Description | Statut |
+|---|-------|-------------|--------|
+| S5.4.1 | Frags parfaits sur graphe Précision | Compter médailles "Perfect" | ⏳ |
+| S5.4.2 | Stacked columns matchs par carte/mode | Win/Loss/Tie/Left | ⏳ |
+| S5.4.3 | Distributions : Win ratio, dégâts, scores | Histogrammes | ⏳ |
+| S5.4.4 | Distribution timestamps 1er kill/death | Par map ou match | ⏳ |
+| S5.4.5 | Corrélations durée vie / kills / outcomes | Scatter plots | ⏳ |
+| S5.4.6 | Win Ratio par jour/heure de la semaine | Heatmap | ⏳ |
+| S5.4.7 | Matches at Top vs Total par semaine | Comparaison | ⏳ |
+| S5.4.8 | Top 3 armes par session avec kills | Cards ou bar chart | ⏳ |
+| S5.4.9 | Médailles gagnées (distribution) | Treemap ou bar | ⏳ |
+| S5.4.10 | Shots Fired/Hit + Callout Assists | Sur graphes précision | ⏳ |
+
+**Source notebooks** : [OpenSpartan Hero Stats](https://github.com/OpenSpartan/notebooks/blob/main/src/hero/Hero%20Stats.ipynb)
+
+---
+
 ## Décisions Architecturales
 
 ### Pourquoi migrer vers DuckDB unifié ?
@@ -461,6 +535,7 @@ Quand un sprint est marqué comme **COMPLETE** :
 | 2026-02-01 | Sprint 3.2 COMPLETE | Agrégation + persistance antagonistes |
 | 2026-02-01 | Sprint 3.3 recentré sur debug | Page Rivalités reportée (faible priorité) |
 | 2026-02-01 | Phase 4 détaillée | Documentation des 4 axes d'optimisation |
+| 2026-02-01 | Phase 5 créée | Grunt API + Stats armes + Visualisations avancées |
 
 ---
 
@@ -490,4 +565,4 @@ victims = repo.get_top_victims(limit=20)   # Qui j'ai le plus tué
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 3.2 COMPLETE - Sprint 3.3 en attente)*
+*Dernière mise à jour : 2026-02-01 (Phase 5 ajoutée - Grunt API & Visualisations)*
