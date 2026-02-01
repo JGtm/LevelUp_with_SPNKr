@@ -2,6 +2,7 @@
 
 > **Analysez vos performances Halo Infinite avec des visualisations avancées et une architecture DuckDB ultra-rapide.**
 
+[![Version](https://img.shields.io/badge/Version-3.0.0-green.svg)](https://github.com/JGtm/LevelUp_with_SPNKr/releases/tag/v3.0.0)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-FF4B4B.svg)](https://streamlit.io/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-0.10%2B-FEE14E.svg)](https://duckdb.org/)
@@ -37,8 +38,8 @@
 
 ```bash
 # Cloner le projet
-git clone https://github.com/username/levelup-halo.git
-cd levelup-halo
+git clone https://github.com/JGtm/LevelUp_with_SPNKr.git
+cd LevelUp_with_SPNKr
 
 # Créer l'environnement virtuel
 python -m venv .venv
