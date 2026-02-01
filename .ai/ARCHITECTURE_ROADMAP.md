@@ -1,7 +1,7 @@
 # Roadmap Architecture - Migration DuckDB Unifiée
 
 > Ce document trace l'évolution planifiée de l'architecture de données.
-> Mis à jour : 2026-02-01
+> Mis à jour : 2026-02-01 (Phase 3 planifiée)
 
 ---
 
@@ -94,18 +94,18 @@ data/
 
 ---
 
-### Phase 2 : Migration DuckDB Unifiée 🚧 (En cours)
+### Phase 2 : Migration DuckDB Unifiée ✅ (Complète)
 
 **Objectif** : Migrer vers DuckDB persisté comme moteur unique
 
 | # | Tâche | Statut | Notes |
 |---|-------|--------|-------|
 | 2.1 | Créer structure `data/players/{gamertag}/` | ✅ | Dossiers créés |
-| 2.2 | Mettre à jour `db_profiles.json` | ✅ | Version 2.0 avec nouveaux chemins |
-| 2.3 | Créer script de migration métadonnées | ⏳ | `metadata.db` → `metadata.duckdb` |
-| 2.4 | Créer script de migration joueur | ⏳ | SQLite → DuckDB |
-| 2.5 | Adapter `HybridRepository` pour DuckDB natif | ⏳ | Plus de SQLite |
-| 2.6 | Migrer les 4 joueurs existants | ⏳ | ~250 MB total |
+| 2.2 | Mettre à jour `db_profiles.json` | ✅ | Version 2.1 avec nouveaux chemins |
+| 2.3 | Créer script de migration métadonnées | ✅ | `metadata.db` → `metadata.duckdb` |
+| 2.4 | Créer script de migration joueur | ✅ | SQLite → DuckDB |
+| 2.5 | Adapter `DuckDBRepository` pour DuckDB natif | ✅ | Nouveau repository |
+| 2.6 | Migrer les 4 joueurs existants | ✅ | ~250 MB total, 1372 matchs |
 
 ---
 
@@ -171,19 +171,65 @@ data/
 
 ---
 
-### Phase 3 : Enrichissement des Données 📋 (Planifié)
+### Phase 3 : Enrichissement des Données 🚧 (En cours)
 
-**Objectif** : Ajouter des tables pour améliorer l'UX
+**Objectif** : Ajouter des tables pour améliorer l'UX + stabiliser les calculs existants
 
 | Nouvelle Table | Description | Utilisation | Source |
 |---------------|-------------|-------------|--------|
-| `antagonists` | Top 20 killers/victimes | Rivalités, matchups | API kill_death_graph |
+| `antagonists` | Top 20 killers/victimes | Rivalités, matchups | HighlightEvents + validation |
 | `weapon_stats` | Stats par arme | Analyse des armes | API weapon_core |
 | `skill_history` | Historique CSR | Graphique progression | API playlist_csr |
-| `career_ranks` | Traductions rangs | Localisation | JSON statique |
+| `career_ranks` | Traductions rangs | Localisation | ✅ Migré (JSON statique) |
 | `match_events` | Timeline événements | Replays (optionnel) | API match_events |
 
 **Schéma SQL** : Voir `docs/SQL_SCHEMA.md`
+
+---
+
+## Sprint Actuel : Phase 3 - Enrichissement
+
+### Sprint 3.1 : Stabilisation Algorithme Antagonistes 🚧
+
+**Problème identifié** : Le calcul des frags peut être instable avec des événements simultanés.
+
+**Solution** : Validation par totaux officiels + tie-breaker par rang.
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S3.1.1 | Créer `load_match_players_stats()` | `src/db/loaders.py` | ⏳ |
+| S3.1.2 | Créer `validate_and_adjust_pairs()` | `src/analysis/killer_victim.py` | ⏳ |
+| S3.1.3 | Modifier `compute_personal_antagonists()` | `src/analysis/killer_victim.py` | ⏳ |
+| S3.1.4 | Mettre à jour les tests | `tests/test_killer_victim_antagonists.py` | ⏳ |
+
+**Algorithme amélioré** :
+```
+1. Reconstituer les paires killer→victim (existant)
+2. Pour chaque joueur du match :
+   - Calculer kills_reconstitués, deaths_reconstitués
+   - Comparer avec kills_officiels, deaths_officiels
+   - Si écart : marquer comme "incertain"
+3. Pour les cas ambigus (égalité de frags par plusieurs adversaires) :
+   - Tie-breaker = rang dans le match (meilleur classement = priorité)
+4. Retourner résultat avec flag de confiance
+```
+
+### Sprint 3.2 : Agrégation et Persistance 📋
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S3.2.1 | Créer `aggregate_antagonists()` | `src/analysis/antagonists.py` | ⏳ |
+| S3.2.2 | Créer script `populate_antagonists.py` | `scripts/populate_antagonists.py` | ⏳ |
+| S3.2.3 | Ajouter méthode `save_antagonists()` | `src/data/repositories/duckdb_repo.py` | ⏳ |
+| S3.2.4 | Tests d'intégration | `tests/test_antagonists_persistence.py` | ⏳ |
+
+### Sprint 3.3 : UI Rivalités 📋
+
+| # | Tâche | Fichier(s) | Statut |
+|---|-------|------------|--------|
+| S3.3.1 | Créer page "Mes Rivalités" | `src/ui/pages/rivalries.py` | ⏳ |
+| S3.3.2 | Améliorer mode debug | `src/ui/pages/match_view_players.py` | ⏳ |
+| S3.3.3 | Documentation | `.ai/thought_log.md` | ⏳ |
 
 ---
 
@@ -299,20 +345,25 @@ python scripts/benchmark_hybrid.py --db data/players/Chocoboflor/stats.duckdb
 | 2026-02-01 | Migration DuckDB unifié | Simplification + performance |
 | 2026-02-01 | Structure `data/players/` | Isolation par joueur |
 | 2026-02-01 | Découverte `halo_unified.db` | À archiver, remplacé par v4 |
+| 2026-02-01 | Phase 2 COMPLETE | Sprints 2.1-2.3 terminés |
+| 2026-02-01 | Stabilisation antagonistes (Phase 3) | Événements simultanés instables |
+| 2026-02-01 | Tie-breaker par rang | Si égalité frags, le mieux classé gagne |
 
 ---
 
 ## Prochaine Action
 
-**Phase 3 : Enrichissement des Données**
+**Sprint 3.1 : Stabilisation Algorithme Antagonistes**
 
-Maintenant que l'architecture DuckDB est en place (Phase 2 complète), la prochaine étape est d'enrichir les données :
+Priorité immédiate : corriger l'instabilité du calcul des frags lors d'événements simultanés.
 
-1. Ajouter la table `antagonists` (top killers/victimes)
-2. Ajouter la table `weapon_stats` (statistiques par arme)
-3. Ajouter la table `skill_history` (historique CSR)
+**Tâches** :
+1. Créer `load_match_players_stats()` pour obtenir kills/deaths officiels
+2. Implémenter `validate_and_adjust_pairs()` pour valider la cohérence
+3. Ajouter tie-breaker par rang dans `compute_personal_antagonists()`
+4. Tests unitaires pour cas d'événements simultanés
 
-```bash
+```python
 # Utilisation du nouveau système :
 # Mode recommandé (auto-détection depuis db_profiles.json v2.1)
 from src.data.repositories.factory import get_repository_from_profile
@@ -325,4 +376,4 @@ repo = get_repository_for_player("JGtm")
 
 ---
 
-*Dernière mise à jour : 2026-02-01 (Sprint 2.3 complété - Phase 2 terminée)*
+*Dernière mise à jour : 2026-02-01 (Phase 3 planifiée - Sprint 3.1 en cours)*

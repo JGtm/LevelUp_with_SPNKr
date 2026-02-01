@@ -17,6 +17,39 @@
 
 ## Journal
 
+### [2026-02-01] - Phase 3 Planifiée - Stabilisation Antagonistes
+
+**Contexte** :
+Phase 2 (Migration DuckDB Unifiée) terminée. L'utilisateur signale un problème d'instabilité dans le calcul des frags lors d'événements simultanés.
+
+**Problème identifié** :
+- Le calcul des paires killer→victim via timestamp peut être instable
+- Avec des événements simultanés (même milliseconde), l'attribution est ambiguë
+- L'heuristique actuelle (privilégier le plus fréquent, puis plus petit XUID) n'est pas optimale
+
+**Solution proposée** :
+1. **Validation par totaux** : Comparer les frags/morts reconstitués avec les stats officielles de chaque joueur
+2. **Ajustement intelligent** : En cas d'incohérence, redistribuer les événements manquants
+3. **Tie-breaker par rang** : Si égalité, le nemesis est celui qui est le mieux classé dans le match (même logique pour le souffre-douleur)
+
+**Plan Phase 3** :
+- Sprint 3.1 : Stabilisation Algorithme Antagonistes (priorité)
+- Sprint 3.2 : Agrégation et Persistance (table `antagonists`)
+- Sprint 3.3 : UI Rivalités
+
+**Fichiers à modifier** :
+- `src/db/loaders.py` : Ajouter `load_match_players_stats()`
+- `src/analysis/killer_victim.py` : Ajouter validation + tie-breaker
+- `tests/test_killer_victim_antagonists.py` : Nouveaux cas de test
+
+**Suivi** :
+- [x] Roadmap mise à jour avec Phase 3
+- [ ] Sprint 3.1 : Implémenter la stabilisation
+- [ ] Sprint 3.2 : Agrégation et persistance
+- [ ] Sprint 3.3 : UI Rivalités
+
+---
+
 ### [2026-02-01] - Sprint 2.3 COMPLETE - Nettoyage Architecture v2.1
 
 **Contexte** :
