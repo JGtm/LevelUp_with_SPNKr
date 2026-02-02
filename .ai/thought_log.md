@@ -7,6 +7,62 @@
 
 ## Journal
 
+### [2026-02-02] - Nettoyage colonnes objectives (19 colonnes supprimées du schéma)
+
+**Contexte** :
+Comme pour `weapon_stats`, des colonnes objectives ont été ajoutées au schéma en anticipation de données que l'API Halo Infinite ne fournit pas réellement. Ces 19 colonnes étaient toujours NULL.
+
+**Colonnes supprimées** :
+
+| Catégorie | Colonnes |
+|-----------|----------|
+| Expected | `expected_kills`, `expected_deaths` |
+| Objectives | `objectives_completed` |
+| Zone/Stronghold | `zone_captures`, `zone_defensive_kills`, `zone_offensive_kills`, `zone_secures`, `zone_occupation_time` |
+| CTF | `ctf_flag_captures`, `ctf_flag_grabs`, `ctf_flag_returners_killed`, `ctf_flag_returns`, `ctf_flag_carriers_killed`, `ctf_time_as_carrier_seconds` |
+| Oddball | `oddball_time_held_seconds`, `oddball_kills_as_carrier`, `oddball_kills_as_non_carrier` |
+| Stockpile | `stockpile_seeds_deposited`, `stockpile_seeds_collected` |
+
+**Actions réalisées** :
+
+| Fichier | Action |
+|---------|--------|
+| `src/data/sync/models.py` | Supprimé 19 attributs de `MatchStatsRow` |
+| `scripts/migrate_player_to_duckdb.py` | Retiré 19 colonnes du CREATE TABLE |
+| `scripts/migrate_add_columns.py` | Ajouté `COLUMNS_TO_DROP` avec logique DROP COLUMN |
+| `tests/test_cache_integrity.py` | Retiré références `expected_kills`/`expected_deaths` |
+
+**Migration exécutée** :
+```
+Joueurs traités: 4
+Colonnes ajoutées: 52 (13 × 4 joueurs)
+Tables weapon_stats supprimées: 4
+```
+
+Note : Les colonnes objectives n'existaient pas encore dans les bases (elles n'avaient jamais été ajoutées via migration), donc aucune suppression de colonne n'était nécessaire.
+
+**Schéma final match_stats** (colonnes conservées) :
+```
+match_id, start_time, playlist_id, playlist_name, map_id, map_name,
+pair_id, pair_name, game_variant_id, game_variant_name, outcome, team_id,
+rank, kills, deaths, assists, kda, accuracy, headshot_kills, max_killing_spree,
+time_played_seconds, avg_life_seconds, my_team_score, enemy_team_score,
+team_mmr, enemy_mmr, damage_dealt, damage_taken, shots_fired, shots_hit,
+grenade_kills, melee_kills, power_weapon_kills, score, personal_score,
+mode_category, is_ranked, is_firefight, left_early,
+session_id, session_label, performance_score, teammates_signature,
+known_teammates_count, is_with_friends, friends_xuids, created_at, updated_at
+```
+
+**Suivi** :
+- [x] Modèle MatchStatsRow nettoyé ✅
+- [x] Schéma CREATE TABLE nettoyé ✅
+- [x] Script migration avec DROP COLUMN ✅
+- [x] Audit code obsolète ✅
+- [x] Migration bases existantes ✅
+
+---
+
 ### [2026-02-02] - Tests complets des fonctions de visualisation (74 tests)
 
 **Contexte** :

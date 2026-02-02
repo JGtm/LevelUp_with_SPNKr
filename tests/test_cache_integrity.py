@@ -139,8 +139,6 @@ class TestMatchCacheIntegrity:
             "grenade_kills",
             "average_life_seconds",
             "score",
-            "expected_kills",
-            "expected_deaths",
         ]
 
         problems = []
