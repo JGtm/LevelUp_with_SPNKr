@@ -2,7 +2,7 @@
 
 > **Date** : 2026-02-02
 > **Objectif** : Identifier les patterns d'armes dans les bytes non documentés des highlight events
-> **Statut** : ✅ **SUCCÈS - WEAPON ID TROUVÉ !**
+> **Statut** : ✅ **SUCCÈS - WEAPON ID TROUVÉ !** → Phase 2 : Mapping complet en attente
 
 ---
 
@@ -33,204 +33,331 @@ Offset | Taille | Contenu
 76+    | ?      | Données supplémentaires (victim index?)
 ```
 
-### Validation
-
-**Match analysé** : `7f1bbf06-d54d-4434-ad80-923fcabe8b1b`
-- **48 kills** total (tous joueurs)
-- **41 kills** avec pattern `0x2e 0xe0` → Sidekick
-- **7 kills** avec pattern `0x17 0x70` → MA40 AR / Melee
-
-Correspond aux données du joueur : principalement Sidekick + quelques kills AR/Melee.
-
 ---
 
-## 1. Contexte
+## 🚀 PHASE 2 : MAPPING COMPLET DES WEAPON IDs
 
-### 1.1 Problème Initial
+### Objectif
 
-Les highlight events parsés par SPNKr contenaient uniquement :
-- `event_type` : "kill", "death", "medal", "mode"
-- `time_ms` : timestamp en millisecondes
-- `xuid` : identifiant du joueur
-- `gamertag` : nom du joueur
-- `type_hint` : 50=kill, 20=death, 10=mode
+Analyser les **10 derniers matchs** de JGtm pour :
+1. Extraire **TOUS** les weapon IDs uniques (pas seulement ceux de JGtm)
+2. Identifier les IDs **inconnus** (non encore mappés)
+3. Pour chaque ID inconnu, fournir les infos nécessaires à l'identification manuelle
 
-**L'arme utilisée pour un kill n'était PAS dans ces champs.**
+### Prérequis
 
-### 1.2 Hypothèse Validée
+**Base de données** : `data/players/JGtm/stats.duckdb`
 
-✅ **L'arme est encodée dans les bytes 74-75** (après offset 72 de la structure documentée).
-
-### 1.3 Découverte Clé
-
-Les events formatés sont dans les **chunks type 3** (summary), pas dans les chunks type 2 (gameplay).
-
-Le script `refetch_film_roster.py` ne téléchargeait que les types 1 et 2. Il a fallu modifier pour inclure le type 3.
-
----
-
-## 2. Méthodologie Qui a Fonctionné
-
-### Phase 1 : Téléchargement du Chunk Type 3
-
-```bash
-# Modification du script pour inclure type 3
-type_ids = {1, 2, 3}  # au lieu de {1, 2}
-
-python scripts/refetch_film_roster.py \
-    --match-id 7f1bbf06-d54d-4434-ad80-923fcabe8b1b \
-    --save-chunks-dir ./data/investigation/match_7f1bbf06/chunks_with_type3 \
-    --include-type2
+**Requête pour obtenir les 10 derniers matchs** :
+```sql
+SELECT match_id, started_at, mode_category, map_name
+FROM match_stats
+ORDER BY started_at DESC
+LIMIT 10;
 ```
 
-### Phase 2 : Extraction des Events Type 3
+**XUID JGtm** : `2533274823110022`
+
+### Étapes d'Exécution
+
+#### Étape 1 : Récupérer les 10 derniers match IDs
+
+```bash
+python -c "
+import duckdb
+con = duckdb.connect('data/players/JGtm/stats.duckdb', read_only=True)
+matches = con.execute('''
+    SELECT match_id, started_at, mode_category, map_name
+    FROM match_stats
+    ORDER BY started_at DESC
+    LIMIT 10
+''').fetchall()
+for m in matches:
+    print(f'{m[0]} | {m[1]} | {m[2]} | {m[3]}')
+"
+```
+
+#### Étape 2 : Télécharger les chunks type 3 pour chaque match
+
+```bash
+# Pour chaque match_id :
+python scripts/refetch_film_roster.py \
+    --match-id <MATCH_ID> \
+    --save-chunks-dir ./data/investigation/mapping/<MATCH_ID_SHORT>/chunks \
+    --include-type2 \
+    --max-type2-chunks 1
+```
+
+**Note** : `--max-type2-chunks 1` limite les chunks type 2 pour gagner du temps. Le chunk type 3 sera téléchargé automatiquement.
+
+#### Étape 3 : Extraire les events de chaque chunk type 3
 
 ```bash
 python scripts/extract_binary_events.py \
-    --chunk data/investigation/match_7f1bbf06/chunks_with_type3/type3___filmChunk18.bin \
-    --analyze \
-    --output data/investigation/match_7f1bbf06/type3_events.json
+    --chunk ./data/investigation/mapping/<MATCH_ID_SHORT>/chunks/type3___filmChunk*.bin \
+    --output ./data/investigation/mapping/<MATCH_ID_SHORT>/events.json
 ```
 
-**Résultat** : 274 events (48 kills, 115 deaths, 111 mode)
+#### Étape 4 : Agréger tous les weapon IDs uniques
 
-### Phase 3 : Analyse des Patterns
-
-```python
-# Grouper les kills par pattern bytes 74-75
-kills = [e for e in events if e['event_type'] == 50]
-
-for k in kills:
-    extra = k['extra_bytes_32']
-    weapon_pattern = (extra[2], extra[3])  # bytes 74-75
-```
-
-**Résultat** :
-- 41 kills avec `(0x2e, 0xe0)` = Sidekick
-- 7 kills avec `(0x17, 0x70)` = AR/Melee
-
----
-
-## 3. Plan pour la Suite
-
-### Phase A : Construire le Mapping Complet
-
-**Objectif** : Identifier les weapon IDs pour toutes les armes de Halo Infinite.
-
-**Méthode** :
-1. Analyser des matchs avec différentes armes (via medals ou usage connu)
-2. Extraire les patterns bytes 74-75 pour chaque kill
-3. Corréler avec l'arme connue
-
-**Armes prioritaires** :
-| Arme | Méthode d'identification |
-|------|-------------------------|
-| BR75 | Matchs Ranked (arme de départ) |
-| Sniper S7 | Medal "Sniper Spree" |
-| Mangler | Caractéristique (melee combo) |
-| Rocket | Medal "Overkill" avec explosif |
-| Shotgun | Medal "Scattergunner" |
-| Energy Sword | Medal "Ninja" |
-| Gravity Hammer | Medal "Hammer Spree" |
-| Melee | Premier kill du match test |
-
-### Phase B : Distinguer AR vs Melee
-
-**Problème** : Le pattern `0x17 0x70` pourrait être AR **ou** Melee.
-
-**Test** :
-1. Match où le joueur fait **uniquement** des kills melee (aucune arme)
-2. Comparer le pattern avec un match AR pur
-
-### Phase C : Intégration dans l'App
-
-**Script à créer** : `src/data/parsers/weapon_parser.py`
+**Script à utiliser** : Créer `scripts/aggregate_weapon_ids.py`
 
 ```python
-WEAPON_ID_MAP = {
+#!/usr/bin/env python3
+"""
+Agrège tous les weapon IDs uniques des matchs analysés.
+
+Output: JSON avec pour chaque weapon_id inconnu :
+- weapon_id (hex et decimal)
+- match_id
+- timestamp_ms
+- gamertag du killer (si lisible)
+- nombre d'occurrences total
+"""
+
+import json
+from pathlib import Path
+from collections import defaultdict
+
+# Mapping connu
+KNOWN_WEAPONS = {
     0xe02e: "Sidekick",
     0x7017: "MA40 AR",
-    # ... autres armes
 }
 
-def extract_weapon_from_event(extra_bytes: bytes) -> str | None:
-    """Extrait le nom de l'arme depuis les extra_bytes d'un event."""
+def extract_weapon_id(extra_bytes: list[int]) -> int | None:
+    """Extrait le weapon_id des extra_bytes (offset 2-3)."""
     if len(extra_bytes) < 4:
         return None
-    weapon_id = int.from_bytes(extra_bytes[2:4], 'little')
-    return WEAPON_ID_MAP.get(weapon_id)
+    return extra_bytes[2] + extra_bytes[3] * 256  # little-endian
+
+def main():
+    base_dir = Path("data/investigation/mapping")
+    
+    all_weapons = defaultdict(list)  # weapon_id -> list of occurrences
+    
+    for match_dir in base_dir.iterdir():
+        if not match_dir.is_dir():
+            continue
+        
+        events_file = match_dir / "events.json"
+        if not events_file.exists():
+            continue
+        
+        match_id = match_dir.name
+        data = json.loads(events_file.read_text(encoding="utf-8"))
+        
+        for event in data.get("events", []):
+            if event.get("event_type") != 50:  # kills only
+                continue
+            
+            weapon_id = extract_weapon_id(event.get("extra_bytes_32", []))
+            if weapon_id is None:
+                continue
+            
+            all_weapons[weapon_id].append({
+                "match_id": match_id,
+                "timestamp_ms": event.get("timestamp_ms", 0),
+                "gamertag": event.get("gamertag", "???")[:16],
+            })
+    
+    # Séparer connus vs inconnus
+    known = {}
+    unknown = {}
+    
+    for weapon_id, occurrences in sorted(all_weapons.items()):
+        weapon_name = KNOWN_WEAPONS.get(weapon_id)
+        entry = {
+            "weapon_id_hex": f"0x{weapon_id:04x}",
+            "weapon_id_dec": weapon_id,
+            "total_kills": len(occurrences),
+            "weapon_name": weapon_name,
+            "samples": occurrences[:3],  # 3 exemples max
+        }
+        
+        if weapon_name:
+            known[weapon_id] = entry
+        else:
+            unknown[weapon_id] = entry
+    
+    result = {
+        "known_weapons": known,
+        "unknown_weapons": unknown,
+        "summary": {
+            "total_unique_ids": len(all_weapons),
+            "known_count": len(known),
+            "unknown_count": len(unknown),
+        }
+    }
+    
+    output_path = base_dir / "weapon_ids_summary.json"
+    output_path.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+    print(f"Résultats sauvegardés: {output_path}")
+    
+    # Afficher résumé
+    print(f"\n=== RÉSUMÉ ===")
+    print(f"Weapon IDs uniques: {len(all_weapons)}")
+    print(f"Connus: {len(known)}")
+    print(f"Inconnus: {len(unknown)}")
+    
+    if unknown:
+        print(f"\n=== WEAPON IDs INCONNUS ===")
+        print(f"{'ID (hex)':<12} {'ID (dec)':<10} {'Kills':<8} {'Exemple (match, timestamp, joueur)'}")
+        print("-" * 80)
+        for wid, entry in sorted(unknown.items(), key=lambda x: -x[1]["total_kills"]):
+            sample = entry["samples"][0] if entry["samples"] else {}
+            print(f"{entry['weapon_id_hex']:<12} {entry['weapon_id_dec']:<10} {entry['total_kills']:<8} "
+                  f"{sample.get('match_id', '?')[:8]}... @ {sample.get('timestamp_ms', 0)/1000:.1f}s - {sample.get('gamertag', '?')}")
+
+if __name__ == "__main__":
+    main()
 ```
 
-### Phase D : Parser les Chunks Type 3
+### Format de Sortie Attendu
 
-**Modifier** : `scripts/refetch_film_roster.py`
+**Fichier** : `data/investigation/mapping/weapon_ids_summary.json`
 
-Ajouter une fonction pour extraire les highlight events formatés depuis le chunk type 3 et les sauvegarder avec le weapon_id.
+```json
+{
+  "known_weapons": {
+    "57390": {
+      "weapon_id_hex": "0xe02e",
+      "weapon_id_dec": 57390,
+      "total_kills": 87,
+      "weapon_name": "Sidekick",
+      "samples": [...]
+    }
+  },
+  "unknown_weapons": {
+    "12345": {
+      "weapon_id_hex": "0x3039",
+      "weapon_id_dec": 12345,
+      "total_kills": 15,
+      "weapon_name": null,
+      "samples": [
+        {
+          "match_id": "abc123...",
+          "timestamp_ms": 125000,
+          "gamertag": "SomePlayer"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_unique_ids": 12,
+    "known_count": 2,
+    "unknown_count": 10
+  }
+}
+```
+
+### Output Console Attendu
+
+```
+=== WEAPON IDs INCONNUS ===
+ID (hex)     ID (dec)   Kills    Exemple (match, timestamp, joueur)
+--------------------------------------------------------------------------------
+0x1234       4660       23       abc123de... @ 125.0s - PlayerName
+0x5678       22136      15       def456ab... @ 89.3s - AnotherPlayer
+...
+```
+
+### Informations pour Identification Manuelle
+
+Pour chaque weapon_id inconnu, l'utilisateur peut :
+
+1. **Consulter le replay** du match indiqué au timestamp donné
+2. **Identifier visuellement** l'arme utilisée par le joueur
+3. **Mettre à jour** le mapping `KNOWN_WEAPONS` dans le script
+
+### Armes Attendues dans Halo Infinite
+
+| Catégorie | Armes |
+|-----------|-------|
+| **Pistolets** | Sidekick ✅, Mangler, Disruptor |
+| **Fusils** | MA40 AR ✅, BR75, Commando, VK78, Stalker Rifle |
+| **Précision** | Sniper S7, Shock Rifle, Skewer |
+| **Shotguns** | Bulldog, Heatwave |
+| **Explosifs** | Rocket Launcher, Cindershot, Ravager |
+| **Corps-à-corps** | Energy Sword, Gravity Hammer, Melee |
+| **Grenades** | Frag, Plasma, Dynamo, Spike |
+| **Véhicules** | Warthog, Ghost, Banshee turrets |
 
 ---
 
-## 4. Scripts Créés
+## Données de Référence
 
-| Script | Statut | Description |
-|--------|--------|-------------|
-| `scripts/extract_binary_events.py` | ✅ | Extrait events bruts d'un chunk |
-| `scripts/analyze_binary_patterns.py` | ✅ | Analyse patterns binaires |
-| `scripts/correlate_kills.py` | ✅ | Corrèle kills avec XUIDs/timestamps |
-| `scripts/find_kill_patterns.py` | ✅ | Cherche structures kill par XUID |
-| `scripts/find_events_by_type.py` | ✅ | Cherche events par type byte |
-| `scripts/fetch_match_weapon_stats.py` | ⚠️ | Fetch API (auth issues) |
+### Match de Test Initial
+
+**ID** : `7f1bbf06-d54d-4434-ad80-923fcabe8b1b`
+
+**Résultats** :
+- 48 kills total
+- 41 Sidekick (0xe02e)
+- 7 AR/Melee (0x7017)
+
+### Mapping Actuel
+
+```python
+KNOWN_WEAPONS = {
+    0xe02e: "Sidekick",   # 57390
+    0x7017: "MA40 AR",    # 28695
+}
+```
 
 ---
 
-## 5. Suivi
+## Structure des Fichiers
 
-- [x] Tokens API configurés (Azure OAuth)
-- [x] Chunks téléchargés (type 1, 2, **3**)
-- [x] Script extract_binary_events.py créé
-- [x] Events type 3 extraits (274 events)
-- [x] **WEAPON ID TROUVÉ** : bytes 74-75
-- [x] Mapping initial : Sidekick (0xe02e), AR (0x7017)
-- [ ] Mapping complet (autres armes)
-- [ ] Distinction AR vs Melee
+```
+data/investigation/
+├── match_7f1bbf06/           # Match de test initial
+│   └── chunks_with_type3/
+│       └── type3___filmChunk18.bin
+│
+└── mapping/                  # Phase 2 : Mapping complet
+    ├── <match_id_1>/
+    │   ├── chunks/
+    │   │   └── type3___filmChunk*.bin
+    │   └── events.json
+    ├── <match_id_2>/
+    │   └── ...
+    └── weapon_ids_summary.json   # ← OUTPUT FINAL
+```
+
+---
+
+## Suivi
+
+- [x] Tokens API configurés
+- [x] WEAPON ID localisé (bytes 74-75)
+- [x] Mapping initial : Sidekick, MA40 AR
+- [ ] **Télécharger chunks type 3 des 10 derniers matchs**
+- [ ] **Extraire events de chaque match**
+- [ ] **Agréger weapon IDs uniques**
+- [ ] **Identifier manuellement les IDs inconnus**
+- [ ] **Compléter le mapping**
 - [ ] Intégration dans l'app LevelUp
 
 ---
 
-## 6. Fichiers d'Investigation
+## Ressources
 
-```
-data/investigation/match_7f1bbf06/
-├── manifest.json              # Manifest du film
-├── chunks/                    # Chunks type 1 & 2
-├── chunks_all/               # Tous les chunks type 2
-├── chunks_with_type3/        # Chunks incluant type 3
-│   └── type3___filmChunk18.bin  # ← Summary chunk avec events
-├── type3_events.json         # Events extraits du type 3
-├── correlated_kills.json     # Analyse corrélation
-└── events_by_type.json       # Events par type byte
-```
+### Scripts Existants
 
----
-
-## 7. Ressources
+| Script | Usage |
+|--------|-------|
+| `scripts/refetch_film_roster.py` | Téléchargement chunks (type 1, 2, **3**) |
+| `scripts/extract_binary_events.py` | Extraction events d'un chunk type 3 |
+| `scripts/aggregate_weapon_ids.py` | **À CRÉER** - Agrégation des weapon IDs |
 
 ### Documentation
 
 - [Den Delimarsky - Film Files](https://den.dev/blog/extracting-stats-film-files-halo-infinite/)
 - [SPNKr GitHub](https://github.com/acurtis166/SPNKr)
-- [OpenSpartan film-event-extractor](https://github.com/OpenSpartan/film-event-extractor)
-
-### Weapon IDs Découverts
-
-| Bytes | uint16 | Arme |
-|-------|--------|------|
-| `0x2e 0xe0` | 57390 (0xe02e) | Sidekick |
-| `0x17 0x70` | 28695 (0x7017) | MA40 AR |
-| *à découvrir* | ... | BR75 |
-| *à découvrir* | ... | Sniper S7 |
-| *à découvrir* | ... | Melee |
 
 ---
 
 *Plan créé le 2026-02-02 - Recherche expérimentale LevelUp*
-*✅ SUCCÈS : Weapon ID trouvé le 2026-02-02*
+*✅ Phase 1 : Weapon ID trouvé*
+*⏳ Phase 2 : Mapping complet en attente*
