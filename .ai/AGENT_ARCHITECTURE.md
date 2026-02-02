@@ -883,6 +883,84 @@ Voici comment se déroule un cycle complet, de l'audit à la validation :
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Revue de Code Scalée (NOUVEAU)
+
+La règle `.cursor/rules/code-review-scaled.md` définit un workflow de revue qui s'adapte à la taille des changements.
+
+#### Déclenchement Automatique
+
+| Taille | Critères | Comportement |
+|--------|----------|--------------|
+| **Petit** | < 100 lignes, < 5 fichiers | Pas de revue auto |
+| **Moyen** | 100-500 lignes OU 5-15 fichiers | Tests + Revue avant livraison |
+| **Gros** | > 500 lignes OU > 15 fichiers | Tests + Revue obligatoire |
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  WORKFLOW REVUE AUTOMATIQUE (Moyen/Gros changements)                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   1. Code terminé                                                           │
+│          │                                                                   │
+│          ▼                                                                   │
+│   2. Détection taille: git diff --stat                                      │
+│          │                                                                   │
+│          ├── Petit (< 100 lignes) → Livrer directement                      │
+│          │                                                                   │
+│          ▼ Moyen/Gros                                                       │
+│   3. Lancer pytest sur modules impactés                                     │
+│          │                                                                   │
+│          ├── ❌ Tests échouent → Corriger d'abord                           │
+│          │                                                                   │
+│          ▼ ✅ Tests passent                                                 │
+│   4. Lancer revue (3-12 agents parallèles selon taille)                     │
+│          │                                                                   │
+│          ├── 🔴 Signal Fort → Corriger avant livraison                      │
+│          │                                                                   │
+│          ▼ ✅ Pas de bloquant                                               │
+│   5. Livrer (considérer comme terminé)                                      │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Scaling des Agents de Revue
+
+| Taille Changement | Agents | Stratégie |
+|-------------------|--------|-----------|
+| Petit (< 10 fichiers) | 3-4 | Par préoccupation (conformité, bugs, smells) |
+| Moyen (10-25 fichiers) | 6-8 | Mixte préoccupation + slice vertical |
+| Gros (> 25 fichiers) | 8-12 | Slices verticaux + agents dédiés bugs/sécurité |
+
+#### Préoccupations Vérifiées
+
+| Préoccupation | Focus |
+|---------------|-------|
+| Edge Cases | Null, vide, limites |
+| Code Mort | Fonctions non utilisées |
+| Erreurs | Fallbacks, exceptions |
+| Conformité | CLAUDE.md, patterns DuckDB |
+| Bugs Logiques | Conditions, off-by-one |
+| Sécurité | Tokens, SQL injection |
+| Code Smells | Complexité, duplication |
+
+#### Output
+
+```markdown
+## Code Review (scope: branch, 15 fichiers)
+
+### Signal Fort (bloquant)
+- [SÉCURITÉ] Token exposé dans logs — `sync.py:142`
+
+### Signal Moyen (recommandé)  
+- [PATTERN] SQLite direct au lieu de DuckDBRepository — `page.py:88`
+
+### Signal Faible (optionnel)
+- [IDIOME] F-string préférable — `helper.py:23`
+
+---
+Trouvé 3 issues: 1 fort, 1 moyen, 1 faible.
+```
+
 ### Structure des Fichiers d'Orchestration
 
 ```
@@ -891,6 +969,7 @@ Voici comment se déroule un cycle complet, de l'audit à la validation :
 │   ├── pm-orchestrator.md        ← Définition du rôle PM
 │   ├── multi-agent-orchestration.md  ← Protocole complet
 │   ├── fagan-reviewer.md         ← Méthodologie Fagan
+│   ├── code-review-scaled.md     ← Revue scalée (NOUVEAU)
 │   └── output-style.md           ← Style de communication
 │
 ├── commands/
@@ -1344,4 +1423,4 @@ pre-commit install --hook-type pre-push  # Active pre-push hooks
 
 ---
 
-*Dernière mise à jour : 2026-02-01*
+*Dernière mise à jour : 2026-02-02*

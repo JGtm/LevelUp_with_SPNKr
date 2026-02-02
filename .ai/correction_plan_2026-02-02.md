@@ -7,8 +7,8 @@
 | Catégorie | Issues | Statut |
 |-----------|--------|--------|
 | Signal Fort (bloquant) | 0 | ✅ |
-| Signal Moyen (recommandé) | 5 | ⏳ À corriger |
-| Signal Faible (optionnel) | 5 | ⏳ Optionnel |
+| Signal Moyen (recommandé) | 5 | ✅ Corrigé |
+| Signal Faible (optionnel) | 5 | ✅ Corrigé |
 
 ---
 
@@ -33,7 +33,7 @@ def cached_load_highlight_events_for_match(..., db_key: tuple[int, int] | None =
 ```
 
 **Effort** : ~5 min  
-**Statut** : ⏳ À faire
+**Statut** : ✅ Corrigé
 
 ---
 
@@ -66,7 +66,7 @@ _PLAYERS_DIR = PLAYERS_DIR
 ```
 
 **Effort** : ~10 min  
-**Statut** : ⏳ À faire
+**Statut** : ✅ Corrigé
 
 ---
 
@@ -102,7 +102,7 @@ finally:
 ```
 
 **Effort** : ~15 min  
-**Statut** : ⏳ À faire
+**Statut** : ✅ Corrigé
 
 ---
 
@@ -130,7 +130,7 @@ finally:
 ```
 
 **Effort** : ~10 min (4 occurrences)  
-**Statut** : ⏳ Optionnel
+**Statut** : ✅ Corrigé
 
 ---
 
@@ -149,7 +149,7 @@ finally:
 **Action** : Supprimer ces 4 fonctions
 
 **Effort** : ~5 min  
-**Statut** : ⏳ Optionnel
+**Statut** : ✅ Corrigé
 
 ---
 
@@ -181,7 +181,7 @@ time.sleep(STREAMLIT_STARTUP_DELAY_SECONDS)
 ```
 
 **Effort** : ~2 min  
-**Statut** : ⏳ Optionnel
+**Statut** : ✅ Corrigé
 
 ---
 
@@ -204,7 +204,7 @@ if any(qp_params) and st.session_state.get("_consumed_query_params") != qp_param
 ```
 
 **Effort** : ~2 min  
-**Statut** : ⏳ Optionnel
+**Statut** : ✅ Corrigé
 
 ---
 
@@ -212,11 +212,11 @@ if any(qp_params) and st.session_state.get("_consumed_query_params") != qp_param
 
 | Phase | Tâches | Effort | Priorité |
 |-------|--------|--------|----------|
-| **Phase 1** | M1, M4, M5, M2/M3 | ~30 min | 🔴 Recommandé |
-| **Phase 2** | m1, m2, m4, m5 | ~20 min | 🟡 Optionnel |
-| **Reporter** | m3 (refactoring) | ~30 min | ⚪ Faible |
+| **Phase 1** | M1, M4, M5, M2/M3 | ~30 min | ✅ Corrigé |
+| **Phase 2** | m1, m2, m4, m5 | ~20 min | ✅ Corrigé |
+| **Reporter** | m3 (refactoring) | ~30 min | ⚪ Reporté |
 
-**Total Phase 1 + 2** : ~50 min
+**Total Phase 1 + 2** : ~50 min ✅ Terminé
 
 ---
 
