@@ -81,9 +81,21 @@ Nettoyer le code et aligner le schéma avec les données réellement disponibles
 | `scripts/migrate_player_to_duckdb.py` | CREATE weapon_stats | 9 colonnes match_stats |
 
 **Suivi** :
-- [ ] Phase 1 : Nettoyage code weapon_stats
-- [ ] Phase 2 : Ajout colonnes match_stats
-- [ ] Phase 3 : Migration données existantes
+- [x] Phase 1 : Nettoyage code weapon_stats ✅ (2026-02-02)
+- [x] Phase 2 : Ajout colonnes match_stats ✅ (2026-02-02)
+- [x] Phase 3 : Migration données existantes ✅ (2026-02-02)
+
+**Résumé des modifications** :
+
+| Fichier | Action |
+|---------|--------|
+| `src/data/sync/models.py` | Supprimé `WeaponStatsRow`, `WeaponAggregateRow` |
+| `src/data/sync/transformers.py` | Supprimé `extract_weapon_stats()`, `has_weapon_stats()`, `_find_weapon_stats_dict()` |
+| `src/data/sync/__init__.py` | Retiré exports weapon_stats |
+| `src/data/repositories/duckdb_repo.py` | Supprimé `get_top_weapons()`, `get_total_shots_stats()` |
+| `src/data/infrastructure/database/duckdb_engine.py` | Supprimé `get_kd_evolution_by_weapon()` |
+| `scripts/migrate_player_to_duckdb.py` | Supprimé CREATE TABLE weapon_stats, ajouté 32 colonnes à match_stats |
+| `scripts/migrate_add_columns.py` | **NOUVEAU** - Script migration pour bases existantes |
 
 ---
 

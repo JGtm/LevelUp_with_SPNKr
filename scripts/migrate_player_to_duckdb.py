@@ -69,6 +69,7 @@ def create_player_schema(conn: duckdb.DuckDBPyConnection) -> None:
             game_variant_name VARCHAR,
             outcome TINYINT,
             team_id TINYINT,
+            rank SMALLINT,
             kills SMALLINT,
             deaths SMALLINT,
             assists SMALLINT,
@@ -82,10 +83,45 @@ def create_player_schema(conn: duckdb.DuckDBPyConnection) -> None:
             enemy_team_score SMALLINT,
             team_mmr FLOAT,
             enemy_mmr FLOAT,
+            -- Colonnes de combat détaillées
+            damage_dealt FLOAT,
+            damage_taken FLOAT,
+            shots_fired INTEGER,
+            shots_hit INTEGER,
+            grenade_kills SMALLINT,
+            melee_kills SMALLINT,
+            power_weapon_kills SMALLINT,
+            expected_kills FLOAT,
+            expected_deaths FLOAT,
+            score INTEGER,
+            personal_score INTEGER,
+            -- Colonnes objectives
+            objectives_completed SMALLINT,
+            zone_captures SMALLINT,
+            zone_defensive_kills SMALLINT,
+            zone_offensive_kills SMALLINT,
+            zone_secures SMALLINT,
+            zone_occupation_time FLOAT,
+            ctf_flag_captures SMALLINT,
+            ctf_flag_grabs SMALLINT,
+            ctf_flag_returners_killed SMALLINT,
+            ctf_flag_returns SMALLINT,
+            ctf_flag_carriers_killed SMALLINT,
+            ctf_time_as_carrier_seconds FLOAT,
+            oddball_time_held_seconds FLOAT,
+            oddball_kills_as_carrier SMALLINT,
+            oddball_kills_as_non_carrier SMALLINT,
+            stockpile_seeds_deposited SMALLINT,
+            stockpile_seeds_collected SMALLINT,
+            -- Colonnes metadata
+            mode_category VARCHAR,
+            is_ranked BOOLEAN DEFAULT FALSE,
+            is_firefight BOOLEAN DEFAULT FALSE,
+            left_early BOOLEAN DEFAULT FALSE,
+            -- Colonnes session/social (existantes)
             session_id VARCHAR,
             session_label VARCHAR,
             performance_score FLOAT,
-            is_firefight BOOLEAN,
             teammates_signature VARCHAR,
             known_teammates_count SMALLINT,
             is_with_friends BOOLEAN,
@@ -130,19 +166,6 @@ def create_player_schema(conn: duckdb.DuckDBPyConnection) -> None:
             times_killed_by INTEGER DEFAULT 0,
             matches_against INTEGER DEFAULT 0,
             last_encounter TIMESTAMP
-        )
-    """)
-
-    # Table weapon_stats (nouvelle)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS weapon_stats (
-            weapon_id VARCHAR PRIMARY KEY,
-            weapon_name VARCHAR,
-            total_kills INTEGER DEFAULT 0,
-            total_deaths INTEGER DEFAULT 0,
-            headshot_kills INTEGER DEFAULT 0,
-            shots_fired INTEGER DEFAULT 0,
-            shots_hit INTEGER DEFAULT 0
         )
     """)
 

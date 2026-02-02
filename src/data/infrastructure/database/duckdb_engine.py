@@ -247,22 +247,6 @@ class DuckDBEngine:
             for r in rows
         ]
 
-    def get_kd_evolution_by_weapon(
-        self,
-        _xuid: str,
-        _last_n_matches: int = 500,
-    ) -> list[dict[str, Any]]:
-        """
-        Exemple de requête analytique complexe.
-        (Example of complex analytical query)
-
-        Calcule l'évolution du ratio K/D moyen par arme sur les N derniers matchs.
-        Note: Requiert les données d'armes dans weapon_stats (à implémenter).
-        """
-        # TODO: Implémenter quand les données d'armes seront disponibles
-        # Pour l'instant, retourne une liste vide
-        return []
-
     def close(self) -> None:
         """Ferme la connexion DuckDB. (Close DuckDB connection)"""
         if self._connection is not None:
