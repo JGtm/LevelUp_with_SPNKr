@@ -112,6 +112,11 @@ def render_match_history_page(
         db_key: Clé de cache de la DB.
         df_full: DataFrame complet (non filtré) pour le calcul du score relatif.
     """
+    # Protection contre les DataFrames vides
+    if dff.empty:
+        st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
+        return
+
     st.subheader("Historique des parties")
 
     dff_table = dff.copy()

@@ -97,6 +97,11 @@ def render_win_loss_page(
         xuid: XUID du joueur.
         db_key: Clé de cache de la DB.
     """
+    # Protection contre les DataFrames vides
+    if dff.empty:
+        st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
+        return
+
     with st.spinner("Calcul des victoires/défaites…"):
         current_mode = st.session_state.get("filter_mode")
         is_session_scope = bool(current_mode == "Sessions" and picked_session_labels)

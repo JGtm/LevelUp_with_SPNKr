@@ -1,6 +1,6 @@
 """Lanceur LevelUp pour OpenSpartan Graph.
 
-Architecture simplifiée centrée sur la DB fusionnée multi-joueurs.
+Architecture v4 DuckDB unifiée avec stockage par joueur.
 
 Usage
 -----
@@ -9,26 +9,23 @@ Mode interactif (recommandé):
 
 Commandes CLI:
   python openspartan_launcher.py run              # Dashboard seul
-  python openspartan_launcher.py sync             # Sync tous les joueurs + rebuild DB fusionnée
+  python openspartan_launcher.py sync             # Sync tous les joueurs
   python openspartan_launcher.py sync --run       # Sync + lance le dashboard
-  python openspartan_launcher.py merge            # Fusionne les DBs sources
 
 Configuration:
-  - La DB fusionnée par défaut: data/halo_unified.db
-  - Les DBs sources: data/spnkr_gt_*.db
-  - Variable d'environnement: OPENSPARTAN_DB_PATH
+  - Données joueurs: data/players/{gamertag}/stats.duckdb
+  - Métadonnées: data/warehouse/metadata.duckdb
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
+import io
 import os
-import re
-import shutil
 import signal
 import socket
 import subprocess
-import sqlite3
 import sys
 import threading
 import time
@@ -36,18 +33,27 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
+# Forcer l'encodage UTF-8 sur Windows pour les emojis
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+# Ajouter src au path pour les imports
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 
 # =============================================================================
 # Configuration
 # =============================================================================
 
 REPO_ROOT = Path(__file__).resolve().parent
-DEFAULT_DATA_DIR = REPO_ROOT / "data"
-DEFAULT_UNIFIED_DB = DEFAULT_DATA_DIR / "halo_unified.db"
 DEFAULT_STREAMLIT_APP = REPO_ROOT / "streamlit_app.py"
-DEFAULT_IMPORTER = REPO_ROOT / "scripts" / "spnkr_import_db.py"
-DEFAULT_MERGER = REPO_ROOT / "scripts" / "merge_databases.py"
-DEFAULT_FILM_ROSTER_REFETCH = REPO_ROOT / "scripts" / "refetch_film_roster.py"
+
+# Architecture v4 - Chemins DuckDB
+PLAYERS_DIR = REPO_ROOT / "data" / "players"
+WAREHOUSE_DIR = REPO_ROOT / "data" / "warehouse"
+PLAYER_DB_FILENAME = "stats.duckdb"
+METADATA_DB_FILENAME = "metadata.duckdb"
 
 
 # =============================================================================
@@ -62,7 +68,7 @@ _ctrl_c_count = 0
 
 def _subprocess_creation_flags() -> int:
     """Retourne les flags pour le sous-processus.
-    
+
     Note: On n'utilise PAS CREATE_NEW_PROCESS_GROUP pour que Ctrl+C
     soit propagé au processus enfant.
     """
@@ -74,7 +80,7 @@ def _kill_active_process() -> None:
     proc = _active_process
     if proc is None:
         return
-    
+
     # Sur Windows, utiliser taskkill pour tuer l'arbre de processus
     if sys.platform == "win32":
         try:
@@ -85,7 +91,7 @@ def _kill_active_process() -> None:
             )
         except Exception:
             pass
-    
+
     try:
         proc.terminate()
     except Exception:
@@ -99,11 +105,11 @@ def _kill_active_process() -> None:
 def _signal_handler(signum: int, frame) -> None:
     """Handler pour Ctrl+C."""
     global _ctrl_c_count
-    
+
     with _shutdown_lock:
         _ctrl_c_count += 1
         count = _ctrl_c_count
-        
+
         if count == 1:
             _shutdown_event.set()
             print("\n⏹ Arrêt en cours (Ctrl+C à nouveau pour forcer)...", flush=True)
@@ -129,6 +135,7 @@ def _check_shutdown() -> bool:
 # =============================================================================
 # Helpers Python / venv
 # =============================================================================
+
 
 def _preferred_python_executable() -> Path | None:
     """Trouve le python du venv local."""
@@ -184,117 +191,105 @@ def _pick_free_port() -> int:
 
 
 # =============================================================================
-# Helpers DB
+# Helpers DuckDB (Architecture v4)
 # =============================================================================
 
-def _safe_filename_component(s: str) -> str:
-    """Nettoie une chaîne pour un nom de fichier."""
-    s = (s or "").strip()
-    if not s:
-        return ""
-    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_ .")
-    return s[:80]
 
-
-def _is_merged_db(db_path: Path | str) -> bool:
-    """Vérifie si la DB est fusionnée (a une table Players)."""
+def _import_duckdb():
+    """Importe duckdb de manière lazy."""
     try:
-        con = sqlite3.connect(str(db_path))
-        cur = con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='Players'"
-        )
-        result = cur.fetchone() is not None
-        con.close()
-        return result
-    except Exception:
-        return False
+        import duckdb
+
+        return duckdb
+    except ImportError:
+        print("❌ DuckDB non installé. Exécute:")
+        print("   pip install duckdb")
+        raise SystemExit(2)
 
 
 @dataclass
 class PlayerInfo:
-    """Informations sur un joueur dans la DB fusionnée."""
-    xuid: str
-    gamertag: str | None
-    label: str | None
-    source_db: str | None
+    """Informations sur un joueur (architecture v4)."""
+
+    gamertag: str
+    db_path: Path
     total_matches: int
+    xuid: str | None = None
 
 
-def _list_players_from_merged_db(db_path: Path | str) -> list[PlayerInfo]:
-    """Liste les joueurs d'une DB fusionnée."""
+def _list_players() -> list[PlayerInfo]:
+    """Liste les joueurs depuis data/players/*/stats.duckdb."""
     players = []
-    try:
-        con = sqlite3.connect(str(db_path))
-        cur = con.execute("""
-            SELECT xuid, gamertag, label, source_db, total_matches
-            FROM Players
-            ORDER BY total_matches DESC
-        """)
-        for row in cur.fetchall():
-            players.append(PlayerInfo(
-                xuid=row[0],
-                gamertag=row[1],
-                label=row[2],
-                source_db=row[3],
-                total_matches=row[4] or 0,
-            ))
-        con.close()
-    except Exception:
-        pass
+
+    if not PLAYERS_DIR.exists():
+        return players
+
+    duckdb = _import_duckdb()
+
+    for player_dir in sorted(PLAYERS_DIR.iterdir()):
+        if not player_dir.is_dir():
+            continue
+
+        db_path = player_dir / PLAYER_DB_FILENAME
+        if not db_path.exists():
+            continue
+
+        gamertag = player_dir.name
+        total_matches = 0
+        xuid = None
+
+        try:
+            con = duckdb.connect(str(db_path), read_only=True)
+            # Compter les matchs
+            result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+            total_matches = result[0] if result else 0
+            # Récupérer le XUID depuis sync_meta si disponible
+            try:
+                result = con.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
+                xuid = result[0] if result else None
+            except Exception:
+                pass
+            con.close()
+        except Exception:
+            pass
+
+        players.append(
+            PlayerInfo(
+                gamertag=gamertag,
+                db_path=db_path,
+                total_matches=total_matches,
+                xuid=xuid,
+            )
+        )
+
+    # Trier par nombre de matchs décroissant
+    players.sort(key=lambda p: p.total_matches, reverse=True)
     return players
 
 
-def _iter_source_dbs(data_dir: Path) -> list[Path]:
-    """Liste les DBs sources (spnkr_gt_*.db)."""
-    if not data_dir.exists():
-        return []
-    return sorted(data_dir.glob("spnkr_gt_*.db"))
+def _get_player_db_path(gamertag: str) -> Path:
+    """Retourne le chemin vers stats.duckdb d'un joueur."""
+    return PLAYERS_DIR / gamertag / PLAYER_DB_FILENAME
 
 
-def _infer_player_from_db_filename(db_path: Path) -> str | None:
-    """Déduit le gamertag depuis le nom de fichier."""
-    base = db_path.stem
-    if base.startswith("spnkr_gt_"):
-        return base[len("spnkr_gt_"):]
-    if base.startswith("spnkr_xuid_"):
-        return base[len("spnkr_xuid_"):]
-    return None
+def _player_db_exists(gamertag: str) -> bool:
+    """Vérifie si la DB d'un joueur existe."""
+    return _get_player_db_path(gamertag).exists()
 
 
-def _default_spnkr_db_path_for_player(player: str) -> Path:
-    """Construit le chemin DB pour un joueur."""
-    tag = f"xuid_{player}" if str(player).strip().isdigit() else f"gt_{player}"
-    safe = _safe_filename_component(tag)
-    name = f"spnkr_{safe}.db" if safe else "spnkr.db"
-    return DEFAULT_DATA_DIR / name
-
-
-def _count_matches_in_db(db_path: Path) -> int:
-    """Compte les matchs dans une DB."""
+def _count_matches_duckdb(db_path: Path) -> int:
+    """Compte les matchs dans une DB DuckDB."""
     if not db_path.exists():
         return 0
     try:
-        con = sqlite3.connect(str(db_path))
-        cur = con.cursor()
-        cur.execute("SELECT COUNT(*) FROM MatchStats")
-        row = cur.fetchone()
+        duckdb = _import_duckdb()
+        con = duckdb.connect(str(db_path), read_only=True)
+        result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+        count = result[0] if result else 0
         con.close()
-        return int(row[0]) if row else 0
+        return count
     except Exception:
         return 0
-
-
-def _get_db_path_from_env_or_default() -> Path:
-    """Retourne la DB à utiliser (env ou défaut)."""
-    env = os.environ.get("OPENSPARTAN_DB_PATH") or os.environ.get("OPENSPARTAN_DB")
-    if env:
-        p = Path(env).expanduser()
-        if p.exists():
-            return p.resolve()
-    if DEFAULT_UNIFIED_DB.exists():
-        return DEFAULT_UNIFIED_DB
-    return DEFAULT_UNIFIED_DB
 
 
 def _display_path(p: Path) -> str:
@@ -305,164 +300,101 @@ def _display_path(p: Path) -> str:
         return str(p)
 
 
+def _metadata_db_exists() -> bool:
+    """Vérifie si metadata.duckdb existe."""
+    return (WAREHOUSE_DIR / METADATA_DB_FILENAME).exists()
+
+
 # =============================================================================
-# Import SPNKr
+# Synchronisation DuckDB (Architecture v4)
 # =============================================================================
 
-@dataclass(frozen=True)
-class RefreshOptions:
-    """Options pour un refresh SPNKr."""
-    player: str
-    out_db: Path
-    match_type: str = "matchmaking"
-    max_matches: int = 100
-    rps: int = 2
-    no_assets: bool = False
-    no_skill: bool = False
-    with_highlight_events: bool = True
-    with_aliases: bool = True
-    delta: bool = True
 
+async def _sync_player_duckdb_async(
+    gamertag: str, *, delta: bool = True, max_matches: int = 100
+) -> tuple[int, int]:
+    """Synchronise un joueur via DuckDBSyncEngine (async).
 
-def _run_spnkr_import(opts: RefreshOptions) -> int:
-    """Exécute l'import SPNKr (safe tmp + replace)."""
-    
-    if not DEFAULT_IMPORTER.exists():
-        raise SystemExit(f"Importer introuvable: {DEFAULT_IMPORTER}")
-    
-    opts.out_db.parent.mkdir(parents=True, exist_ok=True)
-
-    tmp_db = opts.out_db.with_suffix(f"{opts.out_db.suffix}.tmp.{int(time.time())}.{os.getpid()}")
-
-    # Copie la DB existante vers TMP
+    Returns:
+        Tuple (matchs_avant, matchs_après)
+    """
     try:
-        if opts.out_db.exists():
-            shutil.copy2(opts.out_db, tmp_db)
-    except Exception:
-        pass
+        from src.data.sync.api_client import get_tokens_from_env
+        from src.data.sync.engine import DuckDBSyncEngine
+        from src.data.sync.models import SyncOptions
+    except ImportError as e:
+        print(f"  ⚠ Import error: {e}")
+        return (0, 0)
 
-    cmd = [
-        sys.executable,
-        str(DEFAULT_IMPORTER),
-        "--out-db", str(tmp_db),
-        "--player", str(opts.player),
-        "--match-type", str(opts.match_type),
-        "--max-matches", str(int(opts.max_matches)),
-        "--requests-per-second", str(int(opts.rps)),
-        "--resume",
-    ]
-    if opts.no_assets:
-        cmd.append("--no-assets")
-    if opts.no_skill:
-        cmd.append("--no-skill")
-    if not opts.with_highlight_events:
-        cmd.append("--no-highlight-events")
-    if not opts.with_aliases:
-        cmd.append("--no-aliases")
-    if opts.delta:
-        cmd.append("--delta")
+    db_path = _get_player_db_path(gamertag)
 
-    print(f"  → Import {opts.player}...")
+    # Créer le dossier si nécessaire
+    db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    global _active_process
-    proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
-    _active_process = proc
-    
+    # Compter les matchs avant
+    matches_before = _count_matches_duckdb(db_path)
+
+    # Récupérer les tokens (async)
     try:
-        proc.wait()
-    except KeyboardInterrupt:
-        try:
-            proc.terminate()
-            proc.wait(timeout=5)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-        try:
-            if tmp_db.exists():
-                tmp_db.unlink()
-        except Exception:
-            pass
-        return 0
-    finally:
-        _active_process = None
-    
-    if proc.returncode != 0:
-        if _shutdown_event.is_set():
-            try:
-                if tmp_db.exists():
-                    tmp_db.unlink()
-            except Exception:
-                pass
-            return 0
-        print(f"  ⚠ Échec import (code={proc.returncode})")
-        try:
-            if tmp_db.exists():
-                tmp_db.unlink()
-        except Exception:
-            pass
-        return int(proc.returncode)
-
-    # Validation et remplacement
-    try:
-        if not tmp_db.exists() or tmp_db.stat().st_size <= 0:
-            return 0
-        os.replace(tmp_db, opts.out_db)
+        tokens = await get_tokens_from_env()
+    except SystemExit:
+        print("  ⚠ Tokens non configurés (SPNKR_SPARTAN_TOKEN, SPNKR_CLEARANCE_TOKEN)")
+        return (matches_before, matches_before)
     except Exception as e:
-        print(f"  ⚠ Remplacement échoué: {e}")
-        try:
-            if tmp_db.exists():
-                tmp_db.unlink()
-        except Exception:
-            pass
-        return 2
+        print(f"  ⚠ Erreur tokens: {e}")
+        return (matches_before, matches_before)
 
-    return 0
+    if not tokens:
+        print("  ⚠ Tokens non configurés")
+        return (matches_before, matches_before)
 
-
-def _repair_aliases_for_recent_matches(db_path: Path, player: str, count: int = 20) -> None:
-    """Répare les aliases sur les matchs récents."""
-    if not DEFAULT_FILM_ROSTER_REFETCH.exists():
-        return
-    
+    # Créer le moteur de sync
     try:
-        con = sqlite3.connect(str(db_path))
-        cur = con.execute("""
-            SELECT json_extract(ResponseBody,'$.MatchId') as MatchId
-            FROM MatchStats
-            WHERE json_extract(ResponseBody,'$.MatchId') IS NOT NULL
-            ORDER BY json_extract(ResponseBody,'$.MatchInfo.StartTime') DESC
-            LIMIT ?
-        """, (count,))
-        match_ids = [row[0] for row in cur.fetchall() if row[0]]
-        con.close()
-    except Exception:
-        return
-    
-    if not match_ids:
-        return
-    
-    print(f"  → Réparation aliases ({len(match_ids)} matchs)...")
-    
-    for mid in match_ids:
-        if _check_shutdown():
-            return
-        cmd = [
-            sys.executable, str(DEFAULT_FILM_ROSTER_REFETCH),
-            "--db", str(db_path),
-            "--write-aliases",
-            "--patch-highlight-events",
-            "--match-id", str(mid),
-        ]
-        try:
-            subprocess.run(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags(),
-                          capture_output=True)
-        except Exception:
-            pass
+        engine = DuckDBSyncEngine(
+            player_db_path=db_path,
+            xuid="",  # Sera résolu par l'engine via gamertag
+            gamertag=gamertag,
+            tokens=tokens,
+        )
+
+        # Exécuter la sync
+        options = SyncOptions(
+            max_matches=max_matches,
+            with_skill=True,
+            with_aliases=True,
+        )
+
+        # Lancer la sync
+        if delta:
+            result = await engine.sync_delta()
+        else:
+            result = await engine.sync_full(options)
+
+        if result.error:
+            print(f"  ⚠ Erreur sync: {result.error}")
+
+    except Exception as e:
+        print(f"  ⚠ Erreur sync: {e}")
+        return (matches_before, matches_before)
+
+    # Compter les matchs après
+    matches_after = _count_matches_duckdb(db_path)
+
+    return (matches_before, matches_after)
 
 
-def _fetch_profile_assets(player: str) -> None:
+def _sync_player_duckdb(
+    gamertag: str, *, delta: bool = True, max_matches: int = 100
+) -> tuple[int, int]:
+    """Synchronise un joueur via DuckDBSyncEngine (wrapper sync).
+
+    Returns:
+        Tuple (matchs_avant, matchs_après)
+    """
+    return asyncio.run(_sync_player_duckdb_async(gamertag, delta=delta, max_matches=max_matches))
+
+
+def _fetch_profile_assets(gamertag: str) -> None:
     """Récupère les assets profil du joueur."""
     try:
         from src.ui.profile_api import (
@@ -473,12 +405,12 @@ def _fetch_profile_assets(player: str) -> None:
         )
     except ImportError:
         return
-    
-    print(f"  → Fetch assets profil...")
-    
-    player_str = str(player).strip()
+
+    print("  → Fetch assets profil...")
+
+    player_str = str(gamertag).strip()
     xuid = None
-    
+
     if player_str.isdigit():
         xuid = player_str
     else:
@@ -488,10 +420,10 @@ def _fetch_profile_assets(player: str) -> None:
                 save_cached_xuid(player_str, xuid)
         except Exception:
             pass
-    
+
     if not xuid:
         return
-    
+
     try:
         appearance = fetch_appearance_via_spnkr(xuid=xuid)
         if appearance:
@@ -504,32 +436,44 @@ def _fetch_profile_assets(player: str) -> None:
 # Commandes principales
 # =============================================================================
 
-def _launch_streamlit(*, db_path: Path | None, port: int | None, no_browser: bool) -> int:
-    """Lance le dashboard Streamlit."""
+
+def _launch_streamlit(
+    *, db_path: Path | None = None, port: int | None = None, no_browser: bool = False
+) -> int:
+    """Lance le dashboard Streamlit.
+
+    Note: Dans l'architecture v4, db_path n'est plus nécessaire.
+    Le dashboard détecte automatiquement les joueurs depuis data/players/.
+    """
     if not DEFAULT_STREAMLIT_APP.exists():
         raise SystemExit(f"Introuvable: {DEFAULT_STREAMLIT_APP}")
 
-    _require_module("streamlit", install_hint="./.venv/Scripts/python -m pip install -r requirements.txt")
-
-    if db_path is not None:
-        os.environ["OPENSPARTAN_DB_PATH"] = str(db_path)
+    _require_module(
+        "streamlit", install_hint="./.venv/Scripts/python -m pip install -r requirements.txt"
+    )
 
     chosen_port = int(port) if port else _pick_free_port()
     url = f"http://localhost:{chosen_port}"
 
     cmd = [
         sys.executable,
-        "-m", "streamlit", "run", str(DEFAULT_STREAMLIT_APP),
-        "--server.address", "localhost",
-        "--server.port", str(chosen_port),
-        "--server.headless", "true",
+        "-m",
+        "streamlit",
+        "run",
+        str(DEFAULT_STREAMLIT_APP),
+        "--server.address",
+        "localhost",
+        "--server.port",
+        str(chosen_port),
+        "--server.headless",
+        "true",
     ]
 
     print("\n🚀 Lancement du dashboard…")
     print(f"   URL: {url}")
-    if db_path:
-        print(f"   DB: {_display_path(db_path)}")
-    
+    print("   Architecture: DuckDB v4")
+    print(f"   Données: {_display_path(PLAYERS_DIR)}")
+
     global _active_process
     proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
     _active_process = proc
@@ -560,222 +504,175 @@ def _launch_streamlit(*, db_path: Path | None, port: int | None, no_browser: boo
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Commande: lance le dashboard."""
-    db = Path(args.db).expanduser().resolve() if args.db else _get_db_path_from_env_or_default()
-    
-    if not db.exists():
-        print(f"❌ DB introuvable: {db}")
+    # Vérifier qu'il y a des données
+    players = _list_players()
+
+    if not players:
+        print("❌ Aucune donnée joueur trouvée")
         print("\n   Tu dois d'abord synchroniser les données:")
         print("   python openspartan_launcher.py sync")
         return 2
-    
-    # Afficher les infos si DB fusionnée
-    if _is_merged_db(db):
-        players = _list_players_from_merged_db(db)
-        print(f"\n📊 DB fusionnée: {len(players)} joueur(s)")
-        for p in players:
-            name = p.label or p.gamertag or p.xuid[:15]
-            print(f"   - {name}: {p.total_matches} matchs")
-    
-    return _launch_streamlit(db_path=db, port=args.port, no_browser=args.no_browser)
+
+    # Afficher les infos
+    total_matches = sum(p.total_matches for p in players)
+    print(f"\n📊 Architecture DuckDB v4: {len(players)} joueur(s), {total_matches} matchs")
+    for p in players:
+        print(f"   - {p.gamertag}: {p.total_matches} matchs")
+
+    return _launch_streamlit(db_path=None, port=args.port, no_browser=args.no_browser)
 
 
 def _cmd_sync(args: argparse.Namespace) -> int:
-    """Commande: sync tous les joueurs + rebuild DB fusionnée."""
-    
-    # Trouver les DBs sources
-    source_dbs = _iter_source_dbs(DEFAULT_DATA_DIR)
-    
-    if not source_dbs:
-        print("❌ Aucune DB source trouvée dans data/spnkr_gt_*.db")
-        print("\n   Tu dois d'abord créer une DB avec le script d'import:")
-        print("   python scripts/spnkr_import_db.py --player <gamertag> --out-db data/spnkr_gt_<gamertag>.db")
+    """Commande: sync tous les joueurs (architecture v4 DuckDB)."""
+
+    # Lister les joueurs existants
+    players = _list_players()
+
+    if not players:
+        print("❌ Aucun joueur trouvé dans data/players/")
+        print("\n   Pour ajouter un nouveau joueur, utilise:")
+        print("   python scripts/sync_player.py --gamertag <gamertag>")
+        print("\n   Ou crée manuellement le dossier:")
+        print("   mkdir data/players/<gamertag>")
         return 2
-    
+
     print("=" * 60)
-    print("🔄 SYNCHRONISATION")
+    print("🔄 SYNCHRONISATION (DuckDB v4)")
     print("=" * 60)
-    print(f"\n   {len(source_dbs)} DB(s) source(s) détectée(s):")
-    for db in source_dbs:
-        player = _infer_player_from_db_filename(db)
-        count = _count_matches_in_db(db)
-        print(f"   - {db.name} ({player}): {count} matchs")
-    
-    print("\n📥 Étape 1/3: Refresh des DBs sources...")
-    
+    print(f"\n   {len(players)} joueur(s) détecté(s):")
+    for p in players:
+        print(f"   - {p.gamertag}: {p.total_matches} matchs")
+
+    print("\n📥 Synchronisation en cours...")
+
+    delta_mode = not getattr(args, "full", False)
+    max_matches = int(getattr(args, "max_matches", 100))
+
+    total_new = 0
     failures = 0
-    for db in source_dbs:
+
+    for player in players:
         if _check_shutdown():
             return 0
-        
-        player = _infer_player_from_db_filename(db)
-        if not player:
-            continue
-        
-        print(f"\n[{player}]")
-        
-        opts = RefreshOptions(
-            player=player,
-            out_db=db,
-            match_type="matchmaking",
-            max_matches=int(getattr(args, "max_matches", 100)),
-            rps=int(getattr(args, "rps", 2)),
-            delta=not getattr(args, "full", False),
-        )
-        
-        matches_before = _count_matches_in_db(db)
-        rc = _run_spnkr_import(opts)
-        
-        if _check_shutdown():
-            return 0
-        
-        if rc != 0:
+
+        print(f"\n[{player.gamertag}]")
+        print(f"  → Sync {'delta' if delta_mode else 'complète'}...")
+
+        try:
+            before, after = _sync_player_duckdb(
+                player.gamertag,
+                delta=delta_mode,
+                max_matches=max_matches,
+            )
+
+            new_matches = after - before
+            total_new += new_matches
+
+            if new_matches > 0:
+                print(f"  ✓ {new_matches} nouveau(x) match(s)")
+            else:
+                print(f"  ✓ À jour ({after} matchs)")
+
+            # Fetch assets profil
+            _fetch_profile_assets(player.gamertag)
+
+        except Exception as e:
+            print(f"  ⚠ Erreur: {e}")
             failures += 1
-            continue
-        
-        matches_after = _count_matches_in_db(db)
-        new_matches = matches_after - matches_before
-        
-        if new_matches > 0:
-            print(f"  ✓ {new_matches} nouveau(x) match(s)")
-        else:
-            print(f"  ✓ À jour")
-        
-        # Réparer les aliases sur les matchs récents
-        _repair_aliases_for_recent_matches(db, player, count=min(new_matches + 1, 30))
-        
-        # Fetch assets profil
-        _fetch_profile_assets(player)
-    
+
     if _check_shutdown():
         return 0
-    
-    print("\n📦 Étape 2/3: Fusion des DBs...")
-    
-    # Appeler le script de merge
-    rc = _run_merge(source_dbs)
-    if rc != 0:
-        print("⚠ La fusion a échoué")
-        return rc
-    
-    print("\n📊 Étape 3/3: Calcul des scores de performance...")
-    
-    # Calculer les scores historiques
-    _run_compute_performance()
-    
+
     print("\n" + "=" * 60)
     print("✅ SYNCHRONISATION TERMINÉE")
     print("=" * 60)
-    
-    unified_db = DEFAULT_UNIFIED_DB
-    if unified_db.exists():
-        players = _list_players_from_merged_db(unified_db)
-        total_matches = sum(p.total_matches for p in players)
-        print(f"\n   DB: {_display_path(unified_db)}")
-        print(f"   Joueurs: {len(players)}")
-        print(f"   Matchs: {total_matches}")
-    
+
+    # Afficher le résumé
+    players_after = _list_players()
+    total_matches = sum(p.total_matches for p in players_after)
+    print(f"\n   Joueurs: {len(players_after)}")
+    print(f"   Total matchs: {total_matches}")
+    if total_new > 0:
+        print(f"   Nouveaux: +{total_new}")
+    if failures > 0:
+        print(f"   ⚠ Échecs: {failures}")
+
     # Lancer le dashboard si demandé
     if getattr(args, "run", False):
-        return _launch_streamlit(db_path=unified_db, port=None, no_browser=False)
-    
+        return _launch_streamlit(db_path=None, port=None, no_browser=False)
+
     return 0
 
 
-def _run_merge(source_dbs: list[Path]) -> int:
-    """Exécute la fusion des DBs."""
-    if not DEFAULT_MERGER.exists():
-        print(f"❌ Script de fusion introuvable: {DEFAULT_MERGER}")
-        return 2
-    
-    cmd = [
-        sys.executable,
-        str(DEFAULT_MERGER),
-        str(DEFAULT_UNIFIED_DB),
-    ] + [str(db) for db in source_dbs]
-    
-    try:
-        proc = subprocess.run(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
-        return proc.returncode
-    except KeyboardInterrupt:
-        return 0
-    except Exception as e:
-        print(f"⚠ Erreur fusion: {e}")
+def _cmd_info(args: argparse.Namespace) -> int:
+    """Commande: affiche les infos sur les données."""
+    players = _list_players()
+
+    if not players:
+        print("❌ Aucun joueur trouvé dans data/players/")
         return 2
 
+    print("=" * 60)
+    print("📊 INFORMATIONS (DuckDB v4)")
+    print("=" * 60)
 
-def _run_compute_performance() -> None:
-    """Calcule les scores de performance historiques."""
-    script = REPO_ROOT / "scripts" / "compute_historical_performance.py"
-    if not script.exists():
-        return
-    
-    cmd = [sys.executable, str(script), str(DEFAULT_UNIFIED_DB)]
-    
-    try:
-        subprocess.run(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags(),
-                      capture_output=True)
-    except Exception:
-        pass
+    total_matches = sum(p.total_matches for p in players)
 
+    print(f"\n   Dossier: {_display_path(PLAYERS_DIR)}")
+    print(f"   Joueurs: {len(players)}")
+    print(f"   Total matchs: {total_matches}")
 
-def _cmd_merge(args: argparse.Namespace) -> int:
-    """Commande: fusionne les DBs sources."""
-    source_dbs = _iter_source_dbs(DEFAULT_DATA_DIR)
-    
-    if not source_dbs:
-        print("❌ Aucune DB source trouvée dans data/spnkr_gt_*.db")
-        return 2
-    
-    print("📦 Fusion des DBs...")
-    for db in source_dbs:
-        print(f"   - {db.name}")
-    print(f"   → {_display_path(DEFAULT_UNIFIED_DB)}")
-    
-    rc = _run_merge(source_dbs)
-    
-    if rc == 0:
-        print("\n✅ Fusion terminée")
-        _run_compute_performance()
-    
-    return rc
+    print("\n   Détail par joueur:")
+    for p in players:
+        size_mb = p.db_path.stat().st_size / (1024 * 1024) if p.db_path.exists() else 0
+        print(f"   - {p.gamertag}: {p.total_matches} matchs ({size_mb:.1f} MB)")
+
+    # Vérifier metadata.duckdb
+    metadata_path = WAREHOUSE_DIR / METADATA_DB_FILENAME
+    if metadata_path.exists():
+        size_mb = metadata_path.stat().st_size / (1024 * 1024)
+        print(f"\n   Métadonnées: {_display_path(metadata_path)} ({size_mb:.1f} MB)")
+    else:
+        print(f"\n   ⚠ Métadonnées non trouvées: {_display_path(metadata_path)}")
+
+    return 0
 
 
 # =============================================================================
 # Mode interactif
 # =============================================================================
 
+
 def _interactive() -> int:
     """Menu interactif simplifié."""
     print("=" * 60)
     print("        LevelUp - Dashboard Halo Infinite")
+    print("        Architecture DuckDB v4")
     print("=" * 60)
-    
-    unified_db = DEFAULT_UNIFIED_DB
-    source_dbs = _iter_source_dbs(DEFAULT_DATA_DIR)
-    
+
+    # Lister les joueurs DuckDB
+    players = _list_players()
+
     # Afficher l'état actuel
     print("\n📊 État actuel:")
-    
-    if unified_db.exists() and _is_merged_db(unified_db):
-        players = _list_players_from_merged_db(unified_db)
+
+    if players:
         total_matches = sum(p.total_matches for p in players)
-        print(f"   DB: {_display_path(unified_db)}")
+        print(f"   Stockage: {_display_path(PLAYERS_DIR)}")
         print(f"   Joueurs: {len(players)}")
         for p in players:
-            name = p.label or p.gamertag or p.xuid[:15]
-            print(f"      - {name}: {p.total_matches} matchs")
+            print(f"      - {p.gamertag}: {p.total_matches} matchs")
         print(f"   Total: {total_matches} matchs")
-    elif source_dbs:
-        print(f"   {len(source_dbs)} DB(s) source(s) détectée(s)")
-        for db in source_dbs:
-            player = _infer_player_from_db_filename(db)
-            count = _count_matches_in_db(db)
-            print(f"      - {player}: {count} matchs")
-        print("   ⚠ Pas de DB fusionnée (lance 'sync' pour créer)")
+
+        # Vérifier metadata
+        if _metadata_db_exists():
+            print("   Métadonnées: ✅")
+        else:
+            print("   Métadonnées: ⚠ Non trouvées")
     else:
-        print("   ❌ Aucune DB trouvée")
-        print("   → Tu dois d'abord importer des données")
-    
+        print("   ❌ Aucun joueur trouvé")
+        print("   → Tu dois d'abord synchroniser des données")
+
     print("\n" + "-" * 60)
     print("Choisis une action:\n")
     print("  1) 🚀 Dashboard                       [recommandé]")
@@ -787,35 +684,43 @@ def _interactive() -> int:
     print("  3) 🔄 Sync seul")
     print("     Synchronise les données sans lancer le dashboard")
     print()
-    print("  4) 📦 Fusion seule")
-    print("     Refait la fusion des DBs sans synchroniser")
+    print("  4) 📊 Infos")
+    print("     Affiche les informations détaillées")
     print()
     print("  Q) Quitter")
     print()
-    
+
     choice = input("Ton choix (1/2/3/4/Q): ").strip().lower()
-    
+
     if choice in {"q", "quit", "exit"}:
         return 0
-    
+
     if choice == "1":
-        if not unified_db.exists():
-            print("\n⚠ La DB fusionnée n'existe pas encore.")
+        if not players:
+            print("\n⚠ Aucune donnée joueur trouvée.")
             print("  Lance d'abord une synchronisation (choix 2 ou 3)")
             return 2
-        return _launch_streamlit(db_path=unified_db, port=None, no_browser=False)
-    
+        return _launch_streamlit(db_path=None, port=None, no_browser=False)
+
     if choice == "2":
-        args = argparse.Namespace(max_matches=100, rps=2, full=False, run=True)
+        if not players:
+            print("\n⚠ Aucun joueur configuré.")
+            print("  Crée d'abord un dossier dans data/players/<gamertag>/")
+            return 2
+        args = argparse.Namespace(max_matches=100, full=False, run=True)
         return _cmd_sync(args)
-    
+
     if choice == "3":
-        args = argparse.Namespace(max_matches=100, rps=2, full=False, run=False)
+        if not players:
+            print("\n⚠ Aucun joueur configuré.")
+            print("  Crée d'abord un dossier dans data/players/<gamertag>/")
+            return 2
+        args = argparse.Namespace(max_matches=100, full=False, run=False)
         return _cmd_sync(args)
-    
+
     if choice == "4":
-        return _cmd_merge(argparse.Namespace())
-    
+        return _cmd_info(argparse.Namespace())
+
     print("Choix invalide.")
     return 2
 
@@ -824,11 +729,12 @@ def _interactive() -> int:
 # Parser CLI
 # =============================================================================
 
+
 def _build_parser() -> argparse.ArgumentParser:
     """Construit le parser CLI."""
     ap = argparse.ArgumentParser(
-        prog="openspartan",
-        description="Lanceur LevelUp - Dashboard Halo Infinite",
+        prog="levelup",
+        description="LevelUp - Dashboard Halo Infinite (Architecture DuckDB v4)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemples:
@@ -836,6 +742,11 @@ Exemples:
   python openspartan_launcher.py run       # Dashboard seul
   python openspartan_launcher.py sync      # Sync tous les joueurs
   python openspartan_launcher.py sync --run  # Sync + dashboard
+  python openspartan_launcher.py info      # Affiche les infos
+
+Architecture v4:
+  - Données joueurs: data/players/{gamertag}/stats.duckdb
+  - Métadonnées: data/warehouse/metadata.duckdb
 """,
     )
 
@@ -843,7 +754,6 @@ Exemples:
 
     # run
     p_run = sub.add_parser("run", help="Lance le dashboard")
-    p_run.add_argument("--db", default=None, help="Chemin DB (défaut: data/halo_unified.db)")
     p_run.add_argument("--port", type=int, default=None, help="Port (sinon auto)")
     p_run.add_argument("--no-browser", action="store_true", help="Ne pas ouvrir le navigateur")
     p_run.set_defaults(func=_cmd_run)
@@ -852,13 +762,14 @@ Exemples:
     p_sync = sub.add_parser("sync", help="Synchronise les données de tous les joueurs")
     p_sync.add_argument("--run", action="store_true", help="Lance le dashboard après la sync")
     p_sync.add_argument("--full", action="store_true", help="Sync complète (pas de delta)")
-    p_sync.add_argument("--max-matches", type=int, default=100, help="Max matchs par joueur (défaut: 100)")
-    p_sync.add_argument("--rps", type=int, default=2, help="Requêtes/sec (défaut: 2)")
+    p_sync.add_argument(
+        "--max-matches", type=int, default=100, help="Max matchs par joueur (défaut: 100)"
+    )
     p_sync.set_defaults(func=_cmd_sync)
 
-    # merge
-    p_merge = sub.add_parser("merge", help="Fusionne les DBs sources")
-    p_merge.set_defaults(func=_cmd_merge)
+    # info
+    p_info = sub.add_parser("info", help="Affiche les informations sur les données")
+    p_info.set_defaults(func=_cmd_info)
 
     return ap
 
@@ -867,10 +778,11 @@ Exemples:
 # Point d'entrée
 # =============================================================================
 
+
 def main(argv: list[str] | None = None) -> int:
     """Point d'entrée principal."""
     _install_signal_handler()
-    
+
     argv = list(sys.argv[1:] if argv is None else argv)
     _maybe_reexec_into_venv(argv)
 
@@ -886,7 +798,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         return int(args.func(args))
-    
+
     except KeyboardInterrupt:
         if not _shutdown_event.is_set():
             print("\n⏹ Arrêt en cours...", flush=True)

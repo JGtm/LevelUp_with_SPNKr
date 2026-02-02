@@ -6,138 +6,123 @@ depuis la base de données SPNKr.
 
 import os
 import urllib.parse
-from datetime import date
-from typing import Optional
 
-import pandas as pd
 import streamlit as st
 
-# Imports depuis la nouvelle architecture
-from src.config import (
-    get_default_db_path,
-)
-from src.analysis import (
-    compute_aggregated_stats,
-    compute_outcome_rates,
-    compute_global_ratio,
-)
-from src.analysis.stats import format_mmss
-from src.visualization import (
-    plot_multi_metric_bars_by_match,
-)
-from src.ui import (
-    display_name_from_xuid,
-    load_css,
-    translate_playlist_name,
-    translate_pair_name,
-    AppSettings,
-    load_settings,
-)
-from src.ui.formatting import (
-    format_duration_hms,
-    format_duration_dhm,
-    format_datetime_fr_hm,
-    format_score_label,
-    score_css_color,
-    PARIS_TZ,
-)
-from src.config import get_aliases_file_path
-
-from src.ui.perf import perf_reset_run, perf_section
-from src.ui.pages import (
-    render_session_comparison_page,
-    render_timeseries_page,
-    render_win_loss_page,
-    render_match_history_page,
-    render_teammates_page,
-    render_citations_page,
-    render_settings_page,
-    render_match_view,
-    render_last_match_page,
-    render_match_search_page,
-    render_media_library_page,
-)
-from src.ui.components import (
-    render_kpi_cards,
-    render_top_summary,
-    render_checkbox_filter,
-    render_hierarchical_checkbox_filter,
-    get_firefight_playlists,
-    render_analytics_section,
-)
-from src.analysis.performance_config import PERFORMANCE_SCORE_FULL_DESC
-from src.ui.cache import (
-    db_cache_key,
-    cached_list_local_dbs,
-    cached_compute_sessions_db,
-    cached_same_team_match_ids_with_friend,
-    cached_load_player_match_result,
-    cached_load_match_medals_for_player,
-    cached_load_match_rosters,
-    cached_load_highlight_events_for_match,
-    cached_load_match_player_gamertags,
-    top_medals_smart,
-    clear_app_caches,
-)
-from src.ui.sync import (
-    is_spnkr_db_path,
-    cleanup_orphan_tmp_dbs,
-    render_sync_indicator,
-    sync_all_players,
-)
-# Phase 1 refactoring: Import des nouveaux modules app
-# Phase 2 refactoring: Helpers et fonctions extraites
-from src.app.helpers import (
-    clean_asset_label,
-    normalize_mode_label,
-    normalize_map_label,
-    assign_player_colors,
-    date_range,
-    styler_map,
-    compute_session_span_seconds,
-    compute_total_play_seconds,
-    avg_match_duration_seconds,
+from src.app.data_loader import (
+    default_identity_from_secrets,
+    ensure_h5g_commendations_repo,
+    init_source_state,
 )
 from src.app.filters import (
     build_friends_opts_map,
 )
-from src.app.data_loader import (
-    default_identity_from_secrets,
-    init_source_state,
-    ensure_h5g_commendations_repo,
+from src.app.filters_render import (
+    apply_filters,
+    render_filters_sidebar,
 )
-# Phase 4 refactoring: Main helpers
-from src.app.main_helpers import (
-    propagate_identity_to_env,
-    apply_settings_path_overrides as apply_settings_overrides_main,
-    validate_and_fix_db_path,
-    resolve_xuid_from_input,
-    load_profile_api,
-    render_profile_hero,
-    load_match_dataframe,
+
+# Phase 1 refactoring: Import des nouveaux modules app
+# Phase 2 refactoring: Helpers et fonctions extraites
+from src.app.helpers import (
+    assign_player_colors,
+    avg_match_duration_seconds,
+    clean_asset_label,
+    compute_session_span_seconds,
+    compute_total_play_seconds,
+    date_range,
+    normalize_map_label,
+    normalize_mode_label,
+    styler_map,
 )
-# Phase 4 refactoring: Page router
-from src.app.page_router import (
-    build_match_view_params,
-    consume_pending_page,
-    consume_pending_match_id,
-    render_page_selector,
-    dispatch_page,
-)
+
 # Phase 5 refactoring: KPIs et Filtres
 from src.app.kpis_render import (
     render_kpis_section,
     render_performance_info,
 )
-from src.app.filters_render import (
-    FilterState,
-    render_filters_sidebar,
-    apply_filters,
-)
-from src.ui.multiplayer import (
-    render_player_selector,
+from src.app.main_helpers import (
+    apply_settings_path_overrides as apply_settings_overrides_main,
 )
 
+# Phase 4 refactoring: Main helpers
+from src.app.main_helpers import (
+    load_match_dataframe,
+    load_profile_api,
+    propagate_identity_to_env,
+    render_profile_hero,
+    resolve_xuid_from_input,
+    validate_and_fix_db_path,
+)
+
+# Phase 4 refactoring: Page router
+from src.app.page_router import (
+    build_match_view_params,
+    consume_pending_match_id,
+    consume_pending_page,
+    dispatch_page,
+    render_page_selector,
+)
+
+# Imports depuis la nouvelle architecture
+from src.config import (
+    get_aliases_file_path,
+    get_default_db_path,
+)
+from src.ui import (
+    AppSettings,
+    display_name_from_xuid,
+    load_css,
+    load_settings,
+)
+from src.ui.cache import (
+    cached_compute_sessions_db,
+    cached_list_local_dbs,
+    cached_load_highlight_events_for_match,
+    cached_load_match_medals_for_player,
+    cached_load_match_player_gamertags,
+    cached_load_match_rosters,
+    cached_load_player_match_result,
+    clear_app_caches,
+    db_cache_key,
+    top_medals_smart,
+)
+from src.ui.components import (
+    render_analytics_section,
+)
+from src.ui.formatting import (
+    PARIS_TZ,
+    format_datetime_fr_hm,
+    format_score_label,
+    score_css_color,
+)
+from src.ui.multiplayer import (
+    get_gamertag_from_duckdb_v4_path,
+    render_player_selector_unified,
+)
+from src.ui.pages import (
+    render_citations_page,
+    render_last_match_page,
+    render_match_history_page,
+    render_match_search_page,
+    render_match_view,
+    render_media_library_page,
+    render_session_comparison_page,
+    render_settings_page,
+    render_teammates_page,
+    render_timeseries_page,
+    render_win_loss_page,
+)
+from src.ui.perf import perf_reset_run, perf_section
+from src.ui.sync import (
+    cleanup_orphan_tmp_dbs,
+    is_spnkr_db_path,
+    render_sync_indicator,
+    sync_all_players,
+)
+from src.visualization import (
+    plot_multi_metric_bars_by_match,
+)
 
 # =============================================================================
 # Aliases vers les fonctions extraites (Phase 2)
@@ -167,7 +152,9 @@ def _qp_first(value) -> str | None:
 
 
 def _set_query_params(**kwargs: str) -> None:
-    clean: dict[str, str] = {k: str(v) for k, v in kwargs.items() if v is not None and str(v).strip()}
+    clean: dict[str, str] = {
+        k: str(v) for k, v in kwargs.items() if v is not None and str(v).strip()
+    }
     try:
         st.query_params.clear()
         for k, v in clean.items():
@@ -217,6 +204,7 @@ def _aliases_cache_key() -> int | None:
 # =============================================================================
 # Application principale
 # =============================================================================
+
 
 def main() -> None:
     """Point d'entrée principal de l'application Streamlit."""
@@ -279,19 +267,35 @@ def main() -> None:
     waypoint_player = str(st.session_state.get("waypoint_player", "") or "").strip()
 
     with st.sidebar:
-        st.markdown("<div class='os-sidebar-brand' style='font-size: 2.5em;'>LevelUp</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='os-sidebar-brand' style='font-size: 2.5em;'>LevelUp</div>",
+            unsafe_allow_html=True,
+        )
         st.markdown("<div class='os-sidebar-divider'></div>", unsafe_allow_html=True)
 
         # Indicateur de dernière synchronisation
         if db_path and os.path.exists(db_path):
             render_sync_indicator(db_path)
 
-        # Sélecteur multi-joueurs (si DB fusionnée)
+        # Sélecteur multi-joueurs (Legacy SQLite + DuckDB v4)
         if db_path and os.path.exists(db_path):
-            new_xuid = render_player_selector(db_path, xuid, key="sidebar_player_selector")
-            if new_xuid:
-                st.session_state["xuid_input"] = new_xuid
-                xuid = new_xuid
+            new_db_path, new_xuid = render_player_selector_unified(
+                db_path, xuid, key="sidebar_player_selector"
+            )
+            if new_db_path or new_xuid:
+                # Changement de joueur
+                if new_db_path:
+                    st.session_state["db_path"] = new_db_path
+                    db_path = new_db_path
+                    # Pour DuckDB v4, mettre à jour le gamertag comme xuid_input
+                    gamertag = get_gamertag_from_duckdb_v4_path(new_db_path)
+                    if gamertag:
+                        st.session_state["xuid_input"] = gamertag
+                        st.session_state["waypoint_player"] = gamertag
+                        xuid = gamertag
+                if new_xuid:
+                    st.session_state["xuid_input"] = new_xuid
+                    xuid = new_xuid
                 # Reset des filtres au changement de joueur
                 # (les valeurs de l'ancien joueur peuvent ne pas exister pour le nouveau)
                 for filter_key in ["filter_playlists", "filter_modes", "filter_maps"]:
@@ -310,7 +314,10 @@ def main() -> None:
                 with st.spinner("Synchronisation en cours..."):
                     ok, msg = sync_all_players(
                         db_path=db_path,
-                        match_type=str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking"),
+                        match_type=str(
+                            getattr(settings, "spnkr_refresh_match_type", "matchmaking")
+                            or "matchmaking"
+                        ),
                         max_matches=int(getattr(settings, "spnkr_refresh_max_matches", 200) or 200),
                         rps=int(getattr(settings, "spnkr_refresh_rps", 5) or 5),
                         with_highlight_events=True,
@@ -341,7 +348,7 @@ def main() -> None:
     # ==========================================================================
     # Chargement des données
     # ==========================================================================
-    
+
     df, db_key = load_match_dataframe(db_path, xuid)
 
     if df.empty:
@@ -362,7 +369,7 @@ def main() -> None:
     # ==========================================================================
     # Sidebar - Filtres
     # ==========================================================================
-    
+
     with st.sidebar:
         filter_state = render_filters_sidebar(
             df=df,
@@ -383,7 +390,7 @@ def main() -> None:
     # ==========================================================================
     # Application des filtres
     # ==========================================================================
-    
+
     dff = apply_filters(
         dff=df,
         filter_state=filter_state,
@@ -402,7 +409,7 @@ def main() -> None:
     # ==========================================================================
     # KPIs
     # ==========================================================================
-    
+
     render_kpis_section(dff)
     render_performance_info()
 

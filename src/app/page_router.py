@@ -8,13 +8,12 @@ Ce module centralise:
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import pandas as pd
 import streamlit as st
 
 from src.ui.settings import AppSettings
-
 
 # Liste des pages disponibles
 PAGES: list[str] = [
@@ -109,7 +108,7 @@ def dispatch_page(
     db_key: str | None,
     aliases_key: str | None,
     settings: AppSettings,
-    picked_session_labels: Optional[list[str]],
+    picked_session_labels: list[str] | None,
     waypoint_player: str,
     gap_minutes: int,
     match_view_params: dict,
@@ -157,7 +156,7 @@ def dispatch_page(
         render_session_comparison_page_fn(all_sessions_df, df_full=df)
 
     elif page == "Séries temporelles":
-        render_timeseries_page_fn(dff, df_full=df)
+        render_timeseries_page_fn(dff, df_full=df, db_path=db_path, xuid=xuid)
 
     elif page == "Victoires/Défaites":
         render_win_loss_page_fn(

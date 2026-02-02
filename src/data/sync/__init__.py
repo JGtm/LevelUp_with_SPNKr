@@ -35,15 +35,11 @@ from src.data.sync.models import (
     PlayerMatchStatsRow,
     SyncOptions,
     SyncResult,
-    WeaponAggregateRow,
-    WeaponStatsRow,
     XuidAliasRow,
 )
 from src.data.sync.transformers import (
     extract_aliases,
-    extract_weapon_stats,
     extract_xuids_from_match,
-    has_weapon_stats,
     transform_highlight_events,
     transform_match_stats,
     transform_skill_stats,
@@ -61,8 +57,6 @@ __all__ = [
     "XuidAliasRow",
     "CareerRankData",
     "CareerRankRow",
-    "WeaponStatsRow",
-    "WeaponAggregateRow",
     # Engine
     "DuckDBSyncEngine",
     # API Client
@@ -75,6 +69,4 @@ __all__ = [
     "transform_highlight_events",
     "extract_aliases",
     "extract_xuids_from_match",
-    "extract_weapon_stats",
-    "has_weapon_stats",
 ]

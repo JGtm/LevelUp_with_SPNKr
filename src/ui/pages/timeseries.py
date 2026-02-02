@@ -26,13 +26,26 @@ from src.visualization.timeseries import (
 )
 
 
-def render_timeseries_page(dff: pd.DataFrame, df_full: pd.DataFrame | None = None) -> None:
+def render_timeseries_page(
+    dff: pd.DataFrame,
+    df_full: pd.DataFrame | None = None,
+    *,
+    db_path: str | None = None,
+    xuid: str | None = None,
+) -> None:
     """Affiche la page Séries temporelles.
 
     Args:
         dff: DataFrame filtré des matchs.
         df_full: DataFrame complet pour le calcul du score relatif.
+        db_path: Chemin vers la DB (optionnel, pour les features DuckDB).
+        xuid: XUID du joueur (optionnel, pour les features DuckDB).
     """
+    # Protection contre les DataFrames vides
+    if dff.empty:
+        st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
+        return
+
     with st.spinner("Génération des graphes…"):
         fig = plot_timeseries(dff)
         st.plotly_chart(fig, width="stretch")

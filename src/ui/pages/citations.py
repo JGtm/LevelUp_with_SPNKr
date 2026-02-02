@@ -40,6 +40,11 @@ def render_citations_page(
     top_medals_fn : Callable
         Fonction pour récupérer les top médailles (signature: db_path, xuid, match_ids, top_n, db_key).
     """
+    # Protection contre les DataFrames vides
+    if dff.empty:
+        st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
+        return
+
     # Agrège les médailles pour les matchs filtrés.
     counts_by_medal: dict[int, int] = {}
     stats_totals: dict[str, int] = {}

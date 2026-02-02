@@ -366,6 +366,28 @@ def cached_get_cache_stats(db_path: str, xuid: str, db_key: tuple[int, int] | No
     return get_cache_stats(db_path, xuid)
 
 
+def _is_duckdb_v4_path(db_path: str) -> bool:
+    """Détecte si le chemin est une DB joueur DuckDB v4."""
+    if not db_path:
+        return False
+    return db_path.endswith(".duckdb") or db_path.endswith("stats.duckdb")
+
+
+def _load_matches_duckdb_v4(db_path: str, include_firefight: bool = True) -> list:
+    """Charge les matchs depuis une DB DuckDB v4."""
+    try:
+        from src.data.repositories.duckdb_repo import DuckDBRepository
+
+        # Le XUID n'est pas nécessaire pour DuckDB v4 (un joueur par DB)
+        # On utilise un placeholder
+        repo = DuckDBRepository(db_path, xuid="", read_only=True)
+        matches = repo.load_matches(include_firefight=include_firefight)
+        repo.close()
+        return matches
+    except Exception:
+        return []
+
+
 @st.cache_data(show_spinner=False)
 def load_df_optimized(
     db_path: str,
@@ -375,12 +397,13 @@ def load_df_optimized(
 ) -> pd.DataFrame:
     """Charge les matchs avec fallback intelligent.
 
-    Utilise MatchCache si disponible (beaucoup plus rapide),
-    sinon fallback sur load_matches() + parsing JSON.
+    Supporte:
+    - DuckDB v4: data/players/{gamertag}/stats.duckdb
+    - Legacy SQLite: MatchCache puis MatchStats
 
     Args:
         db_path: Chemin vers la DB.
-        xuid: XUID du joueur.
+        xuid: XUID du joueur (ignoré pour DuckDB v4).
         db_key: Clé de cache (mtime, size).
         include_firefight: Inclure les matchs PvE.
 
@@ -389,12 +412,19 @@ def load_df_optimized(
     """
     _ = db_key  # Utilisé pour invalidation du cache Streamlit
 
-    # Tenter le cache optimisé d'abord
-    matches = load_matches_cached(db_path, xuid, include_firefight=include_firefight)
+    matches = []
 
-    if not matches:
-        # Fallback sur loader original
-        matches = load_matches(db_path, xuid)
+    # Détecter le type de DB
+    if _is_duckdb_v4_path(db_path):
+        # DuckDB v4: utiliser le repository dédié
+        matches = _load_matches_duckdb_v4(db_path, include_firefight=include_firefight)
+    else:
+        # Legacy SQLite: tenter le cache optimisé d'abord
+        matches = load_matches_cached(db_path, xuid, include_firefight=include_firefight)
+
+        if not matches:
+            # Fallback sur loader original
+            matches = load_matches(db_path, xuid)
 
     if not matches:
         return pd.DataFrame()

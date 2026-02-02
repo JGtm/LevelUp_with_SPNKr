@@ -79,6 +79,11 @@ def render_teammates_page(
         plot_multi_metric_bars_fn: Fonction pour tracer les barres multi-métriques.
         top_medals_fn: Fonction pour récupérer les top médailles.
     """
+    # Protection contre les DataFrames vides
+    if dff.empty:
+        st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
+        return
+
     # Vérification du cache pour performance
     if not st.session_state.get("_cache_warning_shown"):
         has_cache = cached_has_cache_tables(db_path, db_key)
