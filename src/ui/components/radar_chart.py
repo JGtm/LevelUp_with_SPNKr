@@ -115,6 +115,12 @@ def create_stats_per_minute_radar(
     if categories is None:
         categories = ["Frags/min", "Morts/min", "Assists/min"]
 
+    # Gestion du cas vide
+    if not players:
+        fig = go.Figure()
+        fig.update_layout(title=dict(text=title, x=0.5, xanchor="center"), height=height)
+        return fig
+
     # Normaliser les valeurs pour le radar (0-1)
     # Calculer les max pour chaque métrique
     max_kills = max((p.get("kills_per_min") or 0) for p in players) or 1
@@ -204,6 +210,12 @@ def create_performance_radar(
         Figure Plotly.
     """
     categories = ["Objectif", "Frags", "Survie", "Assists"]
+
+    # Gestion du cas vide
+    if not players:
+        fig = go.Figure()
+        fig.update_layout(title=dict(text=title, x=0.5, xanchor="center"), height=height)
+        return fig
 
     # Calculer les max pour normalisation
     max_obj = max((p.get("objective_score") or 0) for p in players) or 1

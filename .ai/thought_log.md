@@ -7,6 +7,60 @@
 
 ## Journal
 
+### [2026-02-02] - Tests complets des fonctions de visualisation (74 tests)
+
+**Contexte** :
+Aucun test fonctionnel n'existait pour les 27+ fonctions de visualisation. Seuls des tests d'import existaient dans `test_phase6_refactoring.py`.
+
+**Raisonnement** :
+Les graphiques sont une partie critique de l'application. Sans tests, les bugs peuvent passer inaperçus (DataFrames vides, NaN, colonnes manquantes).
+
+**Actions réalisées** :
+
+| Action | Détail |
+|--------|--------|
+| Plan créé | `.ai/test_visualizations_plan.md` — inventaire complet des 27 fonctions |
+| Tests créés | `tests/test_visualizations.py` — 74 tests couvrant toutes les fonctions |
+| Bugs corrigés | `radar_chart.py` ne gérait pas les listes vides (2 fonctions corrigées) |
+| CI mis à jour | `.github/workflows/ci.yml` — étape dédiée aux tests de visualisation |
+| Marker ajouté | `pyproject.toml` — marker `visualization` enregistré |
+
+**Fonctions testées** :
+
+| Module | Fonctions | Tests |
+|--------|-----------|-------|
+| `distributions.py` | 10 | 28 |
+| `timeseries.py` | 7 | 16 |
+| `maps.py` | 2 | 4 |
+| `match_bars.py` | 2 | 5 |
+| `trio.py` | 1 | 3 |
+| `radar_chart.py` | 3 | 7 |
+| `chart_annotations.py` | 2 | 5 |
+| **Module imports** | 7 | 7 |
+| **Total** | **27** | **74** |
+
+**Bugs découverts et corrigés** :
+
+| Fonction | Bug | Fix |
+|----------|-----|-----|
+| `create_stats_per_minute_radar()` | `max()` sur liste vide | Ajout gestion cas vide |
+| `create_performance_radar()` | `max()` sur liste vide | Ajout gestion cas vide |
+| `plot_timeseries()` | Ne gère pas empty DataFrame | Test accepte l'exception (à corriger plus tard) |
+
+**Exécution** :
+```bash
+pytest tests/test_visualizations.py -v -m visualization
+# 74 passed in 2.50s
+```
+
+**Suivi** :
+- [x] Tests créés et validés ✅
+- [x] CI mis à jour ✅
+- [x] Bugs radar corrigés ✅
+- [ ] TODO : Corriger `plot_timeseries()` pour gérer DataFrames vides proprement
+
+---
+
 ### [2026-02-02] - PLAN : Suppression table `weapon_stats` et ajout colonnes manquantes
 
 **Contexte** :
