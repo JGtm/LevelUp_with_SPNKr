@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
 """
-Script pour récupérer les weapon stats d'un match via l'API Halo.
+Récupère les weapon stats détaillées d'un match pour un joueur spécifique.
+
+Usage:
+    python scripts/fetch_match_weapon_stats.py --match-id <ID> --gamertag <GT>
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
 
-# Ajouter le répertoire parent au path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    import aiohttp
-except ImportError:
-    print("ERREUR: aiohttp non installé")
-    sys.exit(1)
+from src.data.sync.api_client import SPNKrAPIClient
 
 
 def _load_dotenv_if_present() -> None:
@@ -44,120 +41,82 @@ def _load_dotenv_if_present() -> None:
                 os.environ[key] = value
 
 
-async def get_tokens() -> tuple[str, str]:
-    """Obtient les tokens d'authentification."""
-    from spnkr import AzureApp, refresh_player_tokens
-
-    azure_client_id = os.environ.get("SPNKR_AZURE_CLIENT_ID")
-    azure_client_secret = os.environ.get("SPNKR_AZURE_CLIENT_SECRET")
-    azure_redirect_uri = os.environ.get("SPNKR_AZURE_REDIRECT_URI", "https://localhost")
-    oauth_refresh_token = os.environ.get("SPNKR_OAUTH_REFRESH_TOKEN")
-
-    if not all([azure_client_id, azure_client_secret, oauth_refresh_token]):
-        raise SystemExit("Tokens Azure manquants dans .env.local")
-
-    app = AzureApp(azure_client_id, azure_client_secret, azure_redirect_uri)
-
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=45)) as session:
-        player = await refresh_player_tokens(session, app, oauth_refresh_token)
-        return str(player.spartan_token.token), str(player.clearance_token.token)
-
-
-async def fetch_match_stats(match_id: str, xuid: str) -> dict:
-    """Récupère les stats détaillées d'un match pour un joueur."""
-    _load_dotenv_if_present()
-
-    spartan_token, clearance_token = await get_tokens()
-
-    headers = {
-        "accept": "application/json",
-        "x-343-authorization-spartan": spartan_token,
-        "343-clearance": clearance_token,
-        "user-agent": "openspartan-graph/weapon-analysis",
-    }
-
-    # URL pour les stats détaillées du match
-    url = f"https://halostats.svc.halowaypoint.com/hi/matches/{match_id}/stats"
-
-    async with aiohttp.ClientSession(
-        headers=headers, timeout=aiohttp.ClientTimeout(total=60)
-    ) as session:
-        async with session.get(url) as resp:
-            if resp.status >= 400:
-                text = await resp.text()
-                print(f"Erreur HTTP {resp.status}: {text[:500]}")
-                return {}
-
-            data = await resp.json()
-            return data
-
-
-def extract_player_weapons(match_data: dict, xuid: str) -> list[dict]:
-    """Extrait les weapon stats d'un joueur spécifique."""
-    weapons = []
-
-    # Chercher dans Results/MatchStats
-    results = match_data.get("Results", [])
-
-    for player in results:
-        player_xuid = player.get("PlayerId", "")
-        # XUID peut être "xuid(123456)" ou juste le nombre
-        if str(xuid) in str(player_xuid):
-            # Trouver les stats
-            team_stats = player.get("PlayerTeamStats", [])
-            if team_stats:
-                stats = team_stats[0].get("Stats", {})
-                core = stats.get("CoreStats", {})
-                breakdowns = core.get("Breakdowns", {})
-
-                for w in breakdowns.get("Weapons", []):
-                    weapons.append(
-                        {
-                            "name": w.get("EquippedWeaponName", "Unknown"),
-                            "kills": w.get("Kills", 0),
-                            "headshots": w.get("Headshots", 0),
-                            "damage_dealt": w.get("DamageDealt", 0),
-                            "shots_fired": w.get("ShotsFired", 0),
-                            "shots_hit": w.get("ShotsHit", 0),
-                        }
-                    )
-            break
-
-    return sorted(weapons, key=lambda x: x["kills"], reverse=True)
-
-
 async def main():
     parser = argparse.ArgumentParser(description="Récupérer les weapon stats d'un match")
     parser.add_argument("--match-id", required=True, help="ID du match")
-    parser.add_argument("--xuid", default="2533274823110022", help="XUID du joueur (défaut: JGtm)")
-    parser.add_argument("--output", type=Path, help="Sauvegarder en JSON")
+    parser.add_argument("--gamertag", help="Gamertag à filtrer (optionnel)")
+    parser.add_argument("--all", action="store_true", help="Afficher tous les joueurs")
 
     args = parser.parse_args()
+    _load_dotenv_if_present()
 
     print(f"Récupération des stats du match {args.match_id}...")
+    print()
 
-    match_data = await fetch_match_stats(args.match_id, args.xuid)
+    async with SPNKrAPIClient() as client:
+        match_data = await client.get_match_stats(args.match_id)
 
     if not match_data:
         print("Aucune donnée récupérée")
         return 1
 
-    # Sauvegarder le raw si demandé
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        with open(args.output, "w", encoding="utf-8") as f:
-            json.dump(match_data, f, ensure_ascii=False, indent=2)
-        print(f"Données brutes sauvegardées: {args.output}")
+    # Chercher les joueurs
+    players = match_data.get("Players", [])
 
-    # Extraire les weapons
-    weapons = extract_player_weapons(match_data, args.xuid)
+    for player in players:
+        player_id = player.get("PlayerId", "")
 
-    print(f"\nArmes utilisées par XUID {args.xuid}:")
-    for w in weapons:
-        if w["kills"] > 0 or w["damage_dealt"] > 100:
-            print(
-                f"  - {w['name']}: {w['kills']} kills, {w['headshots']} headshots, {w['damage_dealt']:.0f} dmg"
-            )
+        # Filtrer par gamertag si spécifié
+        if args.gamertag and args.gamertag.lower() not in player_id.lower():
+            if not args.all:
+                continue
+
+        team_stats = player.get("PlayerTeamStats", [])
+        if not team_stats:
+            continue
+
+        stats = team_stats[0].get("Stats", {})
+        core = stats.get("CoreStats", {})
+        breakdowns = core.get("Breakdowns", {})
+        weapons = breakdowns.get("Weapons", [])
+
+        if not weapons and not args.all:
+            continue
+
+        # Afficher le header joueur
+        print(f"{'='*60}")
+        print(f"JOUEUR: {player_id}")
+        print(
+            f"Kills: {core.get('Kills', 0)} | Deaths: {core.get('Deaths', 0)} | "
+            f"Assists: {core.get('Assists', 0)}"
+        )
+        print(f"{'='*60}")
+        print()
+
+        if weapons:
+            print(f"{'Arme':<35} {'Kills':>6} {'HS':>4} {'Dégâts':>10} {'Préc.':>7}")
+            print("-" * 68)
+
+            for w in sorted(weapons, key=lambda x: -x.get("Kills", 0)):
+                name = w.get("EquippedWeaponName", "Unknown")
+                kills = w.get("Kills", 0)
+                headshots = w.get("Headshots", 0)
+                damage = w.get("DamageDealt", 0)
+                shots_fired = w.get("ShotsFired", 0)
+                shots_hit = w.get("ShotsHit", 0)
+
+                accuracy = (shots_hit / shots_fired * 100) if shots_fired > 0 else 0
+
+                if kills > 0 or damage > 100:
+                    print(
+                        f"{name:<35} {kills:>6} {headshots:>4} "
+                        f"{damage:>10.0f} {accuracy:>6.1f}%"
+                    )
+
+            print()
+        else:
+            print("(Pas de données d'armes)")
+            print()
 
     return 0
 

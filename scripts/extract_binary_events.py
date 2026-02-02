@@ -91,8 +91,14 @@ def shift_bytes(data: bytes, bit_offset: int) -> bytes:
     return bytes(out)
 
 
-def looks_like_gamertag(s: str) -> bool:
-    """Vérifie si une chaîne ressemble à un gamertag valide."""
+def looks_like_gamertag(s: str, strict: bool = False) -> bool:
+    """
+    Vérifie si une chaîne ressemble à un gamertag valide.
+
+    Args:
+        s: Chaîne à vérifier
+        strict: Si True, exige que le gamertag soit principalement ASCII
+    """
     v = (s or "").strip()
     if not v:
         return False
@@ -106,13 +112,33 @@ def looks_like_gamertag(s: str) -> bool:
         return False
     if not any(ch.isalnum() for ch in v):
         return False
+
+    if strict:
+        # En mode strict, au moins 50% des caractères doivent être ASCII alphanumériques
+        ascii_alnum_count = sum(1 for ch in v if ch.isascii() and ch.isalnum())
+        if ascii_alnum_count < len(v) * 0.5:
+            return False
+
     return True
+
+
+def is_valid_timestamp(timestamp_ms: int, max_match_duration_ms: int = 1800000) -> bool:
+    """
+    Vérifie si un timestamp est valide pour un match Halo.
+
+    Args:
+        timestamp_ms: Timestamp en millisecondes
+        max_match_duration_ms: Durée max d'un match (défaut: 30 min = 1800000 ms)
+    """
+    return 0 <= timestamp_ms <= max_match_duration_ms
 
 
 def find_events_in_chunk(
     chunk: bytes,
     gamertag_filter: str | None = None,
     verbose: bool = False,
+    strict_gamertag: bool = False,
+    max_timestamp_ms: int | None = None,
 ) -> list[ExtractedEvent]:
     """
     Cherche tous les events dans un chunk décompressé.
@@ -180,11 +206,24 @@ def find_events_in_chunk(
             except Exception:
                 gamertag = ""
 
-            if not looks_like_gamertag(gamertag):
+            if not looks_like_gamertag(gamertag, strict=strict_gamertag):
                 continue
 
             # Filtre gamertag si demandé
             if gamertag_filter and gamertag.lower() != gamertag_filter.lower():
+                continue
+
+            # Extraire timestamp pour validation éventuelle
+            ts_bytes = view[event_start + 60 : event_start + 64]
+            if len(ts_bytes) == 4:
+                timestamp_ms = struct.unpack("<I", ts_bytes)[0]
+            else:
+                timestamp_ms = 0
+
+            # Filtrer par timestamp si demandé
+            if max_timestamp_ms is not None and not is_valid_timestamp(
+                timestamp_ms, max_timestamp_ms
+            ):
                 continue
 
             seen_offsets.add(key)
@@ -192,13 +231,7 @@ def find_events_in_chunk(
             # Extraire les composants
             header = view[event_start : event_start + 12]
             event_type = view[event_start + 59]
-
-            # Timestamp (4 bytes little-endian à offset 60)
-            ts_bytes = view[event_start + 60 : event_start + 64]
-            if len(ts_bytes) == 4:
-                timestamp_ms = struct.unpack("<I", ts_bytes)[0]
-            else:
-                timestamp_ms = 0
+            # timestamp_ms déjà extrait plus haut
 
             # Medal marker et ID
             medal_marker = view[event_start + 67] if event_start + 67 < len(view) else 0
@@ -382,6 +415,15 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true", help="Afficher les détails de scan")
     parser.add_argument("--analyze", action="store_true", help="Analyser les patterns")
     parser.add_argument("--hex-dump", action="store_true", help="Afficher les hex dumps complets")
+    parser.add_argument(
+        "--strict", action="store_true", help="Mode strict: gamertags majoritairement ASCII"
+    )
+    parser.add_argument(
+        "--max-timestamp",
+        type=int,
+        default=None,
+        help="Timestamp max en ms (défaut: pas de limite, suggéré: 1800000 pour 30 min)",
+    )
 
     args = parser.parse_args()
 
@@ -416,6 +458,8 @@ def main() -> int:
             chunk_data,
             gamertag_filter=args.gamertag,
             verbose=args.verbose,
+            strict_gamertag=args.strict,
+            max_timestamp_ms=args.max_timestamp,
         )
 
         if args.type:

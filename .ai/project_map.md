@@ -2,7 +2,14 @@
 
 > Ce fichier est la cartographie vivante du projet. L'agent IA doit le consulter et le mettre à jour.
 
-## État Actuel (2026-02-01)
+## ⚠️ Limitations Connues
+
+**IMPORTANT** : Consulter `.ai/API_LIMITATIONS.md` avant d'implémenter des fonctionnalités liées aux armes.
+
+- **Weapon Stats par arme** : NON DISPONIBLE dans l'API (vérifié 2026-02-02)
+- **Film Chunks** : NON EXPLOITABLES pour l'identification d'armes
+
+## État Actuel (2026-02-02)
 
 ### Phases Complétées
 

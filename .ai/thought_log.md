@@ -7,6 +7,100 @@
 
 ## Journal
 
+### [2026-02-02] - RÉSULTATS: Investigation Bit-Shifted Binary Chunks (v2)
+
+**Statut** : ✅ **SUCCÈS PARTIEL** - Events extraits, Weapon ID non trouvé
+
+**Contexte** :
+Investigation approfondie des film chunks avec extraction bit-shifted selon la méthode Den Delimarsky.
+
+**Résultats validés** :
+
+| Test | Résultat | Détails |
+|------|----------|---------|
+| Structure Den Delimarsky | ✅ VALIDÉE | 72+ bytes par event |
+| Event types (10/20/50) | ✅ VALIDÉS | mode/death/kill confirmés |
+| Timestamp format | ✅ **BIG ENDIAN** | Pas Little Endian comme supposé |
+| Corrélation théâtre | ✅ **100%** | 14/14 kills matchés (< 2.5s delta) |
+
+**Résultat négatif** :
+
+| Test | Résultat | Détails |
+|------|----------|---------|
+| Weapon ID dans extra bytes | ❌ ÉCHEC | Pattern `0x2ee0` constant pour TOUTES les armes |
+
+**Découverte clé** : Le timestamp est en **Big Endian**, pas Little Endian !
+
+```python
+# FAUX
+timestamp = struct.unpack('<I', ts_bytes)[0]
+
+# CORRECT
+timestamp = struct.unpack('>I', ts_bytes)[0]
+```
+
+**Livrables** :
+- `scripts/analyze_chunks_bitshifted.py` : Script d'analyse complet
+- `.ai/research/BINARY_CHUNK_ANALYSIS_V2_PLAN.md` : Documentation mise à jour
+- `data/investigation/chunks/189d1c23_full/` : Chunks du match Fiesta
+
+**Conclusion** :
+Les events (kills, deaths) peuvent être extraits avec timestamps précis (~1-2s).
+Le weapon ID **n'est PAS encodé** dans la structure documentée par Den Delimarsky.
+Le pattern `0x2ee0` trouvé précédemment n'est PAS un weapon ID mais un marker constant.
+
+**Investigation complémentaire (Headers et Medals)** :
+
+1. **Header (bytes 0-11)** = Identifiant JOUEUR (pas arme)
+   - Chaque joueur a un header unique et constant
+   - Exemple: JGtm = `4cde91e8aba1301621967cf9`
+
+2. **Medal ID (byte 71)** = Inférence partielle possible (~7%)
+   - Kill Sniper 1:04 → Medal 108 ("Snipe") ✓
+   - Mais 14/15 kills n'ont pas de medal liée à l'arme
+
+**Conclusion définitive** : Le weapon ID n'est pas disponible dans les film chunks.
+
+**Dernière théorie (Event DEATH victime)** :
+- Event DEATH de la victime analysé → Extra bytes identiques pour différentes armes
+- Pas de structure killer+victim combinée
+- API Match Stats vérifié → Seulement compteurs agrégés (PowerWeaponKills, MeleeKills, etc.)
+
+**VERDICT FINAL** : Les weapon stats individuelles par kill ne sont PAS disponibles (limitation 343i).
+
+---
+
+### [2026-02-02] - IMPORTANT : Limites de l'API Halo Infinite (Weapon Stats)
+
+**Statut** : ❌ **CONFIRMÉ - Les weapon breakdowns N'EXISTENT PAS dans l'API**
+
+**Contexte** :
+L'utilisateur a demandé d'obtenir les armes utilisées pour chaque kill. Après investigation approfondie, nous confirmons que cette donnée n'est pas disponible.
+
+**Vérifications effectuées** :
+1. Match Stats API (`/hi/matches/{id}/stats`) - 15 matchs testés
+2. Service Record API (`/hi/players/{xuid}/matchmade/servicerecord`)
+3. Blog de Den Delimarsky (référence communautaire)
+
+**Résultat** : `CoreStats.Breakdowns.Weapons[]` **n'existe pas** dans les réponses API réelles.
+
+**Ce qui est disponible** :
+```
+GrenadeKills, HeadshotKills, MeleeKills, PowerWeaponKills (compteurs agrégés uniquement)
+```
+
+**Ce qui N'EST PAS disponible** :
+- Kills par type d'arme (BR75, Sidekick, etc.)
+- Précision par arme
+- Dégâts par arme
+- Association kill → arme utilisée
+
+**Documentation** : Voir `.ai/archive/BINARY_CHUNK_ANALYSIS_FINAL.md` section "Limites de l'API"
+
+**Impact** : Le projet ne peut pas implémenter de statistiques par arme. Cette limitation est côté 343 Industries, pas côté LevelUp.
+
+---
+
 ### [2026-02-02] - RÉSULTATS : Analyse binaire des Film Chunks (weapon_id)
 
 **Statut** : ✅ **SUCCÈS - WEAPON ID TROUVÉ !**
