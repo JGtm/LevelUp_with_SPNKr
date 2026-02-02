@@ -7,6 +7,86 @@
 
 ## Journal
 
+### [2026-02-02] - PLAN : Suppression table `weapon_stats` et ajout colonnes manquantes
+
+**Contexte** :
+La table `weapon_stats` est vide et inutile. Elle était conçue pour stocker des statistiques par arme individuelle (BR, AR, Sniper, etc.), mais l'API Halo Infinite ne fournit pas ces données détaillées par arme.
+
+Les seules données de tir disponibles via l'API sont :
+- `shots_fired` (tirs totaux par match)
+- `shots_hit` (tirs au but par match)
+- `accuracy` (déjà calculée)
+
+Ces données appartiennent à `match_stats`, pas à une table séparée.
+
+**Problème identifié** :
+1. Table `weapon_stats` : Vide et inutile (données par arme non disponibles)
+2. Colonnes manquantes dans `match_stats` : Le modèle `MatchStatsRow` contient `shots_fired`, `shots_hit`, `damage_dealt`, etc. mais le schéma DuckDB ne les a pas
+
+**Décision** :
+Nettoyer le code et aligner le schéma avec les données réellement disponibles.
+
+---
+
+#### Phase 1 : Nettoyage du code `weapon_stats`
+
+| Fichier | Action |
+|---------|--------|
+| `src/data/sync/models.py` | Supprimer `WeaponStatsRow` et `WeaponAggregateRow` |
+| `src/data/sync/transformers.py` | Supprimer `extract_weapon_stats()`, `has_weapon_stats()`, `_find_weapon_stats_dict()` |
+| `src/data/sync/__init__.py` | Retirer les exports `extract_weapon_stats`, `has_weapon_stats` |
+| `src/data/repositories/duckdb_repo.py` | Supprimer méthodes `get_weapon_stats()`, `get_global_accuracy()` |
+| `src/data/infrastructure/database/duckdb_engine.py` | Supprimer TODO/commentaires liés aux armes |
+| `scripts/migrate_player_to_duckdb.py` | Supprimer création table `weapon_stats` |
+
+---
+
+#### Phase 2 : Ajout colonnes manquantes à `match_stats`
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `shots_fired` | INTEGER | Nombre total de tirs |
+| `shots_hit` | INTEGER | Tirs au but |
+| `damage_dealt` | FLOAT | Dégâts infligés |
+| `damage_taken` | FLOAT | Dégâts reçus |
+| `score` | INTEGER | Score du match |
+| `personal_score` | INTEGER | Score personnel |
+| `grenade_kills` | INTEGER | Kills grenade |
+| `melee_kills` | INTEGER | Kills mêlée |
+| `power_weapon_kills` | INTEGER | Kills armes lourdes |
+
+**Fichiers impactés** :
+- `scripts/migrate_player_to_duckdb.py` : Ajouter colonnes au CREATE TABLE
+
+---
+
+#### Phase 3 : Migration des données existantes
+
+| Action | Détail |
+|--------|--------|
+| Script ALTER TABLE | Ajouter colonnes manquantes aux bases existantes |
+| DROP TABLE weapon_stats | Supprimer la table inutile |
+
+---
+
+#### Résumé des fichiers à modifier
+
+| Fichier | Suppressions | Ajouts |
+|---------|--------------|--------|
+| `src/data/sync/models.py` | 2 classes | - |
+| `src/data/sync/transformers.py` | 3 fonctions (~150 lignes) | - |
+| `src/data/sync/__init__.py` | 2 exports | - |
+| `src/data/repositories/duckdb_repo.py` | 2 méthodes | - |
+| `src/data/infrastructure/database/duckdb_engine.py` | Commentaires | - |
+| `scripts/migrate_player_to_duckdb.py` | CREATE weapon_stats | 9 colonnes match_stats |
+
+**Suivi** :
+- [ ] Phase 1 : Nettoyage code weapon_stats
+- [ ] Phase 2 : Ajout colonnes match_stats
+- [ ] Phase 3 : Migration données existantes
+
+---
+
 ### [2026-02-01] - Phase 6 COMPLETE - Documentation & Branding LevelUp
 
 **Contexte** :
