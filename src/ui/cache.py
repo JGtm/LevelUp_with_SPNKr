@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 import streamlit as st
 
-from src.analysis import compute_sessions, compute_sessions_with_context, mark_firefight
+from src.analysis import compute_sessions, mark_firefight
 from src.db import (
     get_cache_stats,
     get_match_session_info,
@@ -43,7 +43,6 @@ from src.db import (
     # Nouveaux loaders optimisés
     load_matches_cached,
     load_player_match_result,
-    load_sessions_cached,
     load_top_medals,
     load_top_teammates_cached,
     query_matches_with_friend,
@@ -160,7 +159,7 @@ def cached_load_highlight_events_for_match(
     db_path: str,
     match_id: str,
     *,
-    db_key: str | None = None,
+    db_key: tuple[int, int] | None = None,
 ):
     """Charge les événements highlight d'un match (cache)."""
     _ = db_key
@@ -172,7 +171,7 @@ def cached_load_match_player_gamertags(
     db_path: str,
     match_id: str,
     *,
-    db_key: str | None = None,
+    db_key: tuple[int, int] | None = None,
 ):
     """Charge les gamertags des joueurs d'un match (cache)."""
     _ = db_key
@@ -273,54 +272,6 @@ def clear_app_caches() -> None:
 
 
 @st.cache_data(show_spinner=False)
-def load_df(db_path: str, xuid: str, db_key: tuple[int, int] | None = None) -> pd.DataFrame:
-    """Charge les matchs et les convertit en DataFrame."""
-    matches = load_matches(db_path, xuid)
-    df = pd.DataFrame(
-        {
-            "match_id": [m.match_id for m in matches],
-            "start_time": [m.start_time for m in matches],
-            "map_id": [m.map_id for m in matches],
-            "map_name": [m.map_name for m in matches],
-            "playlist_id": [m.playlist_id for m in matches],
-            "playlist_name": [m.playlist_name for m in matches],
-            "pair_id": [m.map_mode_pair_id for m in matches],
-            "pair_name": [m.map_mode_pair_name for m in matches],
-            "game_variant_id": [m.game_variant_id for m in matches],
-            "game_variant_name": [m.game_variant_name for m in matches],
-            "outcome": [m.outcome for m in matches],
-            "kda": [m.kda for m in matches],
-            "my_team_score": [m.my_team_score for m in matches],
-            "enemy_team_score": [m.enemy_team_score for m in matches],
-            "max_killing_spree": [m.max_killing_spree for m in matches],
-            "headshot_kills": [m.headshot_kills for m in matches],
-            "average_life_seconds": [m.average_life_seconds for m in matches],
-            "time_played_seconds": [m.time_played_seconds for m in matches],
-            "kills": [m.kills for m in matches],
-            "deaths": [m.deaths for m in matches],
-            "assists": [m.assists for m in matches],
-            "accuracy": [m.accuracy for m in matches],
-            "ratio": [m.ratio for m in matches],
-            "team_mmr": [m.team_mmr for m in matches],
-            "enemy_mmr": [m.enemy_mmr for m in matches],
-        }
-    )
-    # Facilite les filtres date
-    df["start_time"] = (
-        pd.to_datetime(df["start_time"], utc=True).dt.tz_convert(PARIS_TZ_NAME).dt.tz_localize(None)
-    )
-    df["date"] = df["start_time"].dt.date
-
-    # Stats par minute
-    minutes = (pd.to_numeric(df["time_played_seconds"], errors="coerce") / 60.0).astype(float)
-    minutes = minutes.where(minutes > 0)
-    df["kills_per_min"] = pd.to_numeric(df["kills"], errors="coerce") / minutes
-    df["deaths_per_min"] = pd.to_numeric(df["deaths"], errors="coerce") / minutes
-    df["assists_per_min"] = pd.to_numeric(df["assists"], errors="coerce") / minutes
-    return df
-
-
-@st.cache_data(show_spinner=False)
 def cached_list_other_xuids(
     db_path: str, self_xuid: str, db_key: tuple[int, int] | None = None, limit: int = 500
 ) -> list[str]:
@@ -381,9 +332,11 @@ def _load_matches_duckdb_v4(db_path: str, include_firefight: bool = True) -> lis
         # Le XUID n'est pas nécessaire pour DuckDB v4 (un joueur par DB)
         # On utilise un placeholder
         repo = DuckDBRepository(db_path, xuid="", read_only=True)
-        matches = repo.load_matches(include_firefight=include_firefight)
-        repo.close()
-        return matches
+        try:
+            matches = repo.load_matches(include_firefight=include_firefight)
+            return matches
+        finally:
+            repo.close()
     except Exception:
         return []
 
@@ -476,22 +429,6 @@ def load_df_optimized(
 
 
 @st.cache_data(show_spinner=False)
-def cached_load_sessions(
-    db_path: str,
-    xuid: str,
-    db_key: tuple[int, int] | None = None,
-    include_firefight: bool = True,
-) -> list[dict]:
-    """Charge les sessions pré-calculées depuis le cache DB.
-
-    Beaucoup plus rapide que compute_sessions() car les sessions
-    sont déjà calculées dans MatchCache.
-    """
-    _ = db_key
-    return load_sessions_cached(db_path, xuid, include_firefight=include_firefight)
-
-
-@st.cache_data(show_spinner=False)
 def cached_load_friends(
     db_path: str,
     owner_xuid: str,
@@ -539,47 +476,6 @@ def cached_get_match_session_info(
     """Récupère les infos de session pour un match spécifique."""
     _ = db_key
     return get_match_session_info(db_path, match_id)
-
-
-def cached_compute_sessions_db_optimized(
-    db_path: str,
-    xuid: str,
-    db_key: tuple[int, int] | None,
-    include_firefight: bool,
-    gap_minutes: int,
-) -> pd.DataFrame:
-    """Compute sessions avec utilisation prioritaire du cache DB.
-
-    Si le cache DB contient déjà les session_id/session_label,
-    on les utilise directement au lieu de recalculer.
-    """
-    # Charger les données
-    df0 = load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
-
-    if df0.empty:
-        df0["session_id"] = pd.Series(dtype=int)
-        df0["session_label"] = pd.Series(dtype=str)
-        return df0
-
-    # Vérifier si les sessions sont déjà dans le cache
-    if has_cache_tables(db_path):
-        # Charger les sessions pré-calculées
-        sessions = load_sessions_cached(db_path, xuid, include_firefight=include_firefight)
-        if sessions:
-            # Les sessions sont dans le cache DB, on doit juste mapper session_id aux matchs
-            # Pour l'instant, on re-calcule mais avec la nouvelle logique
-            pass
-
-    # Calcul des sessions (utilise compute_sessions_with_context si teammates_signature existe)
-    df0 = mark_firefight(df0)
-    if (not include_firefight) and ("is_firefight" in df0.columns):
-        df0 = df0.loc[~df0["is_firefight"]].copy()
-
-    # Utiliser la fonction appropriée selon les colonnes disponibles
-    if "teammates_signature" in df0.columns:
-        return compute_sessions_with_context(df0, gap_minutes=gap_minutes)
-    else:
-        return compute_sessions(df0, gap_minutes=gap_minutes)
 
 
 # =============================================================================
@@ -656,28 +552,6 @@ def load_df_hybrid(
         return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
     except Exception:
         # Erreur inattendue, fallback sur legacy
-        return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
-
-
-def load_df_smart(
-    db_path: str,
-    xuid: str,
-    db_key: tuple[int, int] | None = None,
-    include_firefight: bool = True,
-) -> pd.DataFrame:
-    """Charge les matchs avec sélection automatique du meilleur loader.
-
-    Choisit automatiquement entre :
-    - load_df_hybrid() si repository_mode != "legacy"
-    - load_df_optimized() sinon
-
-    C'est la fonction recommandée pour le nouveau code.
-    """
-    mode = _get_repository_mode()
-
-    if mode in ("hybrid", "shadow"):
-        return load_df_hybrid(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
-    else:
         return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
 
 
@@ -839,8 +713,10 @@ def cached_load_recent_matches(
             return pd.DataFrame()
 
         repo = DuckDBRepository(db_path, xuid)
-        matches = repo.load_recent_matches(limit=limit)
-        repo.close()
+        try:
+            matches = repo.load_recent_matches(limit=limit)
+        finally:
+            repo.close()
 
         if not matches:
             return pd.DataFrame()
@@ -923,12 +799,14 @@ def cached_load_matches_paginated(
             return pd.DataFrame(), 1
 
         repo = DuckDBRepository(db_path, xuid)
-        matches, total_pages = repo.load_matches_paginated(
-            page=page,
-            page_size=page_size,
-            order_desc=True,
-        )
-        repo.close()
+        try:
+            matches, total_pages = repo.load_matches_paginated(
+                page=page,
+                page_size=page_size,
+                order_desc=True,
+            )
+        finally:
+            repo.close()
 
         if not matches:
             return pd.DataFrame(), total_pages
@@ -1007,9 +885,11 @@ def cached_get_match_count_duckdb(
             return 0
 
         repo = DuckDBRepository(db_path, xuid)
-        count = repo.get_match_count()
-        repo.close()
-        return count
+        try:
+            count = repo.get_match_count()
+            return count
+        finally:
+            repo.close()
 
     except Exception:
         return 0

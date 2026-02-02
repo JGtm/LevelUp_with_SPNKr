@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import io
 import os
 import signal
@@ -49,12 +50,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_STREAMLIT_APP = REPO_ROOT / "streamlit_app.py"
 
-# Architecture v4 - Chemins DuckDB
-PLAYERS_DIR = REPO_ROOT / "data" / "players"
-WAREHOUSE_DIR = REPO_ROOT / "data" / "warehouse"
-PLAYER_DB_FILENAME = "stats.duckdb"
-METADATA_DB_FILENAME = "metadata.duckdb"
-
+# Architecture v4 - Chemins DuckDB (centralisés dans src/utils/paths)
+from src.utils.paths import (
+    METADATA_DB_FILENAME,
+    PLAYER_DB_FILENAME,
+    PLAYERS_DIR,
+    WAREHOUSE_DIR,
+)
 
 # =============================================================================
 # Gestion propre du Ctrl+C
@@ -83,23 +85,17 @@ def _kill_active_process() -> None:
 
     # Sur Windows, utiliser taskkill pour tuer l'arbre de processus
     if sys.platform == "win32":
-        try:
+        with contextlib.suppress(Exception):
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                 capture_output=True,
                 timeout=5,
             )
-        except Exception:
-            pass
 
-    try:
+    with contextlib.suppress(Exception):
         proc.terminate()
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         proc.kill()
-    except Exception:
-        pass
 
 
 def _signal_handler(signum: int, frame) -> None:
@@ -180,7 +176,7 @@ def _require_module(name: str, *, install_hint: str) -> None:
         print("Détail:", e)
         print("Installe-la puis relance:")
         print(f"  {install_hint}")
-        raise SystemExit(2)
+        raise SystemExit(2) from e
 
 
 def _pick_free_port() -> int:
@@ -201,10 +197,10 @@ def _import_duckdb():
         import duckdb
 
         return duckdb
-    except ImportError:
+    except ImportError as err:
         print("❌ DuckDB non installé. Exécute:")
         print("   pip install duckdb")
-        raise SystemExit(2)
+        raise SystemExit(2) from err
 
 
 @dataclass
@@ -240,16 +236,20 @@ def _list_players() -> list[PlayerInfo]:
 
         try:
             con = duckdb.connect(str(db_path), read_only=True)
-            # Compter les matchs
-            result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
-            total_matches = result[0] if result else 0
-            # Récupérer le XUID depuis sync_meta si disponible
             try:
-                result = con.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
-                xuid = result[0] if result else None
-            except Exception:
-                pass
-            con.close()
+                # Compter les matchs
+                result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+                total_matches = result[0] if result else 0
+                # Récupérer le XUID depuis sync_meta si disponible
+                try:
+                    result = con.execute(
+                        "SELECT value FROM sync_meta WHERE key = 'xuid'"
+                    ).fetchone()
+                    xuid = result[0] if result else None
+                except Exception:
+                    pass
+            finally:
+                con.close()
         except Exception:
             pass
 
@@ -284,10 +284,12 @@ def _count_matches_duckdb(db_path: Path) -> int:
     try:
         duckdb = _import_duckdb()
         con = duckdb.connect(str(db_path), read_only=True)
-        result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
-        count = result[0] if result else 0
-        con.close()
-        return count
+        try:
+            result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+            count = result[0] if result else 0
+            return count
+        finally:
+            con.close()
     except Exception:
         return 0
 
@@ -469,6 +471,9 @@ def _launch_streamlit(
         "true",
     ]
 
+    # Délai avant ouverture du navigateur pour laisser Streamlit démarrer
+    STREAMLIT_STARTUP_DELAY_SECONDS = 1.2
+
     print("\n🚀 Lancement du dashboard…")
     print(f"   URL: {url}")
     print("   Architecture: DuckDB v4")
@@ -479,11 +484,9 @@ def _launch_streamlit(
     _active_process = proc
 
     if not no_browser:
-        time.sleep(1.2)
-        try:
+        time.sleep(STREAMLIT_STARTUP_DELAY_SECONDS)
+        with contextlib.suppress(Exception):
             webbrowser.open(url)
-        except Exception:
-            pass
 
     try:
         return int(proc.wait())
@@ -492,14 +495,11 @@ def _launch_streamlit(
     finally:
         _active_process = None
         if proc.poll() is None:
-            try:
+            with contextlib.suppress(Exception):
                 proc.terminate()
                 proc.wait(timeout=3)
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+            with contextlib.suppress(Exception):
+                proc.kill()
 
 
 def _cmd_run(args: argparse.Namespace) -> int:

@@ -22,20 +22,15 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
+from src.utils.paths import PLAYERS_DIR
+
 if TYPE_CHECKING:
     pass
-
-# Chemin vers le dossier des joueurs DuckDB v4
-_PLAYERS_DIR: Path | None = None
 
 
 def _get_players_dir() -> Path:
     """Retourne le chemin vers data/players/."""
-    global _PLAYERS_DIR
-    if _PLAYERS_DIR is None:
-        # Remonter depuis src/ui/multiplayer.py vers la racine
-        _PLAYERS_DIR = Path(__file__).resolve().parents[2] / "data" / "players"
-    return _PLAYERS_DIR
+    return PLAYERS_DIR
 
 
 def _is_duckdb_file(db_path: str) -> bool:

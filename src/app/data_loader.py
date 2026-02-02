@@ -151,9 +151,11 @@ def _pick_best_duckdb_v4_player() -> tuple[str, str] | None:
         gamertag = player_dir.name
         try:
             con = duckdb.connect(str(db_path), read_only=True)
-            result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
-            count = result[0] if result else 0
-            con.close()
+            try:
+                result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+                count = result[0] if result else 0
+            finally:
+                con.close()
 
             if count > best_count:
                 best_count = count

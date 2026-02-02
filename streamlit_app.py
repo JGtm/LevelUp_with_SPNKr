@@ -4,6 +4,7 @@ Application de visualisation des statistiques Halo Infinite
 depuis la base de données SPNKr.
 """
 
+import contextlib
 import os
 import urllib.parse
 
@@ -145,7 +146,7 @@ _build_friends_opts_map = build_friends_opts_map
 def _qp_first(value) -> str | None:
     if value is None:
         return None
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return str(value[0]) if value else None
     s = str(value)
     return s if s.strip() else None
@@ -161,10 +162,8 @@ def _set_query_params(**kwargs: str) -> None:
             st.query_params[k] = v
     except Exception:
         # Fallback API legacy (compat)
-        try:
+        with contextlib.suppress(Exception):
             st.experimental_set_query_params(**clean)
-        except Exception:
-            pass
 
 
 def _app_url(page: str, **params: str) -> str:
@@ -246,21 +245,19 @@ def main() -> None:
     except Exception:
         qp_page = None
         qp_mid = None
-    qp_token = (str(qp_page or "").strip(), str(qp_mid or "").strip())
-    if any(qp_token) and st.session_state.get("_consumed_query_params") != qp_token:
-        st.session_state["_consumed_query_params"] = qp_token
-        if qp_token[0]:
-            st.session_state["_pending_page"] = qp_token[0]
-        if qp_token[1]:
-            st.session_state["_pending_match_id"] = qp_token[1]
+    qp_params = (str(qp_page or "").strip(), str(qp_mid or "").strip())
+    if any(qp_params) and st.session_state.get("_consumed_query_params") != qp_params:
+        st.session_state["_consumed_query_params"] = qp_params
+        if qp_params[0]:
+            st.session_state["_pending_page"] = qp_params[0]
+        if qp_params[1]:
+            st.session_state["_pending_match_id"] = qp_params[1]
         # Nettoie l'URL après consommation pour ne pas forcer la page en boucle.
         try:
             st.query_params.clear()
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 st.experimental_set_query_params()
-            except Exception:
-                pass
 
     db_path = str(st.session_state.get("db_path", "") or "").strip()
     xuid = str(st.session_state.get("xuid_input", "") or "").strip()
@@ -304,7 +301,7 @@ def main() -> None:
                 st.rerun()
 
         # Bouton Sync pour toutes les DB SPNKr (multi-joueurs si DB fusionnée)
-        if db_path and is_spnkr_db_path(db_path) and os.path.exists(db_path):
+        if db_path and is_spnkr_db_path(db_path) and os.path.exists(db_path):  # noqa: SIM102
             if st.button(
                 "🔄 Synchroniser",
                 key="sidebar_sync_button",
