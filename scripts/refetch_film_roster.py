@@ -38,10 +38,10 @@ import re
 import sqlite3
 import sys
 import zlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any
 
 try:
     import aiohttp
@@ -104,7 +104,9 @@ class Tokens:
 
 
 async def _get_tokens(args: argparse.Namespace) -> Tokens:
-    spartan = _normalize_token_value(getattr(args, "spartan_token", None) or os.environ.get("SPNKR_SPARTAN_TOKEN"))
+    spartan = _normalize_token_value(
+        getattr(args, "spartan_token", None) or os.environ.get("SPNKR_SPARTAN_TOKEN")
+    )
     clearance = _normalize_token_value(
         getattr(args, "clearance_token", None) or os.environ.get("SPNKR_CLEARANCE_TOKEN")
     )
@@ -112,15 +114,19 @@ async def _get_tokens(args: argparse.Namespace) -> Tokens:
         return Tokens(spartan_token=spartan, clearance_token=clearance)
 
     # Fallback: si on a les secrets Azure + refresh token, on demande à SPNKr.
-    azure_client_id = getattr(args, "azure_client_id", None) or os.environ.get("SPNKR_AZURE_CLIENT_ID")
-    azure_client_secret = getattr(args, "azure_client_secret", None) or os.environ.get("SPNKR_AZURE_CLIENT_SECRET")
+    azure_client_id = getattr(args, "azure_client_id", None) or os.environ.get(
+        "SPNKR_AZURE_CLIENT_ID"
+    )
+    azure_client_secret = getattr(args, "azure_client_secret", None) or os.environ.get(
+        "SPNKR_AZURE_CLIENT_SECRET"
+    )
     azure_redirect_uri = (
         getattr(args, "azure_redirect_uri", None)
         or os.environ.get("SPNKR_AZURE_REDIRECT_URI")
         or "https://localhost"
     )
-    oauth_refresh_token = (
-        getattr(args, "oauth_refresh_token", None) or os.environ.get("SPNKR_OAUTH_REFRESH_TOKEN")
+    oauth_refresh_token = getattr(args, "oauth_refresh_token", None) or os.environ.get(
+        "SPNKR_OAUTH_REFRESH_TOKEN"
     )
 
     if azure_client_id and azure_client_secret and oauth_refresh_token:
@@ -134,7 +140,9 @@ async def _get_tokens(args: argparse.Namespace) -> Tokens:
                 "(et ses dépendances, dont aiohttp)."
             ) from e
 
-        async def _refresh_oauth_access_token_v2(session: ClientSession, refresh_token: str, app: AzureApp) -> str:
+        async def _refresh_oauth_access_token_v2(
+            session: ClientSession, refresh_token: str, app: AzureApp
+        ) -> str:
             url = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
             data = {
                 "client_id": app.client_id,
@@ -170,14 +178,18 @@ async def _get_tokens(args: argparse.Namespace) -> Tokens:
 
                 # Fallback: endpoint OAuth v2 (consumers) pour obtenir un access_token MSA,
                 # puis chain Xbox/XSTS/Halo comme SPNKr.
-                from spnkr.auth.xbox import request_user_token, request_xsts_token
                 from spnkr.auth.core import XSTS_V3_HALO_AUDIENCE, XSTS_V3_XBOX_AUDIENCE
-                from spnkr.auth.halo import request_spartan_token, request_clearance_token
+                from spnkr.auth.halo import request_clearance_token, request_spartan_token
+                from spnkr.auth.xbox import request_user_token, request_xsts_token
 
-                access_token = await _refresh_oauth_access_token_v2(session, oauth_refresh_token, app)
+                access_token = await _refresh_oauth_access_token_v2(
+                    session, oauth_refresh_token, app
+                )
                 user_token = await request_user_token(session, access_token)
                 _ = await request_xsts_token(session, user_token.token, XSTS_V3_XBOX_AUDIENCE)
-                halo_xsts_token = await request_xsts_token(session, user_token.token, XSTS_V3_HALO_AUDIENCE)
+                halo_xsts_token = await request_xsts_token(
+                    session, user_token.token, XSTS_V3_HALO_AUDIENCE
+                )
                 spartan_token = await request_spartan_token(session, halo_xsts_token.token)
                 clearance_token = await request_clearance_token(session, spartan_token.token)
 
@@ -276,7 +288,7 @@ def _looks_like_gamertag(s: str) -> bool:
     if not any(ch.isalnum() for ch in v):
         return False
     # Caractères trop “suspects” pour un gamertag.
-    if any(ch in "\uFFFD" for ch in v):
+    if any(ch in "\ufffd" for ch in v):
         return False
     return True
 
@@ -427,7 +439,9 @@ def extract_candidates_from_chunk(chunk: bytes) -> tuple[dict[int, Candidate], l
 
             start = idx + 2
 
-        stats.append(ScanStats(bit_offset=bit_off, marker_hits=marker_hits, best_pairs_found=best_pairs))
+        stats.append(
+            ScanStats(bit_offset=bit_off, marker_hits=marker_hits, best_pairs_found=best_pairs)
+        )
 
     return candidates, stats
 
@@ -562,7 +576,9 @@ async def download_and_decompress_chunks(
     # Limites optionnelles pour éviter de télécharger des tonnes de chunks type2.
     if max_type2_chunks is not None and max_type2_chunks >= 0:
         type1 = [f for f in files if f.file_type_id == 1]
-        type2 = sorted((f for f in files if f.file_type_id == 2), key=lambda x: x.relative_path)[:max_type2_chunks]
+        type2 = sorted((f for f in files if f.file_type_id == 2), key=lambda x: x.relative_path)[
+            :max_type2_chunks
+        ]
         other = [f for f in files if f.file_type_id not in (1, 2)]
         files = type1 + type2 + other
 
@@ -572,6 +588,7 @@ async def download_and_decompress_chunks(
 
     timeout = aiohttp.ClientTimeout(total=90)
     async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+
         async def _dl(fi: FilmFileInfo) -> tuple[FilmFileInfo, bytes]:
             url = prefix.rstrip("/") + "/" + fi.relative_path.lstrip("/")
             raw = await _fetch_bytes(session, url)
@@ -603,7 +620,9 @@ def _load_highlight_xuids(db_path: Path, match_id: str) -> set[int]:
 
 def _merge_aliases(aliases_path: Path, roster: dict[int, str]) -> int:
     try:
-        existing = json.loads(aliases_path.read_text(encoding="utf-8")) if aliases_path.exists() else {}
+        existing = (
+            json.loads(aliases_path.read_text(encoding="utf-8")) if aliases_path.exists() else {}
+        )
     except Exception:
         existing = {}
 
@@ -617,7 +636,9 @@ def _merge_aliases(aliases_path: Path, roster: dict[int, str]) -> int:
             existing[k] = gt
             changed += 1
 
-    aliases_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    aliases_path.write_text(
+        json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     return changed
 
 
@@ -694,10 +715,14 @@ def _load_match_ids_from_db(db_path: Path, *, table: str) -> list[str]:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Refetch film roster (XUID->Gamertag)")
     ap.add_argument("--match-id", default=None, help="Match GUID")
-    ap.add_argument("--spartan-token", default=None, help="Valeur brute du header x-343-authorization-spartan")
+    ap.add_argument(
+        "--spartan-token", default=None, help="Valeur brute du header x-343-authorization-spartan"
+    )
     ap.add_argument("--clearance-token", default=None, help="Valeur brute du header 343-clearance")
     ap.add_argument("--azure-client-id", default=None, help="Azure App Registration client_id")
-    ap.add_argument("--azure-client-secret", default=None, help="Azure App Registration client_secret")
+    ap.add_argument(
+        "--azure-client-secret", default=None, help="Azure App Registration client_secret"
+    )
     ap.add_argument(
         "--azure-redirect-uri",
         default=None,
@@ -752,7 +777,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=[],
         help=(
             "Analyse un chunk déjà décompressé depuis un fichier local (peut être répété). "
-            "Quand utilisé, aucun réseau n'est nécessaire pour l'extraction." 
+            "Quand utilisé, aucun réseau n'est nécessaire pour l'extraction."
         ),
     )
     ap.add_argument(
@@ -825,7 +850,9 @@ async def main_async(argv: list[str]) -> int:
             expected_players=args.expected_players,
         )
 
-        print(f"Roster extrait (local chunks): {len(roster_all)} joueurs (candidats={len(candidates)})")
+        print(
+            f"Roster extrait (local chunks): {len(roster_all)} joueurs (candidats={len(candidates)})"
+        )
         shown = 0
         for xuid in sorted(roster_all.keys()):
             c = candidates.get(xuid)
@@ -838,7 +865,9 @@ async def main_async(argv: list[str]) -> int:
         if args.verbose_scan and all_stats:
             print("\nStats scan (local):")
             for s in all_stats:
-                print(f"- bit_offset={s.bit_offset}: markers={s.marker_hits} best_pairs={s.best_pairs_found}")
+                print(
+                    f"- bit_offset={s.bit_offset}: markers={s.marker_hits} best_pairs={s.best_pairs_found}"
+                )
 
         if args.write_aliases:
             aliases_path = Path(args.aliases).expanduser().resolve()
@@ -869,17 +898,23 @@ async def main_async(argv: list[str]) -> int:
         print(f"\n[{i}/{len(match_ids)}] MatchId={match_id}")
 
         if args.manifest_json:
-            manifest = json.loads(Path(args.manifest_json).expanduser().resolve().read_text(encoding="utf-8"))
+            manifest = json.loads(
+                Path(args.manifest_json).expanduser().resolve().read_text(encoding="utf-8")
+            )
         else:
             manifest = await fetch_manifest(match_id=match_id, headers=headers)
 
         if args.save_manifest:
             out = Path(args.save_manifest).expanduser().resolve()
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            out.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
 
-        out_dir = Path(args.save_chunks_dir).expanduser().resolve() if args.save_chunks_dir else None
-        type_ids = {1, 2} if args.include_type2 else {1}
+        out_dir = (
+            Path(args.save_chunks_dir).expanduser().resolve() if args.save_chunks_dir else None
+        )
+        type_ids = {1, 2, 3} if args.include_type2 else {1}  # Include type 3 (summary)
         chunks = await download_and_decompress_chunks(
             manifest=manifest,
             headers=headers,
@@ -902,7 +937,6 @@ async def main_async(argv: list[str]) -> int:
         candidates: dict[int, Candidate] = {}
         all_stats: list[ScanStats] = []
         for _fi, dec in chunks:
-
             part, stats = extract_candidates_from_chunk(dec)
             _merge_candidates(candidates, part)
             all_stats.extend(stats)
@@ -934,7 +968,9 @@ async def main_async(argv: list[str]) -> int:
         if args.verbose_scan and all_stats:
             print("\nStats scan:")
             for s in all_stats:
-                print(f"- bit_offset={s.bit_offset}: markers={s.marker_hits} best_pairs={s.best_pairs_found}")
+                print(
+                    f"- bit_offset={s.bit_offset}: markers={s.marker_hits} best_pairs={s.best_pairs_found}"
+                )
 
     if aliases_path is not None:
         print(f"\nAliases écrits: {total_alias_changes} modifications -> {aliases_path}")

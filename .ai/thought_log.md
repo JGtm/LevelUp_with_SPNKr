@@ -7,6 +7,127 @@
 
 ## Journal
 
+### [2026-02-02] - RÉSULTATS : Analyse binaire des Film Chunks (weapon_id)
+
+**Statut** : ✅ **SUCCÈS - WEAPON ID TROUVÉ !**
+
+**Découverte clé** :
+- Les weapon IDs sont dans les **chunks type 3** (summary), pas type 2 (gameplay)
+- Position : **bytes 74-75** (offset 72+2/72+3 dans extra_bytes)
+- Format : uint16 little-endian
+
+**Mapping confirmé** :
+| Bytes | uint16 | Arme |
+|-------|--------|------|
+| `0x2e 0xe0` | 57390 | Sidekick |
+| `0x17 0x70` | 28695 | MA40 AR |
+
+**Validation** : Match `7f1bbf06-d54d-4434-ad80-923fcabe8b1b`
+- 48 kills total (tous joueurs)
+- 41 kills Sidekick (pattern `0x2e 0xe0`)
+- 7 kills AR/Melee (pattern `0x17 0x70`)
+- Correspond aux données fournies par l'utilisateur
+
+---
+
+### [2026-02-02] - ANCIENNE ANALYSE (avant découverte chunk type 3)
+
+**Statut** : ⚠️ Échec partiel (chunks type 2 uniquement)
+
+**Ce qui a été fait** :
+1. Téléchargement des chunks binaires (27 fichiers, ~20 MB) via `refetch_film_roster.py`
+2. Création de `scripts/extract_binary_events.py` - extraction via structure 72 bytes
+3. Création de `scripts/analyze_binary_patterns.py` - analyse via marker 0x2D 0xC0
+4. Analyse de 907 contextes marker et 378 events candidats
+
+**Résultats** :
+- **Structure roster** identifiée via marker `0x2D 0xC0` (XUID/Gamertag/métadonnées)
+- **Faux positifs** massifs (~90%) dans la détection d'events
+- **Timestamps aberrants** (>8h) indiquant des structures différentes dans les chunks type 2
+- **Weapon_id NON TROUVÉ** dans les bytes analysés
+
+**Conclusion** :
+La structure 72 bytes documentée est pour les **chunks type 3 (summary)**, pas type 2 (gameplay).
+Les chunks type 3 ne sont pas toujours présents dans les manifests.
+
+**Pistes restantes** :
+1. Trouver des matchs avec chunks type 3
+2. Corréler avec weapon_stats de l'API match_stats
+3. Analyser les données de replay frame-by-frame
+
+**Livrables** :
+- `.ai/research/BINARY_ANALYSIS_RESULTS.md` : Rapport complet
+- `data/investigation/*.json` : Données d'analyse
+
+---
+
+### [2026-02-02] - RECHERCHE : Identification des armes dans les Highlight Events
+
+**Contexte** :
+Les highlight events contiennent des événements kill/death mais **l'arme utilisée n'est pas documentée**. L'utilisateur souhaite explorer les données brutes pour identifier des patterns potentiels.
+
+**État de l'art** (source: Den Delimarsky, SPNKr) :
+
+La structure connue d'un event fait 72 bytes :
+| Offset | Taille | Contenu |
+|--------|--------|---------|
+| 0 | 12 | Header (inconnu) |
+| 12 | 32 | Gamertag (UTF-16) |
+| 44 | 15 | Padding |
+| 59 | 1 | Type (10=mode, 20=death, 50=kill) |
+| 60 | 4 | Timestamp (ms) |
+| 64 | 3 | Padding |
+| 67 | 1 | Medal marker |
+| 68 | 3 | Padding |
+| 71 | 1 | Medal ID |
+| 72+ | ? | **BYTES NON DOCUMENTÉS** |
+
+**Hypothèses de recherche** :
+1. L'arme pourrait être dans les bytes au-delà de l'offset 72
+2. L'arme pourrait être encodée dans le header (0-12 bytes)
+3. L'arme pourrait être dans un event séparé corrélé par timestamp
+4. Les chunks de type 2 (in-game events) pourraient contenir l'arme active
+
+**Livrables créés** :
+- `.ai/research/HIGHLIGHT_WEAPON_RESEARCH.md` : Rapport de recherche détaillé
+- `scripts/analyze_highlight_binary.py` : Script d'analyse expérimentale
+
+**Prochaines étapes** :
+```bash
+# Analyser les raw_json existants
+python scripts/analyze_highlight_binary.py --gamertag MonGT --analyze-json
+
+# Télécharger et analyser les chunks binaires
+python scripts/analyze_highlight_binary.py --match-id <GUID> --analyze-binary
+
+# Générer un rapport complet
+python scripts/analyze_highlight_binary.py --gamertag MonGT --report
+```
+
+**Résultats de l'analyse (match 7f1bbf06)** :
+- 187 events trouvés dans la DB SQLite legacy
+- 6 kills par JGtm identifiés
+- **AUCUN champ weapon_id** dans le JSON parsé
+- Medal "Gunslinger" obtenue → confirme utilisation Sidekick
+- Tous les kills ont `medal_value: 0` et `type_hint: 50` (pas de différenciation)
+
+**Conclusion** : L'arme n'est PAS dans les données JSON parsées par SPNKr.
+Il faut analyser les **bytes binaires bruts** des chunks de film.
+
+**Plan d'action créé** : `.ai/research/BINARY_CHUNK_ANALYSIS_PLAN.md`
+
+**Suivi** :
+- [x] Recherche documentée ✅
+- [x] Script d'analyse créé ✅
+- [x] Analyse des raw_json ✅ (aucun champ weapon)
+- [x] Plan d'analyse binaire créé ✅
+- [ ] Configuration tokens API (utilisateur)
+- [ ] Téléchargement chunks bruts
+- [ ] Analyse binaire des bytes non documentés
+- [ ] Corrélation avec armes connues (via medals)
+
+---
+
 ### [2026-02-02] - Nettoyage colonnes objectives (19 colonnes supprimées du schéma)
 
 **Contexte** :
