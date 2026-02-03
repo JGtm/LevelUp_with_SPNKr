@@ -802,7 +802,7 @@ def render_participation_trend_section(
         st.caption("Comparaison de la contribution au score entre les deux sessions")
 
         fig = create_participation_radar(radar_data, title="", height=380)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception:
         pass  # Ne pas bloquer la page en cas d'erreur

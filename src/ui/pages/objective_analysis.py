@@ -223,7 +223,7 @@ def render_objective_analysis_page(
             match_stats_df,
             title="Score Objectifs vs Kills par Match",
         )
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        st.plotly_chart(fig_scatter, width="stretch")
 
     with tab_breakdown:
         col_bars, col_gauge = st.columns([2, 1])
@@ -235,7 +235,7 @@ def render_objective_analysis_page(
                 xuid=xuid,
                 title="Points Totaux par Catégorie",
             )
-            st.plotly_chart(fig_bars, use_container_width=True)
+            st.plotly_chart(fig_bars, width="stretch")
 
         with col_gauge:
             st.markdown("### Ratio Objectifs")
@@ -243,7 +243,7 @@ def render_objective_analysis_page(
                 objective_ratio,
                 title="% du score sur objectifs",
             )
-            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.plotly_chart(fig_gauge, width="stretch")
 
     with tab_trend:
         st.markdown("### Évolution dans le temps")
@@ -263,7 +263,7 @@ def render_objective_analysis_page(
                 summary_with_time,
                 title="Score Objectifs au fil des matchs",
             )
-            st.plotly_chart(fig_trend, use_container_width=True)
+            st.plotly_chart(fig_trend, width="stretch")
         else:
             st.info("Pas assez de données pour afficher la tendance.")
 
@@ -316,7 +316,7 @@ def render_objective_analysis_page(
                 breakdown,
                 title="Types d'Assistances",
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width="stretch")
 
         with col_table:
             st.markdown("### Détail par type")
@@ -326,7 +326,7 @@ def render_objective_analysis_page(
                 assist_table.columns = ["Type d'assistance", "Points", "Nombre"]
                 st.dataframe(
                     assist_table,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
     else:
@@ -349,7 +349,7 @@ def render_objective_analysis_page(
         if not obj_freq.is_empty():
             freq_table = obj_freq.to_pandas()
             freq_table.columns = ["Award", "Points", "Occurrences"]
-            st.dataframe(freq_table, use_container_width=True, hide_index=True)
+            st.dataframe(freq_table, width="stretch", hide_index=True)
         else:
             st.info("Aucun award objectif enregistré.")
 
@@ -359,7 +359,7 @@ def render_objective_analysis_page(
         if not all_freq.is_empty():
             all_table = all_freq.to_pandas()
             all_table.columns = ["Award", "Points", "Occurrences"]
-            st.dataframe(all_table, use_container_width=True, hide_index=True)
+            st.dataframe(all_table, width="stretch", hide_index=True)
         else:
             st.info("Aucun award enregistré.")
 
@@ -381,7 +381,7 @@ def render_objective_analysis_page(
         # Placeholder pour le graphique
         # rankings = rank_players_by_objective_contribution_polars(awards_df, top_n=10)
         # fig_rankings = plot_top_players_objective_bars(rankings)
-        # st.plotly_chart(fig_rankings, use_container_width=True)
+        # st.plotly_chart(fig_rankings, width="stretch")
 
     # ══════════════════════════════════════════════════════════════════════════
     # Section 6: Conseils personnalisés

@@ -13,6 +13,7 @@ Note: cette page ne dépend pas de métadonnées dans les noms de fichiers.
 
 from __future__ import annotations
 
+import contextlib
 import html
 import os
 import urllib.parse
@@ -251,7 +252,7 @@ def _render_media_grid(items: pd.DataFrame, *, cols_per_row: int) -> None:
 
                 if kind == "image" and path:
                     try:
-                        st.image(path, use_container_width=True)
+                        st.image(path, width="stretch")
                     except Exception:
                         st.caption(base)
                 else:
@@ -264,7 +265,7 @@ def _render_media_grid(items: pd.DataFrame, *, cols_per_row: int) -> None:
                     )
                     if path:
                         preview_key = f"media_preview::{hash(path)}"
-                        if st.button("Aperçu", key=preview_key, use_container_width=True):
+                        if st.button("Aperçu", key=preview_key, width="stretch"):
                             st.session_state[preview_key + "::open"] = True
                         if st.session_state.get(preview_key + "::open"):
                             try:
@@ -306,11 +307,9 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
         )
         name_filter = st.text_input("Filtre nom de fichier", value="", placeholder="ex: 2026-01")
 
-        if st.button("Re-scanner les dossiers", use_container_width=True):
-            try:
+        if st.button("Re-scanner les dossiers", width="stretch"):
+            with contextlib.suppress(Exception):
                 index_media_dir.clear()
-            except Exception:
-                pass
             st.rerun()
 
     media_df = _index_all_media(settings).head(int(max_items))

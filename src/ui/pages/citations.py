@@ -142,7 +142,7 @@ def render_citations_page(
                 title=None,
                 top_n=25,
             )
-            st.plotly_chart(fig_medals, use_container_width=True)
+            st.plotly_chart(fig_medals, width="stretch")
 
             st.divider()
             st.subheader("Toutes les médailles")

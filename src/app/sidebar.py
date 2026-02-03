@@ -144,7 +144,7 @@ def render_sync_button(
         "🔄 Synchroniser",
         key="sidebar_sync_button",
         help="Synchronise tous les joueurs (nouveaux matchs, highlights, aliases).",
-        use_container_width=True,
+        width="stretch",
     ):
         with st.spinner("Synchronisation en cours..."):
             ok, msg = sync_all_players_duckdb(

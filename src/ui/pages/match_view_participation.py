@@ -73,7 +73,7 @@ def render_participation_section(
             title="Profil de participation",
             height=350,
         )
-        st.plotly_chart(fig_radar, use_container_width=True)
+        st.plotly_chart(fig_radar, width="stretch")
 
     with col_pie:
         fig_pie = plot_participation_pie(
@@ -81,11 +81,11 @@ def render_participation_section(
             title="Répartition du score",
             show_values=True,
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width="stretch")
 
     # Indicateurs KPI en dessous
     fig_indicator = create_participation_indicator(df, title="")
-    st.plotly_chart(fig_indicator, use_container_width=True)
+    st.plotly_chart(fig_indicator, width="stretch")
 
 
 def render_participation_comparison(
@@ -138,7 +138,7 @@ def render_participation_comparison(
 
         st.subheader("📊 Comparaison de participation")
         fig = create_participation_radar(radar_data, title="", height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     except Exception:
         pass

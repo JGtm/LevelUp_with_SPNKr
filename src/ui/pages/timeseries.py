@@ -80,7 +80,7 @@ def render_timeseries_page(
                         show_kde=True,
                         color=colors["cyan"],
                     )
-                    st.plotly_chart(fig_acc, use_container_width=True)
+                    st.plotly_chart(fig_acc, width="stretch")
                 else:
                     st.info("Pas assez de données de précision.")
             else:
@@ -99,7 +99,7 @@ def render_timeseries_page(
                         show_kde=True,
                         color=colors["green"],
                     )
-                    st.plotly_chart(fig_kills, use_container_width=True)
+                    st.plotly_chart(fig_kills, width="stretch")
                 else:
                     st.info("Pas assez de données de kills.")
             else:
@@ -125,7 +125,7 @@ def render_timeseries_page(
                         show_kde=True,
                         color=colors["amber"],
                     )
-                    st.plotly_chart(fig_life, use_container_width=True)
+                    st.plotly_chart(fig_life, width="stretch")
                 else:
                     st.info("Pas assez de données de durée de vie.")
             else:
@@ -144,7 +144,7 @@ def render_timeseries_page(
                         show_kde=True,
                         color=colors["violet"],
                     )
-                    st.plotly_chart(fig_perf, use_container_width=True)
+                    st.plotly_chart(fig_perf, width="stretch")
                 else:
                     st.info("Pas assez de données de performance.")
             else:
@@ -173,7 +173,7 @@ def render_timeseries_page(
                     y_label="Kills",
                     show_trendline=True,
                 )
-                st.plotly_chart(fig_corr1, use_container_width=True)
+                st.plotly_chart(fig_corr1, width="stretch")
             else:
                 st.info("Données insuffisantes pour cette corrélation.")
 
@@ -190,7 +190,7 @@ def render_timeseries_page(
                     y_label="FDA",
                     show_trendline=True,
                 )
-                st.plotly_chart(fig_corr2, use_container_width=True)
+                st.plotly_chart(fig_corr2, width="stretch")
             else:
                 st.info("Données insuffisantes pour cette corrélation.")
 
@@ -222,7 +222,7 @@ def render_timeseries_page(
                 first_deaths,
                 title=None,
             )
-            st.plotly_chart(fig_events, use_container_width=True)
+            st.plotly_chart(fig_events, width="stretch")
         else:
             st.info(
                 "Données d'événements non disponibles. "
@@ -262,7 +262,7 @@ def render_timeseries_page(
                     weapons_data = repo.get_top_weapons(limit=10)
                     if weapons_data:
                         fig_weapons = plot_top_weapons(weapons_data, title=None, top_n=10)
-                        st.plotly_chart(fig_weapons, use_container_width=True)
+                        st.plotly_chart(fig_weapons, width="stretch")
                     else:
                         st.info("Pas de données d'armes disponibles.")
 

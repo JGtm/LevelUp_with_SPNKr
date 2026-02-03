@@ -16,10 +16,11 @@ Usage:
         render_kda_trend_chart,
         render_performance_by_map,
     )
-    
+
     # Dans une page Streamlit
     render_global_stats_card(db_path, xuid, db_key)
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -49,25 +50,25 @@ def render_global_stats_card(
     """
     Affiche une carte avec les stats globales via DuckDB.
     (Display a card with global stats via DuckDB)
-    
+
     Returns:
         True si le composant a été affiché, False sinon.
     """
     if not _is_analytics_enabled():
         return False
-    
+
     try:
         from src.ui.cache import cached_get_global_stats_duckdb
-        
+
         stats = cached_get_global_stats_duckdb(db_path, xuid, db_key=db_key)
-        
+
         if not stats:
             return False
-        
+
         st.markdown("### 📊 Stats globales (DuckDB)")
-        
+
         col1, col2, col3, col4 = st.columns(4)
-        
+
         col1.metric(
             "Matchs",
             f"{stats['total_matches']:,}",
@@ -84,9 +85,9 @@ def render_global_stats_card(
             "Précision",
             f"{stats['avg_accuracy']:.1f}%",
         )
-        
+
         col5, col6, col7, col8 = st.columns(4)
-        
+
         col5.metric(
             "Kills",
             f"{stats['total_kills']:,}",
@@ -103,9 +104,9 @@ def render_global_stats_card(
             "Temps joué",
             f"{stats['total_time_hours']:.0f}h",
         )
-        
+
         return True
-        
+
     except Exception as e:
         st.warning(f"Erreur analytics DuckDB: {e}")
         return False
@@ -121,50 +122,54 @@ def render_kda_trend_chart(
     """
     Affiche un graphique d'évolution du KDA via DuckDB.
     (Display KDA trend chart via DuckDB)
-    
+
     Returns:
         True si le composant a été affiché, False sinon.
     """
     if not _is_analytics_enabled():
         return False
-    
+
     try:
-        from src.ui.cache import cached_get_kda_trend_duckdb
         import pandas as pd
-        
+
+        from src.ui.cache import cached_get_kda_trend_duckdb
+
         data = cached_get_kda_trend_duckdb(
-            db_path, xuid,
+            db_path,
+            xuid,
             window_size=window_size,
             last_n=last_n,
             db_key=db_key,
         )
-        
+
         if not data:
             return False
-        
+
         df = pd.DataFrame(data)
-        
+
         if df.empty:
             return False
-        
+
         st.markdown(f"### 📈 Évolution KDA (moyenne mobile {window_size} matchs)")
-        
+
         # Graphique avec Streamlit natif
         chart_df = df[["match_number", "rolling_kda"]].copy()
-        chart_df = chart_df.rename(columns={
-            "match_number": "Match",
-            "rolling_kda": "KDA",
-        })
+        chart_df = chart_df.rename(
+            columns={
+                "match_number": "Match",
+                "rolling_kda": "KDA",
+            }
+        )
         chart_df = chart_df.set_index("Match")
-        
-        st.line_chart(chart_df, use_container_width=True)
-        
+
+        st.line_chart(chart_df, width="stretch")
+
         # Stats récentes vs anciennes
         if len(df) >= window_size * 2:
             recent = df.head(window_size)["kda"].mean()
             older = df.tail(window_size)["kda"].mean()
             delta = recent - older
-            
+
             col1, col2, col3 = st.columns(3)
             col1.metric(
                 f"KDA (derniers {window_size})",
@@ -179,9 +184,9 @@ def render_kda_trend_chart(
                 "Tendance",
                 "📈 En hausse" if delta > 0.1 else "📉 En baisse" if delta < -0.1 else "➡️ Stable",
             )
-        
+
         return True
-        
+
     except Exception as e:
         st.warning(f"Erreur graphique KDA: {e}")
         return False
@@ -197,61 +202,67 @@ def render_performance_by_map(
     """
     Affiche un tableau des performances par carte via DuckDB.
     (Display performance by map table via DuckDB)
-    
+
     Returns:
         True si le composant a été affiché, False sinon.
     """
     if not _is_analytics_enabled():
         return False
-    
+
     try:
-        from src.ui.cache import cached_get_performance_by_map_duckdb
         import pandas as pd
-        
+
+        from src.ui.cache import cached_get_performance_by_map_duckdb
+
         data = cached_get_performance_by_map_duckdb(
-            db_path, xuid,
+            db_path,
+            xuid,
             min_matches=min_matches,
             db_key=db_key,
         )
-        
+
         if not data:
             return False
-        
+
         df = pd.DataFrame(data)
-        
+
         if df.empty:
             return False
-        
+
         # Trier par win_rate et limiter
         df = df.sort_values("win_rate", ascending=False).head(top_n)
-        
+
         st.markdown("### 🗺️ Performances par carte (DuckDB)")
-        
+
         # Formater pour l'affichage
-        display_df = df[["map_name", "total_matches", "wins", "losses", "win_rate", "avg_kda", "kd_ratio"]].copy()
-        display_df = display_df.rename(columns={
-            "map_name": "Carte",
-            "total_matches": "Matchs",
-            "wins": "V",
-            "losses": "D",
-            "win_rate": "Win %",
-            "avg_kda": "KDA",
-            "kd_ratio": "K/D",
-        })
-        
+        display_df = df[
+            ["map_name", "total_matches", "wins", "losses", "win_rate", "avg_kda", "kd_ratio"]
+        ].copy()
+        display_df = display_df.rename(
+            columns={
+                "map_name": "Carte",
+                "total_matches": "Matchs",
+                "wins": "V",
+                "losses": "D",
+                "win_rate": "Win %",
+                "avg_kda": "KDA",
+                "kd_ratio": "K/D",
+            }
+        )
+
         # Formater les nombres
         display_df["Win %"] = display_df["Win %"].apply(lambda x: f"{x:.1f}%")
         display_df["KDA"] = display_df["KDA"].apply(lambda x: f"{x:.2f}")
         display_df["K/D"] = display_df["K/D"].apply(lambda x: f"{x:.2f}")
-        
+
         st.dataframe(
             display_df,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
-        
+
         return True
-        
+
     except Exception as e:
         st.warning(f"Erreur performances par carte: {e}")
         return False
@@ -265,40 +276,40 @@ def render_analytics_section(
     """
     Affiche une section complète d'analytics DuckDB.
     (Display complete DuckDB analytics section)
-    
+
     Combine les différents composants dans une section cohérente.
-    
+
     Returns:
         True si au moins un composant a été affiché, False sinon.
     """
     if not _is_analytics_enabled():
         return False
-    
+
     displayed = False
-    
+
     with st.expander("📊 Analytics avancées (DuckDB)", expanded=False):
         st.caption(
             "Ces statistiques sont calculées via DuckDB sur les fichiers Parquet. "
             "Performance 10-20x supérieure au système legacy."
         )
-        
+
         if render_global_stats_card(db_path, xuid, db_key):
             displayed = True
-        
+
         st.divider()
-        
+
         if render_kda_trend_chart(db_path, xuid, db_key, last_n=100):
             displayed = True
-        
+
         st.divider()
-        
+
         if render_performance_by_map(db_path, xuid, db_key):
             displayed = True
-        
+
         if not displayed:
             st.info(
                 "Aucune donnée Parquet disponible. "
                 "Lancez la migration dans Paramètres → Architecture de données."
             )
-    
+
     return displayed

@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from collections.abc import Mapping
-from typing import Callable
 
-import pandas as pd
 import streamlit as st
 
-from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_WAYPOINT_PLAYER, get_aliases_file_path
+from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_WAYPOINT_PLAYER
 from src.db import (
     guess_xuid_from_db_path,
     infer_spnkr_player_from_db_path,
     load_profiles,
-    save_profiles,
     resolve_xuid_from_db,
 )
-from src.ui.aliases import load_aliases_file, save_aliases_file, display_name_from_xuid
+from src.ui.aliases import display_name_from_xuid
 
 
 def _default_identity_from_secrets() -> tuple[str, str]:
@@ -59,7 +57,7 @@ def render_source_section(
     """
 
     # --- Multi-DB / Profils ---
-    profiles = load_profiles()
+    _ = load_profiles()  # Précharge les profils
 
     if "db_path" not in st.session_state:
         st.session_state["db_path"] = default_db
@@ -86,30 +84,30 @@ def render_source_section(
         spnkr_candidates = []
 
     spnkr_candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
-    latest_spnkr_db_path = str(spnkr_candidates[0]) if spnkr_candidates else spnkr_db_path
+    # latest_spnkr_db_path préparé pour usage futur (multi-profils)
+    _ = str(spnkr_candidates[0]) if spnkr_candidates else spnkr_db_path
 
     current_db_path = str(st.session_state.get("db_path", "") or "")
     try:
         cur_parent = Path(current_db_path).resolve().parent
     except Exception:
         cur_parent = Path(current_db_path).parent
-    is_spnkr = (
+    # is_spnkr préparé pour usage futur (conditionnels multi-profils)
+    _ = (
         os.path.normcase(str(cur_parent)) == os.path.normcase(str(data_dir))
         and Path(current_db_path).suffix.lower() == ".db"
         and Path(current_db_path).name.lower().startswith("spnkr")
     )
 
     c_top = st.columns(2)
-    if c_top[0].button("Vider caches", use_container_width=True):
+    if c_top[0].button("Vider caches", width="stretch"):
         on_clear_caches()
         st.success("Caches vidés.")
         st.rerun()
-    if c_top[1].button("Rafraîchir", use_container_width=True):
+    if c_top[1].button("Rafraîchir", width="stretch"):
         # Le get_local_dbs est censé être caché côté app (ttl) ; on le force via clear/closure.
-        try:
-            getattr(get_local_dbs, "clear")()  # st.cache_data wrapper
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            get_local_dbs.clear()  # st.cache_data wrapper
         st.rerun()
 
     # Section DB détectées masquée - sélection automatique depuis session_state

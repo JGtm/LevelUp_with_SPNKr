@@ -140,7 +140,7 @@ def _render_synergy_radar(
         title="",
         height=350,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Analyse textuelle de la complémentarité
     my_kills_pct = my_profile["kills_pct"]
@@ -718,7 +718,7 @@ def _render_trio_view(
     col_table, col_radar = st.columns([1, 1])
 
     with col_table:
-        st.dataframe(trio_per_min, use_container_width=True, hide_index=True)
+        st.dataframe(trio_per_min, width="stretch", hide_index=True)
 
     with col_radar:
         from src.ui.components.radar_chart import create_stats_per_minute_radar
@@ -765,7 +765,7 @@ def _render_trio_view(
             },
         ]
         radar_fig = create_stats_per_minute_radar(radar_players, title="", height=300)
-        st.plotly_chart(radar_fig, use_container_width=True)
+        st.plotly_chart(radar_fig, width="stretch")
 
     f1_df = f1_df[
         ["match_id", "kills", "deaths", "assists", "accuracy", "ratio", "average_life_seconds"]

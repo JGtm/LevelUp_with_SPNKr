@@ -129,7 +129,7 @@ def render_win_loss_page(
                     sort_by="total",
                     max_categories=12,
                 )
-                st.plotly_chart(fig_map, use_container_width=True)
+                st.plotly_chart(fig_map, width="stretch")
             else:
                 st.info("Données insuffisantes.")
 
@@ -146,7 +146,7 @@ def render_win_loss_page(
                     sort_by="total",
                     max_categories=10,
                 )
-                st.plotly_chart(fig_mode, use_container_width=True)
+                st.plotly_chart(fig_mode, width="stretch")
             else:
                 st.info("Données insuffisantes.")
 
@@ -164,7 +164,7 @@ def render_win_loss_page(
                 title=None,
                 min_matches=2,
             )
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width="stretch")
         else:
             st.info("Données temporelles manquantes.")
 
@@ -193,7 +193,7 @@ def render_win_loss_page(
                     rank_col="outcome",  # Fallback
                     top_n_ranks=1,
                 )
-            st.plotly_chart(fig_top, use_container_width=True)
+            st.plotly_chart(fig_top, width="stretch")
         else:
             st.info("Données temporelles manquantes.")
 
