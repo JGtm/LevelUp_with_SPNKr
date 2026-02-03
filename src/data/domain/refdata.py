@@ -422,6 +422,9 @@ NEGATIVE_SCORES: Final[frozenset[int]] = frozenset(
     }
 )
 
+# Alias pour compatibilité
+PENALTY_SCORES = NEGATIVE_SCORES
+
 # Scores liés aux véhicules
 VEHICLE_DESTRUCTION_SCORES: Final[frozenset[int]] = frozenset(
     {

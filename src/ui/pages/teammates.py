@@ -51,10 +51,15 @@ def _render_synergy_radar(
     me_name: str,
     friend_name: str,
     colors_by_name: dict[str, str],
+    *,
+    db_path: str | None = None,
+    xuid: str | None = None,
+    friend_xuid: str | None = None,
 ) -> None:
     """Affiche le radar de complémentarité entre moi et un coéquipier.
 
-    Montre le profil de jeu (% kills, % assists, K/D, précision).
+    Montre le profil de jeu (% kills, % assists, % objectifs, K/D, précision).
+    Utilise les PersonalScores si disponibles pour les % objectifs.
 
     Args:
         sub: DataFrame de mes matchs.
@@ -62,14 +67,49 @@ def _render_synergy_radar(
         me_name: Mon nom.
         friend_name: Nom du coéquipier.
         colors_by_name: Mapping nom → couleur.
+        db_path: Chemin vers la DB (pour PersonalScores).
+        xuid: Mon XUID (pour PersonalScores).
+        friend_xuid: XUID du coéquipier (pour PersonalScores).
     """
     if sub.empty or friend_sub.empty:
         return
 
     from src.ui.components.radar_chart import create_teammate_synergy_radar
 
+    # Récupérer db_path et xuid depuis session_state si non fournis
+    if db_path is None:
+        db_path = st.session_state.get("db_path", "")
+    if xuid is None:
+        xuid = st.session_state.get("xuid", "")
+
+    # Obtenir les match_ids partagés
+    shared_match_ids = list(set(sub["match_id"].tolist()) & set(friend_sub["match_id"].tolist()))
+
+    # Essayer de charger les PersonalScores pour les % objectifs
+    my_obj_pct = 0.0
+    friend_obj_pct = 0.0
+
+    if db_path and xuid and shared_match_ids:
+        try:
+            from src.data.repositories import DuckDBRepository
+            from src.visualization import compute_participation_percentages
+
+            repo = DuckDBRepository(db_path, xuid)
+            if repo.has_personal_score_awards():
+                # Mes données
+                my_ps = repo.load_personal_score_awards_as_polars(match_ids=shared_match_ids)
+                if not my_ps.is_empty():
+                    my_pcts = compute_participation_percentages(my_ps)
+                    my_obj_pct = my_pcts.get("objectives_pct", 0)
+
+                # Données du coéquipier (si on a son XUID et qu'il est dans la même DB)
+                # Note: Les PersonalScores du coéquipier ne sont pas stockés dans notre DB
+                # On garde 0 pour lui sauf si on a une autre source
+        except Exception:
+            pass
+
     # Calculer les stats agrégées pour chaque joueur
-    def compute_profile(df: pd.DataFrame) -> dict:
+    def compute_profile(df: pd.DataFrame, obj_pct: float = 0.0) -> dict:
         total_kills = df["kills"].sum()
         total_deaths = df["deaths"].sum()
         total_assists = df["assists"].sum()
@@ -78,16 +118,16 @@ def _render_synergy_radar(
         return {
             "kills_pct": (total_kills / total_actions * 100) if total_actions > 0 else 0,
             "assists_pct": (total_assists / total_actions * 100) if total_actions > 0 else 0,
-            "objectives_pct": 0,  # Pas disponible sans PersonalScores
+            "objectives_pct": obj_pct,
             "kd_ratio": total_kills / max(total_deaths, 1),
             "accuracy": df["accuracy"].mean() if "accuracy" in df.columns else 0,
         }
 
-    my_profile = compute_profile(sub)
+    my_profile = compute_profile(sub, my_obj_pct)
     my_profile["name"] = me_name
     my_profile["color"] = colors_by_name.get(me_name, "#636EFA")
 
-    friend_profile = compute_profile(friend_sub)
+    friend_profile = compute_profile(friend_sub, friend_obj_pct)
     friend_profile["name"] = friend_name
     friend_profile["color"] = colors_by_name.get(friend_name, "#EF553B")
 
@@ -106,19 +146,20 @@ def _render_synergy_radar(
     my_kills_pct = my_profile["kills_pct"]
     friend_kills_pct = friend_profile["kills_pct"]
 
+    analysis_parts = []
+
     if abs(my_kills_pct - friend_kills_pct) > 20:
         if my_kills_pct > friend_kills_pct:
-            st.caption(
-                f"💡 **Profils complémentaires** : Tu es plus orienté frags, "
-                f"{friend_name} supporte davantage."
-            )
+            analysis_parts.append(f"Tu es plus orienté frags, {friend_name} supporte davantage")
         else:
-            st.caption(
-                f"💡 **Profils complémentaires** : {friend_name} est plus orienté frags, "
-                f"tu supportes davantage."
-            )
+            analysis_parts.append(f"{friend_name} est plus orienté frags, tu supportes davantage")
     else:
-        st.caption("💡 **Profils similaires** : Vous avez un style de jeu comparable.")
+        analysis_parts.append("Vous avez un style de jeu comparable")
+
+    if my_obj_pct > 10:
+        analysis_parts.append(f"Tu contribues {my_obj_pct:.0f}% aux objectifs")
+
+    st.caption(f"💡 **Profil** : {'. '.join(analysis_parts)}.")
 
 
 def render_teammates_page(

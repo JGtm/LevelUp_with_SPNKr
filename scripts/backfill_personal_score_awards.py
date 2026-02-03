@@ -45,11 +45,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def ensure_schema(conn: duckdb.DuckDBPyConnection) -> None:
-    """S'assure que la table personal_score_awards existe."""
+def ensure_schema(conn: duckdb.DuckDBPyConnection, *, recreate: bool = False) -> None:
+    """S'assure que la table personal_score_awards existe.
+
+    Args:
+        conn: Connexion DuckDB.
+        recreate: Si True, supprime et recrée la table.
+    """
+    if recreate:
+        with contextlib.suppress(Exception):
+            conn.execute("DROP TABLE IF EXISTS personal_score_awards")
+
+    # Créer la table sans colonne id explicite (DuckDB gère le rowid)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS personal_score_awards (
-            id INTEGER PRIMARY KEY,
             match_id VARCHAR NOT NULL,
             xuid VARCHAR NOT NULL,
             award_name VARCHAR NOT NULL,
@@ -163,6 +172,7 @@ async def backfill_player_db(
     limit: int | None = None,
     dry_run: bool = False,
     force: bool = False,
+    recreate_table: bool = False,
     requests_per_second: int = 3,
 ) -> dict:
     """Backfill une base joueur.
@@ -173,6 +183,7 @@ async def backfill_player_db(
         limit: Limite du nombre de matchs à traiter.
         dry_run: Si True, ne modifie pas la DB.
         force: Si True, retraite tous les matchs.
+        recreate_table: Si True, supprime et recrée la table.
         requests_per_second: Rate limiting API.
 
     Returns:
@@ -197,7 +208,7 @@ async def backfill_player_db(
     try:
         # S'assurer que le schéma existe
         if not dry_run:
-            ensure_schema(conn)
+            ensure_schema(conn, recreate=recreate_table)
 
         # Récupérer le XUID si non fourni
         if xuid is None:
@@ -335,6 +346,7 @@ async def main_async(args):
             limit=args.limit,
             dry_run=args.dry_run,
             force=args.force,
+            recreate_table=args.recreate,
             requests_per_second=args.rate_limit,
         )
         total_stats["matches_processed"] += stats["matches_processed"]
@@ -403,6 +415,11 @@ def main():
         "-f",
         action="store_true",
         help="Retraiter tous les matchs (même déjà traités)",
+    )
+    parser.add_argument(
+        "--recreate",
+        action="store_true",
+        help="Supprimer et recréer la table personal_score_awards",
     )
     parser.add_argument(
         "--verbose",
