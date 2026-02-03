@@ -278,75 +278,119 @@ fig = plot_killer_victim_stacked_bars(pairs_df, match_id="abc123", me_xuid="xuid
 
 ---
 
-## Sprint 6 : Performance Cumulée avec Polars (1 semaine)
+## Sprint 6 : Performance Cumulée avec Polars (1 semaine) ✅ TERMINÉ
 
 ### Objectifs
-- Calculer performance cumulée avec Polars
-- Créer graphiques de tendance
-- Intégrer dans comparaison de sessions
+- ✅ Calculer performance cumulée avec Polars
+- ✅ Créer graphiques de tendance
+- ✅ Intégrer dans comparaison de sessions
 
 ### Tâches
 
-| ID | Tâche | Fichiers | Estimation |
-|----|-------|----------|------------|
-| 6.1 | Créer `compute_cumulative_net_score_series_polars()` | `src/analysis/performance.py` | 4h |
-| 6.2 | Créer `plot_cumulative_net_score()` | `src/visualization/performance.py` | 4h |
-| 6.3 | Intégrer dans page comparaison sessions | `src/ui/pages/session_compare.py` | 3h |
-| 6.4 | Ajouter métriques cumulées (K/D, score objectifs) | `src/analysis/performance.py` | 3h |
-| 6.5 | Tests et validation | `tests/test_performance_cumulative.py` | 2h |
+| ID | Tâche | Fichiers | Statut |
+|----|-------|----------|--------|
+| 6.1 | ✅ Créer `compute_cumulative_net_score_series_polars()` | `src/analysis/cumulative.py` | **FAIT** |
+| 6.2 | ✅ Créer `plot_cumulative_net_score()` | `src/visualization/performance.py` | **FAIT** |
+| 6.3 | ✅ Intégrer dans page comparaison sessions | `src/ui/pages/session_compare.py` | **FAIT** |
+| 6.4 | ✅ Ajouter métriques cumulées (K/D, score objectifs) | `src/analysis/cumulative.py` | **FAIT** |
+| 6.5 | ✅ Tests et validation (24 tests) | `tests/test_performance_cumulative.py` | **FAIT** |
 
-### Code exemple Polars
+### Fonctions implémentées
 
 ```python
-import polars as pl
+from src.analysis import (
+    # Dataclasses
+    CumulativeSeriesResult,
+    CumulativeMetricsResult,
+    # Séries cumulatives
+    compute_cumulative_net_score_series_polars,
+    compute_cumulative_kd_series_polars,
+    compute_cumulative_kda_series_polars,
+    compute_cumulative_objective_score_series_polars,
+    # Métriques agrégées
+    compute_cumulative_metrics_polars,
+    compute_rolling_kd_polars,
+    compute_session_trend_polars,
+    cumulative_series_to_dicts,
+)
 
-def compute_cumulative_net_score_series_polars(
-    match_stats_df: pl.DataFrame,
-) -> pl.DataFrame:
-    """Calcule série cumulative net score avec Polars."""
-    return (
-        match_stats_df
-        .sort("start_time")
-        .with_columns([
-            # Net score = kills - deaths
-            (pl.col("kills") - pl.col("deaths")).alias("net_score"),
-        ])
-        .with_columns([
-            # Cumulatif
-            pl.col("net_score").cumsum().alias("cumulative_net_score"),
-        ])
-        .select(["start_time", "cumulative_net_score"])
-    )
+from src.visualization import (
+    plot_cumulative_net_score,
+    plot_cumulative_kd,
+    plot_rolling_kd,
+    plot_session_trend,
+    plot_cumulative_comparison,
+    create_cumulative_metrics_indicator,
+    get_performance_colors,
+)
 ```
 
 ### Livrables
-- ✅ Analyses performance cumulée
-- ✅ Graphiques de tendance
-- ✅ Intégration UI
+- ✅ Module `src/analysis/cumulative.py` avec 9 fonctions Polars
+- ✅ Module `src/visualization/performance.py` avec 7 graphiques
+- ✅ 24 tests unitaires passés (`tests/test_performance_cumulative.py`)
 
 ---
 
-## Sprint 7 : Analyses Score Personnel Avancées (1 semaine)
+## Sprint 7 : Analyses Score Personnel Avancées (1 semaine) ✅ TERMINÉ
 
 ### Objectifs
-- Créer page d'analyse objectifs
-- Visualiser contribution aux objectifs
-- Valoriser joueurs support
+- ✅ Créer page d'analyse objectifs
+- ✅ Visualiser contribution aux objectifs
+- ✅ Valoriser joueurs support
 
 ### Tâches
 
-| ID | Tâche | Fichiers | Estimation |
-|----|-------|----------|------------|
-| 7.1 | Créer page `objective_analysis.py` | `src/ui/pages/objective_analysis.py` | 5h |
-| 7.2 | Graphique score objectifs vs kills | `src/visualization/objective_charts.py` | 4h |
-| 7.3 | Tableau top joueurs sur objectifs | `src/ui/pages/objective_analysis.py` | 3h |
-| 7.4 | Métriques ratio objectifs/kills | `src/analysis/objective_participation.py` | 2h |
-| 7.5 | Tests et validation | Tests manuels | 2h |
+| ID | Tâche | Fichiers | Statut |
+|----|-------|----------|--------|
+| 7.1 | ✅ Créer page `objective_analysis.py` | `src/ui/pages/objective_analysis.py` | **FAIT** |
+| 7.2 | ✅ Graphique score objectifs vs kills | `src/visualization/objective_charts.py` | **FAIT** |
+| 7.3 | ✅ Tableau top joueurs sur objectifs | `src/ui/pages/objective_analysis.py` | **FAIT** |
+| 7.4 | ✅ Métriques ratio objectifs/kills | `src/analysis/objective_participation.py` | **FAIT** |
+| 7.5 | ✅ Tests et validation | Tests existants Sprint 4 (26 tests) | **FAIT** |
+
+### Fonctions implémentées
+
+```python
+# Sprint 7: Page et visualisations objectifs
+from src.ui.pages import (
+    render_objective_analysis_page,
+    render_objective_analysis_page_from_session_state,
+)
+
+from src.visualization import (
+    plot_objective_vs_kills_scatter,
+    plot_objective_breakdown_bars,
+    plot_top_players_objective_bars,
+    plot_objective_ratio_gauge,
+    plot_assist_breakdown_pie,
+    plot_objective_trend_over_time,
+    get_objective_chart_colors,
+)
+
+# Sprint 7.4: Nouvelles métriques ratio
+from src.analysis import (
+    PlayerProfileResult,
+    compute_objective_kill_ratio_polars,
+    compute_player_profile_polars,
+    compute_objective_efficiency_polars,
+)
+```
+
+### Fonctionnalités de la page
+
+1. **Vue d'ensemble** : Métriques globales (score objectifs, kills, assists, ratio)
+2. **Profil du joueur** : Détection automatique (Slayer/Support/Polyvalent)
+3. **Graphiques** : Scatter objectifs vs kills, répartition par catégorie, tendances
+4. **Analyse des assistances** : Décomposition par type (kill, mark, EMP, etc.)
+5. **Awards fréquents** : Top awards objectifs et tous awards
+6. **Conseils personnalisés** : Recommandations basées sur le profil
 
 ### Livrables
-- ✅ Page d'analyse objectifs complète
-- ✅ Visualisations enrichies
-- ✅ Métriques valorisées
+- ✅ Page `src/ui/pages/objective_analysis.py` complète avec 6 sections
+- ✅ Module `src/visualization/objective_charts.py` avec 7 graphiques
+- ✅ 3 nouvelles fonctions d'analyse (ratio, profil, efficacité)
+- ✅ Tests existants valides (26 tests Sprint 4)
 
 ---
 
@@ -508,11 +552,11 @@ Sprint 9 (Optimisation)
 - [x] **SPRINT 3 TERMINÉ** ✅ (Fonctions Polars Antagonistes)
 - [x] **SPRINT 4 TERMINÉ** ✅ (Analyses Score Personnel avec Polars - 26 tests)
 - [x] **SPRINT 5 TERMINÉ** ✅ (Visualisations Antagonistes - 8 graphiques)
+- [x] **SPRINT 6 TERMINÉ** ✅ (Performance Cumulée avec Polars - 24 tests)
+- [x] **SPRINT 7 TERMINÉ** ✅ (Page Analyse Objectifs + Métriques Ratio)
 
 ### Prochains sprints
 
-- [ ] Sprint 6 : Performance Cumulée avec Polars
-- [ ] Sprint 7 : Analyses Score Personnel Avancées
 - [ ] Sprint 8 : Backfill et Migration
 - [ ] Sprint 9 : Optimisation et Tests Finaux
 

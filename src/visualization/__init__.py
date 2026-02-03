@@ -30,6 +30,24 @@ from src.visualization.match_bars import (
     plot_metric_bars_by_match,
     plot_multi_metric_bars_by_match,
 )
+from src.visualization.objective_charts import (
+    get_objective_chart_colors,
+    plot_assist_breakdown_pie,
+    plot_objective_breakdown_bars,
+    plot_objective_ratio_gauge,
+    plot_objective_trend_over_time,
+    plot_objective_vs_kills_scatter,
+    plot_top_players_objective_bars,
+)
+from src.visualization.performance import (
+    create_cumulative_metrics_indicator,
+    get_performance_colors,
+    plot_cumulative_comparison,
+    plot_cumulative_kd,
+    plot_cumulative_net_score,
+    plot_rolling_kd,
+    plot_session_trend,
+)
 from src.visualization.theme import apply_halo_plot_style
 from src.visualization.timeseries import (
     plot_accuracy_last_n,
@@ -75,4 +93,20 @@ __all__ = [
     "plot_top_antagonists_bars",
     "get_antagonist_chart_colors",
     "create_kd_indicator",
+    # Sprint 6: Performance cumulée
+    "plot_cumulative_net_score",
+    "plot_cumulative_kd",
+    "plot_rolling_kd",
+    "plot_session_trend",
+    "plot_cumulative_comparison",
+    "create_cumulative_metrics_indicator",
+    "get_performance_colors",
+    # Sprint 7: Graphiques objectifs
+    "plot_objective_vs_kills_scatter",
+    "plot_objective_breakdown_bars",
+    "plot_top_players_objective_bars",
+    "plot_objective_ratio_gauge",
+    "plot_assist_breakdown_pie",
+    "plot_objective_trend_over_time",
+    "get_objective_chart_colors",
 ]

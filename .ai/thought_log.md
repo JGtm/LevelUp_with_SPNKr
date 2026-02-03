@@ -7,6 +7,77 @@
 
 ## Journal
 
+### [2026-02-03] - SPRINTS 6 & 7 TERMINÉS : Performance Cumulée + Page Objectifs
+
+**Statut** : ✅ **SUCCÈS** - 50+ tests passent (24 Sprint 6 + 26 Sprint 4)
+
+**Sprint 6 : Performance Cumulée avec Polars**
+
+Module créé : `src/analysis/cumulative.py`
+
+| Fonction | Description |
+|----------|-------------|
+| `compute_cumulative_net_score_series_polars()` | Série cumulative net score (kills - deaths) |
+| `compute_cumulative_kd_series_polars()` | Série cumulative K/D ratio |
+| `compute_cumulative_kda_series_polars()` | Série cumulative KDA |
+| `compute_cumulative_objective_score_series_polars()` | Série cumulative score objectifs |
+| `compute_cumulative_metrics_polars()` | Métriques agrégées finales |
+| `compute_rolling_kd_polars()` | K/D glissant sur N matchs |
+| `compute_session_trend_polars()` | Tendance de session (amélioration/déclin) |
+
+Module créé : `src/visualization/performance.py`
+
+| Graphique | Description |
+|-----------|-------------|
+| `plot_cumulative_net_score()` | Courbe net score avec barres par match |
+| `plot_cumulative_kd()` | Courbe K/D cumulé avec ligne cible |
+| `plot_rolling_kd()` | K/D glissant avec K/D par match |
+| `plot_session_trend()` | Indicateurs de tendance (début/fin/delta) |
+| `plot_cumulative_comparison()` | Comparaison deux sessions superposées |
+| `create_cumulative_metrics_indicator()` | Indicateurs compacts métriques |
+
+**Sprint 7 : Page Analyse Objectifs**
+
+Page créée : `src/ui/pages/objective_analysis.py`
+
+Sections de la page :
+1. Vue d'ensemble avec métriques (objectifs, kills, assists, ratio)
+2. Profil du joueur (Slayer/Support/Polyvalent)
+3. Graphiques : scatter objectifs vs kills, répartition, tendances
+4. Analyse des assistances avec camembert
+5. Top awards par catégorie
+6. Conseils personnalisés
+
+Module créé : `src/visualization/objective_charts.py`
+
+| Graphique | Description |
+|-----------|-------------|
+| `plot_objective_vs_kills_scatter()` | Scatter correlation + tendance |
+| `plot_objective_breakdown_bars()` | Barres répartition par catégorie |
+| `plot_top_players_objective_bars()` | Top N joueurs horizontal |
+| `plot_objective_ratio_gauge()` | Gauge ratio objectifs/total |
+| `plot_assist_breakdown_pie()` | Camembert types d'assistances |
+| `plot_objective_trend_over_time()` | Évolution dans le temps |
+
+Nouvelles fonctions dans `src/analysis/objective_participation.py` :
+
+| Fonction | Description |
+|----------|-------------|
+| `compute_objective_kill_ratio_polars()` | Ratio objectifs/kills par match |
+| `compute_player_profile_polars()` | Déterminer profil joueur |
+| `compute_objective_efficiency_polars()` | Efficacité objective |
+
+**Corrections** :
+- `HALO_COLORS.get()` → `HALO_COLORS.green` (attribut vs dict)
+- `THEME_COLORS.get("text")` → `THEME_COLORS.text_primary`
+- `pl.count()` → `pl.len()` (dépréciation Polars)
+
+**Tests** : 50 passent (24 Sprint 6 + 26 Sprint 4)
+
+**Prochains sprints** : 8 (Backfill), 9 (Optimisation)
+
+---
+
 ### [2026-02-03] - SPRINTS 4 & 5 TERMINÉS : Analyses et Visualisations
 
 **Statut** : ✅ **SUCCÈS** - 46 tests passent
