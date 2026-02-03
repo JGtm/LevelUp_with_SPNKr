@@ -40,6 +40,86 @@ from src.ui.pages.teammates_helpers import (
 from src.ui.perf import perf_section
 from src.visualization import plot_map_ratio_with_winloss
 
+# =============================================================================
+# Helpers Sprint 8.2 - Radar de complémentarité
+# =============================================================================
+
+
+def _render_synergy_radar(
+    sub: pd.DataFrame,
+    friend_sub: pd.DataFrame,
+    me_name: str,
+    friend_name: str,
+    colors_by_name: dict[str, str],
+) -> None:
+    """Affiche le radar de complémentarité entre moi et un coéquipier.
+
+    Montre le profil de jeu (% kills, % assists, K/D, précision).
+
+    Args:
+        sub: DataFrame de mes matchs.
+        friend_sub: DataFrame des matchs du coéquipier.
+        me_name: Mon nom.
+        friend_name: Nom du coéquipier.
+        colors_by_name: Mapping nom → couleur.
+    """
+    if sub.empty or friend_sub.empty:
+        return
+
+    from src.ui.components.radar_chart import create_teammate_synergy_radar
+
+    # Calculer les stats agrégées pour chaque joueur
+    def compute_profile(df: pd.DataFrame) -> dict:
+        total_kills = df["kills"].sum()
+        total_deaths = df["deaths"].sum()
+        total_assists = df["assists"].sum()
+        total_actions = total_kills + total_assists
+
+        return {
+            "kills_pct": (total_kills / total_actions * 100) if total_actions > 0 else 0,
+            "assists_pct": (total_assists / total_actions * 100) if total_actions > 0 else 0,
+            "objectives_pct": 0,  # Pas disponible sans PersonalScores
+            "kd_ratio": total_kills / max(total_deaths, 1),
+            "accuracy": df["accuracy"].mean() if "accuracy" in df.columns else 0,
+        }
+
+    my_profile = compute_profile(sub)
+    my_profile["name"] = me_name
+    my_profile["color"] = colors_by_name.get(me_name, "#636EFA")
+
+    friend_profile = compute_profile(friend_sub)
+    friend_profile["name"] = friend_name
+    friend_profile["color"] = colors_by_name.get(friend_name, "#EF553B")
+
+    st.subheader("🤝 Complémentarité")
+
+    # Afficher le radar
+    fig = create_teammate_synergy_radar(
+        me_data=my_profile,
+        teammate_data=friend_profile,
+        title="",
+        height=350,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Analyse textuelle de la complémentarité
+    my_kills_pct = my_profile["kills_pct"]
+    friend_kills_pct = friend_profile["kills_pct"]
+
+    if abs(my_kills_pct - friend_kills_pct) > 20:
+        if my_kills_pct > friend_kills_pct:
+            st.caption(
+                f"💡 **Profils complémentaires** : Tu es plus orienté frags, "
+                f"{friend_name} supporte davantage."
+            )
+        else:
+            st.caption(
+                f"💡 **Profils complémentaires** : {friend_name} est plus orienté frags, "
+                f"tu supportes davantage."
+            )
+    else:
+        st.caption("💡 **Profils similaires** : Vous avez un style de jeu comparable.")
+
 
 def render_teammates_page(
     df: pd.DataFrame,
@@ -283,6 +363,15 @@ def _render_single_teammate_view(
             show_smooth=show_smooth,
             key_suffix=friend_xuid,
             plot_fn=plot_multi_metric_bars_fn,
+        )
+
+        # Radar de complémentarité (Sprint 8.2)
+        _render_synergy_radar(
+            sub=sub,
+            friend_sub=friend_sub,
+            me_name=me_name,
+            friend_name=name,
+            colors_by_name=colors_by_name,
         )
 
         # Médailles
@@ -750,23 +839,20 @@ def _render_trio_view(
             top_f2 = top_medals_fn(db_path, f2_xuid, trio_match_ids, top_n=12, db_key=db_key)
 
         c1, c2, c3 = st.columns(3)
-        with c1:
-            with st.expander(f"{me_name}", expanded=True):
-                render_medals_grid(
-                    [{"name_id": int(n), "count": int(c)} for n, c in (top_self or [])],
-                    cols_per_row=6,
-                )
-        with c2:
-            with st.expander(f"{f1_name}", expanded=True):
-                render_medals_grid(
-                    [{"name_id": int(n), "count": int(c)} for n, c in (top_f1 or [])],
-                    cols_per_row=6,
-                )
-        with c3:
-            with st.expander(f"{f2_name}", expanded=True):
-                render_medals_grid(
-                    [{"name_id": int(n), "count": int(c)} for n, c in (top_f2 or [])],
-                    cols_per_row=6,
-                )
+        with c1, st.expander(f"{me_name}", expanded=True):
+            render_medals_grid(
+                [{"name_id": int(n), "count": int(c)} for n, c in (top_self or [])],
+                cols_per_row=6,
+            )
+        with c2, st.expander(f"{f1_name}", expanded=True):
+            render_medals_grid(
+                [{"name_id": int(n), "count": int(c)} for n, c in (top_f1 or [])],
+                cols_per_row=6,
+            )
+        with c3, st.expander(f"{f2_name}", expanded=True):
+            render_medals_grid(
+                [{"name_id": int(n), "count": int(c)} for n, c in (top_f2 or [])],
+                cols_per_row=6,
+            )
 
     return True

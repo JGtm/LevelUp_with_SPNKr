@@ -9,35 +9,36 @@ Ce module a été refactorisé en sous-modules :
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 import streamlit as st
 
+from src.analysis.performance_config import SCORE_THRESHOLDS
+from src.analysis.performance_score import compute_relative_performance_score
 from src.config import HALO_COLORS, OUTCOME_CODES
 from src.ui import (
-    translate_playlist_name,
-    translate_pair_name,
     AppSettings,
+    translate_pair_name,
+    translate_playlist_name,
 )
 from src.ui.formatting import format_date_fr
 from src.ui.medals import medal_label, render_medals_grid
-from src.analysis.performance_score import compute_relative_performance_score
-from src.analysis.performance_config import SCORE_THRESHOLDS
+from src.ui.pages.match_view_charts import render_expected_vs_actual
 
 # Imports depuis les sous-modules
 from src.ui.pages.match_view_helpers import (
-    os_card,
     map_thumb_path,
+    os_card,
     render_media_section,
 )
-from src.ui.pages.match_view_charts import render_expected_vs_actual
+from src.ui.pages.match_view_participation import render_participation_section
 from src.ui.pages.match_view_players import (
     render_nemesis_section,
     render_roster_section,
 )
-
 
 # =============================================================================
 # Fonction principale
@@ -121,9 +122,7 @@ def render_match_view(
         outcome_color = colors["green"]
     elif outcome_code == OUTCOME_CODES.LOSS:
         outcome_color = colors["red"]
-    elif outcome_code == OUTCOME_CODES.TIE:
-        outcome_color = colors["violet"]
-    elif outcome_code == OUTCOME_CODES.NO_FINISH:
+    elif outcome_code == OUTCOME_CODES.TIE or outcome_code == OUTCOME_CODES.NO_FINISH:
         outcome_color = colors["violet"]
     else:
         outcome_color = colors["slate"]
@@ -131,12 +130,14 @@ def render_match_view(
     last_my_score = row.get("my_team_score")
     last_enemy_score = row.get("enemy_team_score")
     score_label = format_score_label_fn(last_my_score, last_enemy_score)
-    score_color = score_css_color_fn(last_my_score, last_enemy_score)
+    _ = score_css_color_fn(last_my_score, last_enemy_score)  # noqa: F841
 
     wp = str(waypoint_player or "").strip()
     match_url = None
     if wp and match_id and match_id.strip() and match_id.strip() != "-":
-        match_url = f"https://www.halowaypoint.com/halo-infinite/players/{wp}/matches/{match_id.strip()}"
+        match_url = (
+            f"https://www.halowaypoint.com/halo-infinite/players/{wp}/matches/{match_id.strip()}"
+        )
 
     # Calcul du score de performance RELATIF
     perf_score = None
@@ -161,8 +162,10 @@ def render_match_view(
     with top_cols[0]:
         os_card("Date", format_date_fr(last_time))
     with top_cols[1]:
-        outcome_class = "text-win" if "victoire" in str(outcome_label).lower() else (
-            "text-loss" if "défaite" in str(outcome_label).lower() else "text-tie"
+        outcome_class = (
+            "text-win"
+            if "victoire" in str(outcome_label).lower()
+            else ("text-loss" if "défaite" in str(outcome_label).lower() else "text-tie")
         )
         os_card(
             "Résultats",
@@ -180,7 +183,9 @@ def render_match_view(
             kpi_color=perf_color,
         )
 
-    last_mode_ui = row.get("mode_ui") or normalize_mode_label_fn(str(last_pair) if last_pair else None)
+    last_mode_ui = row.get("mode_ui") or normalize_mode_label_fn(
+        str(last_pair) if last_pair else None
+    )
     row_cols = st.columns(3)
     row_cols[0].metric(" ", str(last_map) if last_map else "-")
     row_cols[1].metric(
@@ -198,12 +203,11 @@ def render_match_view(
     map_id = row.get("map_id")
     thumb = map_thumb_path(row, str(map_id) if map_id else None)
     if thumb:
+        import contextlib
+
         c = st.columns([1, 2, 1])
-        with c[1]:
-            try:
-                st.image(thumb, width=400)
-            except Exception:
-                pass
+        with c[1], contextlib.suppress(Exception):
+            st.image(thumb, width=400)
 
     # Stats détaillées
     with st.spinner("Lecture des stats détaillées (attendu vs réel, médailles)…"):
@@ -211,9 +215,19 @@ def render_match_view(
         medals_last = load_match_medals_fn(db_path, match_id, xuid.strip(), db_key=db_key)
 
     if not pm:
-        st.info("Stats détaillées indisponibles pour ce match (PlayerMatchStats manquant ou format inattendu).")
+        st.info(
+            "Stats détaillées indisponibles pour ce match (PlayerMatchStats manquant ou format inattendu)."
+        )
     else:
         render_expected_vs_actual(row, pm, colors, df_full=df_full)
+
+    # Section Participation (PersonalScores) - Sprint 8.2
+    render_participation_section(
+        db_path=db_path,
+        match_id=match_id,
+        xuid=xuid,
+        db_key=db_key,
+    )
 
     # Némésis / Souffre-douleur
     render_nemesis_section(
@@ -264,23 +278,37 @@ def render_match_view(
 # =============================================================================
 
 # Réexporter les fonctions helpers pour rétrocompatibilité
-from src.ui.pages.match_view_helpers import (
-    to_paris_naive_local as _to_paris_naive_local,
-    safe_dt as _safe_dt,
-    match_time_window as _match_time_window,
-    paris_epoch_seconds_local as _paris_epoch_seconds_local,
-    index_media_dir as _index_media_dir,
-    render_media_section as _render_media_section,
-    os_card as _os_card,
-    map_thumb_path as _map_thumb_path,
-)
-
 from src.ui.pages.match_view_charts import (
     render_expected_vs_actual as _render_expected_vs_actual,
 )
-
+from src.ui.pages.match_view_helpers import (
+    index_media_dir as _index_media_dir,
+)
+from src.ui.pages.match_view_helpers import (
+    map_thumb_path as _map_thumb_path,
+)
+from src.ui.pages.match_view_helpers import (
+    match_time_window as _match_time_window,
+)
+from src.ui.pages.match_view_helpers import (
+    os_card as _os_card,
+)
+from src.ui.pages.match_view_helpers import (
+    paris_epoch_seconds_local as _paris_epoch_seconds_local,
+)
+from src.ui.pages.match_view_helpers import (
+    render_media_section as _render_media_section,
+)
+from src.ui.pages.match_view_helpers import (
+    safe_dt as _safe_dt,
+)
+from src.ui.pages.match_view_helpers import (
+    to_paris_naive_local as _to_paris_naive_local,
+)
 from src.ui.pages.match_view_players import (
     render_nemesis_section as _render_nemesis_section,
+)
+from src.ui.pages.match_view_players import (
     render_roster_section as _render_roster_section,
 )
 

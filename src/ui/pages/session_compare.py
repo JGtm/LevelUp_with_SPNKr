@@ -535,7 +535,7 @@ def render_comparison_radar_chart(
                 name=f"Moy. historique ({hist_n} sessions){suffix}",
                 line_color=SESSION_COLORS["historical"],
                 fillcolor=SESSION_COLORS["historical_fill"],
-                line=dict(dash="dot"),
+                line={"dash": "dot"},
             )
         )
 
@@ -562,14 +562,14 @@ def render_comparison_radar_chart(
     )
 
     fig_radar.update_layout(
-        polar=dict(
-            radialaxis=dict(visible=True, range=[0, 100]),
-            bgcolor="rgba(0,0,0,0)",
-        ),
+        polar={
+            "radialaxis": {"visible": True, "range": [0, 100]},
+            "bgcolor": "rgba(0,0,0,0)",
+        },
         showlegend=True,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#E0E0E0"),
+        font={"color": "#E0E0E0"},
         height=400,
     )
 
@@ -677,10 +677,10 @@ def render_comparison_bar_chart(
         h_wr = float(hist_avg.get("win_rate", 0) or 0.0)
 
         name = f"Moy. historique ({hist_n} sessions)" + (" ⚠️" if hist_n < 3 else "")
-        hist_marker = dict(
-            color=SESSION_COLORS["historical"],
-            pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
-        )
+        hist_marker = {
+            "color": SESSION_COLORS["historical"],
+            "pattern": {"shape": ".", "fgcolor": "rgba(255,255,255,0.75)", "solidity": 0.10},
+        }
 
         fig_bar.add_trace(
             go.Bar(
@@ -712,32 +712,122 @@ def render_comparison_bar_chart(
         barmode="group",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#E0E0E0"),
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.1)", title="Par partie / Ratio"),
-        yaxis2=dict(
-            title="Victoire (%)",
-            overlaying="y",
-            side="right",
-            showgrid=False,
-            rangemode="tozero",
-        ),
+        font={"color": "#E0E0E0"},
+        xaxis={"showgrid": False},
+        yaxis={
+            "showgrid": True,
+            "gridcolor": "rgba(255,255,255,0.1)",
+            "title": "Par partie / Ratio",
+        },
+        yaxis2={
+            "title": "Victoire (%)",
+            "overlaying": "y",
+            "side": "right",
+            "showgrid": False,
+            "rangemode": "tozero",
+        },
         height=350,
     )
 
     st.plotly_chart(fig_bar, width="stretch")
 
 
+def render_participation_trend_section(
+    df_session_a: pd.DataFrame,
+    df_session_b: pd.DataFrame,
+    db_path: str,
+    xuid: str,
+) -> None:
+    """Affiche la tendance de participation entre deux sessions (Sprint 8.2).
+
+    Utilise les PersonalScores pour montrer l'évolution du profil de jeu.
+
+    Args:
+        df_session_a: DataFrame de la session A.
+        df_session_b: DataFrame de la session B.
+        db_path: Chemin vers la base de données.
+        xuid: XUID du joueur.
+    """
+    from src.data.repositories import DuckDBRepository
+
+    try:
+        repo = DuckDBRepository(db_path, xuid)
+        if not repo.has_personal_score_awards():
+            return  # Pas de données PersonalScores
+
+        # Récupérer les match_ids de chaque session
+        match_ids_a = df_session_a["match_id"].tolist() if not df_session_a.empty else []
+        match_ids_b = df_session_b["match_id"].tolist() if not df_session_b.empty else []
+
+        if not match_ids_a and not match_ids_b:
+            return
+
+        # Charger les données de participation
+        df_a = (
+            repo.load_personal_score_awards_as_polars(match_ids=match_ids_a)
+            if match_ids_a
+            else None
+        )
+        df_b = (
+            repo.load_personal_score_awards_as_polars(match_ids=match_ids_b)
+            if match_ids_b
+            else None
+        )
+
+        if (df_a is None or df_a.is_empty()) and (df_b is None or df_b.is_empty()):
+            return
+
+        from src.ui.components.radar_chart import create_participation_radar
+        from src.visualization import aggregate_participation_for_radar
+
+        radar_data = []
+
+        if df_a is not None and not df_a.is_empty():
+            data_a = aggregate_participation_for_radar(
+                df_a, name="Session A", color=SESSION_COLORS["session_a"]
+            )
+            radar_data.append(data_a)
+
+        if df_b is not None and not df_b.is_empty():
+            data_b = aggregate_participation_for_radar(
+                df_b, name="Session B", color=SESSION_COLORS["session_b"]
+            )
+            radar_data.append(data_b)
+
+        if not radar_data:
+            return
+
+        st.markdown("---")
+        st.markdown("#### 🎯 Évolution du profil de participation")
+        st.caption("Comparaison de la contribution au score entre les deux sessions")
+
+        fig = create_participation_radar(radar_data, title="", height=380)
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception:
+        pass  # Ne pas bloquer la page en cas d'erreur
+
+
 def render_session_comparison_page(
     all_sessions_df: pd.DataFrame,
     df_full: pd.DataFrame | None = None,
+    *,
+    db_path: str | None = None,
+    xuid: str | None = None,
 ) -> None:
     """Rend la page de comparaison de sessions.
 
     Args:
         all_sessions_df: DataFrame avec toutes les sessions (colonnes session_id, session_label).
         df_full: DataFrame complet pour le calcul du score relatif.
+        db_path: Chemin vers la base de données (optionnel, récupéré depuis session_state).
+        xuid: XUID du joueur (optionnel, récupéré depuis session_state).
     """
+    # Récupérer db_path et xuid depuis session_state si non fournis
+    if db_path is None:
+        db_path = st.session_state.get("db_path", "")
+    if xuid is None:
+        xuid = st.session_state.get("xuid", "")
     st.caption("Compare les performances entre deux sessions de jeu.")
 
     if all_sessions_df.empty:
@@ -1002,6 +1092,16 @@ def render_session_comparison_page(
     with col_bars:
         st.markdown("#### Comparaison par métrique")
         render_comparison_bar_chart(perf_a, perf_b, hist_avg=hist_avg)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Tendance de participation (PersonalScores) - Sprint 8.2
+    # ══════════════════════════════════════════════════════════════════════════
+    render_participation_trend_section(
+        df_session_a=df_session_a,
+        df_session_b=df_session_b,
+        db_path=db_path,
+        xuid=xuid,
+    )
 
     # ══════════════════════════════════════════════════════════════════════════
     # Tableau historique des parties
