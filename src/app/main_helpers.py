@@ -362,8 +362,15 @@ def render_profile_hero(
     )
 
 
-def load_match_dataframe(db_path: str, xuid: str) -> tuple[pd.DataFrame, tuple[int, int] | None]:
+def load_match_dataframe(
+    db_path: str, xuid: str, cache_buster: int = 0
+) -> tuple[pd.DataFrame, tuple[int, int] | None]:
     """Charge le DataFrame des matchs.
+
+    Args:
+        db_path: Chemin vers la DB.
+        xuid: XUID du joueur.
+        cache_buster: Token pour forcer l'invalidation du cache après sync.
 
     Returns:
         (df, db_key)
@@ -375,7 +382,7 @@ def load_match_dataframe(db_path: str, xuid: str) -> tuple[pd.DataFrame, tuple[i
 
     if db_path and os.path.exists(db_path) and str(xuid or "").strip():
         with perf_section("db/load_df_optimized"):
-            df = load_df_optimized(db_path, xuid.strip(), db_key=db_key)
+            df = load_df_optimized(db_path, xuid.strip(), db_key=db_key, cache_buster=cache_buster)
         if df.empty:
             st.warning("Aucun match trouvé.")
     else:

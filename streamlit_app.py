@@ -322,6 +322,8 @@ def main() -> None:
                 if ok:
                     st.success(msg)
                     _clear_app_caches()
+                    # Force cache invalidation avec un token de session
+                    st.session_state["_cache_buster"] = st.session_state.get("_cache_buster", 0) + 1
                     st.rerun()
                 else:
                     st.error(msg)
@@ -343,7 +345,9 @@ def main() -> None:
     # Chargement des données
     # ==========================================================================
 
-    df, db_key = load_match_dataframe(db_path, xuid)
+    # Cache buster pour forcer le rechargement après sync
+    cache_buster = st.session_state.get("_cache_buster", 0)
+    df, db_key = load_match_dataframe(db_path, xuid, cache_buster=cache_buster)
 
     if df.empty:
         st.radio(

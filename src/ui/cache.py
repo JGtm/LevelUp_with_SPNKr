@@ -590,6 +590,7 @@ def load_df_optimized(
     xuid: str,
     db_key: tuple[int, int] | None = None,
     include_firefight: bool = True,
+    cache_buster: int = 0,
 ) -> pd.DataFrame:
     """Charge les matchs avec fallback intelligent.
 
@@ -602,11 +603,13 @@ def load_df_optimized(
         xuid: XUID du joueur (ignoré pour DuckDB v4).
         db_key: Clé de cache (mtime, size).
         include_firefight: Inclure les matchs PvE.
+        cache_buster: Token pour forcer l'invalidation du cache.
 
     Returns:
         DataFrame enrichi avec toutes les colonnes calculées.
     """
     _ = db_key  # Utilisé pour invalidation du cache Streamlit
+    _ = cache_buster  # Utilisé pour forcer le rechargement après sync
 
     matches = []
 
