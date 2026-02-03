@@ -22,25 +22,34 @@ Ce plan combine deux initiatives majeures :
 ## Sprint 0 : Préparation et Investigation (1 semaine)
 
 ### Objectifs
-- Vérifier disponibilité API pour refdata
+- Finaliser l'investigation API refdata (déjà démarrée)
+- Créer module refdata avec enums SPNKr
 - Valider l'architecture Polars
 - Préparer les schémas BDD
 
 ### Tâches
 
-| ID | Tâche | Fichiers | Estimation |
-|----|-------|----------|------------|
-| 0.1 | Exécuter script investigation refdata | `scripts/investigate_refdata_fields.py` | 2h |
-| 0.2 | Documenter résultats API (GameVariantCategory, PersonalScoreAwards) | `.ai/research/API_REFDATA_FIELDS.md` | 2h |
-| 0.3 | Créer module refdata avec enums SPNKr | `src/data/domain/refdata.py` | 4h |
-| 0.4 | Tests unitaires module refdata | `tests/test_refdata.py` | 2h |
-| 0.5 | Valider architecture Polars (exemples de requêtes) | `scripts/test_polars_integration.py` | 3h |
+| ID | Tâche | Fichiers | Statut | Estimation |
+|----|-------|----------|--------|------------|
+| 0.1 | ✅ Script investigation refdata créé | `scripts/investigate_refdata_fields.py` | **FAIT** | - |
+| 0.2 | Exécuter script investigation et documenter résultats | `.ai/research/API_REFDATA_FIELDS.md` | À faire | 3h |
+| 0.3 | Créer module refdata avec enums SPNKr complets | `src/data/domain/refdata.py` | À faire | 4h |
+| 0.4 | Tests unitaires module refdata | `tests/test_refdata.py` | À faire | 2h |
+| 0.5 | Valider architecture Polars (exemples de requêtes) | `scripts/test_polars_integration.py` | À faire | 3h |
 
 ### Livrables
-- ✅ Résultats investigation API
-- ✅ Module `refdata.py` avec enums complets
-- ✅ Tests de validation Polars
-- ✅ Documentation schémas BDD étendus
+- ✅ Script d'investigation créé (`scripts/investigate_refdata_fields.py`)
+- ✅ Plan d'intégration documenté (`.ai/research/SPNKR_REFDATA_INTEGRATION_PLAN.md`)
+- ⏳ Résultats investigation API (à exécuter)
+- ⏳ Module `refdata.py` avec enums complets
+- ⏳ Tests de validation Polars
+- ⏳ Documentation schémas BDD étendus
+
+### Note
+Le script d'investigation et le plan d'intégration ont déjà été créés. Il reste à :
+1. Exécuter le script pour obtenir les résultats réels de l'API
+2. Créer le module refdata avec les enums complets
+3. Valider l'architecture Polars
 
 ---
 
@@ -496,10 +505,12 @@ Sprint 9 (Optimisation)
 
 ## Checklist de Démarrage
 
+- [x] Script d'investigation refdata créé (`scripts/investigate_refdata_fields.py`)
+- [x] Plan d'intégration documenté (`.ai/research/SPNKR_REFDATA_INTEGRATION_PLAN.md`)
 - [ ] Environnement Python configuré (Polars >= 0.20.0)
 - [ ] Tokens API SPNKr configurés
 - [ ] Base DuckDB de test disponible
-- [ ] Scripts d'investigation exécutés
+- [ ] Scripts d'investigation **exécutés** (résultats API obtenus)
 - [ ] Équipe alignée sur architecture Polars
 
 ---
