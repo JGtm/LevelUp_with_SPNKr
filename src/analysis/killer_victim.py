@@ -682,3 +682,349 @@ def killer_victim_matrix(pairs: Iterable[KVPair]) -> pd.DataFrame:
     pivot = pivot.loc[pivot.sum(axis=1).sort_values(ascending=False).index]
     pivot = pivot[pivot.sum(axis=0).sort_values(ascending=False).index]
     return pivot
+
+
+# =============================================================================
+# Sprint 3 : Fonctions d'analyse Polars
+# =============================================================================
+
+try:
+    import polars as pl
+
+    POLARS_AVAILABLE = True
+except ImportError:
+    POLARS_AVAILABLE = False
+    pl = None  # type: ignore
+
+
+@dataclass(frozen=True)
+class AntagonistsResultPolars:
+    """Résultat Némésis / Souffre-douleur calculé avec Polars.
+
+    Version simplifiée pour les données provenant de killer_victim_pairs DuckDB.
+    """
+
+    nemesis_xuid: str | None
+    nemesis_gamertag: str | None
+    nemesis_times_killed_by: int
+    victim_xuid: str | None
+    victim_gamertag: str | None
+    victim_times_killed: int
+    total_deaths: int
+    total_kills: int
+
+
+def compute_personal_antagonists_from_pairs_polars(
+    pairs_df: pl.DataFrame,
+    me_xuid: str,
+) -> AntagonistsResultPolars:
+    """Calcule antagonistes (némésis/souffre-douleur) avec Polars.
+
+    Cette fonction utilise les données de killer_victim_pairs stockées en DuckDB.
+    Plus simple que compute_personal_antagonists() car les paires sont déjà établies.
+
+    Args:
+        pairs_df: DataFrame Polars avec colonnes killer_xuid, killer_gamertag,
+                  victim_xuid, victim_gamertag, kill_count.
+        me_xuid: XUID du joueur principal.
+
+    Returns:
+        AntagonistsResultPolars avec némésis et souffre-douleur.
+    """
+    if not POLARS_AVAILABLE:
+        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
+
+    if pairs_df.is_empty():
+        return AntagonistsResultPolars(
+            nemesis_xuid=None,
+            nemesis_gamertag=None,
+            nemesis_times_killed_by=0,
+            victim_xuid=None,
+            victim_gamertag=None,
+            victim_times_killed=0,
+            total_deaths=0,
+            total_kills=0,
+        )
+
+    # Némésis : qui m'a le plus tué (je suis la victime)
+    nemesis_df = (
+        pairs_df.filter(pl.col("victim_xuid") == me_xuid)
+        .group_by("killer_xuid", "killer_gamertag")
+        .agg(pl.col("kill_count").sum().alias("times_killed_by"))
+        .sort("times_killed_by", descending=True)
+        .head(1)
+    )
+
+    # Souffre-douleur : qui j'ai le plus tué (je suis le tueur)
+    victim_df = (
+        pairs_df.filter(pl.col("killer_xuid") == me_xuid)
+        .group_by("victim_xuid", "victim_gamertag")
+        .agg(pl.col("kill_count").sum().alias("times_killed"))
+        .sort("times_killed", descending=True)
+        .head(1)
+    )
+
+    # Totaux
+    total_deaths = (
+        pairs_df.filter(pl.col("victim_xuid") == me_xuid).select(pl.col("kill_count").sum()).item()
+    ) or 0
+
+    total_kills = (
+        pairs_df.filter(pl.col("killer_xuid") == me_xuid).select(pl.col("kill_count").sum()).item()
+    ) or 0
+
+    # Extraire les résultats
+    nemesis_xuid = None
+    nemesis_gamertag = None
+    nemesis_times_killed_by = 0
+    if len(nemesis_df) > 0:
+        row = nemesis_df.row(0, named=True)
+        nemesis_xuid = row["killer_xuid"]
+        nemesis_gamertag = row["killer_gamertag"]
+        nemesis_times_killed_by = row["times_killed_by"]
+
+    victim_xuid = None
+    victim_gamertag = None
+    victim_times_killed = 0
+    if len(victim_df) > 0:
+        row = victim_df.row(0, named=True)
+        victim_xuid = row["victim_xuid"]
+        victim_gamertag = row["victim_gamertag"]
+        victim_times_killed = row["times_killed"]
+
+    return AntagonistsResultPolars(
+        nemesis_xuid=nemesis_xuid,
+        nemesis_gamertag=nemesis_gamertag,
+        nemesis_times_killed_by=nemesis_times_killed_by,
+        victim_xuid=victim_xuid,
+        victim_gamertag=victim_gamertag,
+        victim_times_killed=victim_times_killed,
+        total_deaths=total_deaths,
+        total_kills=total_kills,
+    )
+
+
+def killer_victim_counts_long_polars(pairs_df: pl.DataFrame) -> pl.DataFrame:
+    """Retourne un DataFrame Polars agrégé: killer, victim, count.
+
+    Équivalent Polars de killer_victim_counts_long() pour les paires KVPair.
+
+    Args:
+        pairs_df: DataFrame Polars avec colonnes killer_xuid, killer_gamertag,
+                  victim_xuid, victim_gamertag, kill_count.
+
+    Returns:
+        DataFrame Polars avec colonnes killer_xuid, killer_gamertag,
+        victim_xuid, victim_gamertag, count, trié par count desc.
+    """
+    if not POLARS_AVAILABLE:
+        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
+
+    if pairs_df.is_empty():
+        return pairs_df
+
+    return (
+        pairs_df.group_by("killer_xuid", "killer_gamertag", "victim_xuid", "victim_gamertag")
+        .agg(pl.col("kill_count").sum().alias("count"))
+        .sort(["count", "killer_gamertag", "victim_gamertag"], descending=[True, False, False])
+    )
+
+
+def compute_kd_timeseries_by_minute_polars(
+    pairs_df: pl.DataFrame,
+    me_xuid: str,
+    *,
+    match_duration_ms: int | None = None,
+) -> pl.DataFrame:
+    """Calcule le K/D cumulé par minute avec Polars.
+
+    Utile pour visualiser la progression du K/D au cours d'un match.
+
+    Args:
+        pairs_df: DataFrame Polars avec colonnes killer_xuid, victim_xuid, time_ms.
+        me_xuid: XUID du joueur principal.
+        match_duration_ms: Durée du match en ms (optionnel, pour compléter les minutes vides).
+
+    Returns:
+        DataFrame Polars avec colonnes minute, kills, deaths, net_kd, cumulative_net_kd.
+    """
+    if not POLARS_AVAILABLE:
+        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
+
+    if pairs_df.is_empty():
+        return pl.DataFrame(
+            {
+                "minute": [],
+                "kills": [],
+                "deaths": [],
+                "net_kd": [],
+                "cumulative_net_kd": [],
+            }
+        )
+
+    # Mes kills par minute
+    my_kills = (
+        pairs_df.filter(pl.col("killer_xuid") == me_xuid)
+        .with_columns((pl.col("time_ms") // 60000).alias("minute"))
+        .group_by("minute")
+        .agg(pl.col("kill_count").sum().alias("kills"))
+    )
+
+    # Mes deaths par minute
+    my_deaths = (
+        pairs_df.filter(pl.col("victim_xuid") == me_xuid)
+        .with_columns((pl.col("time_ms") // 60000).alias("minute"))
+        .group_by("minute")
+        .agg(pl.col("kill_count").sum().alias("deaths"))
+    )
+
+    # Déterminer la plage de minutes
+    all_minutes = set()
+    if len(my_kills) > 0:
+        all_minutes.update(my_kills["minute"].to_list())
+    if len(my_deaths) > 0:
+        all_minutes.update(my_deaths["minute"].to_list())
+
+    if match_duration_ms:
+        max_minute = match_duration_ms // 60000
+        all_minutes.update(range(max_minute + 1))
+
+    if not all_minutes:
+        return pl.DataFrame(
+            {
+                "minute": [],
+                "kills": [],
+                "deaths": [],
+                "net_kd": [],
+                "cumulative_net_kd": [],
+            }
+        )
+
+    # Créer un DataFrame avec toutes les minutes
+    minutes_df = pl.DataFrame({"minute": sorted(all_minutes)})
+
+    # Joindre kills et deaths
+    result = (
+        minutes_df.join(my_kills, on="minute", how="left")
+        .join(my_deaths, on="minute", how="left")
+        .with_columns(
+            [
+                pl.col("kills").fill_null(0),
+                pl.col("deaths").fill_null(0),
+            ]
+        )
+        .with_columns((pl.col("kills") - pl.col("deaths")).alias("net_kd"))
+        .with_columns(pl.col("net_kd").cum_sum().alias("cumulative_net_kd"))
+        .sort("minute")
+    )
+
+    return result
+
+
+def compute_duel_history_polars(
+    pairs_df: pl.DataFrame,
+    me_xuid: str,
+    opponent_xuid: str,
+) -> pl.DataFrame:
+    """Calcule l'historique des duels entre deux joueurs avec Polars.
+
+    Args:
+        pairs_df: DataFrame Polars avec colonnes match_id, killer_xuid, victim_xuid, time_ms.
+        me_xuid: XUID du joueur principal.
+        opponent_xuid: XUID de l'adversaire.
+
+    Returns:
+        DataFrame Polars avec colonnes match_id, my_kills, opponent_kills, net.
+    """
+    if not POLARS_AVAILABLE:
+        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
+
+    if pairs_df.is_empty():
+        return pl.DataFrame(
+            {
+                "match_id": [],
+                "my_kills": [],
+                "opponent_kills": [],
+                "net": [],
+            }
+        )
+
+    # Mes kills sur l'adversaire
+    my_kills = (
+        pairs_df.filter(
+            (pl.col("killer_xuid") == me_xuid) & (pl.col("victim_xuid") == opponent_xuid)
+        )
+        .group_by("match_id")
+        .agg(pl.col("kill_count").sum().alias("my_kills"))
+    )
+
+    # Kills de l'adversaire sur moi
+    opponent_kills = (
+        pairs_df.filter(
+            (pl.col("killer_xuid") == opponent_xuid) & (pl.col("victim_xuid") == me_xuid)
+        )
+        .group_by("match_id")
+        .agg(pl.col("kill_count").sum().alias("opponent_kills"))
+    )
+
+    # Combiner
+    all_matches = set()
+    if len(my_kills) > 0:
+        all_matches.update(my_kills["match_id"].to_list())
+    if len(opponent_kills) > 0:
+        all_matches.update(opponent_kills["match_id"].to_list())
+
+    if not all_matches:
+        return pl.DataFrame(
+            {
+                "match_id": [],
+                "my_kills": [],
+                "opponent_kills": [],
+                "net": [],
+            }
+        )
+
+    matches_df = pl.DataFrame({"match_id": list(all_matches)})
+
+    result = (
+        matches_df.join(my_kills, on="match_id", how="left")
+        .join(opponent_kills, on="match_id", how="left")
+        .with_columns(
+            [
+                pl.col("my_kills").fill_null(0),
+                pl.col("opponent_kills").fill_null(0),
+            ]
+        )
+        .with_columns((pl.col("my_kills") - pl.col("opponent_kills")).alias("net"))
+    )
+
+    return result
+
+
+def killer_victim_matrix_polars(pairs_df: pl.DataFrame) -> pl.DataFrame:
+    """Retourne une matrice killer/victim en format pivot avec Polars.
+
+    Args:
+        pairs_df: DataFrame Polars avec colonnes killer_gamertag, victim_gamertag, kill_count.
+
+    Returns:
+        DataFrame Polars pivotée avec gamertags en lignes et colonnes.
+    """
+    if not POLARS_AVAILABLE:
+        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
+
+    if pairs_df.is_empty():
+        return pairs_df
+
+    # Agréger les counts
+    aggregated = pairs_df.group_by("killer_gamertag", "victim_gamertag").agg(
+        pl.col("kill_count").sum().alias("count")
+    )
+
+    # Créer la matrice pivot
+    return aggregated.pivot(
+        values="count",
+        index="killer_gamertag",
+        on="victim_gamertag",
+        aggregate_function="sum",
+    ).fill_null(0)

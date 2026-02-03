@@ -409,6 +409,9 @@ def transform_match_stats(
     is_firefight = _is_firefight_match(match_info)
     mode_category = _determine_mode_category(pair_name)
 
+    # Sprint 2: Extraire GameVariantCategory (6=Slayer, 15=CTF, etc.)
+    game_variant_category = extract_game_variant_category(match_json)
+
     # Déterminer si le joueur a quitté prématurément
     left_early = outcome == 4  # DidNotFinish
 
@@ -449,6 +452,7 @@ def transform_match_stats(
         score=score,
         personal_score=personal_score,
         mode_category=mode_category,
+        game_variant_category=game_variant_category,
         is_ranked=is_ranked,
         is_firefight=is_firefight,
         left_early=left_early,
@@ -783,3 +787,39 @@ def extract_xuids_from_match(match_json: dict[str, Any]) -> list[int]:
             continue
 
     return xuids
+
+
+# =============================================================================
+# Sprint 2 : Extracteur GameVariantCategory
+# =============================================================================
+
+
+def extract_game_variant_category(match_json: dict[str, Any]) -> int | None:
+    """Extrait le GameVariantCategory depuis le JSON du match.
+
+    Le GameVariantCategory est un entier qui identifie le type de mode
+    (Slayer=6, CTF=15, Oddball=18, etc.).
+
+    Args:
+        match_json: JSON brut du match (MatchStats).
+
+    Returns:
+        GameVariantCategory (int) ou None si non disponible.
+    """
+    match_info = match_json.get("MatchInfo")
+    if not isinstance(match_info, dict):
+        return None
+
+    # Chemin direct : MatchInfo.GameVariantCategory
+    category = match_info.get("GameVariantCategory")
+    if isinstance(category, int):
+        return category
+
+    # Fallback : UgcGameVariant.Category
+    ugc = match_info.get("UgcGameVariant")
+    if isinstance(ugc, dict):
+        cat = ugc.get("Category") or ugc.get("GameVariantCategory")
+        if isinstance(cat, int):
+            return cat
+
+    return None

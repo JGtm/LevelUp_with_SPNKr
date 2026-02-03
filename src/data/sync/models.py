@@ -199,6 +199,9 @@ class MatchStatsRow:
     score: int | None = None
     personal_score: int | None = None
     mode_category: str | None = None
+    game_variant_category: int | None = (
+        None  # Sprint 2: GameVariantCategory API (6=Slayer, 15=CTF, etc.)
+    )
     is_ranked: bool = False
     is_firefight: bool = False
     left_early: bool = False
