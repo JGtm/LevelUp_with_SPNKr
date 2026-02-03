@@ -185,25 +185,53 @@ def _extract_spree_headshots(player_obj: dict[str, Any]) -> tuple[int | None, in
 
 def _extract_life_time_stats(
     player_obj: dict[str, Any],
+    match_obj: dict[str, Any] | None = None,
 ) -> tuple[float | None, int | None]:
-    """Extrait avg_life_seconds et time_played_seconds."""
+    """Extrait avg_life_seconds et time_played_seconds.
+
+    Args:
+        player_obj: Objet joueur avec PlayerTeamStats.
+        match_obj: Objet match complet (pour extraire Duration depuis MatchInfo).
+
+    Returns:
+        (avg_life_seconds, time_played_seconds)
+    """
     stats_dict = _find_core_stats_dict(player_obj)
-    if stats_dict is None:
-        return None, None
 
-    avg_life = _safe_float(stats_dict.get("AverageLifeSeconds"))
+    # Extraire avg_life_seconds
+    avg_life = None
+    if stats_dict:
+        # Essayer d'abord AverageLifeSeconds (format numérique)
+        avg_life = _safe_float(stats_dict.get("AverageLifeSeconds"))
 
-    # Time played peut être dans différents formats
+        # Si non trouvé, essayer AverageLifeDuration (format ISO: "PT49.3S")
+        if avg_life is None:
+            avg_life_duration = stats_dict.get("AverageLifeDuration")
+            if isinstance(avg_life_duration, str):
+                avg_life_secs = _parse_duration_to_seconds(avg_life_duration)
+                avg_life = float(avg_life_secs) if avg_life_secs else None
+
+    # Extraire time_played_seconds
     time_played = None
-    if "TimePlayed" in stats_dict:
-        tp = stats_dict.get("TimePlayed")
-        if isinstance(tp, str):
-            # Format ISO 8601 duration (PT1H30M)
-            time_played = _parse_duration_to_seconds(tp)
-        elif isinstance(tp, int | float):
-            time_played = _safe_int(tp)
-    elif "TimePlayedSeconds" in stats_dict:
-        time_played = _safe_int(stats_dict.get("TimePlayedSeconds"))
+
+    # 1. Essayer depuis CoreStats
+    if stats_dict:
+        if "TimePlayed" in stats_dict:
+            tp = stats_dict.get("TimePlayed")
+            if isinstance(tp, str):
+                time_played = _parse_duration_to_seconds(tp)
+            elif isinstance(tp, int | float):
+                time_played = _safe_int(tp)
+        elif "TimePlayedSeconds" in stats_dict:
+            time_played = _safe_int(stats_dict.get("TimePlayedSeconds"))
+
+    # 2. Fallback: extraire depuis MatchInfo.Duration
+    if time_played is None and match_obj:
+        match_info = match_obj.get("MatchInfo")
+        if isinstance(match_info, dict):
+            duration = match_info.get("Duration")
+            if isinstance(duration, str):
+                time_played = _parse_duration_to_seconds(duration)
 
     return avg_life, time_played
 
@@ -372,7 +400,7 @@ def transform_match_stats(
     rank = _extract_player_rank(me)
     kda = _extract_kda(me)
     max_spree, headshots = _extract_spree_headshots(me)
-    avg_life, time_played = _extract_life_time_stats(me)
+    avg_life, time_played = _extract_life_time_stats(me, match_json)
     my_team_score, enemy_team_score = _extract_team_scores(match_json, team_id)
 
     # Extraire les identifiants d'assets
