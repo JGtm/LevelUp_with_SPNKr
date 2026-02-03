@@ -528,7 +528,6 @@ def aggregate_participation_for_radar(
             "kill_score": 0,
             "assist_score": 0,
             "objective_score": 0,
-            "vehicle_score": 0,
             "penalty_score": 0,
             "color": color,
         }
@@ -544,7 +543,6 @@ def aggregate_participation_for_radar(
         "kill_score": scores.get("kill", 0),
         "assist_score": scores.get("assist", 0),
         "objective_score": scores.get("objective", 0),
-        "vehicle_score": scores.get("vehicle", 0),
         "penalty_score": scores.get("penalty", 0),
         "color": color,
     }

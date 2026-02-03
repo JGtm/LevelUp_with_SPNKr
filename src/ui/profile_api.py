@@ -14,37 +14,36 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import os
 import time
+
+from src.ui.career_ranks import format_career_rank_label_fr
 
 # Re-export des modules décomposés pour compatibilité
 from src.ui.profile_api_cache import (
     ProfileAppearance,
-    get_profile_api_cache_dir,
-    load_cached_appearance,
-    save_cached_appearance,
-    load_cached_xuid_for_gamertag,
-    save_cached_xuid,
     _cache_path,
-    _xuid_cache_path,
-    _safe_read_json,
     _safe_write_json,
-)
-from src.ui.profile_api_urls import (
-    _to_image_url,
-    _inventory_emblem_to_waypoint_png,
-    _inventory_json_to_cms_url,
-    _waypoint_nameplate_png_from_emblem,
-    _inventory_backdrop_to_waypoint_png,
-    resolve_inventory_png_via_api as _resolve_inventory_png_via_api,
+    _xuid_cache_path,
+    load_cached_appearance,
+    load_cached_xuid_for_gamertag,
 )
 from src.ui.profile_api_tokens import (
-    _load_dotenv_if_present,
     _is_probable_auth_error,
-    get_tokens as _get_tokens,
-    ensure_spnkr_tokens,
 )
-from src.ui.career_ranks import format_career_rank_label_fr
+from src.ui.profile_api_tokens import (
+    get_tokens as _get_tokens,
+)
+from src.ui.profile_api_urls import (
+    _inventory_backdrop_to_waypoint_png,
+    _inventory_emblem_to_waypoint_png,
+    _to_image_url,
+    _waypoint_nameplate_png_from_emblem,
+)
+from src.ui.profile_api_urls import (
+    resolve_inventory_png_via_api as _resolve_inventory_png_via_api,
+)
 
 
 def fetch_appearance_via_spnkr(
@@ -75,9 +74,10 @@ def fetch_appearance_via_spnkr(
 
         timeout = aiohttp.ClientTimeout(total=float(timeout_seconds))
         async with aiohttp.ClientSession(timeout=timeout) as session:
+
             async def _parse(resp: object) -> object:
                 if hasattr(resp, "data"):
-                    return getattr(resp, "data")
+                    return resp.data
                 if hasattr(resp, "parse"):
                     return await resp.parse()  # type: ignore[attr-defined]
                 return resp
@@ -89,15 +89,20 @@ def fetch_appearance_via_spnkr(
                     clearance_token=ct_in,
                     requests_per_second=int(requests_per_second),
                 )
-                resp = await client.economy.get_player_customization(str(xuid).strip(), view_type="public")
+                resp = await client.economy.get_player_customization(
+                    str(xuid).strip(), view_type="public"
+                )
                 customization = await _parse(resp)
 
                 # Best-effort: Career Rank du joueur
-                rank_label, rank_subtitle, rank_image_url = await _get_career_rank_for_player(
-                    client, session, st_in, ct_in, xuid, _parse
-                )
+                (
+                    rank_label,
+                    rank_subtitle,
+                    rank_image_url,
+                    adornment_image_url,
+                ) = await _get_career_rank_for_player(client, session, st_in, ct_in, xuid, _parse)
 
-                return customization, rank_label, rank_subtitle, rank_image_url
+                return customization, rank_label, rank_subtitle, rank_image_url, adornment_image_url
 
             st, ct = await _get_tokens(
                 session,
@@ -107,7 +112,13 @@ def fetch_appearance_via_spnkr(
             )
 
             try:
-                customization, rank_label, rank_subtitle, rank_image_url = await _call_with_tokens(st, ct)
+                (
+                    customization,
+                    rank_label,
+                    rank_subtitle,
+                    rank_image_url,
+                    adornment_image_url,
+                ) = await _call_with_tokens(st, ct)
             except Exception as e:
                 # Si tokens fournis expirés, tente une régénération via Azure refresh (si configuré).
                 if (spartan_token and clearance_token) and _is_probable_auth_error(e):
@@ -117,7 +128,13 @@ def fetch_appearance_via_spnkr(
                         clearance_token=None,
                         timeout_seconds=timeout_seconds,
                     )
-                    customization, rank_label, rank_subtitle, rank_image_url = await _call_with_tokens(st, ct)
+                    (
+                        customization,
+                        rank_label,
+                        rank_subtitle,
+                        rank_image_url,
+                        adornment_image_url,
+                    ) = await _call_with_tokens(st, ct)
                 else:
                     raise
 
@@ -125,34 +142,34 @@ def fetch_appearance_via_spnkr(
 
             emblem_path = getattr(appearance.emblem, "emblem_path", None)
             emblem_cfg = getattr(appearance.emblem, "configuration_id", None)
-            
+
             # Essayer d'abord le pattern Waypoint (rapide, pas d'appel API supplémentaire)
             emblem_url = _inventory_emblem_to_waypoint_png(emblem_path, emblem_cfg)
-            
+
             # Si le pattern Waypoint ne fonctionne pas, résoudre via l'API progression
             if not emblem_url and emblem_path:
                 emblem_url = await _resolve_inventory_png_via_api(
                     session, emblem_path, spartan_token=st, clearance_token=ct
                 )
-            
+
             # Dernier fallback: URL vers le JSON (sera résolu au moment du téléchargement)
             if not emblem_url:
                 emblem_url = _to_image_url(emblem_path)
-            
+
             # Backdrop: convertir le chemin JSON en URL PNG Waypoint
             backdrop_raw = getattr(appearance, "backdrop_image_path", None)
             backdrop_url = _inventory_backdrop_to_waypoint_png(backdrop_raw)
-            
+
             # Si le pattern Waypoint ne fonctionne pas, résoudre via l'API progression
             if not backdrop_url and backdrop_raw:
                 backdrop_url = await _resolve_inventory_png_via_api(
                     session, backdrop_raw, spartan_token=st, clearance_token=ct
                 )
-            
+
             # Dernier fallback
             if not backdrop_url:
                 backdrop_url = _to_image_url(backdrop_raw)
-            
+
             player_title_path = getattr(appearance, "player_title_path", None)
             nameplate_url = _to_image_url(player_title_path) or _waypoint_nameplate_png_from_emblem(
                 emblem_path,
@@ -167,6 +184,7 @@ def fetch_appearance_via_spnkr(
                 rank_label=(str(rank_label or "").strip() or None),
                 rank_subtitle=(str(rank_subtitle or "").strip() or None),
                 rank_image_url=(str(rank_image_url or "").strip() or None),
+                adornment_image_url=(str(adornment_image_url or "").strip() or None),
             )
 
     return _run_sync(_run())
@@ -174,33 +192,36 @@ def fetch_appearance_via_spnkr(
 
 async def _get_career_rank_for_player(
     client, session, st_in: str, ct_in: str, xuid: str, parse_fn
-) -> tuple[str | None, str | None, str | None]:
+) -> tuple[str | None, str | None, str | None, str | None]:
     """Récupère le Career Rank du joueur via les APIs Halo.
-    
+
     1. Appelle gamecms_hacs.get_career_reward_track() pour les métadonnées des rangs
     2. Appelle l'endpoint Economy pour la progression du joueur
+
+    Returns:
+        (rank_label, rank_subtitle, rank_image_url, adornment_image_url)
     """
     xu = str(xuid).strip()
-    
+
     try:
         # 1. Récupérer les métadonnées des rangs via SPNKr
         gamecms = getattr(client, "gamecms_hacs", None)
         if gamecms is None:
-            return None, None, None
-        
+            return None, None, None, None
+
         career_track_resp = await gamecms.get_career_reward_track()
         career_track = await parse_fn(career_track_resp)
-        
+
         if career_track is None:
-            return None, None, None
-        
+            return None, None, None, None
+
         ranks_list = getattr(career_track, "ranks", None)
         if not ranks_list:
-            return None, None, None
-        
+            return None, None, None, None
+
         # 2. Appeler l'API Economy pour la progression du joueur
         economy_host = "https://economy.svc.halowaypoint.com"
-        
+
         headers = {
             "Accept": "application/json",
         }
@@ -208,20 +229,22 @@ async def _get_career_rank_for_player(
             headers["X-343-Authorization-Spartan"] = st_in
         if ct_in:
             headers["343-Clearance"] = ct_in
-        
+
         career_progress = None
         response_format = None
-        
+
         # Format 1 (den.dev): GET /hi/players/xuid({XUID})/rewardtracks/careerranks/careerrank1
         try:
-            career_url = f"{economy_host}/hi/players/xuid({xu})/rewardtracks/careerranks/careerrank1"
+            career_url = (
+                f"{economy_host}/hi/players/xuid({xu})/rewardtracks/careerranks/careerrank1"
+            )
             async with session.get(career_url, headers=headers) as resp:
                 if resp.status == 200:
                     career_progress = await resp.json()
                     response_format = "direct"
         except Exception:
             pass
-        
+
         # Format 2 (fallback Grunt): POST /hi/rewardtracks/careerRank1
         if career_progress is None:
             try:
@@ -233,70 +256,79 @@ async def _get_career_rank_for_player(
                         response_format = "wrapped"
             except Exception:
                 pass
-        
+
         if career_progress is None:
-            return None, None, None
-        
+            return None, None, None, None
+
         # Extraire la progression selon le format de réponse
         if response_format == "direct":
             current_progress = career_progress.get("CurrentProgress", {})
         else:
             reward_tracks = career_progress.get("RewardTracks", [])
             if not reward_tracks:
-                return None, None, None
+                return None, None, None, None
             track0 = reward_tracks[0]
             result = track0.get("Result", {})
             current_progress = result.get("CurrentProgress", {})
-        
+
         current_rank = current_progress.get("Rank")
         partial_xp = current_progress.get("PartialProgress", 0)
-        
+
         if current_rank is None:
-            return None, None, None
-        
+            return None, None, None, None
+
         # 3. Trouver le stage correspondant dans les métadonnées
         display_rank = current_rank if current_rank == 272 else current_rank + 1
-        
+
         current_stage = None
         for rank_obj in ranks_list:
             r = getattr(rank_obj, "rank", None)
             if r == display_rank:
                 current_stage = rank_obj
                 break
-        
+
         if current_stage is None:
-            return f"Rang de carrière {display_rank}", f"XP {partial_xp}", None
-        
+            return f"Rang de carrière {display_rank}", f"XP {partial_xp}", None, None
+
         # 4. Construire le label du rang
         tier_type = getattr(current_stage, "tier_type", None)
         rank_title_obj = getattr(current_stage, "rank_title", None)
         rank_tier_obj = getattr(current_stage, "rank_tier", None)
         xp_required = getattr(current_stage, "xp_required_for_rank", None)
         rank_large_icon = getattr(current_stage, "rank_large_icon", None)
-        
+        rank_adornment_icon = getattr(current_stage, "rank_adornment_icon", None)
+
         rank_title = getattr(rank_title_obj, "value", None) if rank_title_obj else None
         rank_tier = getattr(rank_tier_obj, "value", None) if rank_tier_obj else None
-        
+
         if current_rank == 272:
-            r_label = format_career_rank_label_fr(tier=None, title=(rank_title or "Hero"), grade=None)
+            r_label = format_career_rank_label_fr(
+                tier=None, title=(rank_title or "Hero"), grade=None
+            )
             r_subtitle = f"XP {partial_xp}/{xp_required}" if xp_required else f"XP {partial_xp}"
         else:
             r_label = format_career_rank_label_fr(tier=tier_type, title=rank_title, grade=rank_tier)
             if not r_label:
                 r_label = f"Rang {display_rank}"
             r_subtitle = f"XP {partial_xp}/{xp_required}" if xp_required else f"XP {partial_xp}"
-        
-        # 5. Construire l'URL de l'icône
+
+        # 5. Construire l'URL de l'icône et de l'adornement
+        host = "https://gamecms-hacs.svc.halowaypoint.com"
+
         r_icon = None
         if rank_large_icon:
-            host = "https://gamecms-hacs.svc.halowaypoint.com"
             icon_path = str(rank_large_icon).lstrip("/")
             r_icon = f"{host}/hi/images/file/{icon_path}"
-        
-        return r_label, r_subtitle, r_icon
-        
+
+        r_adornment = None
+        if rank_adornment_icon:
+            adorn_path = str(rank_adornment_icon).lstrip("/")
+            r_adornment = f"{host}/hi/images/file/{adorn_path}"
+
+        return r_label, r_subtitle, r_icon, r_adornment
+
     except Exception:
-        return None, None, None
+        return None, None, None, None
 
 
 def fetch_xuid_via_spnkr(
@@ -330,6 +362,7 @@ def fetch_xuid_via_spnkr(
 
         timeout = aiohttp.ClientTimeout(total=float(timeout_seconds))
         async with aiohttp.ClientSession(timeout=timeout) as session:
+
             async def _call_with_tokens(st_in: str, ct_in: str):
                 client = HaloInfiniteClient(
                     session,
@@ -416,7 +449,7 @@ def get_xuid_for_gamertag(
             ),
         )
 
-    try:
+    with contextlib.suppress(Exception):
         _safe_write_json(
             _xuid_cache_path(gt),
             {
@@ -425,8 +458,6 @@ def get_xuid_for_gamertag(
                 "xuid": xuid,
             },
         )
-    except Exception:
-        pass
 
     return xuid, None
 
@@ -476,7 +507,7 @@ def get_profile_appearance(
             ),
         )
 
-    try:
+    with contextlib.suppress(Exception):
         _safe_write_json(
             _cache_path(xu),
             {
@@ -490,8 +521,5 @@ def get_profile_appearance(
                 "rank_image_url": appearance.rank_image_url,
             },
         )
-    except Exception:
-        # Cache best-effort
-        pass
 
     return appearance, None

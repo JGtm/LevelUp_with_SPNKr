@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +24,7 @@ class ProfileAppearance:
     rank_label: str | None = None
     rank_subtitle: str | None = None
     rank_image_url: str | None = None
+    adornment_image_url: str | None = None
 
 
 def _repo_root() -> Path:
@@ -82,11 +82,11 @@ def _is_fresh(fetched_at: float | None, *, refresh_hours: int) -> bool:
 
 def load_cached_appearance(xuid: str, *, refresh_hours: int) -> ProfileAppearance | None:
     """Charge l'apparence depuis le cache disque.
-    
+
     Args:
         xuid: XUID du joueur.
         refresh_hours: Durée de validité du cache en heures.
-        
+
     Returns:
         ProfileAppearance si le cache est valide, None sinon.
     """
@@ -95,7 +95,9 @@ def load_cached_appearance(xuid: str, *, refresh_hours: int) -> ProfileAppearanc
     if not data:
         return None
     fetched_at = data.get("fetched_at")
-    if not _is_fresh(fetched_at if isinstance(fetched_at, (int, float)) else None, refresh_hours=refresh_hours):
+    if not _is_fresh(
+        fetched_at if isinstance(fetched_at, int | float) else None, refresh_hours=refresh_hours
+    ):
         return None
 
     return ProfileAppearance(
@@ -106,6 +108,7 @@ def load_cached_appearance(xuid: str, *, refresh_hours: int) -> ProfileAppearanc
         rank_label=(str(data.get("rank_label") or "").strip() or None),
         rank_subtitle=(str(data.get("rank_subtitle") or "").strip() or None),
         rank_image_url=(str(data.get("rank_image_url") or "").strip() or None),
+        adornment_image_url=(str(data.get("adornment_image_url") or "").strip() or None),
     )
 
 
@@ -121,17 +124,18 @@ def save_cached_appearance(xuid: str, appearance: ProfileAppearance) -> None:
         "rank_label": appearance.rank_label,
         "rank_subtitle": appearance.rank_subtitle,
         "rank_image_url": appearance.rank_image_url,
+        "adornment_image_url": appearance.adornment_image_url,
     }
     _safe_write_json(cp, data)
 
 
 def load_cached_xuid_for_gamertag(gamertag: str, *, refresh_hours: int) -> str | None:
     """Charge le XUID depuis le cache pour un gamertag donné.
-    
+
     Args:
         gamertag: Gamertag du joueur.
         refresh_hours: Durée de validité du cache en heures.
-        
+
     Returns:
         XUID si le cache est valide, None sinon.
     """
@@ -140,7 +144,9 @@ def load_cached_xuid_for_gamertag(gamertag: str, *, refresh_hours: int) -> str |
     if not data:
         return None
     fetched_at = data.get("fetched_at")
-    if not _is_fresh(fetched_at if isinstance(fetched_at, (int, float)) else None, refresh_hours=refresh_hours):
+    if not _is_fresh(
+        fetched_at if isinstance(fetched_at, int | float) else None, refresh_hours=refresh_hours
+    ):
         return None
     xuid = str(data.get("xuid") or "").strip()
     return xuid if xuid.isdigit() else None

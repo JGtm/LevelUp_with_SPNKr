@@ -13,11 +13,10 @@ Ce fichier teste les nouveaux modules créés lors de la Phase 6 :
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
-import pandas as pd
-import pytest
+from datetime import datetime
+from unittest.mock import patch
 
+import pandas as pd
 
 # =============================================================================
 # Tests profile_api_cache.py
@@ -55,8 +54,9 @@ class TestProfileApiCache:
 
     def test_safe_read_json_missing_file(self):
         """Test lecture JSON fichier inexistant."""
-        from src.ui.profile_api_cache import _safe_read_json
         from pathlib import Path
+
+        from src.ui.profile_api_cache import _safe_read_json
 
         result = _safe_read_json(Path("/nonexistent/path.json"))
         assert result is None
@@ -147,16 +147,18 @@ class TestMatchViewHelpers:
 
     def test_safe_dt_with_none(self):
         """Test conversion avec None."""
-        from src.ui.pages.match_view_helpers import safe_dt
         import pytz
+
+        from src.ui.pages.match_view_helpers import safe_dt
 
         paris_tz = pytz.timezone("Europe/Paris")
         assert safe_dt(None, paris_tz) is None
 
     def test_safe_dt_with_valid_timestamp(self):
         """Test conversion avec timestamp valide."""
-        from src.ui.pages.match_view_helpers import safe_dt
         import pytz
+
+        from src.ui.pages.match_view_helpers import safe_dt
 
         paris_tz = pytz.timezone("Europe/Paris")
         ts = pd.Timestamp("2024-01-15 14:30:00", tz="UTC")
@@ -165,31 +167,56 @@ class TestMatchViewHelpers:
         assert isinstance(result, datetime)
 
     def test_match_time_window_valid(self):
-        """Test calcul fenêtre temporelle."""
-        from src.ui.pages.match_view_helpers import match_time_window
+        """Test calcul fenêtre temporelle avec durée connue."""
         import pytz
 
+        from src.ui.pages.match_view_helpers import match_time_window
+
         paris_tz = pytz.timezone("Europe/Paris")
-        row = pd.Series({
-            "start_time": "2024-01-15 14:00:00",
-            "time_played_seconds": 600,  # 10 minutes
-        })
-        t0, t1 = match_time_window(row, tolerance_minutes=5, paris_tz=paris_tz)
+        row = pd.Series(
+            {
+                "start_time": "2024-01-15 14:00:00",
+                "time_played_seconds": 600,  # 10 minutes
+            }
+        )
+        t0, t1, duration_known = match_time_window(row, tolerance_minutes=5, paris_tz=paris_tz)
         assert t0 is not None
         assert t1 is not None
+        assert duration_known is True  # Durée réelle disponible
         # La fenêtre doit être plus large que la durée du match
+        assert t1 > t0
+
+    def test_match_time_window_missing_duration(self):
+        """Test avec durée manquante (fallback 12 min)."""
+        import pytz
+
+        from src.ui.pages.match_view_helpers import match_time_window
+
+        paris_tz = pytz.timezone("Europe/Paris")
+        row = pd.Series(
+            {
+                "start_time": "2024-01-15 14:00:00",
+                "time_played_seconds": None,  # Durée inconnue
+            }
+        )
+        t0, t1, duration_known = match_time_window(row, tolerance_minutes=5, paris_tz=paris_tz)
+        assert t0 is not None
+        assert t1 is not None
+        assert duration_known is False  # Durée estimée
         assert t1 > t0
 
     def test_match_time_window_missing_start(self):
         """Test avec start_time manquant."""
-        from src.ui.pages.match_view_helpers import match_time_window
         import pytz
+
+        from src.ui.pages.match_view_helpers import match_time_window
 
         paris_tz = pytz.timezone("Europe/Paris")
         row = pd.Series({"time_played_seconds": 600})
-        t0, t1 = match_time_window(row, tolerance_minutes=5, paris_tz=paris_tz)
+        t0, t1, duration_known = match_time_window(row, tolerance_minutes=5, paris_tz=paris_tz)
         assert t0 is None
         assert t1 is None
+        assert duration_known is False
 
 
 class TestOsCard:
@@ -334,9 +361,9 @@ class TestModuleIntegration:
     def test_match_view_imports_submodules(self):
         """Test que match_view.py importe correctement ses sous-modules."""
         from src.ui.pages.match_view import (
-            render_match_view,
-            os_card,
             map_thumb_path,
+            os_card,
+            render_match_view,
         )
 
         assert callable(render_match_view)
@@ -360,8 +387,9 @@ class TestFiltersRender:
 
     def test_filter_state_dataclass(self):
         """Test création d'un FilterState."""
-        from src.app.filters_render import FilterState
         from datetime import date
+
+        from src.app.filters_render import FilterState
 
         fs = FilterState(
             filter_mode="Période",

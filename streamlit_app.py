@@ -88,9 +88,6 @@ from src.ui.cache import (
     db_cache_key,
     top_medals_smart,
 )
-from src.ui.components import (
-    render_analytics_section,
-)
 from src.ui.formatting import (
     PARIS_TZ,
     format_datetime_fr_hm,
@@ -409,9 +406,6 @@ def main() -> None:
 
     render_kpis_section(dff)
     render_performance_info()
-
-    # Analytics DuckDB (si activées dans les paramètres)
-    render_analytics_section(db_path, xuid, db_key=db_key)
 
     # ==========================================================================
     # Pages (navigation)

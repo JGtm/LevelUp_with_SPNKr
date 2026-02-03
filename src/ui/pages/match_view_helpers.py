@@ -5,16 +5,15 @@ from __future__ import annotations
 import html
 import os
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
 
 import pandas as pd
 import streamlit as st
 
 from src.config import get_repo_root
 from src.ui import AppSettings
-
 
 # =============================================================================
 # Utilitaires de conversion date/heure
@@ -43,24 +42,36 @@ def safe_dt(v, paris_tz) -> datetime | None:
 
 def match_time_window(
     row: pd.Series, *, tolerance_minutes: int, paris_tz
-) -> tuple[datetime | None, datetime | None]:
-    """Calcule la fenêtre temporelle d'un match avec tolérance."""
+) -> tuple[datetime | None, datetime | None, bool]:
+    """Calcule la fenêtre temporelle d'un match avec tolérance.
+
+    Returns:
+        Tuple (start_window, end_window, duration_known):
+        - start_window: début de fenêtre (start_time - tolérance)
+        - end_window: fin de fenêtre (end_time + tolérance)
+        - duration_known: True si la durée réelle du match a été utilisée
+    """
     start = safe_dt(row.get("start_time"), paris_tz)
     if start is None:
-        return None, None
+        return None, None, False
 
     dur_s = row.get("time_played_seconds")
+    duration_known = False
     try:
         dur = float(dur_s) if dur_s == dur_s else None
     except Exception:
         dur = None
-    if dur is None or dur <= 0:
-        end = start + timedelta(minutes=30)
-    else:
+
+    if dur is not None and dur > 0:
+        # Durée réelle du match disponible
         end = start + timedelta(seconds=float(dur))
+        duration_known = True
+    else:
+        # Fallback: durée typique d'un match (~12 min au lieu de 30)
+        end = start + timedelta(minutes=12)
 
     tol = max(0, int(tolerance_minutes))
-    return start - timedelta(minutes=tol), end + timedelta(minutes=tol)
+    return start - timedelta(minutes=tol), end + timedelta(minutes=tol), duration_known
 
 
 def paris_epoch_seconds_local(dt: datetime | None, paris_tz) -> float | None:
@@ -87,7 +98,7 @@ def index_media_dir(dir_path: str, exts: tuple[str, ...]) -> pd.DataFrame:
     if not p or not os.path.isdir(p):
         return pd.DataFrame(columns=["path", "mtime", "ext"])
 
-    wanted = {e.lower().lstrip(".") for e in (exts or tuple()) if isinstance(e, str) and e.strip()}
+    wanted = {e.lower().lstrip(".") for e in (exts or ()) if isinstance(e, str) and e.strip()}
     if not wanted:
         return pd.DataFrame(columns=["path", "mtime", "ext"])
 
@@ -135,7 +146,7 @@ def render_media_section(
         return
 
     tol = int(getattr(settings, "media_tolerance_minutes", 0) or 0)
-    t0, t1 = match_time_window(row, tolerance_minutes=tol, paris_tz=paris_tz)
+    t0, t1, duration_known = match_time_window(row, tolerance_minutes=tol, paris_tz=paris_tz)
     if t0 is None or t1 is None:
         return
 
@@ -146,7 +157,11 @@ def render_media_section(
         return
 
     st.subheader("Médias")
-    st.caption(f"Fenêtre de recherche: {format_datetime_fn(t0)} → {format_datetime_fn(t1)}")
+    # Afficher la fenêtre avec indication si durée exacte ou estimée
+    window_info = f"Fenêtre: {format_datetime_fn(t0)} → {format_datetime_fn(t1)}"
+    if not duration_known:
+        window_info += " *(durée estimée)*"
+    st.caption(window_info)
 
     try:
         t0_epoch = t0.timestamp() if t0 else None
@@ -225,8 +240,12 @@ def os_card(
     style = "min-height:" + str(int(min_h)) + "px; margin-bottom:10px;"
     if accent and str(accent).startswith("#"):
         style += f"border-color:{accent}66;"
-    kpi_style = "" if not (kpi_color and str(kpi_color).startswith("#")) else f" style='color:{kpi_color}'"
-    sub_style_attr = "" if not sub_style else " style=\"" + html.escape(str(sub_style), quote=True) + "\""
+    kpi_style = (
+        "" if not (kpi_color and str(kpi_color).startswith("#")) else f" style='color:{kpi_color}'"
+    )
+    sub_style_attr = (
+        "" if not sub_style else ' style="' + html.escape(str(sub_style), quote=True) + '"'
+    )
     st.markdown(
         "<div class='os-card' style='" + style + "'>"
         f"<div class='os-card-title'>{t}</div>"
@@ -239,6 +258,7 @@ def os_card(
 
 def map_thumb_path(row: pd.Series, map_id: str | None) -> str | None:
     """Trouve le chemin vers la miniature de la carte."""
+
     def _safe_stem_from_name(name: str | None) -> str:
         s = str(name or "").strip()
         if not s:

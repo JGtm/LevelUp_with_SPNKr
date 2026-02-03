@@ -119,7 +119,8 @@ def _compute_match_windows(df_full: pd.DataFrame, settings: AppSettings) -> pd.D
         except Exception:
             dur = None
         if dur is None or dur <= 0:
-            return start + timedelta(minutes=30)
+            # Fallback: durée typique d'un match (~12 min au lieu de 30)
+            return start + timedelta(minutes=12)
         return start + timedelta(seconds=float(dur))
 
     base["_end"] = base.apply(_end_from_row, axis=1)
@@ -329,6 +330,13 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
     windows_df = _compute_match_windows(df_full, settings)
     assoc_df = _associate_media_to_matches(media_df, windows_df)
 
+    # Diagnostic : fenêtres de matchs disponibles
+    if windows_df.empty:
+        st.warning(
+            "⚠️ Aucune fenêtre temporelle de match disponible pour l'association. "
+            "Vérifiez que les matchs ont bien des dates de départ (`start_time`)."
+        )
+
     # Affichage
     if not group_by_match:
         _render_media_grid(assoc_df, cols_per_row=int(cols_per_row))
@@ -336,6 +344,16 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
 
     assigned = assoc_df.loc[assoc_df["match_id"].notna()].copy()
     unassigned = assoc_df.loc[assoc_df["match_id"].isna()].copy()
+
+    # Si aucun média n'est associé, afficher directement les non associés
+    if assigned.empty and not unassigned.empty:
+        st.info(
+            f"Aucun média n'a pu être associé à un match. "
+            f"Vérifiez la tolérance temporelle dans Paramètres → Médias (actuelle: {int(getattr(settings, 'media_tolerance_minutes', 0) or 0)} min)."
+        )
+        st.subheader(f"Médias non associés ({len(unassigned)})")
+        _render_media_grid(unassigned, cols_per_row=int(cols_per_row))
+        return
 
     if not assigned.empty:
         # Tri: match le plus récent d'abord, puis médias par ordre chronologique (mtime asc)

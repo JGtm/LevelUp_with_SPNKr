@@ -5,13 +5,18 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
-from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_PLAYER_XUID, XUID_ALIASES_DEFAULT, get_aliases_file_path
+from src.config import (
+    DEFAULT_PLAYER_GAMERTAG,
+    DEFAULT_PLAYER_XUID,
+    XUID_ALIASES_DEFAULT,
+    get_aliases_file_path,
+)
 from src.db.connection import get_connection
 
 
-def infer_spnkr_player_from_db_path(db_path: str) -> Optional[str]:
+def infer_spnkr_player_from_db_path(db_path: str) -> str | None:
     """Déduit le paramètre --player à utiliser pour une DB SPNKr.
 
     Conventions supportées (aligné avec refresh_all_dbs.bat):
@@ -37,16 +42,16 @@ def infer_spnkr_player_from_db_path(db_path: str) -> Optional[str]:
     return out or None
 
 
-def guess_xuid_from_db_path(db_path: str) -> Optional[str]:
+def guess_xuid_from_db_path(db_path: str) -> str | None:
     """Devine le XUID à partir du nom du fichier .db.
-    
+
     La convention OpenSpartan Workshop nomme les fichiers <XUID>.db.
     Mais on supporte aussi des noms "conviviaux" (ex: spnkr_gt_<Gamertag>.db)
     ou des fichiers renommés à la main (ex: <Gamertag>.db).
-    
+
     Args:
         db_path: Chemin vers le fichier .db.
-        
+
     Returns:
         Le XUID si le nom de fichier est numérique, None sinon.
     """
@@ -85,7 +90,7 @@ def guess_xuid_from_db_path(db_path: str) -> Optional[str]:
         aliases: dict[str, str] = dict(XUID_ALIASES_DEFAULT)
         aliases_path = get_aliases_file_path()
         if aliases_path and os.path.exists(aliases_path):
-            with open(aliases_path, "r", encoding="utf-8") as f:
+            with open(aliases_path, encoding="utf-8") as f:
                 obj = json.load(f)
             if isinstance(obj, dict):
                 for x, gt in obj.items():
@@ -110,12 +115,12 @@ def guess_xuid_from_db_path(db_path: str) -> Optional[str]:
 
 def parse_iso_utc(s: str) -> datetime:
     """Parse une date ISO 8601 en datetime UTC.
-    
+
     Gère le format utilisé par l'API Halo: 2026-01-02T20:18:01.293Z
-    
+
     Args:
         s: Chaîne de date au format ISO 8601.
-        
+
     Returns:
         datetime en timezone UTC.
     """
@@ -127,23 +132,23 @@ def parse_iso_utc(s: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def coerce_number(v: Any) -> Optional[float]:
+def coerce_number(v: Any) -> float | None:
     """Convertit une valeur en float de manière robuste.
-    
+
     Gère différents formats vus dans l'API Halo:
     - Nombres directs (int, float)
     - Chaînes numériques
     - Dictionnaires avec clés Count, Value, Seconds, etc.
-    
+
     Args:
         v: Valeur à convertir.
-        
+
     Returns:
         La valeur en float, ou None si la conversion échoue.
     """
     if v is None or isinstance(v, bool):
         return None
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return float(v)
     if isinstance(v, str):
         try:
@@ -159,28 +164,26 @@ def coerce_number(v: Any) -> Optional[float]:
 
 
 # Regex pour les durées ISO 8601 (ex: PT31.5S)
-_ISO8601_DURATION_RE = re.compile(
-    r"^PT(?:(?P<h>\d+)H)?(?:(?P<m>\d+)M)?(?:(?P<s>\d+(?:\.\d+)?)S)?$"
-)
+_ISO8601_DURATION_RE = re.compile(r"^PT(?:(?P<h>\d+)H)?(?:(?P<m>\d+)M)?(?:(?P<s>\d+(?:\.\d+)?)S)?$")
 
 
-def coerce_duration_seconds(v: Any) -> Optional[float]:
+def coerce_duration_seconds(v: Any) -> float | None:
     """Convertit une durée en secondes.
-    
+
     Gère différents formats:
     - Nombres directs (déjà en secondes)
     - Chaînes ISO 8601 (ex: "PT31.5S")
     - Dictionnaires avec Seconds ou Milliseconds
-    
+
     Args:
         v: Valeur de durée à convertir.
-        
+
     Returns:
         La durée en secondes, ou None si la conversion échoue.
     """
     if v is None or isinstance(v, bool):
         return None
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return float(v)
     if isinstance(v, dict):
         if "Milliseconds" in v or "Ms" in v:
@@ -201,16 +204,16 @@ def coerce_duration_seconds(v: Any) -> Optional[float]:
     return None
 
 
-def parse_xuid_input(s: str) -> Optional[str]:
+def parse_xuid_input(s: str) -> str | None:
     """Parse une entrée utilisateur de XUID.
-    
+
     Accepte:
     - Un nombre direct: "2533274823110022"
     - Le format xuid(): "xuid(2533274823110022)"
-    
+
     Args:
         s: Entrée utilisateur.
-        
+
     Returns:
         Le XUID extrait, ou None si invalide.
     """
@@ -228,14 +231,14 @@ def parse_xuid_input(s: str) -> Optional[str]:
 _XUID_DIGITS_RE = re.compile(r"(\d{12,20})")
 
 
-def _extract_xuid_from_player_id(player_id: Any) -> Optional[str]:
+def _extract_xuid_from_player_id(player_id: Any) -> str | None:
     if player_id is None:
         return None
     if isinstance(player_id, dict):
         for k in ("Xuid", "xuid", "XUID"):
             if k in player_id:
                 v = player_id.get(k)
-                if isinstance(v, (int, str)):
+                if isinstance(v, int | str):
                     parsed = parse_xuid_input(str(v))
                     if parsed:
                         return parsed
@@ -243,7 +246,7 @@ def _extract_xuid_from_player_id(player_id: Any) -> Optional[str]:
                     if m:
                         return m.group(1)
         return None
-    if isinstance(player_id, (int, str)):
+    if isinstance(player_id, int | str):
         s = str(player_id)
         parsed = parse_xuid_input(s)
         if parsed:
@@ -254,7 +257,7 @@ def _extract_xuid_from_player_id(player_id: Any) -> Optional[str]:
     return None
 
 
-def _extract_gamertag_from_player_id(player_id: Any) -> Optional[str]:
+def _extract_gamertag_from_player_id(player_id: Any) -> str | None:
     if player_id is None:
         return None
     if isinstance(player_id, dict):
@@ -266,7 +269,7 @@ def _extract_gamertag_from_player_id(player_id: Any) -> Optional[str]:
     return None
 
 
-def resolve_xuid_from_db(db_path: str, player: str, *, limit_rows: int = 400) -> Optional[str]:
+def resolve_xuid_from_db(db_path: str, player: str, *, limit_rows: int = 400) -> str | None:
     """Résout un XUID à partir d'une entrée utilisateur.
 
     - Si `player` est déjà un XUID (ou xuid(...)), renvoie le XUID.
@@ -282,7 +285,9 @@ def resolve_xuid_from_db(db_path: str, player: str, *, limit_rows: int = 400) ->
         return parsed
 
     # Fallback 1: valeurs par défaut (local)
-    default_gt = (os.environ.get("OPENSPARTAN_DEFAULT_GAMERTAG") or DEFAULT_PLAYER_GAMERTAG or "").strip()
+    default_gt = (
+        os.environ.get("OPENSPARTAN_DEFAULT_GAMERTAG") or DEFAULT_PLAYER_GAMERTAG or ""
+    ).strip()
     default_xuid = (os.environ.get("OPENSPARTAN_DEFAULT_XUID") or DEFAULT_PLAYER_XUID or "").strip()
     if default_gt and p.casefold() == default_gt.casefold():
         return default_xuid or None
@@ -292,7 +297,7 @@ def resolve_xuid_from_db(db_path: str, player: str, *, limit_rows: int = 400) ->
         aliases: dict[str, str] = dict(XUID_ALIASES_DEFAULT)
         aliases_path = get_aliases_file_path()
         if aliases_path and os.path.exists(aliases_path):
-            with open(aliases_path, "r", encoding="utf-8") as f:
+            with open(aliases_path, encoding="utf-8") as f:
                 obj = json.load(f)
             if isinstance(obj, dict):
                 for x, gt in obj.items():
@@ -309,6 +314,23 @@ def resolve_xuid_from_db(db_path: str, player: str, *, limit_rows: int = 400) ->
         return None
 
     gt = p.casefold()
+
+    # DuckDB v4 : utiliser la table xuid_aliases
+    if db_path.endswith(".duckdb"):
+        try:
+            import duckdb
+
+            conn = duckdb.connect(db_path, read_only=True)
+            result = conn.execute(
+                "SELECT xuid FROM xuid_aliases WHERE LOWER(gamertag) = LOWER(?)",
+                [p],
+            ).fetchone()
+            conn.close()
+            if result and result[0]:
+                return str(result[0])
+            return None
+        except Exception:
+            return None
 
     try:
         with get_connection(db_path) as con:

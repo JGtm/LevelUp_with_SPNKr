@@ -281,6 +281,7 @@ def render_profile_hero(
         getattr(api_app, "rank_subtitle", None) if api_app else ""
     )
     rank_icon_value = (getattr(api_app, "rank_image_url", None) if api_app else "") or ""
+    adornment_value = (getattr(api_app, "adornment_image_url", None) if api_app else "") or ""
 
     # Tokens Halo si nécessaire
     if (
@@ -313,6 +314,12 @@ def render_profile_hero(
     rank_icon_path = ensure_local_image_path(
         rank_icon_value, prefix="rank", download_enabled=dl_enabled, auto_refresh_hours=refresh_h
     )
+    adornment_path = ensure_local_image_path(
+        adornment_value,
+        prefix="adornment",
+        download_enabled=dl_enabled,
+        auto_refresh_hours=refresh_h,
+    )
 
     # Diagnostics non bloquants
     def _warn_asset(prefix: str, url: str, path: str | None) -> None:
@@ -341,6 +348,7 @@ def render_profile_hero(
             rank_label=str(rank_label_value or "").strip() or None,
             rank_subtitle=str(rank_subtitle_value or "").strip() or None,
             rank_icon_path=rank_icon_path,
+            adornment_path=adornment_path,
             banner_path=banner_path,
             backdrop_path=backdrop_path,
             nameplate_path=nameplate_path,

@@ -103,7 +103,13 @@ def cached_same_team_match_ids_with_friend(
     friend_xuid: str,
     db_key: tuple[int, int] | None,
 ) -> tuple[str, ...]:
-    """Retourne les match_id (str) joués dans la même équipe avec un ami (cache)."""
+    """Retourne les match_id (str) joués dans la même équipe avec un ami (cache).
+
+    DuckDB v4 n'a pas le JSON brut nécessaire, retourne tuple vide.
+    """
+    # DuckDB v4 : pas de données JSON brutes pour cette requête
+    if _is_duckdb_v4_path(db_path):
+        return ()
     rows = query_matches_with_friend(db_path, self_xuid, friend_xuid)
     ids = {str(r.match_id) for r in rows if getattr(r, "same_team", False)}
     return tuple(sorted(ids))
@@ -116,7 +122,13 @@ def cached_query_matches_with_friend(
     friend_xuid: str,
     db_key: tuple[int, int] | None,
 ):
-    """Requête les matchs joués avec un ami (cache)."""
+    """Requête les matchs joués avec un ami (cache).
+
+    DuckDB v4 n'a pas le JSON brut nécessaire, retourne liste vide.
+    """
+    # DuckDB v4 : pas de données JSON brutes pour cette requête
+    if _is_duckdb_v4_path(db_path):
+        return []
     return query_matches_with_friend(db_path, self_xuid, friend_xuid)
 
 
@@ -127,7 +139,34 @@ def cached_load_player_match_result(
     xuid: str,
     db_key: tuple[int, int] | None,
 ):
-    """Charge le résultat d'un match pour un joueur (cache)."""
+    """Charge le résultat d'un match pour un joueur (cache).
+
+    Utilise DuckDBRepository pour .duckdb, sinon fallback legacy.
+    Note: DuckDB ne stocke pas les StatPerformances (expected/stddev).
+    """
+    # DuckDB v4 : utiliser le repository
+    if _is_duckdb_v4_path(db_path):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(xuid).strip())
+            mmr_data = repo.load_match_mmr_batch([match_id])
+            if match_id in mmr_data:
+                team_mmr, enemy_mmr = mmr_data[match_id]
+                return {
+                    "team_id": None,  # Non disponible dans DuckDB v4
+                    "team_mmr": team_mmr,
+                    "enemy_mmr": enemy_mmr,
+                    "team_mmrs": None,  # Non disponible dans DuckDB v4
+                    "kills": {"count": None, "expected": None, "stddev": None},
+                    "deaths": {"count": None, "expected": None, "stddev": None},
+                    "assists": {"count": None, "expected": None, "stddev": None},
+                }
+            return None
+        except Exception:
+            return None
+
+    # Legacy SQLite
     return load_player_match_result(db_path, match_id, xuid)
 
 
@@ -138,7 +177,21 @@ def cached_load_match_medals_for_player(
     xuid: str,
     db_key: tuple[int, int] | None,
 ):
-    """Charge les médailles d'un match pour un joueur (cache)."""
+    """Charge les médailles d'un match pour un joueur (cache).
+
+    Utilise DuckDBRepository pour .duckdb, sinon fallback legacy.
+    """
+    # DuckDB v4 : utiliser le repository
+    if _is_duckdb_v4_path(db_path):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(xuid).strip())
+            return repo.load_match_medals(match_id)
+        except Exception:
+            return []
+
+    # Legacy SQLite
     return load_match_medals_for_player(db_path, match_id, xuid)
 
 
@@ -149,8 +202,16 @@ def cached_load_match_rosters(
     xuid: str,
     db_key: tuple[int, int] | None,
 ):
-    """Charge les rosters d'un match (cache)."""
+    """Charge les rosters d'un match (cache).
+
+    Note: DuckDB v4 ne stocke pas les rosters JSON bruts, retourne None.
+    """
     _ = db_key
+    # DuckDB v4 : pas de rosters JSON disponibles
+    if _is_duckdb_v4_path(db_path):
+        return None
+
+    # Legacy SQLite
     return load_match_rosters(db_path, match_id, xuid)
 
 
@@ -161,8 +222,60 @@ def cached_load_highlight_events_for_match(
     *,
     db_key: tuple[int, int] | None = None,
 ):
-    """Charge les événements highlight d'un match (cache)."""
+    """Charge les événements highlight d'un match (cache).
+
+    Utilise DuckDBRepository pour .duckdb, sinon fallback legacy.
+    """
     _ = db_key
+    # DuckDB v4 : charger depuis la table highlight_events
+    if _is_duckdb_v4_path(db_path):
+        try:
+            import duckdb
+
+            conn = duckdb.connect(db_path, read_only=True)
+            # Vérifier si la table existe
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='highlight_events'"
+            ).fetchall()
+            if not tables:
+                conn.close()
+                return []
+
+            result = conn.execute(
+                """
+                SELECT event_type, time_ms, xuid, gamertag, type_hint, raw_json
+                FROM highlight_events
+                WHERE match_id = ?
+                ORDER BY time_ms ASC
+                """,
+                [match_id],
+            ).fetchall()
+            conn.close()
+
+            import json
+
+            events = []
+            for row in result:
+                event = {
+                    "event_type": row[0],
+                    "time_ms": row[1],
+                    "xuid": row[2],
+                    "gamertag": row[3],
+                    "type_hint": row[4],
+                }
+                # Parser raw_json si présent
+                if row[5]:
+                    try:
+                        extra = json.loads(row[5]) if isinstance(row[5], str) else {}
+                        event.update(extra)
+                    except Exception:
+                        pass
+                events.append(event)
+            return events
+        except Exception:
+            return []
+
+    # Legacy SQLite
     return load_highlight_events_for_match(db_path, match_id)
 
 
@@ -173,8 +286,50 @@ def cached_load_match_player_gamertags(
     *,
     db_key: tuple[int, int] | None = None,
 ):
-    """Charge les gamertags des joueurs d'un match (cache)."""
+    """Charge les gamertags des joueurs d'un match (cache).
+
+    Utilise la table highlight_events pour DuckDB, sinon fallback legacy.
+    """
     _ = db_key
+    # DuckDB v4 : extraire les gamertags depuis highlight_events ou xuid_aliases
+    if _is_duckdb_v4_path(db_path):
+        try:
+            import duckdb
+
+            conn = duckdb.connect(db_path, read_only=True)
+
+            # Essayer d'abord depuis highlight_events pour ce match
+            try:
+                result = conn.execute(
+                    """
+                    SELECT DISTINCT xuid, gamertag
+                    FROM highlight_events
+                    WHERE match_id = ?
+                      AND xuid IS NOT NULL
+                      AND gamertag IS NOT NULL
+                    """,
+                    [match_id],
+                ).fetchall()
+                if result:
+                    conn.close()
+                    return {str(row[0]): str(row[1]) for row in result if row[0] and row[1]}
+            except Exception:
+                pass
+
+            # Fallback: utiliser xuid_aliases (moins précis pour ce match spécifique)
+            try:
+                result = conn.execute(
+                    "SELECT xuid, gamertag FROM xuid_aliases WHERE xuid IS NOT NULL"
+                ).fetchall()
+                conn.close()
+                return {str(row[0]): str(row[1]) for row in result if row[0] and row[1]}
+            except Exception:
+                conn.close()
+                return {}
+        except Exception:
+            return {}
+
+    # Legacy SQLite
     return load_match_player_gamertags(db_path, match_id)
 
 
@@ -186,7 +341,24 @@ def cached_load_top_medals(
     top_n: int | None,
     db_key: tuple[int, int] | None,
 ):
-    """Charge les top médailles (cache)."""
+    """Charge les top médailles (cache).
+
+    Utilise DuckDBRepository pour les bases .duckdb, sinon fallback legacy.
+    """
+    # DuckDB v4 : utiliser le repository
+    if _is_duckdb_v4_path(db_path):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(xuid).strip())
+            return repo.load_top_medals(
+                list(match_ids),
+                top_n=(int(top_n) if top_n is not None else None),
+            )
+        except Exception:
+            return []
+
+    # Legacy SQLite
     return load_top_medals(
         db_path,
         xuid,
@@ -206,7 +378,21 @@ def top_medals_smart(
     """Charge les top médailles avec gestion intelligente du cache.
 
     Évite de stocker d'immenses tuples en cache pour les grandes listes.
+    Utilise DuckDBRepository pour les bases .duckdb.
     """
+    # DuckDB v4 : utiliser le repository directement (pas de cache pour les grandes listes)
+    if _is_duckdb_v4_path(db_path):
+        if len(match_ids) > 1500:
+            try:
+                from src.data.repositories.duckdb_repo import DuckDBRepository
+
+                repo = DuckDBRepository(db_path, str(xuid).strip())
+                return repo.load_top_medals(match_ids, top_n=top_n)
+            except Exception:
+                return []
+        return cached_load_top_medals(db_path, xuid, tuple(match_ids), top_n, db_key=db_key)
+
+    # Legacy SQLite
     if len(match_ids) > 1500:
         return load_top_medals(db_path, xuid, match_ids, top_n=top_n)
     return cached_load_top_medals(db_path, xuid, tuple(match_ids), top_n, db_key=db_key)
@@ -275,7 +461,31 @@ def clear_app_caches() -> None:
 def cached_list_other_xuids(
     db_path: str, self_xuid: str, db_key: tuple[int, int] | None = None, limit: int = 500
 ) -> list[str]:
-    """Version cachée de list_other_player_xuids."""
+    """Version cachée de list_other_player_xuids.
+
+    DuckDB v4 utilise xuid_aliases ou teammates_aggregate.
+    """
+    # DuckDB v4 : utiliser la table xuid_aliases ou teammates
+    if _is_duckdb_v4_path(db_path):
+        try:
+            import duckdb
+
+            conn = duckdb.connect(db_path, read_only=True)
+            # Essayer depuis xuid_aliases (tous les joueurs rencontrés)
+            try:
+                result = conn.execute(
+                    f"SELECT DISTINCT xuid FROM xuid_aliases WHERE xuid != ? LIMIT {limit}",
+                    [self_xuid],
+                ).fetchall()
+                if result:
+                    conn.close()
+                    return [str(row[0]) for row in result if row[0]]
+            except Exception:
+                pass
+            conn.close()
+            return []
+        except Exception:
+            return []
     return list_other_player_xuids(db_path, self_xuid, limit)
 
 
@@ -285,10 +495,20 @@ def cached_list_top_teammates(
 ) -> list[tuple[str, int]]:
     """Version cachée de list_top_teammates.
 
-    Utilise TeammatesAggregate (cache DB) si disponible, sinon fallback
-    sur la requête JSON lente (list_top_teammates).
+    Utilise DuckDBRepository pour .duckdb, sinon TeammatesAggregate (cache DB),
+    sinon fallback sur la requête JSON lente (list_top_teammates).
     """
-    # Essayer d'abord le cache optimisé (TeammatesAggregate)
+    # DuckDB v4 : utiliser le repository
+    if _is_duckdb_v4_path(db_path):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(self_xuid).strip())
+            return repo.list_top_teammates(limit=limit)
+        except Exception:
+            return []
+
+    # Legacy SQLite : essayer d'abord le cache optimisé (TeammatesAggregate)
     cached_results = load_top_teammates_cached(db_path, self_xuid, limit)
     if cached_results:
         # Convertir le format (xuid, gamertag, matches, wins, losses) -> (xuid, matches)
@@ -305,15 +525,38 @@ def cached_list_top_teammates(
 
 @st.cache_data(show_spinner=False)
 def cached_has_cache_tables(db_path: str, db_key: tuple[int, int] | None = None) -> bool:
-    """Vérifie si les tables de cache existent."""
+    """Vérifie si les tables de cache existent.
+
+    DuckDB v4 considéré comme ayant toujours les tables de cache.
+    """
     _ = db_key
+    # DuckDB v4 : toujours considéré comme ayant le cache
+    if _is_duckdb_v4_path(db_path):
+        return True
     return has_cache_tables(db_path)
 
 
 @st.cache_data(show_spinner=False)
 def cached_get_cache_stats(db_path: str, xuid: str, db_key: tuple[int, int] | None = None) -> dict:
-    """Retourne les stats du cache DB pour un joueur."""
+    """Retourne les stats du cache DB pour un joueur.
+
+    DuckDB v4 retourne des stats depuis le repository.
+    """
     _ = db_key
+    # DuckDB v4 : utiliser le repository
+    if _is_duckdb_v4_path(db_path):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(xuid).strip())
+            storage = repo.get_storage_info()
+            return {
+                "has_cache": True,
+                "match_count": storage.get("total_matches", 0),
+                "sessions_count": storage.get("sessions_count", 0),
+            }
+        except Exception:
+            return {"has_cache": True}
     return get_cache_stats(db_path, xuid)
 
 
@@ -434,8 +677,14 @@ def cached_load_friends(
     owner_xuid: str,
     db_key: tuple[int, int] | None = None,
 ) -> list[dict]:
-    """Charge la liste des amis depuis la table Friends."""
+    """Charge la liste des amis depuis la table Friends.
+
+    DuckDB v4 n'a pas de table Friends, retourne liste vide.
+    """
     _ = db_key
+    # DuckDB v4 : pas de table Friends
+    if _is_duckdb_v4_path(db_path):
+        return []
     return load_friends(db_path, owner_xuid)
 
 
@@ -473,8 +722,14 @@ def cached_get_match_session_info(
     match_id: str,
     db_key: tuple[int, int] | None = None,
 ) -> dict | None:
-    """Récupère les infos de session pour un match spécifique."""
+    """Récupère les infos de session pour un match spécifique.
+
+    DuckDB v4 ne stocke pas les sessions de la même manière.
+    """
     _ = db_key
+    # DuckDB v4 : pas d'info session disponible de cette façon
+    if _is_duckdb_v4_path(db_path):
+        return None
     return get_match_session_info(db_path, match_id)
 
 

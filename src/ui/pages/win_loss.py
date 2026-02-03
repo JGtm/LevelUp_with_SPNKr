@@ -367,8 +367,9 @@ def _render_map_table(breakdown: pd.DataFrame, base_scope: pd.DataFrame) -> None
     tbl = breakdown.copy()
     tbl["win_rate"] = (tbl["win_rate"] * 100).round(1)
     tbl["loss_rate"] = (tbl["loss_rate"] * 100).round(1)
-    tbl["accuracy_avg"] = tbl["accuracy_avg"].round(2)
-    tbl["ratio_global"] = tbl["ratio_global"].round(2)
+    # Convertir en numérique pour éviter TypeError si la colonne est de type object
+    tbl["accuracy_avg"] = pd.to_numeric(tbl["accuracy_avg"], errors="coerce").round(2)
+    tbl["ratio_global"] = pd.to_numeric(tbl["ratio_global"], errors="coerce").round(2)
     if "performance_avg" in tbl.columns:
         tbl["performance_avg"] = tbl["performance_avg"].round(1)
 

@@ -15,7 +15,7 @@
     --bg-plot: rgb(29, 35, 40);           /* Fond graphiques (Waypoint news) */
     --bg-surface: rgb(21, 50, 62);        /* Surfaces (cards) */
     --bg-dark: rgb(16, 22, 30);           /* Fond sombre (gradients) */
-    
+
     --surface: rgba(21, 50, 62, 0.95);
     --surface-2: rgba(21, 50, 62, 0.78);
     --surface-3: rgba(16, 22, 30, 0.45);
@@ -40,7 +40,7 @@
     --corner-size: 12px;
     --corner-size-sm: 8px;
     --corner-size-lg: 16px;
-    
+
     /* Couleurs sémantiques (victoire/défaite/score) */
     --color-win: #4CAF50;
     --color-loss: #F44336;
@@ -462,8 +462,8 @@ section.main:after {
     );
     z-index: -1;
     padding: 1px;
-    -webkit-mask: 
-        linear-gradient(#fff 0 0) content-box, 
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
         linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -529,6 +529,22 @@ section.main:after {
     justify-content: center;
     min-width: 120px;
     gap: 8px;
+    position: relative;
+}
+
+.career-rank__adornment {
+    position: absolute;
+    width: 140px;
+    height: 140px;
+    object-fit: contain;
+    /* Centré horizontalement, positionné vers le bas de l'icône */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -20%);
+    z-index: 0;
+    opacity: 0.85;
+    filter: drop-shadow(0 2px 8px rgba(51, 214, 255, 0.3));
+    pointer-events: none;
 }
 
 .career-rank__icon {
@@ -536,6 +552,8 @@ section.main:after {
     height: 192px;
     object-fit: contain;
     filter: drop-shadow(0 4px 12px rgba(51, 214, 255, 0.25));
+    position: relative;
+    z-index: 1;
 }
 
 .career-rank__text {
@@ -891,8 +909,8 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
     );
     z-index: -1;
     padding: 1px;
-    -webkit-mask: 
-        linear-gradient(#fff 0 0) content-box, 
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
         linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -1210,8 +1228,8 @@ div[data-testid="stNumberInput"] input:focus {
     );
     z-index: -1;
     padding: 1px;
-    -webkit-mask: 
-        linear-gradient(#fff 0 0) content-box, 
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
         linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -1304,8 +1322,8 @@ div[data-testid="stNumberInput"] input:focus {
     );
     z-index: -1;
     padding: 1px;
-    -webkit-mask: 
-        linear-gradient(#fff 0 0) content-box, 
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
         linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;

@@ -319,7 +319,7 @@ def create_participation_radar(
     Returns:
         Figure Plotly.
     """
-    categories = ["Frags", "Assists", "Objectifs", "Véhicules", "Survie"]
+    categories = ["Frags", "Assists", "Objectifs", "Survie"]
 
     if not participation_data:
         fig = go.Figure()
@@ -333,7 +333,6 @@ def create_participation_radar(
     max_kill = max(abs(p.get("kill_score") or 0) for p in participation_data) or 1
     max_assist = max(abs(p.get("assist_score") or 0) for p in participation_data) or 1
     max_obj = max(abs(p.get("objective_score") or 0) for p in participation_data) or 1
-    max_vehicle = max(abs(p.get("vehicle_score") or 0) for p in participation_data) or 1
     max_penalty = max(abs(p.get("penalty_score") or 0) for p in participation_data) or 1
 
     fig = go.Figure()
@@ -346,18 +345,16 @@ def create_participation_radar(
         kill_raw = item.get("kill_score") or 0
         assist_raw = item.get("assist_score") or 0
         obj_raw = item.get("objective_score") or 0
-        vehicle_raw = item.get("vehicle_score") or 0
         penalty_raw = item.get("penalty_score") or 0
 
         # Normaliser (0-1)
         kill_norm = kill_raw / max_kill if max_kill else 0
         assist_norm = assist_raw / max_assist if max_assist else 0
         obj_norm = obj_raw / max_obj if max_obj else 0
-        vehicle_norm = vehicle_raw / max_vehicle if max_vehicle else 0
         # Survie : inverse des pénalités (moins de pénalités = mieux)
         survival_norm = 1 - (abs(penalty_raw) / max_penalty) if max_penalty else 1
 
-        values = [kill_norm, assist_norm, obj_norm, vehicle_norm, survival_norm, kill_norm]
+        values = [kill_norm, assist_norm, obj_norm, survival_norm, kill_norm]
         theta = categories + [categories[0]]
 
         # Données pour hover
@@ -365,7 +362,6 @@ def create_participation_radar(
             [f"{int(kill_raw):,} pts"],
             [f"{int(assist_raw):,} pts"],
             [f"{int(obj_raw):,} pts"],
-            [f"{int(vehicle_raw):,} pts"],
             [f"{int(penalty_raw):,} pts" if penalty_raw else "Aucune"],
             [f"{int(kill_raw):,} pts"],
         ]

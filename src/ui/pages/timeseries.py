@@ -14,7 +14,6 @@ from src.visualization.distributions import (
     plot_first_event_distribution,
     plot_histogram,
     plot_kda_distribution,
-    plot_top_weapons,
 )
 from src.visualization.timeseries import (
     plot_assists_timeseries,
@@ -81,10 +80,12 @@ def render_timeseries_page(
                         color=colors["cyan"],
                     )
                     st.plotly_chart(fig_acc, width="stretch")
+                elif len(acc_data) == 0:
+                    st.info("Aucune donnée de précision disponible pour ce filtre.")
                 else:
-                    st.info("Pas assez de données de précision.")
+                    st.info(f"Pas assez de données de précision ({len(acc_data)} matchs).")
             else:
-                st.info("Colonne précision non disponible.")
+                st.info("Colonne précision non disponible dans les données.")
 
         with col_dist2:
             # Distribution des kills
@@ -180,19 +181,24 @@ def render_timeseries_page(
         with col_corr2:
             # Précision vs KDA
             if "accuracy" in dff.columns and "kda" in dff.columns:
-                fig_corr2 = plot_correlation_scatter(
-                    dff,
-                    "accuracy",
-                    "kda",
-                    color_col="outcome",
-                    title="Précision vs FDA",
-                    x_label="Précision (%)",
-                    y_label="FDA",
-                    show_trendline=True,
-                )
-                st.plotly_chart(fig_corr2, width="stretch")
+                # Vérifier qu'il y a des données non-NaN pour les deux colonnes
+                valid_data = dff.dropna(subset=["accuracy", "kda"])
+                if len(valid_data) > 5:
+                    fig_corr2 = plot_correlation_scatter(
+                        dff,
+                        "accuracy",
+                        "kda",
+                        color_col="outcome",
+                        title="Précision vs FDA",
+                        x_label="Précision (%)",
+                        y_label="FDA",
+                        show_trendline=True,
+                    )
+                    st.plotly_chart(fig_corr2, width="stretch")
+                else:
+                    st.info("Pas assez de données de précision/FDA disponibles.")
             else:
-                st.info("Données insuffisantes pour cette corrélation.")
+                st.info("Colonnes précision ou FDA non disponibles.")
 
         # === Distribution Premier Kill/Death (Sprint 5.4.4) ===
         st.divider()
@@ -247,51 +253,6 @@ def render_timeseries_page(
             st.info("Average Life indisponible sur ce filtre.")
         else:
             st.plotly_chart(plot_average_life(dff), width="stretch")
-
-        # === Top armes (Sprint 5.4.8) ===
-        st.divider()
-        st.subheader("Top armes")
-        st.caption("Armes avec le plus de kills (données globales).")
-
-        if db_path and xuid:
-            try:
-                from src.data.repositories.duckdb_repo import DuckDBRepository
-
-                if db_path.endswith(".duckdb"):
-                    repo = DuckDBRepository(db_path, str(xuid).strip())
-                    weapons_data = repo.get_top_weapons(limit=10)
-                    if weapons_data:
-                        fig_weapons = plot_top_weapons(weapons_data, title=None, top_n=10)
-                        st.plotly_chart(fig_weapons, width="stretch")
-                    else:
-                        st.info("Pas de données d'armes disponibles.")
-
-                    # === Shots Fired/Hit Stats (Sprint 5.4.10) ===
-                    shots_stats = repo.get_total_shots_stats()
-                    if shots_stats:
-                        st.markdown("##### Statistiques de tirs globales")
-                        col_s1, col_s2, col_s3 = st.columns(3)
-                        with col_s1:
-                            st.metric(
-                                "Tirs tirés",
-                                f"{shots_stats.get('total_shots_fired', 0):,}".replace(",", " "),
-                            )
-                        with col_s2:
-                            st.metric(
-                                "Tirs touchés",
-                                f"{shots_stats.get('total_shots_hit', 0):,}".replace(",", " "),
-                            )
-                        with col_s3:
-                            st.metric(
-                                "Précision globale",
-                                f"{shots_stats.get('overall_accuracy', 0):.1f}%",
-                            )
-                else:
-                    st.info("Statistiques d'armes non disponibles pour ce profil.")
-            except Exception:
-                st.info("Erreur lors du chargement des statistiques d'armes.")
-        else:
-            st.info("Profil joueur non configuré.")
 
         st.subheader("Folie meurtrière / Tirs à la tête / Précision / Frags parfaits")
 

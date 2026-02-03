@@ -56,16 +56,28 @@ def pick_latest_spnkr_db_if_any(repo_root: Path | None = None) -> str:
 
 
 def is_spnkr_db_path(db_path: str) -> bool:
-    """Vérifie si un chemin correspond à une base SPNKr ou fusionnée multi-joueurs."""
+    """Vérifie si un chemin correspond à une base SPNKr ou fusionnée multi-joueurs.
+
+    Supporte les bases SQLite (.db) et DuckDB (.duckdb).
+    """
     try:
         p = Path(db_path)
-        if p.suffix.lower() != ".db":
+        suffix = p.suffix.lower()
+
+        # Supporte .db (SQLite legacy) et .duckdb (v4)
+        if suffix not in (".db", ".duckdb"):
             return False
+
+        name_lower = p.name.lower()
+
         # DB SPNKr classique (spnkr_*.db)
-        if p.name.lower().startswith("spnkr"):
+        if name_lower.startswith("spnkr"):
             return True
         # DB fusionnée (halo_*.db ou autre avec table Players)
-        if p.name.lower().startswith("halo"):
+        if name_lower.startswith("halo"):
+            return True
+        # DB DuckDB v4 (stats.duckdb dans data/players/{gamertag}/)
+        if suffix == ".duckdb":
             return True
         return False
     except Exception:
@@ -114,6 +126,22 @@ def cleanup_orphan_tmp_dbs(repo_root: Path | None = None) -> None:
         pass
 
 
+def _get_sync_metadata_smart(db_path: str, xuid: str | None = None) -> dict:
+    """Récupère les métadonnées de sync selon le type de base."""
+    # DuckDB v4 : utiliser le repository
+    if db_path.endswith(".duckdb"):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(xuid or "").strip() or "unknown")
+            return repo.get_sync_metadata()
+        except Exception:
+            return {"last_sync_at": None, "total_matches": 0}
+
+    # Legacy SQLite
+    return get_sync_metadata(db_path)
+
+
 def render_sync_indicator(db_path: str) -> None:
     """Affiche l'indicateur de dernière synchronisation dans la sidebar.
 
@@ -128,7 +156,7 @@ def render_sync_indicator(db_path: str) -> None:
     if not db_path or not os.path.exists(db_path):
         return
 
-    meta = get_sync_metadata(db_path)
+    meta = _get_sync_metadata_smart(db_path)
     last_sync = meta.get("last_sync_at")
     _ = meta.get("total_matches", 0)  # noqa: F841 - Pour usage futur
 
@@ -184,6 +212,111 @@ def render_sync_indicator(db_path: str) -> None:
     #     f"{sync_text} {match_info}</div>",
     #     unsafe_allow_html=True,
     # )
+
+
+def _sync_duckdb_player(
+    *,
+    db_path: str,
+    gamertag: str,
+    max_matches: int = 100,
+    delta: bool = True,
+    timeout_seconds: int = 120,
+) -> tuple[bool, str]:
+    """Synchronise un joueur DuckDB v4 via DuckDBSyncEngine.
+
+    Args:
+        db_path: Chemin vers le fichier stats.duckdb.
+        gamertag: Gamertag du joueur.
+        max_matches: Nombre max de matchs à synchroniser.
+        delta: Mode delta (arrêt au premier match connu).
+        timeout_seconds: Timeout en secondes.
+
+    Returns:
+        Tuple (succès, message).
+    """
+    import asyncio
+
+    async def _sync_async() -> tuple[bool, str]:
+        try:
+            from src.data.sync.api_client import get_tokens_from_env
+            from src.data.sync.engine import DuckDBSyncEngine
+            from src.data.sync.models import SyncOptions
+        except ImportError as e:
+            return False, f"Module sync non disponible: {e}"
+
+        db_file = Path(db_path)
+
+        # Compter les matchs avant
+        matches_before = 0
+        try:
+            import duckdb
+
+            conn = duckdb.connect(str(db_file), read_only=True)
+            result = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+            matches_before = result[0] if result else 0
+            conn.close()
+        except Exception:
+            pass
+
+        # Récupérer les tokens
+        try:
+            tokens = await get_tokens_from_env()
+        except SystemExit:
+            return False, "Tokens SPNKr non configurés."
+        except Exception as e:
+            return False, f"Erreur tokens: {e}"
+
+        if not tokens:
+            return False, "Tokens SPNKr manquants."
+
+        # Créer le moteur de sync
+        try:
+            engine = DuckDBSyncEngine(
+                player_db_path=db_file,
+                xuid="",  # Sera résolu par l'engine via gamertag
+                gamertag=gamertag,
+                tokens=tokens,
+            )
+
+            # Exécuter la sync
+            options = SyncOptions(
+                max_matches=max_matches,
+                with_skill=True,
+                with_aliases=True,
+            )
+
+            if delta:
+                result = await engine.sync_delta()
+            else:
+                result = await engine.sync_full(options)
+
+            if result.errors:
+                return False, f"Erreur: {'; '.join(result.errors)}"
+
+        except Exception as e:
+            return False, f"Erreur sync: {e}"
+
+        # Compter les matchs après
+        matches_after = 0
+        try:
+            conn = duckdb.connect(str(db_file), read_only=True)
+            result = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+            matches_after = result[0] if result else 0
+            conn.close()
+        except Exception:
+            pass
+
+        new_matches = matches_after - matches_before
+        if new_matches > 0:
+            return True, f"{new_matches} nouveau(x) match(s) synchronisé(s)."
+        return True, f"À jour ({matches_after} matchs)."
+
+    try:
+        return asyncio.run(asyncio.wait_for(_sync_async(), timeout=timeout_seconds))
+    except asyncio.TimeoutError:
+        return False, f"Timeout après {timeout_seconds}s."
+    except Exception as e:
+        return False, f"Erreur: {e}"
 
 
 def refresh_spnkr_db_via_api(
@@ -298,13 +431,44 @@ def sync_all_players(
     """Synchronise tous les joueurs d'une DB fusionnée (table Players).
 
     Si la DB n'a pas de table Players, tente de déduire le joueur depuis le nom.
+    Pour DuckDB v4, utilise DuckDBSyncEngine au lieu du script legacy.
 
     Returns:
         Tuple (succès_global, message_résumé).
     """
     from src.db import get_players_from_db, infer_spnkr_player_from_db_path
 
-    players = get_players_from_db(db_path)
+    players = []
+    is_duckdb = db_path.endswith(".duckdb")
+
+    # DuckDB v4 : extraire le gamertag depuis le chemin
+    if is_duckdb:
+        # Chemin attendu: data/players/{gamertag}/stats.duckdb
+        try:
+            p = Path(db_path)
+            if p.name == "stats.duckdb" and p.parent.parent.name == "players":
+                gamertag = p.parent.name
+                # Essayer de récupérer le XUID depuis xuid_aliases
+                xuid = ""
+                try:
+                    import duckdb
+
+                    conn = duckdb.connect(db_path, read_only=True)
+                    result = conn.execute(
+                        "SELECT xuid FROM xuid_aliases ORDER BY last_seen DESC LIMIT 1"
+                    ).fetchone()
+                    conn.close()
+                    if result and result[0]:
+                        xuid = str(result[0])
+                except Exception:
+                    pass
+                players = [{"xuid": xuid, "gamertag": gamertag, "label": gamertag}]
+        except Exception:
+            pass
+
+    # SQLite legacy : chercher dans la table Players
+    if not players:
+        players = get_players_from_db(db_path)
 
     if not players:
         # Fallback: DB mono-joueur, on déduit depuis le nom
@@ -319,22 +483,35 @@ def sync_all_players(
         # Utiliser XUID si disponible, sinon gamertag
         player_id = str(p.get("xuid") or p.get("gamertag") or "").strip()
         player_label = str(p.get("label") or p.get("gamertag") or player_id).strip()
+        gamertag = str(p.get("gamertag") or "").strip()
 
         if not player_id:
             continue
 
-        ok, msg = refresh_spnkr_db_via_api(
-            db_path=db_path,
-            player=player_id,
-            match_type=match_type,
-            max_matches=max_matches,
-            rps=rps,
-            with_highlight_events=with_highlight_events,
-            with_aliases=with_aliases,
-            delta=delta,
-            timeout_seconds=timeout_seconds,
-        )
-        results.append((player_label, ok, msg))
+        # DuckDB v4 : utiliser DuckDBSyncEngine
+        if is_duckdb and gamertag:
+            ok, msg = _sync_duckdb_player(
+                db_path=db_path,
+                gamertag=gamertag,
+                max_matches=max_matches,
+                delta=delta,
+                timeout_seconds=timeout_seconds,
+            )
+            results.append((player_label, ok, msg))
+        else:
+            # SQLite legacy : utiliser le script spnkr_import_db.py
+            ok, msg = refresh_spnkr_db_via_api(
+                db_path=db_path,
+                player=player_id,
+                match_type=match_type,
+                max_matches=max_matches,
+                rps=rps,
+                with_highlight_events=with_highlight_events,
+                with_aliases=with_aliases,
+                delta=delta,
+                timeout_seconds=timeout_seconds,
+            )
+            results.append((player_label, ok, msg))
 
     if not results:
         return False, "Aucun joueur à synchroniser."
