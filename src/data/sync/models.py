@@ -248,6 +248,45 @@ class XuidAliasRow:
 
 
 # =============================================================================
+# Sprint 8 : Nouvelles tables pour backfill
+# =============================================================================
+
+
+@dataclass
+class KillerVictimPairRow:
+    """Ligne pour la table killer_victim_pairs.
+
+    Stocke les paires killer→victim calculées depuis highlight_events.
+    Permet des requêtes rapides pour némésis/souffre-douleur.
+    """
+
+    match_id: str
+    killer_xuid: str
+    victim_xuid: str
+    killer_gamertag: str | None = None
+    victim_gamertag: str | None = None
+    kill_count: int = 1
+    time_ms: int | None = None
+    is_validated: bool = False
+
+
+@dataclass
+class PersonalScoreAwardRow:
+    """Ligne pour la table personal_score_awards.
+
+    Stocke les awards individuels contribuant au PersonalScore.
+    Catégories : objective, assist, kill, medal, etc.
+    """
+
+    match_id: str
+    xuid: str
+    award_name: str
+    award_category: str | None = None
+    award_count: int = 1
+    award_score: int = 0
+
+
+# =============================================================================
 # Données Career Rank (Phase 5)
 # =============================================================================
 

@@ -7,6 +7,73 @@
 
 ## Journal
 
+### [2026-02-03] - SPRINTS 8 & 9 TERMINÉS : Backfill + Migration + Tests
+
+**Statut** : ✅ **SUCCÈS** - Infrastructure complète pour killer_victim_pairs
+
+**Sprint 8 : Backfill et Migration**
+
+| Tâche | Fichier | Description |
+|-------|---------|-------------|
+| 8.0 | `src/data/sync/engine.py` | Schémas DuckDB pour `killer_victim_pairs` et `personal_score_awards` |
+| 8.1 | `scripts/backfill_killer_victim_pairs.py` | Calcule les paires depuis highlight_events |
+| 8.3 | `scripts/migrate_game_variant_category.py` | Ajoute colonne manquante à match_stats |
+| 8.4 | `scripts/validate_refdata_integrity.py` | Vérifie cohérence des données |
+| 8.5 | `docs/MIGRATION_REFDATA.md` | Guide de migration complet |
+
+**Sprint 9 : Optimisation et Tests**
+
+| Tâche | Fichier | Description |
+|-------|---------|-------------|
+| 9.1 | `src/data/repositories/duckdb_repo.py` | 4 méthodes Polars ajoutées |
+| 9.2 | `tests/integration/test_refdata_antagonists.py` | 15+ tests d'intégration |
+| 9.3 | `scripts/benchmark_polars.py` | Benchmark Polars vs Pandas |
+
+**Nouvelles tables DuckDB** :
+
+```sql
+-- killer_victim_pairs : Paires killer→victim par match
+CREATE TABLE killer_victim_pairs (
+    id INTEGER PRIMARY KEY,
+    match_id VARCHAR NOT NULL,
+    killer_xuid VARCHAR NOT NULL,
+    killer_gamertag VARCHAR,
+    victim_xuid VARCHAR NOT NULL,
+    victim_gamertag VARCHAR,
+    kill_count INTEGER DEFAULT 1,
+    time_ms INTEGER,
+    is_validated BOOLEAN DEFAULT FALSE
+);
+
+-- personal_score_awards : Décomposition score (REPORTÉ - API non dispo)
+```
+
+**Nouvelles méthodes Repository** :
+
+```python
+repo.load_killer_victim_pairs_as_polars(match_id="...")
+repo.load_match_stats_as_polars(limit=100)
+repo.get_antagonists_summary_polars(top_n=20)
+repo.has_killer_victim_pairs()
+```
+
+**Note** : Sprint 8.2 (backfill personal_score_awards) reporté car l'API ne fournit pas ces données.
+
+**Commandes de migration** :
+
+```bash
+# 1. Migrer le schéma
+python scripts/migrate_game_variant_category.py --all
+
+# 2. Backfill les paires
+python scripts/backfill_killer_victim_pairs.py --all
+
+# 3. Valider
+python scripts/validate_refdata_integrity.py --all
+```
+
+---
+
 ### [2026-02-03] - SPRINTS 6 & 7 TERMINÉS : Performance Cumulée + Page Objectifs
 
 **Statut** : ✅ **SUCCÈS** - 50+ tests passent (24 Sprint 6 + 26 Sprint 4)
