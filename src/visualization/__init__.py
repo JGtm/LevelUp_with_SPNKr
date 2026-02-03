@@ -1,5 +1,15 @@
 """Module de visualisation (graphiques Plotly)."""
 
+from src.visualization.antagonist_charts import (
+    create_kd_indicator,
+    get_antagonist_chart_colors,
+    plot_duel_history,
+    plot_kd_timeseries,
+    plot_killer_victim_heatmap,
+    plot_killer_victim_stacked_bars,
+    plot_nemesis_victim_summary,
+    plot_top_antagonists_bars,
+)
 from src.visualization.distributions import (
     plot_correlation_scatter,
     plot_first_event_distribution,
@@ -56,4 +66,13 @@ __all__ = [
     "plot_trio_metric",
     "plot_metric_bars_by_match",
     "plot_multi_metric_bars_by_match",
+    # Sprint 5: Graphiques antagonistes
+    "plot_killer_victim_stacked_bars",
+    "plot_kd_timeseries",
+    "plot_duel_history",
+    "plot_nemesis_victim_summary",
+    "plot_killer_victim_heatmap",
+    "plot_top_antagonists_bars",
+    "get_antagonist_chart_colors",
+    "create_kd_indicator",
 ]

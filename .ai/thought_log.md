@@ -7,6 +7,51 @@
 
 ## Journal
 
+### [2026-02-03] - SPRINTS 4 & 5 TERMINÉS : Analyses et Visualisations
+
+**Statut** : ✅ **SUCCÈS** - 46 tests passent
+
+**Sprint 4 : Analyses Score Personnel avec Polars**
+
+Module créé : `src/analysis/objective_participation.py`
+
+| Fonction | Description |
+|----------|-------------|
+| `compute_objective_participation_score_polars()` | Score de participation (objectifs, assists, kills) |
+| `rank_players_by_objective_contribution_polars()` | Classement des joueurs par contribution |
+| `compute_assist_breakdown_polars()` | Décomposition des assistances |
+| `compute_objective_summary_by_match_polars()` | Résumé par match |
+| `compute_award_frequency_polars()` | Fréquence des awards |
+
+Dataclasses :
+- `ObjectiveParticipationResult` : Scores et ratios
+- `AssistBreakdownResult` : Décomposition des assists
+- `PlayerObjectiveRanking` : Classement joueur
+
+**Sprint 5 : Visualisations Antagonistes**
+
+Module créé : `src/visualization/antagonist_charts.py`
+
+| Graphique | Description |
+|-----------|-------------|
+| `plot_killer_victim_stacked_bars()` | Barres empilées kills/deaths par joueur |
+| `plot_kd_timeseries()` | K/D par minute avec cumul |
+| `plot_duel_history()` | Historique des duels entre 2 joueurs |
+| `plot_nemesis_victim_summary()` | Indicateurs némésis/souffre-douleur |
+| `plot_killer_victim_heatmap()` | Heatmap matrice killer→victim |
+| `plot_top_antagonists_bars()` | Top némésis et victimes |
+| `create_kd_indicator()` | Indicateur K/D simple |
+
+**Corrections** :
+- Ajout des fonctions Polars manquantes dans `killer_victim.py`
+- Correction d'un test avec assertions incorrectes (`victim_times_killed`)
+
+**Tests** : 46 passent (26 Sprint 4 + 20 Sprint 3)
+
+**Prochains sprints** : 6 (Performance Cumulée), 7 (Analyses Avancées)
+
+---
+
 ### [2026-02-02] - RÉSULTATS: Investigation Bit-Shifted Binary Chunks (v2)
 
 **Statut** : ✅ **SUCCÈS PARTIEL** - Events extraits, Weapon ID non trouvé

@@ -165,130 +165,116 @@ def compute_personal_antagonists_from_pairs_polars(
 
 ---
 
-## Sprint 4 : Analyses Score Personnel avec Polars (1 semaine)
+## Sprint 4 : Analyses Score Personnel avec Polars (1 semaine) ✅ TERMINÉ
 
 ### Objectifs
-- Analyser `personal_score_awards` avec Polars
-- Créer KPIs de participation aux objectifs
-- Valoriser assistances différenciées
+- ✅ Analyser `personal_score_awards` avec Polars
+- ✅ Créer KPIs de participation aux objectifs
+- ✅ Valoriser assistances différenciées
 
 ### Tâches
 
-| ID | Tâche | Fichiers | Estimation |
-|----|-------|----------|------------|
-| 4.1 | Créer `compute_objective_participation_score_polars()` | `src/analysis/objective_participation.py` | 4h |
-| 4.2 | Créer `rank_players_by_objective_contribution_polars()` | `src/analysis/objective_participation.py` | 4h |
-| 4.3 | Créer `compute_assist_breakdown_polars()` | `src/analysis/objective_participation.py` | 3h |
-| 4.4 | Créer requêtes DuckDB optimisées pour Polars | `src/data/repositories/duckdb_repo.py` | 3h |
-| 4.5 | Tests unitaires analyses | `tests/test_objective_participation.py` | 3h |
+| ID | Tâche | Fichiers | Statut |
+|----|-------|----------|--------|
+| 4.1 | ✅ Créer `compute_objective_participation_score_polars()` | `src/analysis/objective_participation.py` | **FAIT** |
+| 4.2 | ✅ Créer `rank_players_by_objective_contribution_polars()` | `src/analysis/objective_participation.py` | **FAIT** |
+| 4.3 | ✅ Créer `compute_assist_breakdown_polars()` | `src/analysis/objective_participation.py` | **FAIT** |
+| 4.4 | ✅ Fonctions additionnelles (summary, frequency) | `src/analysis/objective_participation.py` | **FAIT** |
+| 4.5 | ✅ Tests unitaires analyses (26 tests) | `tests/test_objective_participation.py` | **FAIT** |
 
-### Code exemple Polars
+### Fonctions implémentées
 
 ```python
 import polars as pl
-from src.data.domain.refdata import PersonalScoreNameId, OBJECTIVE_SCORES, ASSIST_SCORES
 
-def compute_objective_participation_score_polars(
-    awards_df: pl.DataFrame,
-    match_id: str,
-) -> dict[str, Any]:
-    """Calcule score de participation aux objectifs avec Polars."""
-    match_awards = awards_df.filter(pl.col("match_id") == match_id)
-    
-    # Score objectifs
-    objective_score = (
-        match_awards
-        .filter(pl.col("award_name_id").is_in(list(OBJECTIVE_SCORES)))
-        .with_columns(
-            (pl.col("count") * pl.lit(100)).alias("points")  # Exemple : 100 pts par action
-        )
-        .select(pl.sum("points"))
-        .item()
-    )
-    
-    # Score assistances
-    assist_score = (
-        match_awards
-        .filter(pl.col("award_name_id").is_in(list(ASSIST_SCORES)))
-        .with_columns(
-            pl.when(pl.col("award_name_id") == PersonalScoreNameId.KILL_ASSIST)
-            .then(pl.col("count") * 50)
-            .when(pl.col("award_name_id") == PersonalScoreNameId.MARK_ASSIST)
-            .then(pl.col("count") * 10)
-            .otherwise(pl.col("count") * 10)
-            .alias("points")
-        )
-        .select(pl.sum("points"))
-        .item()
-    )
-    
-    return {
-        "objective_score": objective_score or 0,
-        "assist_score": assist_score or 0,
-        "total_score": objective_score + assist_score,
-    }
+# Sprint 4: Analyse de la participation aux objectifs
+from src.analysis import (
+    compute_objective_participation_score_polars,
+    rank_players_by_objective_contribution_polars,
+    compute_assist_breakdown_polars,
+    compute_objective_summary_by_match_polars,
+    compute_award_frequency_polars,
+)
+
+# 1. Score de participation aux objectifs
+awards_df = repo.load_personal_score_awards_as_polars()
+result = compute_objective_participation_score_polars(awards_df, match_id, xuid)
+# result.objective_score, result.assist_score, result.kill_score, result.objective_ratio
+
+# 2. Classement des joueurs par contribution
+rankings = rank_players_by_objective_contribution_polars(awards_df, top_n=20)
+# [PlayerObjectiveRanking(xuid, objective_score, avg_objective_per_match, ...)]
+
+# 3. Décomposition des assistances
+assists = compute_assist_breakdown_polars(awards_df, match_id, xuid)
+# assists.kill_assists, assists.mark_assists, assists.emp_assists, assists.high_value_ratio
+
+# 4. Résumé par match
+summary_df = compute_objective_summary_by_match_polars(awards_df, xuid)
+# DataFrame avec objective_score, assist_score, total_score, objective_ratio par match
+
+# 5. Fréquence des awards
+frequency_df = compute_award_frequency_polars(awards_df, category="objective", top_n=20)
 ```
 
 ### Livrables
-- ✅ Module d'analyse objectifs avec Polars
-- ✅ KPIs calculés
-- ✅ Requêtes optimisées
+- ✅ Module `src/analysis/objective_participation.py` avec 6 fonctions Polars
+- ✅ Dataclasses : `ObjectiveParticipationResult`, `AssistBreakdownResult`, `PlayerObjectiveRanking`
+- ✅ 26 tests unitaires passés (`tests/test_objective_participation.py`)
+
+### Fichiers créés/modifiés
+- `src/analysis/objective_participation.py` : Module complet d'analyse
+- `src/analysis/__init__.py` : Exports mis à jour
+- `tests/test_objective_participation.py` : Tests unitaires
 
 ---
 
-## Sprint 5 : Visualisations Antagonistes (1 semaine)
+## Sprint 5 : Visualisations Antagonistes (1 semaine) ✅ TERMINÉ
 
 ### Objectifs
-- Créer graphiques antagonistes avec Plotly
-- Intégrer dans pages UI
-- Utiliser Polars pour préparer données
+- ✅ Créer graphiques antagonistes avec Plotly
+- ✅ Utiliser Polars pour préparer données
+- Intégrer dans pages UI (à faire lors de l'intégration)
 
 ### Tâches
 
-| ID | Tâche | Fichiers | Estimation |
-|----|-------|----------|------------|
-| 5.1 | Créer `plot_killer_victim_stacked_bars()` | `src/visualization/antagonist_charts.py` | 4h |
-| 5.2 | Créer `plot_kd_timeseries()` | `src/visualization/antagonist_charts.py` | 4h |
-| 5.3 | Adapter chargement UI pour utiliser DuckDB | `src/ui/pages/match_view_players.py` | 3h |
-| 5.4 | Intégrer graphiques dans page match | `src/ui/pages/match_view_players.py` | 3h |
-| 5.5 | Tests visuels et validation | Tests manuels | 2h |
+| ID | Tâche | Fichiers | Statut |
+|----|-------|----------|--------|
+| 5.1 | ✅ Créer `plot_killer_victim_stacked_bars()` | `src/visualization/antagonist_charts.py` | **FAIT** |
+| 5.2 | ✅ Créer `plot_kd_timeseries()` | `src/visualization/antagonist_charts.py` | **FAIT** |
+| 5.3 | ✅ Créer `plot_duel_history()` | `src/visualization/antagonist_charts.py` | **FAIT** |
+| 5.4 | ✅ Créer `plot_nemesis_victim_summary()` | `src/visualization/antagonist_charts.py` | **FAIT** |
+| 5.5 | ✅ Créer `plot_killer_victim_heatmap()` | `src/visualization/antagonist_charts.py` | **FAIT** |
+| 5.6 | ✅ Créer `plot_top_antagonists_bars()` | `src/visualization/antagonist_charts.py` | **FAIT** |
+| 5.7 | ✅ Créer `create_kd_indicator()` | `src/visualization/antagonist_charts.py` | **FAIT** |
 
-### Code exemple
+### Fonctions de visualisation implémentées
 
 ```python
-import polars as pl
-import plotly.graph_objects as go
+from src.visualization import (
+    plot_killer_victim_stacked_bars,  # Barres empilées kills/deaths par joueur
+    plot_kd_timeseries,               # K/D par minute avec cumul
+    plot_duel_history,                # Historique des duels entre 2 joueurs
+    plot_nemesis_victim_summary,      # Indicateurs némésis/souffre-douleur
+    plot_killer_victim_heatmap,       # Heatmap matrice killer→victim
+    plot_top_antagonists_bars,        # Top némésis et victimes
+    create_kd_indicator,              # Indicateur K/D simple
+    get_antagonist_chart_colors,      # Palette de couleurs
+)
 
-def plot_killer_victim_stacked_bars(
-    pairs_df: pl.DataFrame,
-    match_id: str,
-) -> go.Figure:
-    """Graphique barres empilées killer-victim avec Polars."""
-    match_pairs = pairs_df.filter(pl.col("match_id") == match_id)
-    
-    # Préparer données avec Polars
-    counts = (
-        match_pairs
-        .group_by("killer_xuid", "killer_gamertag", "victim_xuid", "victim_gamertag")
-        .agg(pl.count().alias("count"))
-        .sort("count", descending=True)
-    )
-    
-    # Convertir en format Plotly
-    killers = counts["killer_gamertag"].unique().to_list()
-    victims = counts["victim_gamertag"].unique().to_list()
-    
-    # Créer graphique empilé
-    fig = go.Figure()
-    # ... logique de création graphique
-    
-    return fig
+# Exemple d'utilisation
+pairs_df = repo.load_killer_victim_pairs_as_polars(match_id="abc123")
+fig = plot_killer_victim_stacked_bars(pairs_df, match_id="abc123", me_xuid="xuid123")
 ```
 
 ### Livrables
-- ✅ Graphiques antagonistes fonctionnels
-- ✅ Intégration UI complète
-- ✅ Documentation utilisateur
+- ✅ Module `src/visualization/antagonist_charts.py` avec 8 fonctions
+- ✅ Palette de couleurs Halo configurée
+- ✅ Intégration avec theme.py (apply_halo_plot_style)
+
+### Fichiers créés/modifiés
+- `src/visualization/antagonist_charts.py` : Module complet de visualisation
+- `src/visualization/__init__.py` : Exports mis à jour
 
 ---
 
@@ -507,11 +493,28 @@ Sprint 9 (Optimisation)
 
 - [x] Script d'investigation refdata créé (`scripts/investigate_refdata_fields.py`)
 - [x] Plan d'intégration documenté (`.ai/research/SPNKR_REFDATA_INTEGRATION_PLAN.md`)
-- [ ] Environnement Python configuré (Polars >= 0.20.0)
-- [ ] Tokens API SPNKr configurés
-- [ ] Base DuckDB de test disponible
-- [ ] Scripts d'investigation **exécutés** (résultats API obtenus)
-- [ ] Équipe alignée sur architecture Polars
+- [x] Environnement Python configuré (Polars 1.37.1 installé)
+- [x] Tokens API SPNKr configurés et fonctionnels
+- [x] Base DuckDB de test disponible
+- [x] Scripts d'investigation **exécutés** (résultats API obtenus)
+- [x] Module refdata créé avec enums complets (`src/data/domain/refdata.py`)
+- [x] Architecture Polars validée (6/6 tests)
+
+### Sprints terminés
+
+- [x] **SPRINT 0 TERMINÉ** ✅ (Investigation + Préparation)
+- [x] **SPRINT 1 TERMINÉ** ✅ (Persistance Killer-Victim + Schémas)
+- [x] **SPRINT 2 TERMINÉ** ✅ (Extraction Refdata + game_variant_category)
+- [x] **SPRINT 3 TERMINÉ** ✅ (Fonctions Polars Antagonistes)
+- [x] **SPRINT 4 TERMINÉ** ✅ (Analyses Score Personnel avec Polars - 26 tests)
+- [x] **SPRINT 5 TERMINÉ** ✅ (Visualisations Antagonistes - 8 graphiques)
+
+### Prochains sprints
+
+- [ ] Sprint 6 : Performance Cumulée avec Polars
+- [ ] Sprint 7 : Analyses Score Personnel Avancées
+- [ ] Sprint 8 : Backfill et Migration
+- [ ] Sprint 9 : Optimisation et Tests Finaux
 
 ---
 
@@ -525,4 +528,4 @@ Sprint 9 (Optimisation)
 
 ---
 
-*Dernière mise à jour : 2026-02-03*
+*Dernière mise à jour : 2026-02-03 (Sprints 4 & 5 terminés)*

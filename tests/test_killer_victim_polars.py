@@ -166,14 +166,15 @@ class TestComputePersonalAntagonistsPolars:
         assert result.nemesis_gamertag == "Enemy1"
         assert result.nemesis_times_killed_by == 3
 
-        # Souffre-douleur = Enemy1 (tué 3 fois : 2 dans m1 + 1 dans m2)
+        # Souffre-douleur = Enemy1 (tué 2 fois : 1 dans m1 + 1 dans m2)
+        # Données: index 0 (me→enemy1) + index 5 (me→enemy1) = 2 kills sur enemy1
         assert result.victim_xuid == "enemy1"
         assert result.victim_gamertag == "Enemy1"
-        assert result.victim_times_killed == 3
+        assert result.victim_times_killed == 2
 
         # Totaux
         assert result.total_deaths == 4  # enemy1 × 3 + enemy2 × 1
-        assert result.total_kills == 4  # enemy1 × 3 + enemy2 × 1
+        assert result.total_kills == 3  # enemy1 × 2 + enemy2 × 1
 
     def test_empty_dataframe(self, empty_pairs_df):
         """Test avec DataFrame vide."""
