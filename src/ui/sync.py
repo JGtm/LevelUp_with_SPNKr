@@ -306,6 +306,15 @@ def _sync_duckdb_player(
         except Exception:
             pass
 
+        # Forcer la mise à jour du mtime du fichier pour invalider les caches
+        # même si aucun nouveau match n'a été ajouté
+        try:
+            import os
+
+            os.utime(str(db_file), None)
+        except Exception:
+            pass
+
         new_matches = matches_after - matches_before
         if new_matches > 0:
             return True, f"{new_matches} nouveau(x) match(s) synchronisé(s)."
