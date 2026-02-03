@@ -39,6 +39,14 @@ from src.visualization.objective_charts import (
     plot_objective_vs_kills_scatter,
     plot_top_players_objective_bars,
 )
+from src.visualization.participation_charts import (
+    create_participation_indicator,
+    get_participation_colors,
+    plot_participation_bars,
+    plot_participation_by_match,
+    plot_participation_pie,
+    plot_participation_sunburst,
+)
 from src.visualization.performance import (
     create_cumulative_metrics_indicator,
     get_performance_colors,
@@ -109,4 +117,11 @@ __all__ = [
     "plot_assist_breakdown_pie",
     "plot_objective_trend_over_time",
     "get_objective_chart_colors",
+    # Sprint 8.2: Graphiques participation (PersonalScores)
+    "plot_participation_pie",
+    "plot_participation_bars",
+    "plot_participation_by_match",
+    "create_participation_indicator",
+    "plot_participation_sunburst",
+    "get_participation_colors",
 ]
