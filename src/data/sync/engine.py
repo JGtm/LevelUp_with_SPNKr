@@ -41,9 +41,11 @@ from src.data.sync.models import (
 )
 from src.data.sync.transformers import (
     extract_aliases,
+    extract_personal_score_awards,
     extract_xuids_from_match,
     transform_highlight_events,
     transform_match_stats,
+    transform_personal_score_awards,
     transform_skill_stats,
 )
 
@@ -524,6 +526,14 @@ class DuckDBSyncEngine:
             if options.with_aliases:
                 alias_rows = extract_aliases(stats_json)
 
+            # Sprint 8.2: Extraire PersonalScores
+            personal_scores = extract_personal_score_awards(stats_json, self._xuid)
+            personal_score_rows = []
+            if personal_scores:
+                personal_score_rows = transform_personal_score_awards(
+                    match_id, self._xuid, personal_scores
+                )
+
             # Insérer dans DuckDB (protégé par lock)
             async with self._db_lock:
                 self._insert_match_row(match_row)
@@ -535,6 +545,10 @@ class DuckDBSyncEngine:
                 if event_rows:
                     self._insert_event_rows(event_rows)
                     result["events"] = len(event_rows)
+
+                if personal_score_rows:
+                    self._insert_personal_score_rows(personal_score_rows)
+                    result["personal_scores"] = len(personal_score_rows)
 
                 if alias_rows:
                     self._insert_alias_rows(alias_rows)
@@ -674,6 +688,32 @@ class DuckDBSyncEngine:
                         row.last_seen,
                         row.source,
                         datetime.now(timezone.utc),
+                    ),
+                )
+
+    def _insert_personal_score_rows(self, rows: list) -> None:
+        """Insère des lignes personal_score_awards (Sprint 8.2)."""
+        if not rows:
+            return
+
+        conn = self._get_connection()
+        now = datetime.now(timezone.utc)
+
+        for row in rows:
+            with contextlib.suppress(Exception):
+                conn.execute(
+                    """INSERT INTO personal_score_awards (
+                        match_id, xuid, award_name, award_category,
+                        award_count, award_score, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        row.match_id,
+                        row.xuid,
+                        row.award_name,
+                        row.award_category,
+                        row.award_count,
+                        row.award_score,
+                        now,
                     ),
                 )
 
