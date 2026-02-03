@@ -1,0 +1,761 @@
+{
+  "metadata": {
+    "total_chunks_found": 16,
+    "total_chunks_analyzed": 16,
+    "total_kills_analyzed": 387,
+    "unique_weapon_ids": 28
+  },
+  "known_weapons": {},
+  "unknown_weapons": {
+    "11776": {
+      "weapon_id_hex": "0x2E00",
+      "weapon_id_dec": 11776,
+      "weapon_name": null,
+      "total_kills": 272,
+      "samples": [
+        {
+          "timestamp_sec": 28.17,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 35.85,
+          "gamertag": "NerdAlert5125",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 184.33,
+          "gamertag": "SimonGames64",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 232.97,
+          "gamertag": "TickleMaster962",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 266.25,
+          "gamertag": "SimonGames64",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        }
+      ]
+    },
+    "32768": {
+      "weapon_id_hex": "0x8000",
+      "weapon_id_dec": 32768,
+      "weapon_name": null,
+      "total_kills": 32,
+      "samples": [
+        {
+          "timestamp_sec": 307.22,
+          "gamertag": null,
+          "chunk": "type3___filmChunk22.bin",
+          "match_id": "a36c8bed"
+        },
+        {
+          "timestamp_sec": 328.23,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 494.08,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 328.23,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 328.23,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "6656": {
+      "weapon_id_hex": "0x1A00",
+      "weapon_id_dec": 6656,
+      "weapon_name": null,
+      "total_kills": 7,
+      "samples": [
+        {
+          "timestamp_sec": 227.91,
+          "gamertag": "II XDELTA II",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 227.91,
+          "gamertag": "II XDELTA II",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 227.91,
+          "gamertag": "II XDELTA II",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        },
+        {
+          "timestamp_sec": 227.91,
+          "gamertag": "II XDELTA II",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        },
+        {
+          "timestamp_sec": 312.4,
+          "gamertag": "Zbrownnurse",
+          "chunk": "type3___filmChunk34.bin",
+          "match_id": "5aa360c3"
+        }
+      ]
+    },
+    "5376": {
+      "weapon_id_hex": "0x1500",
+      "weapon_id_dec": 5376,
+      "weapon_name": null,
+      "total_kills": 7,
+      "samples": [
+        {
+          "timestamp_sec": 527.46,
+          "gamertag": null,
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        },
+        {
+          "timestamp_sec": 527.46,
+          "gamertag": null,
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        },
+        {
+          "timestamp_sec": 527.46,
+          "gamertag": null,
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        },
+        {
+          "timestamp_sec": 527.46,
+          "gamertag": null,
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        },
+        {
+          "timestamp_sec": 527.46,
+          "gamertag": null,
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        }
+      ]
+    },
+    "25088": {
+      "weapon_id_hex": "0x6200",
+      "weapon_id_dec": 25088,
+      "weapon_name": null,
+      "total_kills": 6,
+      "samples": [
+        {
+          "timestamp_sec": 230.48,
+          "gamertag": "TGITousley",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 230.48,
+          "gamertag": "TGITousley",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 230.48,
+          "gamertag": "TGITousley",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        },
+        {
+          "timestamp_sec": 230.48,
+          "gamertag": "TGITousley",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        },
+        {
+          "timestamp_sec": 353.3,
+          "gamertag": "mimo2956",
+          "chunk": "type3___filmChunk31.bin",
+          "match_id": "55df2a12"
+        }
+      ]
+    },
+    "55296": {
+      "weapon_id_hex": "0xD800",
+      "weapon_id_dec": 55296,
+      "weapon_name": null,
+      "total_kills": 6,
+      "samples": [
+        {
+          "timestamp_sec": 486.5,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 486.5,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 486.5,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 486.5,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 486.5,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "23296": {
+      "weapon_id_hex": "0x5B00",
+      "weapon_id_dec": 23296,
+      "weapon_name": null,
+      "total_kills": 5,
+      "samples": [
+        {
+          "timestamp_sec": 609.34,
+          "gamertag": "SimonGames64",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 609.34,
+          "gamertag": "SimonGames64",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 609.34,
+          "gamertag": "SimonGames64",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        },
+        {
+          "timestamp_sec": 609.34,
+          "gamertag": "SimonGames64",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        },
+        {
+          "timestamp_sec": 501.84,
+          "gamertag": "sixxt",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "26880": {
+      "weapon_id_hex": "0x6900",
+      "weapon_id_dec": 26880,
+      "weapon_name": null,
+      "total_kills": 5,
+      "samples": [
+        {
+          "timestamp_sec": 314.94,
+          "gamertag": "xoKIKAox",
+          "chunk": "type3___filmChunk31.bin",
+          "match_id": "55df2a12"
+        },
+        {
+          "timestamp_sec": 253.51,
+          "gamertag": "JBOI",
+          "chunk": "type3___filmChunk34.bin",
+          "match_id": "5aa360c3"
+        },
+        {
+          "timestamp_sec": 48.68,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk34.bin",
+          "match_id": "653fe7c4"
+        },
+        {
+          "timestamp_sec": 115.22,
+          "gamertag": "rageeeeee4408",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "e5e1eff5"
+        },
+        {
+          "timestamp_sec": 483.86,
+          "gamertag": "GUCE",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "e5e1eff5"
+        }
+      ]
+    },
+    "20992": {
+      "weapon_id_hex": "0x5200",
+      "weapon_id_dec": 20992,
+      "weapon_name": null,
+      "total_kills": 5,
+      "samples": [
+        {
+          "timestamp_sec": 153.67,
+          "gamertag": "Imigtnotmakeit",
+          "chunk": "type3___filmChunk34.bin",
+          "match_id": "5aa360c3"
+        },
+        {
+          "timestamp_sec": 596.49,
+          "gamertag": "Awesome Wassoum",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 238.15,
+          "gamertag": "gerardo ping799",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 527.46,
+          "gamertag": "sixxt",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 617.06,
+          "gamertag": "Herbz33",
+          "chunk": "type3___filmChunk38.bin",
+          "match_id": "btb_5faa6b74"
+        }
+      ]
+    },
+    "4608": {
+      "weapon_id_hex": "0x1200",
+      "weapon_id_dec": 4608,
+      "weapon_name": null,
+      "total_kills": 5,
+      "samples": [
+        {
+          "timestamp_sec": 110.18,
+          "gamertag": null,
+          "chunk": "type3___filmChunk22.bin",
+          "match_id": "a36c8bed"
+        },
+        {
+          "timestamp_sec": 110.18,
+          "gamertag": null,
+          "chunk": "type3___filmChunk22.bin",
+          "match_id": "a36c8bed"
+        },
+        {
+          "timestamp_sec": 110.18,
+          "gamertag": null,
+          "chunk": "type3___filmChunk22.bin",
+          "match_id": "a36c8bed"
+        },
+        {
+          "timestamp_sec": 110.18,
+          "gamertag": null,
+          "chunk": "type3___filmChunk22.bin",
+          "match_id": "a36c8bed"
+        },
+        {
+          "timestamp_sec": 110.18,
+          "gamertag": null,
+          "chunk": "type3___filmChunk22.bin",
+          "match_id": "a36c8bed"
+        }
+      ]
+    },
+    "32512": {
+      "weapon_id_hex": "0x7F00",
+      "weapon_id_dec": 32512,
+      "weapon_name": null,
+      "total_kills": 5,
+      "samples": [
+        {
+          "timestamp_sec": 33.33,
+          "gamertag": "Kaluuuv1",
+          "chunk": "type3___filmChunk23.bin",
+          "match_id": "bf07bdd8"
+        },
+        {
+          "timestamp_sec": 302.15,
+          "gamertag": "sixxt",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 545.31,
+          "gamertag": "hectorBaton21",
+          "chunk": "type3___filmChunk38.bin",
+          "match_id": "btb_5faa6b74"
+        },
+        {
+          "timestamp_sec": 573.49,
+          "gamertag": "Jamal Lamar8619",
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        },
+        {
+          "timestamp_sec": 153.67,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        }
+      ]
+    },
+    "27648": {
+      "weapon_id_hex": "0x6C00",
+      "weapon_id_dec": 27648,
+      "weapon_name": null,
+      "total_kills": 4,
+      "samples": [
+        {
+          "timestamp_sec": 645.12,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 645.12,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "unknown"
+        },
+        {
+          "timestamp_sec": 645.12,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        },
+        {
+          "timestamp_sec": 645.12,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "189d1c23"
+        }
+      ]
+    },
+    "6400": {
+      "weapon_id_hex": "0x1900",
+      "weapon_id_dec": 6400,
+      "weapon_name": null,
+      "total_kills": 4,
+      "samples": [
+        {
+          "timestamp_sec": 327.92,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 327.92,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 327.92,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 327.92,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "19456": {
+      "weapon_id_hex": "0x4C00",
+      "weapon_id_dec": 19456,
+      "weapon_name": null,
+      "total_kills": 3,
+      "samples": [
+        {
+          "timestamp_sec": 540.17,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk11.bin",
+          "match_id": "008e1bba"
+        },
+        {
+          "timestamp_sec": 312.37,
+          "gamertag": "Spartacus611",
+          "chunk": "type3___filmChunk22.bin",
+          "match_id": "a36c8bed"
+        },
+        {
+          "timestamp_sec": 453.19,
+          "gamertag": "Anillotrollx",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "e5e1eff5"
+        }
+      ]
+    },
+    "33536": {
+      "weapon_id_hex": "0x8300",
+      "weapon_id_dec": 33536,
+      "weapon_name": null,
+      "total_kills": 2,
+      "samples": [
+        {
+          "timestamp_sec": 593.97,
+          "gamertag": "Imigtnotmakeit",
+          "chunk": "type3___filmChunk34.bin",
+          "match_id": "5aa360c3"
+        },
+        {
+          "timestamp_sec": 61.46,
+          "gamertag": "JGtm",
+          "chunk": "type3___filmChunk30.bin",
+          "match_id": "e5e1eff5"
+        }
+      ]
+    },
+    "39936": {
+      "weapon_id_hex": "0x9C00",
+      "weapon_id_dec": 39936,
+      "weapon_name": null,
+      "total_kills": 2,
+      "samples": [
+        {
+          "timestamp_sec": 355.86,
+          "gamertag": "ObscureGuide710",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 48.78,
+          "gamertag": "BabyJokic15",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "12800": {
+      "weapon_id_hex": "0x3200",
+      "weapon_id_dec": 12800,
+      "weapon_name": null,
+      "total_kills": 2,
+      "samples": [
+        {
+          "timestamp_sec": 327.92,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 327.92,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "18176": {
+      "weapon_id_hex": "0x4700",
+      "weapon_id_dec": 18176,
+      "weapon_name": null,
+      "total_kills": 2,
+      "samples": [
+        {
+          "timestamp_sec": 240.69,
+          "gamertag": "sixxt",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 151.11,
+          "gamertag": "Rim7955",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "15872": {
+      "weapon_id_hex": "0x3E00",
+      "weapon_id_dec": 15872,
+      "weapon_name": null,
+      "total_kills": 2,
+      "samples": [
+        {
+          "timestamp_sec": 230.48,
+          "gamertag": "Naarly117",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 222.84,
+          "gamertag": "Ammonea",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "16640": {
+      "weapon_id_hex": "0x4100",
+      "weapon_id_dec": 16640,
+      "weapon_name": null,
+      "total_kills": 2,
+      "samples": [
+        {
+          "timestamp_sec": 422.49,
+          "gamertag": "Ammonea",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        },
+        {
+          "timestamp_sec": 153.72,
+          "gamertag": "gerardo ping799",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "42240": {
+      "weapon_id_hex": "0xA500",
+      "weapon_id_dec": 42240,
+      "weapon_name": null,
+      "total_kills": 2,
+      "samples": [
+        {
+          "timestamp_sec": 361.02,
+          "gamertag": "SamcroGunner011",
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        },
+        {
+          "timestamp_sec": 140.87,
+          "gamertag": "ETHAN LE BG8314",
+          "chunk": "type3___filmChunk26.bin",
+          "match_id": "eed0830b"
+        }
+      ]
+    },
+    "15360": {
+      "weapon_id_hex": "0x3C00",
+      "weapon_id_dec": 15360,
+      "weapon_name": null,
+      "total_kills": 1,
+      "samples": [
+        {
+          "timestamp_sec": 166.5,
+          "gamertag": null,
+          "chunk": "type3___filmChunk34.bin",
+          "match_id": "653fe7c4"
+        }
+      ]
+    },
+    "16896": {
+      "weapon_id_hex": "0x4200",
+      "weapon_id_dec": 16896,
+      "weapon_name": null,
+      "total_kills": 1,
+      "samples": [
+        {
+          "timestamp_sec": 481.3,
+          "gamertag": "vkzuuu",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "18944": {
+      "weapon_id_hex": "0x4A00",
+      "weapon_id_dec": 18944,
+      "weapon_name": null,
+      "total_kills": 1,
+      "samples": [
+        {
+          "timestamp_sec": 317.5,
+          "gamertag": "SimaEpic",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "19200": {
+      "weapon_id_hex": "0x4B00",
+      "weapon_id_dec": 19200,
+      "weapon_name": null,
+      "total_kills": 1,
+      "samples": [
+        {
+          "timestamp_sec": 327.92,
+          "gamertag": null,
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "29952": {
+      "weapon_id_hex": "0x7500",
+      "weapon_id_dec": 29952,
+      "weapon_name": null,
+      "total_kills": 1,
+      "samples": [
+        {
+          "timestamp_sec": 547.91,
+          "gamertag": "Naarly117",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "19968": {
+      "weapon_id_hex": "0x4E00",
+      "weapon_id_dec": 19968,
+      "weapon_name": null,
+      "total_kills": 1,
+      "samples": [
+        {
+          "timestamp_sec": 545.39,
+          "gamertag": "Ammonea",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    },
+    "20224": {
+      "weapon_id_hex": "0x4F00",
+      "weapon_id_dec": 20224,
+      "weapon_name": null,
+      "total_kills": 1,
+      "samples": [
+        {
+          "timestamp_sec": 87.18,
+          "gamertag": "caelcio",
+          "chunk": "type3___filmChunk58.bin",
+          "match_id": "btb_58d09c44"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "known_count": 0,
+    "unknown_count": 28
+  }
+}

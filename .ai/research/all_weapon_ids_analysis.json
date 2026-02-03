@@ -1,0 +1,47 @@
+{
+  "metadata": {
+    "total_chunks_analyzed": 1,
+    "total_kills_analyzed": 10,
+    "unique_weapon_ids": 1
+  },
+  "known_weapons": {},
+  "unknown_weapons": {
+    "11776": {
+      "weapon_id_hex": "0x2E00",
+      "weapon_id_dec": 11776,
+      "weapon_name": null,
+      "total_kills": 10,
+      "samples": [
+        {
+          "timestamp_sec": 69.13,
+          "gamertag": "HJ Destroyer",
+          "chunk": "type3___filmChunk18.bin"
+        },
+        {
+          "timestamp_sec": 84.49,
+          "gamertag": "AleMai3",
+          "chunk": "type3___filmChunk18.bin"
+        },
+        {
+          "timestamp_sec": 174.09,
+          "gamertag": "breizhbengp",
+          "chunk": "type3___filmChunk18.bin"
+        },
+        {
+          "timestamp_sec": 171.54,
+          "gamertag": "LordFilip7984",
+          "chunk": "type3___filmChunk18.bin"
+        },
+        {
+          "timestamp_sec": 69.15,
+          "gamertag": "Ecaru",
+          "chunk": "type3___filmChunk18.bin"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "known_count": 0,
+    "unknown_count": 1
+  }
+}

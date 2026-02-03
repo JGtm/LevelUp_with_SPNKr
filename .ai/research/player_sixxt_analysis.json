@@ -1,0 +1,55 @@
+{
+  "player": "sixxt",
+  "kills": [
+    {
+      "type": "kill",
+      "timestamp_sec": 240.69,
+      "gamertag": "sixxt",
+      "weapon_id": 18176,
+      "weapon_id_hex": "0x4700",
+      "chunk": "type3___filmChunk58.bin",
+      "match_id": "btb_58d09c44"
+    },
+    {
+      "type": "kill",
+      "timestamp_sec": 302.15,
+      "gamertag": "sixxt",
+      "weapon_id": 11776,
+      "weapon_id_hex": "0x2E00",
+      "chunk": "type3___filmChunk58.bin",
+      "match_id": "btb_58d09c44"
+    },
+    {
+      "type": "kill",
+      "timestamp_sec": 302.15,
+      "gamertag": "sixxt",
+      "weapon_id": 32512,
+      "weapon_id_hex": "0x7F00",
+      "chunk": "type3___filmChunk58.bin",
+      "match_id": "btb_58d09c44"
+    },
+    {
+      "type": "kill",
+      "timestamp_sec": 501.84,
+      "gamertag": "sixxt",
+      "weapon_id": 23296,
+      "weapon_id_hex": "0x5B00",
+      "chunk": "type3___filmChunk58.bin",
+      "match_id": "btb_58d09c44"
+    },
+    {
+      "type": "kill",
+      "timestamp_sec": 527.46,
+      "gamertag": "sixxt",
+      "weapon_id": 20992,
+      "weapon_id_hex": "0x5200",
+      "chunk": "type3___filmChunk58.bin",
+      "match_id": "btb_58d09c44"
+    }
+  ],
+  "deaths": [],
+  "summary": {
+    "total_kills": 5,
+    "total_deaths": 0
+  }
+}

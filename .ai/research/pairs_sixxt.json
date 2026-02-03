@@ -1,0 +1,38 @@
+{
+  "player": "sixxt",
+  "killed_by_player": [
+    {
+      "killer": "sixxt",
+      "victim": "ObscureGuide710",
+      "timestamp_sec": 240.69,
+      "weapon_id": 18176,
+      "weapon_id_hex": "0x4700"
+    },
+    {
+      "killer": "sixxt",
+      "victim": "SimonGames64",
+      "timestamp_sec": 302.15,
+      "weapon_id": 11776,
+      "weapon_id_hex": "0x2E00"
+    },
+    {
+      "killer": "sixxt",
+      "victim": "SimonGames64",
+      "timestamp_sec": 302.15,
+      "weapon_id": 32512,
+      "weapon_id_hex": "0x7F00"
+    },
+    {
+      "killer": "sixxt",
+      "victim": "Thdragonadvs",
+      "timestamp_sec": 527.46,
+      "weapon_id": 20992,
+      "weapon_id_hex": "0x5200"
+    }
+  ],
+  "killed_player": [],
+  "summary": {
+    "kills": 4,
+    "deaths": 0
+  }
+}

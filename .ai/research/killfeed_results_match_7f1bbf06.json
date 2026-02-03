@@ -1,0 +1,1206 @@
+{
+  "chunk": "data/investigation/match_7f1bbf06/chunks_with_type3/type3___filmChunk18.bin",
+  "total_events": 150,
+  "events": [
+    {
+      "offset": 416382,
+      "type": "death",
+      "timestamp_sec": 10.44,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 511554,
+      "type": "death",
+      "timestamp_sec": 10.44,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300574,
+      "type": "death",
+      "timestamp_sec": 15.36,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369419,
+      "type": "death",
+      "timestamp_sec": 15.36,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 416257,
+      "type": "death",
+      "timestamp_sec": 15.36,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 511429,
+      "type": "death",
+      "timestamp_sec": 15.36,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 172,
+      "type": "death",
+      "timestamp_sec": 25.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 28645,
+      "type": "death",
+      "timestamp_sec": 25.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 86260,
+      "type": "death",
+      "timestamp_sec": 25.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 130109,
+      "type": "death",
+      "timestamp_sec": 25.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300701,
+      "type": "death",
+      "timestamp_sec": 36.04,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369546,
+      "type": "death",
+      "timestamp_sec": 36.04,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 60638,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 116668,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 116742,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 155606,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 155680,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 173015,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 173089,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 261902,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 261928,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 271971,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 282910,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 282984,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300478,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300866,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 314772,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 314798,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 356808,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369323,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369711,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 391344,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 391418,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 403755,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 403781,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 457534,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 495450,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 495476,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 539564,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 546535,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 595785,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 595859,
+      "type": "death",
+      "timestamp_sec": 51.2,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300873,
+      "type": "death",
+      "timestamp_sec": 51.26,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369718,
+      "type": "death",
+      "timestamp_sec": 51.26,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 271,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 277,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 445,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 28744,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 28750,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 28918,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 86359,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 86365,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 86533,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 116580,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 116711,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 116750,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 130208,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 130214,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 130382,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 155518,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 155649,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 155688,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 172927,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 173058,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 173097,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 261922,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 261931,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 275843,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 282822,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 282953,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 282992,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300588,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300743,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 300911,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 314792,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 314801,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369433,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369588,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 369756,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 391256,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 391387,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 391426,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 403775,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 403784,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 461406,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 482943,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 495470,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 495479,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 521890,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 550407,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 578280,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 595697,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 595828,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 595867,
+      "type": "death",
+      "timestamp_sec": 51.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 60459,
+      "type": "kill",
+      "timestamp_sec": 69.13,
+      "gamertag": "HJ Destroyer",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 356629,
+      "type": "kill",
+      "timestamp_sec": 69.15,
+      "gamertag": "Ecaru",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 86090,
+      "type": "kill",
+      "timestamp_sec": 84.49,
+      "gamertag": "AleMai3",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 363600,
+      "type": "kill",
+      "timestamp_sec": 97.31,
+      "gamertag": "breizhbengp",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 369145,
+      "type": "kill",
+      "timestamp_sec": 99.87,
+      "gamertag": "SG1",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 262104,
+      "type": "death",
+      "timestamp_sec": 102.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 314974,
+      "type": "death",
+      "timestamp_sec": 102.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 403957,
+      "type": "death",
+      "timestamp_sec": 102.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 495652,
+      "type": "death",
+      "timestamp_sec": 102.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 7338,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 16351,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 69855,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 78868,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 224190,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 272175,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 468185,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 518222,
+      "type": "death",
+      "timestamp_sec": 102.8,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 143863,
+      "type": "assist",
+      "timestamp_sec": 104.99,
+      "gamertag": "nrph",
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 230778,
+      "type": "death",
+      "timestamp_sec": 115.22,
+      "gamertag": "JGtm",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 276036,
+      "type": "death",
+      "timestamp_sec": 153.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 461599,
+      "type": "death",
+      "timestamp_sec": 153.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 483136,
+      "type": "death",
+      "timestamp_sec": 153.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 522083,
+      "type": "death",
+      "timestamp_sec": 153.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 550600,
+      "type": "death",
+      "timestamp_sec": 153.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 578473,
+      "type": "death",
+      "timestamp_sec": 153.6,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 69481,
+      "type": "death",
+      "timestamp_sec": 168.98,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 246779,
+      "type": "kill",
+      "timestamp_sec": 171.54,
+      "gamertag": "LordFilip7984",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 100014,
+      "type": "kill",
+      "timestamp_sec": 174.09,
+      "gamertag": "breizhbengp",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 116765,
+      "type": "death",
+      "timestamp_sec": 204.88,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 155703,
+      "type": "death",
+      "timestamp_sec": 204.88,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 173112,
+      "type": "death",
+      "timestamp_sec": 204.88,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 283007,
+      "type": "death",
+      "timestamp_sec": 204.88,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 391441,
+      "type": "death",
+      "timestamp_sec": 204.88,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 595882,
+      "type": "death",
+      "timestamp_sec": 204.88,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 223816,
+      "type": "death",
+      "timestamp_sec": 222.76,
+      "gamertag": "nrph",
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 436579,
+      "type": "death",
+      "timestamp_sec": 266.34,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 472049,
+      "type": "death",
+      "timestamp_sec": 266.34,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 387197,
+      "type": "assist",
+      "timestamp_sec": 268.86,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 129939,
+      "type": "death",
+      "timestamp_sec": 322.57,
+      "gamertag": "HJ Destroyer",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 243294,
+      "type": "death",
+      "timestamp_sec": 322.6,
+      "gamertag": "nrph",
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 412220,
+      "type": "kill",
+      "timestamp_sec": 343.07,
+      "gamertag": "AleMai3",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 539385,
+      "type": "death",
+      "timestamp_sec": 343.08,
+      "gamertag": "Hlappia06",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 416464,
+      "type": "death",
+      "timestamp_sec": 358.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 511636,
+      "type": "death",
+      "timestamp_sec": 358.4,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 517848,
+      "type": "assist",
+      "timestamp_sec": 361.04,
+      "gamertag": "ndl",
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 546356,
+      "type": "death",
+      "timestamp_sec": 371.24,
+      "gamertag": "breizhbengp",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 291270,
+      "type": "death",
+      "timestamp_sec": 412.18,
+      "gamertag": "Hlappia06",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 105559,
+      "type": "death",
+      "timestamp_sec": 422.42,
+      "gamertag": "nrph",
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 567259,
+      "type": "kill",
+      "timestamp_sec": 425.0,
+      "gamertag": "HJ Destroyer",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 300300,
+      "type": "assist",
+      "timestamp_sec": 448.02,
+      "gamertag": "LordFilip7984",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 444848,
+      "type": "death",
+      "timestamp_sec": 450.59,
+      "gamertag": "breizhbengp",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 399713,
+      "type": "assist",
+      "timestamp_sec": 465.98,
+      "gamertag": null,
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 271801,
+      "type": "death",
+      "timestamp_sec": 522.28,
+      "gamertag": "nrph",
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 457355,
+      "type": "kill",
+      "timestamp_sec": 576.03,
+      "gamertag": "LordFilip7984",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    },
+    {
+      "offset": 467811,
+      "type": "assist",
+      "timestamp_sec": 586.31,
+      "gamertag": "ndl",
+      "weapon_id": null,
+      "weapon_name": null
+    },
+    {
+      "offset": 40982,
+      "type": "death",
+      "timestamp_sec": 637.44,
+      "gamertag": "breizhbengp",
+      "weapon_id": 57390,
+      "weapon_name": "Sidekick"
+    }
+  ]
+}
