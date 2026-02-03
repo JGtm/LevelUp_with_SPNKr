@@ -108,8 +108,8 @@ class DuckDBRepository:
             self._connection.execute(f"SET memory_limit = '{self._memory_limit}'")
             self._connection.execute("SET enable_object_cache = true")
 
-            # Attacher la DB metadata si elle existe
-            if self._metadata_db_path.exists():
+            # Attacher la DB metadata si elle existe et pas déjà attachée
+            if self._metadata_db_path.exists() and "meta" not in self._attached_dbs:
                 try:
                     self._connection.execute(
                         f"ATTACH '{self._metadata_db_path}' AS meta (READ_ONLY)"
@@ -117,7 +117,9 @@ class DuckDBRepository:
                     self._attached_dbs.add("meta")
                     logger.debug(f"Metadata DB attachée: {self._metadata_db_path}")
                 except Exception as e:
-                    logger.warning(f"Impossible d'attacher metadata.duckdb: {e}")
+                    # Ignorer si déjà attachée (peut arriver avec connexions réutilisées)
+                    if "already exists" not in str(e):
+                        logger.warning(f"Impossible d'attacher metadata.duckdb: {e}")
 
         return self._connection
 

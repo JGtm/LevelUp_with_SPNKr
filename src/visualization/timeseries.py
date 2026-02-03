@@ -231,7 +231,7 @@ def plot_per_minute_timeseries(
 
     customdata = list(
         zip(
-            d["time_played_seconds"].fillna(float("nan")).astype(float),
+            d["time_played_seconds"].astype(float).fillna(float("nan")),
             d["kills"],
             d["deaths"],
             d["assists"],
@@ -505,9 +505,7 @@ def plot_spree_headshots_accuracy(
 
     # Perfect kills (médaille Perfect = tuer sans prendre de dégâts)
     if perfect_counts and "match_id" in d.columns:
-        perfect_series = d["match_id"].astype(str).map(
-            lambda mid: perfect_counts.get(mid, 0)
-        )
+        perfect_series = d["match_id"].astype(str).map(lambda mid: perfect_counts.get(mid, 0))
         if perfect_series.sum() > 0:
             fig.add_trace(
                 go.Bar(
