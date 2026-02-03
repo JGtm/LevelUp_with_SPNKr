@@ -40,6 +40,8 @@ from src.visualization.objective_charts import (
     plot_top_players_objective_bars,
 )
 from src.visualization.participation_charts import (
+    aggregate_participation_for_radar,
+    compute_participation_percentages,
     create_participation_indicator,
     get_participation_colors,
     plot_participation_bars,
@@ -124,4 +126,6 @@ __all__ = [
     "create_participation_indicator",
     "plot_participation_sunburst",
     "get_participation_colors",
+    "aggregate_participation_for_radar",
+    "compute_participation_percentages",
 ]

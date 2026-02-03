@@ -501,6 +501,106 @@ def plot_participation_sunburst(
 
 
 # =============================================================================
+# Helpers pour Radar
+# =============================================================================
+
+
+def aggregate_participation_for_radar(
+    df: pl.DataFrame,
+    name: str = "Match",
+    color: str | None = None,
+) -> dict:
+    """Agrège les PersonalScores en données pour radar de participation.
+
+    Args:
+        df: DataFrame avec colonnes award_category, award_score.
+        name: Nom pour le radar (ex: "Match 1", "Session A").
+        color: Couleur optionnelle.
+
+    Returns:
+        Dict compatible avec create_participation_radar().
+    """
+    import polars as pl
+
+    if df.is_empty():
+        return {
+            "name": name,
+            "kill_score": 0,
+            "assist_score": 0,
+            "objective_score": 0,
+            "vehicle_score": 0,
+            "penalty_score": 0,
+            "color": color,
+        }
+
+    # Agréger par catégorie
+    agg = df.group_by("award_category").agg(pl.col("award_score").sum().alias("total"))
+
+    # Convertir en dict
+    scores = {row["award_category"]: row["total"] for row in agg.iter_rows(named=True)}
+
+    return {
+        "name": name,
+        "kill_score": scores.get("kill", 0),
+        "assist_score": scores.get("assist", 0),
+        "objective_score": scores.get("objective", 0),
+        "vehicle_score": scores.get("vehicle", 0),
+        "penalty_score": scores.get("penalty", 0),
+        "color": color,
+    }
+
+
+def compute_participation_percentages(
+    df: pl.DataFrame,
+) -> dict:
+    """Calcule les pourcentages de contribution par catégorie.
+
+    Utile pour le radar de complémentarité coéquipiers.
+
+    Args:
+        df: DataFrame avec colonnes award_category, award_score.
+
+    Returns:
+        Dict avec kills_pct, assists_pct, objectives_pct (sur score positif total).
+    """
+    import polars as pl
+
+    if df.is_empty():
+        return {
+            "kills_pct": 0,
+            "assists_pct": 0,
+            "objectives_pct": 0,
+            "vehicles_pct": 0,
+        }
+
+    # Filtrer les scores positifs
+    positive_df = df.filter(pl.col("award_score") > 0)
+
+    if positive_df.is_empty():
+        return {
+            "kills_pct": 0,
+            "assists_pct": 0,
+            "objectives_pct": 0,
+            "vehicles_pct": 0,
+        }
+
+    total = positive_df["award_score"].sum()
+    if total == 0:
+        total = 1
+
+    agg = positive_df.group_by("award_category").agg(pl.col("award_score").sum().alias("total"))
+
+    scores = {row["award_category"]: row["total"] for row in agg.iter_rows(named=True)}
+
+    return {
+        "kills_pct": (scores.get("kill", 0) / total) * 100,
+        "assists_pct": (scores.get("assist", 0) / total) * 100,
+        "objectives_pct": (scores.get("objective", 0) / total) * 100,
+        "vehicles_pct": (scores.get("vehicle", 0) / total) * 100,
+    }
+
+
+# =============================================================================
 # Export
 # =============================================================================
 
@@ -511,4 +611,7 @@ __all__ = [
     "plot_participation_by_match",
     "create_participation_indicator",
     "plot_participation_sunburst",
+    # Helpers pour radar
+    "aggregate_participation_for_radar",
+    "compute_participation_percentages",
 ]
