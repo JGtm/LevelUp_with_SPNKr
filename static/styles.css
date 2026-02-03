@@ -534,8 +534,8 @@ section.main:after {
 
 .career-rank__adornment {
     position: absolute;
-    width: 140px;
-    height: 140px;
+    width: 350px;
+    height: 350px;
     object-fit: contain;
     /* Centré horizontalement, positionné vers le bas de l'icône */
     top: 50%;
