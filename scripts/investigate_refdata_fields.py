@@ -8,6 +8,9 @@ Vérifie la présence de :
 
 Usage:
     python scripts/investigate_refdata_fields.py [match_id] [gamertag]
+
+Note: Ce script nécessite les dépendances installées (pip install -r requirements.txt)
+      notamment pandas pour les imports du projet.
 """
 
 import asyncio
@@ -39,7 +42,19 @@ def _load_dotenv():
 async def main():
     _load_dotenv()
 
-    from src.data.sync.api_client import SPNKrAPIClient, get_tokens_from_env
+    # Import avec gestion d'erreur claire
+    try:
+        from src.data.sync.api_client import SPNKrAPIClient, get_tokens_from_env
+    except ImportError as e:
+        print("=" * 80)
+        print("ERREUR: Impossible d'importer les modules nécessaires")
+        print("=" * 80)
+        print(f"Details: {e}")
+        print("\nSolution:")
+        print("  1. Installez les dependances: pip install -r requirements.txt")
+        print("  2. Ou utilisez l'environnement virtuel du projet")
+        print("  3. Ou executez via streamlit: streamlit run streamlit_app.py")
+        return
 
     # Arguments
     match_id = sys.argv[1] if len(sys.argv) > 1 else None
