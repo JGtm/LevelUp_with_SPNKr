@@ -415,15 +415,56 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
         if st.button("Re-scanner les dossiers", width="stretch"):
             with contextlib.suppress(Exception):
                 index_media_dir.clear()
-            # Forcer re-indexation
+            # Forcer re-indexation en BDD
             if "_media_indexing_started" in st.session_state:
                 del st.session_state["_media_indexing_started"]
+
+            # Lancer l'indexation manuellement si DB DuckDB disponible
+            if db_path and db_path.endswith(".duckdb") and xuid:
+                try:
+                    from pathlib import Path
+
+                    from src.data.media_indexer import MediaIndexer
+
+                    videos_path = (
+                        Path(dirs.videos_dir)
+                        if dirs.videos_dir and os.path.exists(dirs.videos_dir)
+                        else None
+                    )
+                    screens_path = (
+                        Path(dirs.screens_dir)
+                        if dirs.screens_dir and os.path.exists(dirs.screens_dir)
+                        else None
+                    )
+
+                    if videos_path or screens_path:
+                        with st.spinner("Indexation en cours..."):
+                            indexer = MediaIndexer(Path(db_path), xuid)
+                            result = indexer.scan_and_index(
+                                videos_dir=videos_path,
+                                screens_dir=screens_path,
+                                force_rescan=True,
+                            )
+                            tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
+                            n_associated = indexer.associate_with_matches(
+                                tolerance_minutes=tolerance
+                            )
+                            st.success(
+                                f"Indexation terminée: {result.n_new} nouveaux, "
+                                f"{result.n_updated} mis à jour, {n_associated} associés"
+                            )
+                except Exception as e:
+                    st.error(f"Erreur lors de l'indexation: {e}")
+
             st.rerun()
 
     # Charger depuis BDD si disponible
     media_df = pd.DataFrame()
+    using_db = False
+    windows_df = pd.DataFrame()  # Initialiser pour le diagnostic
     if db_path and db_path.endswith(".duckdb") and xuid:
         media_df = _load_media_from_db(db_path, xuid)
+        using_db = not media_df.empty
 
     # Fallback sur scan disque si BDD vide
     if media_df.empty:
@@ -442,6 +483,17 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
             assoc_df["match_id"] = None
         if "match_start_time" not in assoc_df.columns:
             assoc_df["match_start_time"] = None
+        # Calculer windows_df pour le diagnostic même si on utilise la BDD
+        windows_df = _compute_match_windows(df_full, settings)
+
+    # Diagnostic : afficher info si médias non associés depuis BDD
+    if using_db and not assoc_df.empty:
+        unassigned_count = assoc_df["match_id"].isna().sum()
+        if unassigned_count > 0:
+            st.info(
+                f"ℹ️ {unassigned_count} média(s) non associé(s) depuis la BDD. "
+                "Cliquez sur 'Re-scanner les dossiers' pour forcer l'indexation et l'association."
+            )
 
     if assoc_df.empty:
         st.info("Aucun média trouvé.")
@@ -462,7 +514,13 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
     unassigned = assoc_df.loc[assoc_df["match_id"].isna()].copy()
 
     # Diagnostic unifié : afficher un seul message informatif
-    if windows_df.empty:
+    if not using_db:
+        # Si on utilise le scan disque (fallback), informer l'utilisateur
+        st.info(
+            "ℹ️ Les médias sont chargés depuis le scan disque (pas encore indexés en BDD). "
+            "Cliquez sur 'Re-scanner les dossiers' pour indexer en BDD et associer automatiquement."
+        )
+    elif windows_df.empty:
         # Compter combien de matchs ont start_time NULL pour diagnostic
         null_start_count = 0
         if df_full is not None and not df_full.empty and "start_time" in df_full.columns:
@@ -478,11 +536,13 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
                 "⚠️ Aucune fenêtre temporelle de match disponible pour l'association. "
                 "Vérifiez que les matchs ont bien des dates de départ (`start_time`)."
             )
-    elif assigned.empty and not unassigned.empty:
-        # Seulement afficher ce message si windows_df n'est pas vide (sinon déjà couvert ci-dessus)
-        st.info(
-            f"Aucun média n'a pu être associé à un match. "
-            f"Vérifiez la tolérance temporelle dans Paramètres → Médias (actuelle: {int(getattr(settings, 'media_tolerance_minutes', 0) or 0)} min)."
+    elif assigned.empty and not unassigned.empty and using_db:
+        # Seulement afficher ce message si windows_df n'est pas vide et qu'on utilise la BDD
+        tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
+        st.warning(
+            f"⚠️ Aucun média n'a pu être associé à un match depuis la BDD. "
+            f"Tolérance actuelle: {tolerance} min. "
+            "Essayez d'augmenter la tolérance dans Paramètres → Médias ou vérifiez que les dates des matchs correspondent."
         )
 
     # Affichage

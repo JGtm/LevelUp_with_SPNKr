@@ -18,7 +18,7 @@ from typing import Any
 
 import duckdb
 
-from src.ui.formatting import paris_epoch_seconds
+from src.ui.formatting import PARIS_TZ, paris_epoch_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -393,7 +393,10 @@ class MediaIndexer:
                 for match_id, start_time, time_played in match_windows:
                     try:
                         # Convertir start_time en epoch seconds Paris
-                        if isinstance(start_time, str):
+                        # DuckDB peut retourner datetime Python directement ou string
+                        if isinstance(start_time, datetime):
+                            dt_start = start_time
+                        elif isinstance(start_time, str):
                             # Gérer format ISO avec/sans timezone
                             if start_time.endswith("Z"):
                                 dt_start = datetime.fromisoformat(start_time[:-1] + "+00:00")
@@ -403,11 +406,19 @@ class MediaIndexer:
                                 # Format naïf, supposé UTC
                                 dt_start = datetime.fromisoformat(start_time + "+00:00")
                         else:
-                            dt_start = start_time
+                            # Autre type (timestamp, etc.)
+                            try:
+                                dt_start = datetime.fromtimestamp(float(start_time), tz=PARIS_TZ)
+                            except (ValueError, TypeError):
+                                logger.warning(
+                                    f"Format start_time inconnu pour {match_id}: {type(start_time)}"
+                                )
+                                continue
 
                         # Convertir en epoch seconds Paris
                         start_epoch = paris_epoch_seconds(dt_start)
                         if start_epoch is None:
+                            logger.warning(f"Impossible de convertir start_time pour {match_id}")
                             continue  # Skip si conversion échoue
 
                         # Calculer fin du match
