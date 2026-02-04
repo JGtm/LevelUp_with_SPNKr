@@ -7,6 +7,59 @@
 
 ## Journal
 
+### [2026-02-03 PM] - 🔴 ANALYSE CRITIQUE : 12 Régressions majeures identifiées
+
+**Statut** : ⚠️ **ANALYSE COMPLÈTE** - Plan de correction en 5 sprints créé
+
+**Contexte** : L'utilisateur a signalé de nombreuses régressions après les dernières modifications.
+
+**Régressions identifiées** :
+
+| # | Symptôme | Cause racine |
+|---|----------|--------------|
+| 1 | Dernier match : 17 jan 2026 | Données non synchronisées ou cache obsolète |
+| 2 | Précision : nan% | Colonne `accuracy` NULL dans match_stats |
+| 3 | Premier kill/mort ne fonctionne pas | Table highlight_events vide ou mal requêtée |
+| 4-5 | Distributions vides (précision, FDA) | Dérivé de #2 (pas de données accuracy) |
+| 6 | **Score de performance non disponible** | **OUBLI D'IMPLÉMENTATION** dans `timeseries.py` |
+| 7 | Roster indisponible | `cached_load_match_rosters()` retourne `None` pour DuckDB v4 |
+| 8, 11 | Médailles indisponibles | Table medals_earned vide |
+| 9-10 | Médias non associés + doublons | start_time NULL + double message |
+| 12 | Page coéquipiers vide | Fonctions cache.py retournent vide pour DuckDB v4 |
+
+**Découverte importante sur le score de performance** :
+- `timeseries.py` vérifie si `performance_score` existe mais **ne la calcule jamais**
+- `match_history.py` et `session_compare.py` appellent `compute_performance_series()` ✅
+- Correction simple : ajouter l'appel à `compute_performance_series()` dans `timeseries.py`
+
+**Cause racine principale** :
+```python
+# src/ui/cache.py - PROBLÈME CRITIQUE
+if _is_duckdb_v4_path(db_path):
+    return []  # ❌ Retourne toujours vide au lieu de charger les données
+```
+
+**Fonctions impactées** :
+- `cached_same_team_match_ids_with_friend()` → `()`
+- `cached_query_matches_with_friend()` → `[]`
+- `cached_load_match_rosters()` → `None`
+- `cached_load_friends()` → `[]`
+
+**Documents créés** :
+- `.ai/diagnostics/REGRESSIONS_ANALYSIS_2026-02-03.md` - Analyse complète
+- `.ai/sprints/SPRINT_REGRESSIONS_FIX.md` - Plan de correction en 5 sprints
+
+**Ordre de priorité** :
+1. Sprint 2 : Diagnostic des données DuckDB
+2. Sprint 1 : Correction cache.py
+3. Sprint 4 : Page coéquipiers
+4. Sprint 3 : Médias
+5. Sprint 5 : Tests
+
+**Prochaine action** : Exécuter le diagnostic pour vérifier l'état des données avant correction.
+
+---
+
 ### [2026-02-03] - SPRINTS 8 & 9 TERMINÉS : Backfill + Migration + Tests
 
 **Statut** : ✅ **SUCCÈS** - Infrastructure complète pour killer_victim_pairs
