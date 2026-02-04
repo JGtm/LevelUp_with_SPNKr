@@ -108,7 +108,7 @@ def render_timeseries_page(
                         show_kde=True,
                         color=colors["green"],
                     )
-                    st.plotly_chart(fig_kills, use_container_width=True)
+                    st.plotly_chart(fig_kills, width="stretch")
                 else:
                     st.info("Pas assez de données de kills.")
             else:
