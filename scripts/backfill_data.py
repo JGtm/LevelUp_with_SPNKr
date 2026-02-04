@@ -49,6 +49,20 @@ from src.db.parsers import resolve_xuid_from_db
 from src.ui.multiplayer import list_duckdb_v4_players
 from src.ui.sync import get_player_duckdb_path, is_duckdb_player
 
+# Import pour le calcul des scores de performance
+try:
+    import pandas as pd
+
+    from src.analysis.performance_config import MIN_MATCHES_FOR_RELATIVE
+    from src.analysis.performance_score import compute_relative_performance_score
+
+    PERFORMANCE_SCORE_AVAILABLE = True
+except ImportError:
+    PERFORMANCE_SCORE_AVAILABLE = False
+    pd = None
+    compute_relative_performance_score = None
+    MIN_MATCHES_FOR_RELATIVE = 10
+
 # Configuration du logging
 logging.basicConfig(
     level=logging.INFO,
@@ -66,10 +80,12 @@ def _insert_medal_rows(conn, rows: list) -> int:
     inserted = 0
     for row in rows:
         try:
+            # Utiliser une requête avec CAST dans une sous-requête pour forcer BIGINT
+            # Cela évite les erreurs de conversion INT64 -> INT32
             conn.execute(
                 """INSERT OR REPLACE INTO medals_earned
                    (match_id, medal_name_id, count)
-                   VALUES (?, ?, ?)""",
+                   SELECT ?, CAST(? AS BIGINT), ?""",
                 (row.match_id, row.medal_name_id, row.count),
             )
             inserted += 1
@@ -86,14 +102,19 @@ def _insert_event_rows(conn, rows: list) -> int:
     if not rows:
         return 0
 
+    # Récupérer le max id actuel pour auto-increment manuel
+    max_id_result = conn.execute("SELECT COALESCE(MAX(id), 0) FROM highlight_events").fetchone()
+    next_id = (max_id_result[0] or 0) + 1
+
     inserted = 0
     for row in rows:
         try:
             conn.execute(
                 """INSERT INTO highlight_events
-                   (match_id, event_type, time_ms, xuid, gamertag, type_hint, raw_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (id, match_id, event_type, time_ms, xuid, gamertag, type_hint, raw_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
+                    next_id,
                     row.match_id,
                     row.event_type,
                     row.time_ms,
@@ -103,6 +124,7 @@ def _insert_event_rows(conn, rows: list) -> int:
                     row.raw_json,
                 ),
             )
+            next_id += 1
             inserted += 1
         except Exception as e:
             logger.warning(f"Erreur insertion event pour {row.match_id}: {e}")
@@ -151,11 +173,12 @@ def _insert_personal_score_rows(conn, rows: list) -> int:
     inserted = 0
     for row in rows:
         try:
+            # PersonalScoreAwardRow n'a pas d'attribut created_at, utiliser CURRENT_TIMESTAMP
             conn.execute(
                 """INSERT INTO personal_score_awards
                    (match_id, xuid, award_name, award_category,
                     award_count, award_score, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
                 (
                     row.match_id,
                     row.xuid,
@@ -163,7 +186,6 @@ def _insert_personal_score_rows(conn, rows: list) -> int:
                     row.award_category,
                     row.award_count,
                     row.award_score,
-                    row.created_at.isoformat() if row.created_at else None,
                 ),
             )
             inserted += 1
@@ -200,6 +222,116 @@ def _insert_alias_rows(conn, rows: list) -> int:
     return inserted
 
 
+def _ensure_performance_score_column(conn) -> None:
+    """S'assure que la colonne performance_score existe dans match_stats."""
+    try:
+        result = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_name = 'match_stats'
+              AND column_name = 'performance_score'
+            """
+        ).fetchone()
+
+        if result and result[0] == 0:
+            # Colonne n'existe pas, l'ajouter
+            logger.info("Ajout de la colonne performance_score à match_stats")
+            conn.execute("ALTER TABLE match_stats ADD COLUMN performance_score FLOAT")
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Note lors de la vérification de performance_score: {e}")
+
+
+def _compute_performance_score_for_match(conn, match_id: str) -> bool:
+    """Calcule et met à jour le score de performance pour un match.
+
+    Returns:
+        True si le score a été calculé, False sinon.
+    """
+    if not PERFORMANCE_SCORE_AVAILABLE:
+        return False
+
+    try:
+        # S'assurer que la colonne existe
+        _ensure_performance_score_column(conn)
+
+        # Vérifier si le score existe déjà
+        existing = conn.execute(
+            "SELECT performance_score FROM match_stats WHERE match_id = ?",
+            (match_id,),
+        ).fetchone()
+
+        if existing and existing[0] is not None:
+            # Score déjà calculé
+            return False
+
+        # Récupérer les données du match actuel
+        match_data = conn.execute(
+            """
+            SELECT match_id, start_time, kills, deaths, assists, kda, accuracy,
+                   time_played_seconds, avg_life_seconds
+            FROM match_stats
+            WHERE match_id = ?
+            """,
+            (match_id,),
+        ).fetchone()
+
+        if not match_data:
+            return False
+
+        match_start_time = match_data[1]  # start_time
+        if match_start_time is None:
+            return False
+
+        # Charger l'historique (tous les matchs AVANT celui-ci)
+        history_df = conn.execute(
+            """
+            SELECT
+                match_id, start_time, kills, deaths, assists, kda, accuracy,
+                time_played_seconds, avg_life_seconds
+            FROM match_stats
+            WHERE match_id != ?
+              AND start_time IS NOT NULL
+              AND start_time < ?
+            ORDER BY start_time ASC
+            """,
+            (match_id, match_start_time),
+        ).df()
+
+        if history_df.empty or len(history_df) < MIN_MATCHES_FOR_RELATIVE:
+            return False
+
+        # Convertir match_data en Series
+        match_series = pd.Series(
+            {
+                "kills": match_data[2] or 0,
+                "deaths": match_data[3] or 0,
+                "assists": match_data[4] or 0,
+                "kda": match_data[5],
+                "accuracy": match_data[6],
+                "time_played_seconds": match_data[7] or 600.0,
+            }
+        )
+
+        # Calculer le score
+        score = compute_relative_performance_score(match_series, history_df)
+
+        if score is not None:
+            conn.execute(
+                "UPDATE match_stats SET performance_score = ? WHERE match_id = ?",
+                (score, match_id),
+            )
+            conn.commit()
+            return True
+
+        return False
+
+    except Exception as e:
+        logger.warning(f"Erreur calcul score performance pour {match_id}: {e}")
+        return False
+
+
 def _find_matches_missing_data(
     conn,
     xuid: str,
@@ -208,6 +340,8 @@ def _find_matches_missing_data(
     events: bool = False,
     skill: bool = False,
     personal_scores: bool = False,
+    performance_scores: bool = False,
+    force_medals: bool = False,
     max_matches: int | None = None,
 ) -> list[str]:
     """Trouve les matchs avec des données manquantes."""
@@ -215,11 +349,18 @@ def _find_matches_missing_data(
     params = []
 
     if medals:
-        conditions.append("""
-            ms.match_id NOT IN (
-                SELECT DISTINCT match_id FROM medals_earned
-            )
-        """)
+        if force_medals:
+            # Mode force: inclure TOUS les matchs pour réinsérer les médailles
+            conditions.append("1=1")  # Condition toujours vraie = tous les matchs
+        else:
+            # Détecter les matchs sans médailles
+            # Note: INSERT OR REPLACE remplacera les médailles existantes si elles sont déjà présentes
+            # donc même si certaines médailles ont échoué précédemment, elles seront réinsérées
+            conditions.append("""
+                ms.match_id NOT IN (
+                    SELECT DISTINCT match_id FROM medals_earned
+                )
+            """)
 
     if events:
         conditions.append("""
@@ -243,6 +384,33 @@ def _find_matches_missing_data(
             )
         """)
         params.append(xuid)
+
+    if performance_scores:
+        # Vérifier si la colonne performance_score existe
+        try:
+            col_check = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_name = 'match_stats'
+                  AND column_name = 'performance_score'
+                """
+            ).fetchone()
+
+            if col_check and col_check[0] > 0:
+                # Colonne existe, trouver les matchs sans score
+                conditions.append("""
+                    ms.match_id IN (
+                        SELECT match_id FROM match_stats
+                        WHERE performance_score IS NULL
+                    )
+                """)
+            # Colonne n'existe pas encore, tous les matchs sont concernés
+            else:
+                conditions.append("1=1")
+        except Exception:
+            # En cas d'erreur, considérer que tous les matchs sont concernés
+            conditions.append("1=1")
 
     if not conditions:
         return []
@@ -273,8 +441,10 @@ async def backfill_player_data(
     events: bool = False,
     skill: bool = False,
     personal_scores: bool = False,
+    performance_scores: bool = False,
     aliases: bool = False,
     all_data: bool = False,
+    force_medals: bool = False,
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
 
@@ -299,10 +469,11 @@ async def backfill_player_data(
         events = True
         skill = True
         personal_scores = True
+        performance_scores = True
         aliases = True
 
     # Vérifier qu'au moins une option est activée
-    if not any([medals, events, skill, personal_scores, aliases]):
+    if not any([medals, events, skill, personal_scores, performance_scores, aliases]):
         logger.warning(
             "Aucune option de backfill activée. Utilisez --all ou spécifiez des options."
         )
@@ -313,6 +484,7 @@ async def backfill_player_data(
             "events_inserted": 0,
             "skill_inserted": 0,
             "personal_scores_inserted": 0,
+            "performance_scores_inserted": 0,
             "aliases_inserted": 0,
         }
 
@@ -328,6 +500,7 @@ async def backfill_player_data(
             "events_inserted": 0,
             "skill_inserted": 0,
             "personal_scores_inserted": 0,
+            "performance_scores_inserted": 0,
             "aliases_inserted": 0,
         }
 
@@ -342,6 +515,7 @@ async def backfill_player_data(
             "events_inserted": 0,
             "skill_inserted": 0,
             "personal_scores_inserted": 0,
+            "performance_scores_inserted": 0,
             "aliases_inserted": 0,
         }
 
@@ -404,6 +578,65 @@ async def backfill_player_data(
     conn = duckdb.connect(str(db_path), read_only=False)
 
     try:
+        # Modifier le schéma de medals_earned si nécessaire
+        # Certaines medal_name_id dépassent INT32, il faut utiliser BIGINT
+        # DuckDB ne supporte pas ALTER COLUMN TYPE, il faut recréer la table
+        try:
+            # Vérifier si la table existe
+            table_exists = (
+                conn.execute(
+                    """
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_name = 'medals_earned'
+                """
+                ).fetchone()[0]
+                > 0
+            )
+
+            if table_exists:
+                # Vérifier le type actuel de la colonne
+                col_info = conn.execute(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_name = 'medals_earned'
+                      AND column_name = 'medal_name_id'
+                    """
+                ).fetchone()
+
+                if col_info and col_info[0] in ("INTEGER", "INT32"):
+                    logger.info("Migration du schéma medals_earned: INTEGER -> BIGINT...")
+                    # Recréer la table avec BIGINT
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS medals_earned_new (
+                            match_id VARCHAR,
+                            medal_name_id BIGINT,
+                            count SMALLINT,
+                            PRIMARY KEY (match_id, medal_name_id)
+                        )
+                    """)
+                    # Copier les données existantes
+                    conn.execute("""
+                        INSERT INTO medals_earned_new
+                        SELECT match_id, CAST(medal_name_id AS BIGINT), count
+                        FROM medals_earned
+                    """)
+                    # Remplacer l'ancienne table
+                    conn.execute("DROP TABLE medals_earned")
+                    conn.execute("ALTER TABLE medals_earned_new RENAME TO medals_earned")
+                    logger.info("✅ Schéma medals_earned migré vers BIGINT")
+                else:
+                    logger.debug(
+                        f"Type de colonne déjà correct: {col_info[0] if col_info else 'N/A'}"
+                    )
+            else:
+                # Table n'existe pas encore, créer avec le bon type directement
+                logger.debug("Table medals_earned n'existe pas encore, sera créée avec BIGINT")
+        except Exception as e:
+            # Si la migration échoue, continuer quand même
+            logger.warning(f"Note: Migration du schéma échouée (continuation): {e}")
+
         # Trouver les matchs avec données manquantes
         match_ids = _find_matches_missing_data(
             conn,
@@ -412,6 +645,8 @@ async def backfill_player_data(
             events=events,
             skill=skill,
             personal_scores=personal_scores,
+            performance_scores=performance_scores,
+            force_medals=force_medals,
             max_matches=max_matches,
         )
 
@@ -442,7 +677,7 @@ async def backfill_player_data(
             }
 
         # Récupérer les tokens
-        tokens = get_tokens_from_env()
+        tokens = await get_tokens_from_env()
         if not tokens:
             logger.error("Tokens SPNKr non disponibles")
             return {
@@ -460,6 +695,7 @@ async def backfill_player_data(
         total_events = 0
         total_skill = 0
         total_personal_scores = 0
+        total_performance_scores = 0
         total_aliases = 0
 
         async with SPNKrAPIClient(
@@ -495,6 +731,7 @@ async def backfill_player_data(
                         "events": 0,
                         "skill": 0,
                         "personal_scores": 0,
+                        "performance_scores": 0,
                         "aliases": 0,
                     }
 
@@ -539,6 +776,11 @@ async def backfill_player_data(
                             inserted_this_match["aliases"] = _insert_alias_rows(conn, alias_rows)
                             total_aliases += inserted_this_match["aliases"]
 
+                    # Performance scores (calculé après récupération des données)
+                    if performance_scores and _compute_performance_score_for_match(conn, match_id):
+                        inserted_this_match["performance_scores"] = 1
+                        total_performance_scores += 1
+
                     # Commit après chaque match
                     conn.commit()
 
@@ -552,6 +794,8 @@ async def backfill_player_data(
                         parts.append("skill")
                     if inserted_this_match["personal_scores"] > 0:
                         parts.append(f"{inserted_this_match['personal_scores']} personal_score(s)")
+                    if inserted_this_match.get("performance_scores", 0) > 0:
+                        parts.append("performance_score")
                     if inserted_this_match["aliases"] > 0:
                         parts.append(f"{inserted_this_match['aliases']} alias(es)")
 
@@ -576,6 +820,7 @@ async def backfill_player_data(
             "events_inserted": total_events,
             "skill_inserted": total_skill,
             "personal_scores_inserted": total_personal_scores,
+            "performance_scores_inserted": total_performance_scores,
             "aliases_inserted": total_aliases,
         }
 
@@ -592,8 +837,10 @@ async def backfill_all_players(
     events: bool = False,
     skill: bool = False,
     personal_scores: bool = False,
+    performance_scores: bool = False,
     aliases: bool = False,
     all_data: bool = False,
+    force_medals: bool = False,
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
     players = list_duckdb_v4_players()
@@ -611,6 +858,7 @@ async def backfill_all_players(
         "events_inserted": 0,
         "skill_inserted": 0,
         "personal_scores_inserted": 0,
+        "performance_scores_inserted": 0,
         "aliases_inserted": 0,
     }
 
@@ -628,8 +876,10 @@ async def backfill_all_players(
             events=events,
             skill=skill,
             personal_scores=personal_scores,
+            performance_scores=performance_scores,
             aliases=aliases,
             all_data=all_data,
+            force_medals=force_medals,
         )
 
         # Agréger les résultats
@@ -708,6 +958,12 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--performance-scores",
+        action="store_true",
+        help="Calculer les scores de performance manquants",
+    )
+
+    parser.add_argument(
         "--aliases",
         action="store_true",
         help="Mettre à jour les aliases XUID",
@@ -716,7 +972,13 @@ def main() -> int:
     parser.add_argument(
         "--all-data",
         action="store_true",
-        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --aliases)",
+        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases)",
+    )
+
+    parser.add_argument(
+        "--force-medals",
+        action="store_true",
+        help="Force le rescan de TOUS les matchs pour les médailles, même s'ils en ont déjà",
     )
 
     args = parser.parse_args()
@@ -737,8 +999,10 @@ def main() -> int:
                     events=args.events,
                     skill=args.skill,
                     personal_scores=args.personal_scores,
+                    performance_scores=args.performance_scores,
                     aliases=args.aliases,
                     all_data=args.all_data,
+                    force_medals=args.force_medals,
                 )
             )
 
@@ -753,6 +1017,7 @@ def main() -> int:
             logger.info(f"Events insérés: {totals['events_inserted']}")
             logger.info(f"Skill inséré: {totals['skill_inserted']}")
             logger.info(f"Personal scores insérés: {totals['personal_scores_inserted']}")
+            logger.info(f"Scores de performance calculés: {totals['performance_scores_inserted']}")
             logger.info(f"Aliases insérés: {totals['aliases_inserted']}")
         else:
             result = asyncio.run(
@@ -765,8 +1030,10 @@ def main() -> int:
                     events=args.events,
                     skill=args.skill,
                     personal_scores=args.personal_scores,
+                    performance_scores=args.performance_scores,
                     aliases=args.aliases,
                     all_data=args.all_data,
+                    force_medals=args.force_medals,
                 )
             )
 
@@ -777,6 +1044,7 @@ def main() -> int:
             logger.info(f"Events insérés: {result['events_inserted']}")
             logger.info(f"Skill inséré: {result['skill_inserted']}")
             logger.info(f"Personal scores insérés: {result['personal_scores_inserted']}")
+            logger.info(f"Scores de performance calculés: {result['performance_scores_inserted']}")
             logger.info(f"Aliases insérés: {result['aliases_inserted']}")
 
         return 0

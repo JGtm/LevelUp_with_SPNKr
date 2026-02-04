@@ -51,6 +51,18 @@ from src.data.sync.transformers import (
 
 logger = logging.getLogger(__name__)
 
+# Import pour le calcul des scores de performance
+try:
+    import pandas as pd
+
+    from src.analysis.performance_config import MIN_MATCHES_FOR_RELATIVE
+    from src.analysis.performance_score import compute_relative_performance_score
+except ImportError:
+    # Fallback si les modules ne sont pas disponibles
+    pd = None
+    compute_relative_performance_score = None
+    MIN_MATCHES_FOR_RELATIVE = 10
+
 
 # =============================================================================
 # Schéma DuckDB pour les nouvelles tables
@@ -600,6 +612,10 @@ class DuckDBSyncEngine:
                     self._insert_alias_rows(alias_rows)
                     result["aliases"] = len(alias_rows)
 
+                # Calculer et mettre à jour le score de performance
+                # (après toutes les insertions pour avoir les données complètes)
+                self._compute_and_update_performance_score(match_id, match_row)
+
             result["inserted"] = True
 
         except Exception as e:
@@ -607,6 +623,125 @@ class DuckDBSyncEngine:
             logger.warning(result["error"])
 
         return result
+
+    def _ensure_performance_score_column(self) -> None:
+        """S'assure que la colonne performance_score existe dans match_stats."""
+        conn = self._get_connection()
+        try:
+            # Vérifier si la colonne existe
+            result = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_name = 'match_stats'
+                  AND column_name = 'performance_score'
+                """
+            ).fetchone()
+
+            if result and result[0] == 0:
+                # Colonne n'existe pas, l'ajouter
+                logger.debug("Ajout de la colonne performance_score à match_stats")
+                conn.execute("ALTER TABLE match_stats ADD COLUMN performance_score FLOAT")
+                conn.commit()
+        except Exception as e:
+            # Si la table n'existe pas encore ou autre erreur, on continue
+            logger.debug(f"Note lors de la vérification de performance_score: {e}")
+
+    def _compute_and_update_performance_score(
+        self, match_id: str, match_row: MatchStatsRow
+    ) -> None:
+        """Calcule et met à jour le score de performance pour un match.
+
+        Note: Chaque DB DuckDB est spécifique à un joueur, donc pas besoin de filtrer par xuid.
+
+        Args:
+            match_id: ID du match
+            match_row: Données du match inséré
+        """
+        if compute_relative_performance_score is None or pd is None:
+            logger.debug("Modules de calcul de performance non disponibles, skip")
+            return
+
+        try:
+            conn = self._get_connection()
+
+            # S'assurer que la colonne existe
+            self._ensure_performance_score_column()
+
+            # Vérifier si le score existe déjà
+            existing = conn.execute(
+                "SELECT performance_score FROM match_stats WHERE match_id = ?",
+                (match_id,),
+            ).fetchone()
+
+            if existing and existing[0] is not None:
+                # Score déjà calculé, skip
+                logger.debug(f"Score de performance déjà présent pour {match_id}")
+                return
+
+            # Charger l'historique (tous les matchs AVANT celui-ci, triés par date)
+            # Note: match_stats n'a pas de colonne xuid car chaque DB est spécifique à un joueur
+            current_start_time = match_row.start_time
+            if current_start_time is None:
+                # Si pas de start_time, on ne peut pas déterminer l'ordre chronologique
+                logger.debug(f"Pas de start_time pour {match_id}, skip calcul score")
+                return
+
+            # Convertir datetime en format compatible avec DuckDB
+            if isinstance(current_start_time, datetime):
+                current_start_time_str = current_start_time.isoformat()
+            else:
+                current_start_time_str = str(current_start_time)
+
+            history_df = conn.execute(
+                """
+                SELECT
+                    match_id, start_time, kills, deaths, assists, kda, accuracy,
+                    time_played_seconds, avg_life_seconds
+                FROM match_stats
+                WHERE match_id != ?
+                  AND start_time IS NOT NULL
+                  AND start_time < CAST(? AS TIMESTAMP)
+                ORDER BY start_time ASC
+                """,
+                (match_id, current_start_time_str),
+            ).df()
+
+            if history_df.empty or len(history_df) < MIN_MATCHES_FOR_RELATIVE:
+                logger.debug(
+                    f"Pas assez d'historique pour calculer le score ({len(history_df)} matchs)"
+                )
+                return
+
+            # Convertir match_row en Series pour le calcul
+            match_series = pd.Series(
+                {
+                    "kills": match_row.kills or 0,
+                    "deaths": match_row.deaths or 0,
+                    "assists": match_row.assists or 0,
+                    "kda": match_row.kda,
+                    "accuracy": match_row.accuracy,
+                    "time_played_seconds": match_row.time_played_seconds or 600.0,
+                }
+            )
+
+            # Calculer le score
+            score = compute_relative_performance_score(match_series, history_df)
+
+            if score is not None:
+                # Mettre à jour la colonne performance_score
+                conn.execute(
+                    "UPDATE match_stats SET performance_score = ? WHERE match_id = ?",
+                    (score, match_id),
+                )
+                conn.commit()
+                logger.debug(f"Score de performance calculé pour {match_id}: {score:.1f}")
+            else:
+                logger.debug(f"Impossible de calculer le score pour {match_id}")
+
+        except Exception as e:
+            # Ne pas bloquer la synchronisation si le calcul échoue
+            logger.warning(f"Erreur calcul score performance pour {match_id}: {e}")
 
     def _insert_match_row(self, row: MatchStatsRow) -> None:
         """Insère une ligne match_stats."""
