@@ -49,6 +49,7 @@ from src.db.schema import (  # noqa: E402
     get_all_cache_table_ddl,
     get_source_table_indexes,
 )
+from src.ui.multiplayer import DuckDBPlayerInfo, list_duckdb_v4_players  # noqa: E402
 
 # Configuration du logging
 logging.basicConfig(
@@ -94,6 +95,63 @@ def _get_sync_meta(con: sqlite3.Connection, key: str) -> str | None:
 def _normalize_player_key(s: str) -> str:
     """Normalise un identifiant joueur pour comparaison."""
     return (s or "").strip().lower()
+
+
+def _get_project_db_path():
+    """Retourne le chemin de DB à utiliser pour le projet.
+
+    Aligné sur le bouton Actualiser de la sidebar (sync_all_players_duckdb).
+    Priorité :
+    1. Si db_profiles.json existe et contient des profils → liste des joueurs depuis ce fichier.
+    2. Sinon si data/players/*/stats.duckdb existe (DuckDB v4) → liste depuis le disque.
+    3. Sinon retourne (get_default_db_path(), []).
+
+    Returns:
+        Tuple (db_path ou None, liste des DuckDBPlayerInfo si mode DuckDB v4).
+    """
+    import json
+
+    db_profiles_path = REPO_ROOT / "db_profiles.json"
+    if db_profiles_path.exists():
+        try:
+            with open(db_profiles_path, encoding="utf-8") as f:
+                data = json.load(f)
+            profiles = data.get("profiles", {})
+            if profiles:
+                duckdb_players: list[DuckDBPlayerInfo] = []
+                for gamertag, profile in profiles.items():
+                    if not isinstance(profile, dict):
+                        continue
+                    raw_path = profile.get("db_path", "").strip()
+                    if raw_path:
+                        db_path = (REPO_ROOT / raw_path).resolve()
+                    else:
+                        db_path = (
+                            REPO_ROOT / "data" / "players" / gamertag / "stats.duckdb"
+                        ).resolve()
+                    if not db_path.exists():
+                        continue
+                    xuid = profile.get("xuid") or None
+                    if isinstance(xuid, str) and not xuid.strip():
+                        xuid = None
+                    duckdb_players.append(
+                        DuckDBPlayerInfo(
+                            gamertag=gamertag,
+                            db_path=db_path,
+                            total_matches=0,
+                            xuid=xuid,
+                        )
+                    )
+                if duckdb_players:
+                    return None, duckdb_players
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    duckdb_players = list_duckdb_v4_players()
+    if duckdb_players:
+        return None, duckdb_players
+    legacy_path = get_default_db_path()
+    return legacy_path, []
 
 
 def _resolve_player_in_db(db_path: str, player_query: str) -> tuple[str, str | None, str | None]:
@@ -193,6 +251,11 @@ def _count_rows(con: sqlite3.Connection, table_name: str) -> int:
 # =============================================================================
 
 
+def _is_duckdb_path(db_path: str) -> bool:
+    """Indique si le chemin pointe vers une base DuckDB (v4)."""
+    return (db_path or "").endswith(".duckdb")
+
+
 def apply_indexes(db_path: str) -> tuple[bool, str]:
     """Applique les index optimisés sur la base de données.
 
@@ -202,6 +265,10 @@ def apply_indexes(db_path: str) -> tuple[bool, str]:
     Returns:
         Tuple (success, message).
     """
+    if _is_duckdb_path(db_path):
+        logger.info("Application des index: ignoré (DuckDB v4 gère ses propres index).")
+        return True, "DuckDB: ignoré"
+
     logger.info("Application des index optimisés...")
 
     try:
@@ -247,6 +314,10 @@ def ensure_cache_tables(db_path: str) -> tuple[bool, str]:
     Returns:
         Tuple (success, message).
     """
+    if _is_duckdb_path(db_path):
+        logger.info("Tables de cache: ignoré (DuckDB v4 n'utilise pas ce cache).")
+        return True, "DuckDB: ignoré"
+
     logger.info("Vérification des tables de cache...")
 
     try:
@@ -294,6 +365,10 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
     Returns:
         Tuple (success, message).
     """
+    if _is_duckdb_path(db_path):
+        logger.info("Rebuild cache: ignoré (DuckDB v4 n'utilise pas MatchCache).")
+        return True, "DuckDB: ignoré"
+
     import math
 
     def _safe_float(v) -> float | None:
@@ -1441,13 +1516,84 @@ Exemples:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Déterminer le chemin de la DB
+    # Déterminer le chemin de la DB (ou la liste des joueurs DuckDB v4)
     db_path = args.db
+    duckdb_players = []
     if not db_path:
+        db_path, duckdb_players = _get_project_db_path()
+        # Si on a des joueurs DuckDB v4, on travaille avec eux
+        if duckdb_players and not db_path:
+            if args.player:
+                # Un seul joueur demandé: prendre sa DB
+                gt = args.player.strip()
+                for p in duckdb_players:
+                    if (p.gamertag or "").strip().lower() == gt.lower():
+                        db_path = str(p.db_path)
+                        break
+                if not db_path:
+                    # Joueur non trouvé dans la liste mais peut-être que le dossier existe
+                    player_db = REPO_ROOT / "data" / "players" / gt / "stats.duckdb"
+                    if player_db.exists():
+                        db_path = str(player_db)
+                if not db_path:
+                    logger.error(f"Joueur DuckDB v4 introuvable: {args.player}")
+                    return 1
+            else:
+                # Sync tous les joueurs DuckDB v4: on garde db_path à None pour l'instant
+                pass
+
+    if not db_path and not duckdb_players:
         db_path = get_default_db_path()
 
+    if not db_path and not duckdb_players:
+        logger.error(
+            "Aucune base de données trouvée. "
+            "Utilisez --db <chemin> ou assurez-vous que data/players/<gamertag>/stats.duckdb existe."
+        )
+        return 1
+
+    # Mode "sync tous les joueurs DuckDB v4" (sans --player)
+    if duckdb_players and not args.player and (args.delta or args.full):
+        logger.info(f"Sync de {len(duckdb_players)} joueur(s) DuckDB v4")
+        success = True
+        for i, pinfo in enumerate(duckdb_players, 1):
+            logger.info(f"[{i}/{len(duckdb_players)}] {pinfo.gamertag}")
+            ok, msg = (
+                sync_delta(
+                    str(pinfo.db_path),
+                    player=pinfo.gamertag,
+                    match_type=args.match_type,
+                    max_matches=args.max_matches,
+                    with_highlight_events=True,
+                    with_aliases=True,
+                )
+                if args.delta
+                else sync_full(
+                    str(pinfo.db_path),
+                    player=pinfo.gamertag,
+                    match_type=args.match_type,
+                    max_matches=args.max_matches,
+                    with_highlight_events=True,
+                    with_aliases=True,
+                )
+            )
+            if not ok:
+                success = False
+                logger.error(f"  {msg}")
+            else:
+                logger.info(f"  {msg}")
+        if args.stats:
+            for pinfo in duckdb_players:
+                print_stats(str(pinfo.db_path), player=pinfo.gamertag)
+        return 0 if success else 1
+
     if not db_path:
-        logger.error("Aucune base de données trouvée. Utilisez --db pour spécifier le chemin.")
+        # Stats seules pour tous les joueurs DuckDB v4
+        if duckdb_players and args.stats:
+            for pinfo in duckdb_players:
+                print_stats(str(pinfo.db_path), player=pinfo.gamertag)
+            return 0
+        logger.error("Aucune base de données à utiliser.")
         return 1
 
     if not os.path.exists(db_path):
@@ -1461,16 +1607,16 @@ Exemples:
 
     # Statistiques seules
     if args.stats:
-        print_stats(db_path)
+        print_stats(db_path, player=args.player)
         return 0
 
-    # Vérifier/créer les tables de cache
+    # Vérifier/créer les tables de cache (ignoré pour DuckDB v4)
     ok, msg = ensure_cache_tables(db_path)
     if not ok:
         logger.error(msg)
         success = False
 
-    # Appliquer les index
+    # Appliquer les index (ignoré pour DuckDB v4)
     if args.apply_indexes or args.delta or args.full:
         ok, msg = apply_indexes(db_path)
         if not ok:
