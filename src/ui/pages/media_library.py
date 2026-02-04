@@ -95,7 +95,12 @@ def _to_paris_naive(dt_value: object) -> datetime | None:
 
 
 def _compute_match_windows(df_full: pd.DataFrame, settings: AppSettings) -> pd.DataFrame:
-    """Construit les fenêtres temporelles des matchs (epoch seconds) pour l'association média."""
+    """Construit les fenêtres temporelles des matchs (epoch seconds) pour l'association média.
+
+    Améliorations:
+    - Gère les start_time NULL avec un diagnostic
+    - Utilise une durée par défaut de 12 minutes si time_played_seconds est NULL
+    """
     if df_full is None or df_full.empty:
         return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
 
@@ -107,6 +112,9 @@ def _compute_match_windows(df_full: pd.DataFrame, settings: AppSettings) -> pd.D
         return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
 
     base = df_full[cols].copy()
+
+    # Filtrer les matchs avec start_time NULL pour diagnostic (mais ne pas les exclure complètement)
+    # On les exclura seulement à la fin si on ne peut pas créer de fenêtre valide
     base["_start"] = base["start_time"].apply(_to_paris_naive)
 
     def _end_from_row(r: pd.Series) -> datetime | None:
@@ -133,6 +141,7 @@ def _compute_match_windows(df_full: pd.DataFrame, settings: AppSettings) -> pd.D
     out = base[["match_id", "start_epoch", "end_epoch", "_start"]].rename(
         columns={"_start": "start_time"}
     )
+    # Exclure uniquement les lignes où on ne peut pas créer de fenêtre valide
     out = out.dropna(subset=["match_id", "start_epoch", "end_epoch"]).copy()
     if out.empty:
         return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
@@ -330,27 +339,37 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
     windows_df = _compute_match_windows(df_full, settings)
     assoc_df = _associate_media_to_matches(media_df, windows_df)
 
-    # Diagnostic : fenêtres de matchs disponibles
+    assigned = assoc_df.loc[assoc_df["match_id"].notna()].copy()
+    unassigned = assoc_df.loc[assoc_df["match_id"].isna()].copy()
+
+    # Diagnostic unifié : afficher un seul message informatif
     if windows_df.empty:
-        st.warning(
-            "⚠️ Aucune fenêtre temporelle de match disponible pour l'association. "
-            "Vérifiez que les matchs ont bien des dates de départ (`start_time`)."
+        # Compter combien de matchs ont start_time NULL pour diagnostic
+        null_start_count = 0
+        if df_full is not None and not df_full.empty and "start_time" in df_full.columns:
+            null_start_count = df_full["start_time"].isna().sum()
+
+        if null_start_count > 0:
+            st.warning(
+                f"⚠️ Aucune fenêtre temporelle disponible : {null_start_count} match(s) ont une date de départ manquante (`start_time` NULL). "
+                "Vérifiez la synchronisation des données."
+            )
+        else:
+            st.warning(
+                "⚠️ Aucune fenêtre temporelle de match disponible pour l'association. "
+                "Vérifiez que les matchs ont bien des dates de départ (`start_time`)."
+            )
+    elif assigned.empty and not unassigned.empty:
+        # Seulement afficher ce message si windows_df n'est pas vide (sinon déjà couvert ci-dessus)
+        st.info(
+            f"Aucun média n'a pu être associé à un match. "
+            f"Vérifiez la tolérance temporelle dans Paramètres → Médias (actuelle: {int(getattr(settings, 'media_tolerance_minutes', 0) or 0)} min)."
         )
 
     # Affichage
     if not group_by_match:
         _render_media_grid(assoc_df, cols_per_row=int(cols_per_row))
         return
-
-    assigned = assoc_df.loc[assoc_df["match_id"].notna()].copy()
-    unassigned = assoc_df.loc[assoc_df["match_id"].isna()].copy()
-
-    # Si aucun média n'est associé, afficher directement les non associés
-    if assigned.empty and not unassigned.empty:
-        st.info(
-            f"Aucun média n'a pu être associé à un match. "
-            f"Vérifiez la tolérance temporelle dans Paramètres → Médias (actuelle: {int(getattr(settings, 'media_tolerance_minutes', 0) or 0)} min)."
-        )
         st.subheader(f"Médias non associés ({len(unassigned)})")
         _render_media_grid(unassigned, cols_per_row=int(cols_per_row))
         return

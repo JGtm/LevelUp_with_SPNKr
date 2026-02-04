@@ -534,6 +534,11 @@ class DuckDBSyncEngine:
                     match_id, self._xuid, personal_scores
                 )
 
+            # Extraire les médailles
+            from src.data.sync.transformers import extract_medals
+
+            medal_rows = extract_medals(stats_json, self._xuid)
+
             # Insérer dans DuckDB (protégé par lock)
             async with self._db_lock:
                 self._insert_match_row(match_row)
@@ -549,6 +554,10 @@ class DuckDBSyncEngine:
                 if personal_score_rows:
                     self._insert_personal_score_rows(personal_score_rows)
                     result["personal_scores"] = len(personal_score_rows)
+
+                if medal_rows:
+                    self._insert_medal_rows(medal_rows)
+                    result["medals"] = len(medal_rows)
 
                 if alias_rows:
                     self._insert_alias_rows(alias_rows)
@@ -714,6 +723,26 @@ class DuckDBSyncEngine:
                         row.award_count,
                         row.award_score,
                         now,
+                    ),
+                )
+
+    def _insert_medal_rows(self, rows: list) -> None:
+        """Insère les lignes medals_earned."""
+        if not rows:
+            return
+
+        conn = self._get_connection()
+
+        for row in rows:
+            with contextlib.suppress(Exception):
+                conn.execute(
+                    """INSERT OR REPLACE INTO medals_earned (
+                        match_id, medal_name_id, count
+                    ) VALUES (?, ?, ?)""",
+                    (
+                        row.match_id,
+                        row.medal_name_id,
+                        row.count,
                     ),
                 )
 

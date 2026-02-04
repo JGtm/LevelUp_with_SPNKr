@@ -601,9 +601,9 @@ class DuckDBRepository:
         conn = self._get_connection()
 
         try:
-            # Vérifier si la table existe
+            # Vérifier si la table existe (DuckDB utilise information_schema, pas sqlite_master)
             tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='highlight_events'"
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'highlight_events'"
             ).fetchall()
             if not tables:
                 return {}
@@ -662,6 +662,176 @@ class DuckDBRepository:
                 [limit],
             )
             return [(row[0], row[1]) for row in result.fetchall()]
+        except Exception:
+            return []
+
+    def load_match_rosters(
+        self,
+        match_id: str,
+    ) -> dict[str, Any] | None:
+        """Charge les rosters d'un match depuis highlight_events et match_stats.
+
+        Extrait les joueurs depuis highlight_events et utilise match_stats pour
+        déterminer l'équipe du joueur principal.
+
+        Returns:
+            None si le match n'existe pas ou si les données sont insuffisantes.
+            Sinon un dict avec la structure:
+            {
+                "my_team_id": int,
+                "my_team": [{"xuid": str, "gamertag": str|None, "team_id": int|None, "is_me": bool}],
+                "enemy_team": [...],
+            }
+        """
+        conn = self._get_connection()
+
+        try:
+            # Obtenir le team_id du joueur principal depuis match_stats
+            match_info = conn.execute(
+                "SELECT team_id FROM match_stats WHERE match_id = ?",
+                [match_id],
+            ).fetchone()
+
+            if not match_info:
+                return None
+
+            my_team_id = match_info[0]
+            if my_team_id is None:
+                return None
+
+            # Extraire tous les joueurs uniques depuis highlight_events
+            players_result = conn.execute(
+                """
+                SELECT DISTINCT xuid, gamertag
+                FROM highlight_events
+                WHERE match_id = ? AND xuid IS NOT NULL AND xuid != ''
+                ORDER BY gamertag NULLS LAST, xuid
+                """,
+                [match_id],
+            ).fetchall()
+
+            if not players_result:
+                return None
+
+            # Construire les listes d'équipes
+            my_team = []
+            enemy_team = []
+
+            for xuid, gamertag in players_result:
+                xuid_str = str(xuid).strip()
+                is_me = xuid_str == self._xuid
+
+                player_data = {
+                    "xuid": xuid_str,
+                    "gamertag": gamertag if gamertag else None,
+                    "team_id": my_team_id
+                    if is_me
+                    else None,  # Approximation: on ne connaît que notre équipe
+                    "is_me": is_me,
+                    "is_bot": False,  # Impossible à déterminer depuis highlight_events
+                    "display_name": gamertag if gamertag else xuid_str,
+                }
+
+                if is_me:
+                    my_team.append(player_data)
+                else:
+                    enemy_team.append(player_data)
+
+            # Trier: moi en premier, puis alphabétique
+            def _sort_key(r: dict[str, Any]) -> tuple[int, str]:
+                me_rank = 0 if r.get("is_me") else 1
+                name = str(r.get("gamertag") or r.get("xuid") or "").strip().lower()
+                return (me_rank, name)
+
+            my_team.sort(key=_sort_key)
+            enemy_team.sort(key=_sort_key)
+
+            return {
+                "my_team_id": int(my_team_id),
+                "my_team_name": None,  # Non disponible depuis match_stats seul
+                "my_team": my_team,
+                "enemy_team": enemy_team,
+                "enemy_team_ids": [],  # Impossible à déterminer précisément
+                "enemy_team_names": [],
+            }
+        except Exception as e:
+            logger.warning(f"Erreur lors du chargement des rosters pour {match_id}: {e}")
+            return None
+
+    def load_matches_with_teammate(
+        self,
+        teammate_xuid: str,
+    ) -> list[str]:
+        """Retourne les match_id joués avec un coéquipier.
+
+        Utilise highlight_events pour détecter la présence dans le même match.
+
+        Args:
+            teammate_xuid: XUID du coéquipier.
+
+        Returns:
+            Liste des match_id où les deux joueurs apparaissent.
+        """
+        conn = self._get_connection()
+
+        try:
+            # Vérifier si highlight_events existe
+            tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'highlight_events'"
+            ).fetchall()
+            if not tables:
+                return []
+
+            # Trouver les matchs où les deux joueurs apparaissent
+            result = conn.execute(
+                """
+                SELECT DISTINCT me.match_id
+                FROM highlight_events me
+                INNER JOIN highlight_events tm ON me.match_id = tm.match_id
+                WHERE me.xuid = ? AND tm.xuid = ?
+                ORDER BY me.match_id DESC
+                """,
+                [self._xuid, teammate_xuid],
+            )
+            return [row[0] for row in result.fetchall()]
+        except Exception:
+            return []
+
+    def load_same_team_match_ids(
+        self,
+        teammate_xuid: str,
+    ) -> list[str]:
+        """Retourne les match_id où les deux joueurs étaient dans la même équipe.
+
+        Utilise match_stats pour vérifier le team_id.
+
+        Args:
+            teammate_xuid: XUID du coéquipier.
+
+        Returns:
+            Liste des match_id où les deux joueurs étaient dans la même équipe.
+        """
+        conn = self._get_connection()
+
+        try:
+            # Trouver les matchs où les deux joueurs ont le même team_id
+            result = conn.execute(
+                """
+                SELECT DISTINCT ms1.match_id
+                FROM match_stats ms1
+                INNER JOIN match_stats ms2 ON ms1.match_id = ms2.match_id
+                WHERE ms1.team_id = ms2.team_id
+                  AND ms1.match_id IN (
+                      SELECT DISTINCT match_id FROM highlight_events WHERE xuid = ?
+                  )
+                  AND ms2.match_id IN (
+                      SELECT DISTINCT match_id FROM highlight_events WHERE xuid = ?
+                  )
+                ORDER BY ms1.match_id DESC
+                """,
+                [self._xuid, teammate_xuid],
+            )
+            return [row[0] for row in result.fetchall()]
         except Exception:
             return []
 

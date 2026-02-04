@@ -8,6 +8,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from src.analysis.performance_score import compute_performance_series
 from src.config import HALO_COLORS
 from src.visualization.distributions import (
     plot_correlation_scatter,
@@ -44,6 +45,13 @@ def render_timeseries_page(
     if dff.empty:
         st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
         return
+
+    # Calculer le score de performance AVANT d'afficher les distributions
+    # (nécessaire pour la distribution du score de performance)
+    history_df = df_full if df_full is not None else dff
+    if "performance_score" not in dff.columns:
+        dff = dff.copy()
+        dff["performance_score"] = compute_performance_series(dff, history_df)
 
     with st.spinner("Génération des graphes…"):
         fig = plot_timeseries(dff)
@@ -100,7 +108,7 @@ def render_timeseries_page(
                         show_kde=True,
                         color=colors["green"],
                     )
-                    st.plotly_chart(fig_kills, width="stretch")
+                    st.plotly_chart(fig_kills, use_container_width=True)
                 else:
                     st.info("Pas assez de données de kills.")
             else:

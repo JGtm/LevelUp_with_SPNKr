@@ -247,6 +247,15 @@ class XuidAliasRow:
     source: str = "sync"
 
 
+@dataclass
+class MedalEarnedRow:
+    """Ligne pour la table medals_earned."""
+
+    match_id: str
+    medal_name_id: int
+    count: int
+
+
 # =============================================================================
 # Sprint 8 : Nouvelles tables pour backfill
 # =============================================================================

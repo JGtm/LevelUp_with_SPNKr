@@ -22,6 +22,7 @@ from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.data.sync.models import (
     HighlightEventRow,
     MatchStatsRow,
+    MedalEarnedRow,
     PlayerMatchStatsRow,
     XuidAliasRow,
 )
@@ -851,6 +852,77 @@ def extract_game_variant_category(match_json: dict[str, Any]) -> int | None:
             return cat
 
     return None
+
+
+# =============================================================================
+# Extracteur de médailles
+# =============================================================================
+
+
+def extract_medals(
+    match_json: dict[str, Any],
+    xuid: str,
+) -> list[MedalEarnedRow]:
+    """Extrait les médailles d'un joueur depuis le JSON du match.
+
+    Args:
+        match_json: JSON brut du match depuis l'API SPNKr.
+        xuid: XUID du joueur.
+
+    Returns:
+        Liste de MedalEarnedRow avec les médailles obtenues.
+    """
+    match_id = match_json.get("MatchId")
+    if not isinstance(match_id, str):
+        return []
+
+    players = match_json.get("Players")
+    if not isinstance(players, list):
+        return []
+
+    # Trouver le joueur
+    me = _find_player(players, xuid)
+    if me is None:
+        return []
+
+    # Extraire les médailles depuis PlayerTeamStats[].Stats.CoreStats.Medals[]
+    pts = me.get("PlayerTeamStats")
+    if not isinstance(pts, list):
+        return []
+
+    medals_dict: dict[int, int] = {}  # medal_name_id -> total_count
+
+    for team_stats in pts:
+        if not isinstance(team_stats, dict):
+            continue
+
+        stats = team_stats.get("Stats")
+        if not isinstance(stats, dict):
+            continue
+
+        core_stats = stats.get("CoreStats")
+        if not isinstance(core_stats, dict):
+            continue
+
+        medals = core_stats.get("Medals")
+        if not isinstance(medals, list):
+            continue
+
+        for medal in medals:
+            if not isinstance(medal, dict):
+                continue
+
+            name_id = _safe_int(medal.get("NameId"))
+            count = _safe_int(medal.get("Count"))
+
+            if name_id is not None and count is not None and count > 0:
+                medals_dict[name_id] = medals_dict.get(name_id, 0) + count
+
+    # Convertir en MedalEarnedRow
+    return [
+        MedalEarnedRow(match_id=match_id, medal_name_id=name_id, count=count)
+        for name_id, count in medals_dict.items()
+    ]
 
 
 # =============================================================================

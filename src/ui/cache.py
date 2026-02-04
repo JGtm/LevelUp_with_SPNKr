@@ -105,11 +105,19 @@ def cached_same_team_match_ids_with_friend(
 ) -> tuple[str, ...]:
     """Retourne les match_id (str) joués dans la même équipe avec un ami (cache).
 
-    DuckDB v4 n'a pas le JSON brut nécessaire, retourne tuple vide.
+    Utilise DuckDBRepository pour DuckDB v4, sinon fallback legacy.
     """
-    # DuckDB v4 : pas de données JSON brutes pour cette requête
+    _ = db_key
+    # DuckDB v4 : utiliser le repository
     if _is_duckdb_v4_path(db_path):
-        return ()
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(self_xuid).strip())
+            match_ids = repo.load_same_team_match_ids(str(friend_xuid).strip())
+            return tuple(sorted(match_ids))
+        except Exception:
+            return ()
     rows = query_matches_with_friend(db_path, self_xuid, friend_xuid)
     ids = {str(r.match_id) for r in rows if getattr(r, "same_team", False)}
     return tuple(sorted(ids))
@@ -124,11 +132,22 @@ def cached_query_matches_with_friend(
 ):
     """Requête les matchs joués avec un ami (cache).
 
-    DuckDB v4 n'a pas le JSON brut nécessaire, retourne liste vide.
+    Utilise DuckDBRepository pour DuckDB v4, sinon fallback legacy.
     """
-    # DuckDB v4 : pas de données JSON brutes pour cette requête
+    _ = db_key
+    # DuckDB v4 : utiliser le repository
     if _is_duckdb_v4_path(db_path):
-        return []
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(self_xuid).strip())
+            match_ids = repo.load_matches_with_teammate(str(friend_xuid).strip())
+            # Convertir en format compatible avec l'ancien code
+            # L'ancien code retourne une liste de MatchRow, mais ici on retourne juste les IDs
+            # Les pages qui utilisent cette fonction devront adapter leur code
+            return match_ids
+        except Exception:
+            return []
     return query_matches_with_friend(db_path, self_xuid, friend_xuid)
 
 
@@ -204,12 +223,18 @@ def cached_load_match_rosters(
 ):
     """Charge les rosters d'un match (cache).
 
-    Note: DuckDB v4 ne stocke pas les rosters JSON bruts, retourne None.
+    Utilise DuckDBRepository pour DuckDB v4, sinon fallback legacy.
     """
     _ = db_key
-    # DuckDB v4 : pas de rosters JSON disponibles
+    # DuckDB v4 : utiliser le repository
     if _is_duckdb_v4_path(db_path):
-        return None
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(xuid).strip())
+            return repo.load_match_rosters(match_id)
+        except Exception:
+            return None
 
     # Legacy SQLite
     return load_match_rosters(db_path, match_id, xuid)
@@ -233,9 +258,9 @@ def cached_load_highlight_events_for_match(
             import duckdb
 
             conn = duckdb.connect(db_path, read_only=True)
-            # Vérifier si la table existe
+            # Vérifier si la table existe (DuckDB utilise information_schema, pas sqlite_master)
             tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='highlight_events'"
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'highlight_events'"
             ).fetchall()
             if not tables:
                 conn.close()
