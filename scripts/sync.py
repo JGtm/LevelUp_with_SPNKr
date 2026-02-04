@@ -107,6 +107,30 @@ def _resolve_player_in_db(db_path: str, player_query: str) -> tuple[str, str | N
         cleaned = player_query.strip()
         return cleaned, cleaned, cleaned
 
+    # Essayer d'abord depuis db_profiles.json (pour DuckDB v4)
+    xuid_from_profiles = _get_xuid_for_gamertag(player_query)
+    if xuid_from_profiles:
+        return xuid_from_profiles, xuid_from_profiles, player_query.strip()
+
+    # Essayer depuis la DB DuckDB du joueur si elle existe (pour DuckDB v4)
+    player_db_path = REPO_ROOT / "data" / "players" / player_query / "stats.duckdb"
+    if player_db_path.exists():
+        try:
+            import duckdb
+
+            conn = duckdb.connect(str(player_db_path), read_only=True)
+            # Chercher dans xuid_aliases
+            result = conn.execute(
+                "SELECT xuid FROM xuid_aliases WHERE LOWER(gamertag) = LOWER(?) LIMIT 1",
+                [player_query],
+            ).fetchone()
+            conn.close()
+            if result and result[0]:
+                xuid = str(result[0]).strip()
+                return xuid, xuid, player_query.strip()
+        except Exception:
+            pass
+
     try:
         from src.db.loaders import get_players_from_db
 
@@ -745,13 +769,25 @@ def _get_xuid_for_gamertag(gamertag: str) -> str | None:
 
     try:
         with open(profiles_path) as f:
-            profiles = json.load(f)
+            data = json.load(f)
 
-        for profile in profiles.get("profiles", []):
-            if profile.get("gamertag", "").lower() == gamertag.lower():
-                return profile.get("xuid")
-            if profile.get("label", "").lower() == gamertag.lower():
-                return profile.get("xuid")
+        # db_profiles.json a la structure: {"profiles": {"JGtm": {"xuid": "...", ...}}}
+        profiles_dict = data.get("profiles", {})
+        if not isinstance(profiles_dict, dict):
+            return None
+
+        # Chercher directement par clé (gamertag)
+        gamertag_lower = gamertag.lower()
+        for key, profile in profiles_dict.items():
+            if isinstance(profile, dict):
+                # Vérifier si la clé correspond
+                if key.lower() == gamertag_lower:
+                    return profile.get("xuid")
+                # Vérifier dans les valeurs du profil
+                if profile.get("gamertag", "").lower() == gamertag_lower:
+                    return profile.get("xuid")
+                if profile.get("waypoint_player", "").lower() == gamertag_lower:
+                    return profile.get("xuid")
 
         return None
     except Exception:
