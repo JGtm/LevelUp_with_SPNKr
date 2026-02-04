@@ -2,24 +2,30 @@
 """Script de backfill pour remplir les données manquantes.
 
 Ce script identifie les matchs existants qui ont des données manquantes
-(medals, highlight_events, skill stats, personal_scores) et les remplit
-en re-téléchargeant les données nécessaires depuis l'API SPNKr.
+(medals, highlight_events, skill stats, personal_scores, performance_scores)
+et les remplit en re-téléchargeant les données nécessaires depuis l'API SPNKr.
 
 Usage:
     # Backfill toutes les données pour un joueur
-    python scripts/backfill_data.py --player JGtm
+    python scripts/backfill_data.py --player JGtm --all-data
 
     # Backfill uniquement les médailles
     python scripts/backfill_data.py --player JGtm --medals
 
+    # Calculer les scores de performance manquants
+    python scripts/backfill_data.py --player JGtm --performance-scores
+
     # Backfill pour tous les joueurs
-    python scripts/backfill_data.py --all
+    python scripts/backfill_data.py --all --all-data
 
     # Mode dry-run (liste seulement)
     python scripts/backfill_data.py --player JGtm --dry-run
 
     # Limiter le nombre de matchs
     python scripts/backfill_data.py --player JGtm --max-matches 100
+
+Note: Pour combiner sync + backfill en une seule commande, utilisez :
+    python scripts/sync.py --delta --player JGtm --with-backfill
 """
 
 from __future__ import annotations

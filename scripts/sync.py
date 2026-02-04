@@ -6,6 +6,7 @@ Point d'entrée unique pour toutes les opérations de synchronisation :
 - Reconstruction du cache (MatchCache)
 - Téléchargement des assets (médailles, maps)
 - Application des index
+- Backfill des données manquantes
 
 Usage:
     python scripts/sync.py --help
@@ -14,6 +15,8 @@ Usage:
     python scripts/sync.py --rebuild-cache            # Reconstruit MatchCache
     python scripts/sync.py --apply-indexes            # Applique les index optimisés
     python scripts/sync.py --delta --with-assets      # Sync + assets
+    python scripts/sync.py --delta --player JGtm --with-backfill  # Sync + backfill complet
+    python scripts/sync.py --delta --player JGtm --backfill-performance-scores  # Sync + scores performance
 """
 
 from __future__ import annotations
@@ -1297,6 +1300,8 @@ Exemples:
   python scripts/sync.py --rebuild-cache            # Reconstruit le cache
   python scripts/sync.py --apply-indexes            # Applique les index
   python scripts/sync.py --delta --with-assets      # Sync + téléchargement assets
+  python scripts/sync.py --delta --player JGtm --with-backfill  # Sync + backfill complet (toutes données)
+  python scripts/sync.py --delta --player JGtm --backfill-performance-scores  # Sync + calcul scores performance
   python scripts/sync.py --stats                    # Affiche les statistiques
         """,
     )
@@ -1369,6 +1374,16 @@ Exemples:
         "--with-assets",
         action="store_true",
         help="Télécharge les assets manquants",
+    )
+    parser.add_argument(
+        "--with-backfill",
+        action="store_true",
+        help="Effectue un backfill complet des données manquantes après la synchronisation (toutes les données)",
+    )
+    parser.add_argument(
+        "--backfill-performance-scores",
+        action="store_true",
+        help="Calcule les scores de performance manquants après la synchronisation",
     )
     parser.add_argument(
         "--migrate-parquet",
@@ -1477,6 +1492,64 @@ Exemples:
         ok, msg = download_assets(db_path)
         if not ok:
             success = False
+
+    # Backfill des données manquantes après sync
+    if args.with_backfill or args.backfill_performance_scores:
+        if not args.player:
+            logger.warning(
+                "--with-backfill nécessite --player. "
+                "Utilisez scripts/backfill_data.py --all pour backfill tous les joueurs."
+            )
+        else:
+            logger.info("Backfill des données manquantes après synchronisation...")
+            try:
+                import asyncio
+
+                from scripts.backfill_data import backfill_player_data
+
+                # Déterminer les options de backfill
+                if args.with_backfill:
+                    # Backfill complet (toutes les données)
+                    backfill_kwargs = {
+                        "dry_run": False,
+                        "max_matches": None,
+                        "requests_per_second": 5,
+                        "all_data": True,
+                    }
+                else:
+                    # Backfill uniquement les scores de performance
+                    backfill_kwargs = {
+                        "dry_run": False,
+                        "max_matches": None,
+                        "requests_per_second": 5,
+                        "performance_scores": True,
+                    }
+
+                result = asyncio.run(backfill_player_data(args.player, **backfill_kwargs))
+
+                logger.info("\n=== Résumé Backfill ===")
+                logger.info(f"Matchs vérifiés: {result['matches_checked']}")
+                logger.info(f"Matchs avec données manquantes: {result['matches_missing_data']}")
+                if result.get("medals_inserted", 0) > 0:
+                    logger.info(f"Médailles insérées: {result['medals_inserted']}")
+                if result.get("events_inserted", 0) > 0:
+                    logger.info(f"Events insérés: {result['events_inserted']}")
+                if result.get("skill_inserted", 0) > 0:
+                    logger.info(f"Skill inséré: {result['skill_inserted']}")
+                if result.get("personal_scores_inserted", 0) > 0:
+                    logger.info(f"Personal scores insérés: {result['personal_scores_inserted']}")
+                if result.get("performance_scores_inserted", 0) > 0:
+                    logger.info(
+                        f"Scores de performance calculés: {result['performance_scores_inserted']}"
+                    )
+                if result.get("aliases_inserted", 0) > 0:
+                    logger.info(f"Aliases insérés: {result['aliases_inserted']}")
+
+            except ImportError as e:
+                logger.warning(f"Impossible d'importer backfill_data: {e}")
+            except Exception as e:
+                logger.error(f"Erreur lors du backfill: {e}")
+                success = False
 
     # Migration vers Parquet (dépréciée depuis v4)
     if args.migrate_parquet:

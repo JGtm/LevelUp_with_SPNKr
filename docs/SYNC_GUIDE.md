@@ -33,7 +33,7 @@ data/players/{gamertag}/stats.duckdb
 Récupère uniquement les nouveaux matchs depuis la dernière synchronisation :
 
 ```bash
-python scripts/sync.py --delta --gamertag MonGamertag
+python scripts/sync.py --delta --player MonGamertag
 ```
 
 **Avantages :**
@@ -46,7 +46,7 @@ python scripts/sync.py --delta --gamertag MonGamertag
 Récupère tous les matchs jusqu'à une limite :
 
 ```bash
-python scripts/sync.py --full --gamertag MonGamertag --max-matches 500
+python scripts/sync.py --full --player MonGamertag --max-matches 500
 ```
 
 **Quand utiliser :**
@@ -54,11 +54,22 @@ python scripts/sync.py --full --gamertag MonGamertag --max-matches 500
 - Récupérer l'historique manquant
 - Après une longue période sans sync
 
-### Sync de Tous les Joueurs
+### Sync avec Backfill
+
+Après la synchronisation, vous pouvez automatiquement remplir les données manquantes :
 
 ```bash
-python scripts/sync.py --all --delta
+# Backfill complet (toutes les données manquantes)
+python scripts/sync.py --delta --player MonGamertag --with-backfill
+
+# Calcul uniquement des scores de performance manquants
+python scripts/sync.py --delta --player MonGamertag --backfill-performance-scores
 ```
+
+**Quand utiliser :**
+- Après une sync pour s'assurer que tous les matchs ont leurs données complètes
+- Pour calculer les scores de performance des nouveaux matchs
+- Pour récupérer les médailles, events ou skill stats manquants
 
 ---
 
@@ -66,14 +77,19 @@ python scripts/sync.py --all --delta
 
 | Option | Description | Défaut |
 |--------|-------------|--------|
-| `--gamertag` | Nom du joueur à synchroniser | Profil par défaut |
-| `--delta` | Mode incrémental | Non |
-| `--full` | Mode complet | Non |
-| `--max-matches` | Nombre max de matchs | 50 |
+| `--player` | Nom du joueur à synchroniser (gamertag ou XUID) | Tous les joueurs |
+| `--delta` | Mode incrémental (nouveaux matchs uniquement) | Non |
+| `--full` | Mode complet (tous les matchs jusqu'à la limite) | Non |
+| `--max-matches` | Nombre max de matchs | 200 |
 | `--match-type` | Type de matchs (`all`, `matchmaking`, `custom`) | `matchmaking` |
-| `--with-skill` | Inclure les données MMR | Oui |
-| `--with-events` | Inclure les highlight events | Oui |
-| `--dry-run` | Simuler sans écrire | Non |
+| `--no-highlight-events` | Ne pas récupérer les highlight events | Récupère par défaut |
+| `--no-aliases` | Ne pas mettre à jour les alias XUID | Met à jour par défaut |
+| `--with-assets` | Télécharge les assets manquants (médailles, maps) | Non |
+| `--with-backfill` | Effectue un backfill complet après la sync | Non |
+| `--backfill-performance-scores` | Calcule les scores de performance manquants | Non |
+| `--rebuild-cache` | Reconstruit le cache MatchCache | Non |
+| `--apply-indexes` | Applique les index optimisés | Non |
+| `--stats` | Affiche les statistiques de la DB | Non |
 | `--verbose` | Mode verbeux | Non |
 
 ---
@@ -210,14 +226,17 @@ Certains matchs très anciens peuvent ne plus être disponibles sur les serveurs
 
 ```bash
 # Sync rapide avant de jouer
-python scripts/sync.py --delta --gamertag MonGamertag
+python scripts/sync.py --delta --player MonGamertag
 ```
 
 ### Après une Session de Jeu
 
 ```bash
-# Sync pour voir les nouveaux matchs
-python scripts/sync.py --delta --gamertag MonGamertag
+# Sync pour voir les nouveaux matchs avec backfill complet
+python scripts/sync.py --delta --player MonGamertag --with-backfill
+
+# Ou seulement les scores de performance
+python scripts/sync.py --delta --player MonGamertag --backfill-performance-scores
 ```
 
 ---
@@ -233,7 +252,7 @@ Si vous avez des données d'une ancienne version :
 python scripts/migrate_all_to_duckdb.py --gamertag MonGamertag
 
 # Vérifier la migration
-python scripts/sync.py --gamertag MonGamertag --stats
+python scripts/sync.py --player MonGamertag --stats
 ```
 
 ### Archiver les Anciens Matchs
@@ -262,11 +281,11 @@ Si la sync semble bloquée :
 Si les stats ne correspondent pas à Halo Waypoint :
 
 ```bash
-# Forcer une resync complète
-python scripts/sync.py --full --gamertag MonGamertag --max-matches 100
+# Forcer une resync complète avec backfill
+python scripts/sync.py --full --player MonGamertag --max-matches 100 --with-backfill
 
-# Rafraîchir les vues
-python scripts/sync.py --gamertag MonGamertag --refresh-views
+# Vérifier les stats
+python scripts/sync.py --player MonGamertag --stats
 ```
 
 ### Base de Données Corrompue
@@ -279,5 +298,5 @@ python scripts/backup_player.py --gamertag MonGamertag
 
 # Supprimer et recréer
 rm data/players/MonGamertag/stats.duckdb
-python scripts/sync.py --full --gamertag MonGamertag
+python scripts/sync.py --full --player MonGamertag --with-backfill
 ```
