@@ -345,14 +345,17 @@ def refresh_spnkr_db_via_api(
 
     Écrit directement dans la DB cible avec --resume (pas de copie temporaire).
 
+    IMPORTANT: Toutes les données sont toujours récupérées (highlights, skill, aliases).
+    Les paramètres with_highlight_events et with_aliases sont forcés à True.
+
     Args:
         db_path: Chemin vers la DB cible.
         player: Gamertag ou XUID du joueur.
         match_type: Type de matchs (all, matchmaking, custom, local).
         max_matches: Nombre maximum de matchs à récupérer.
         rps: Requêtes par seconde.
-        with_highlight_events: Activer les highlight events (défaut: True).
-        with_aliases: Activer le refresh des aliases (défaut: True).
+        with_highlight_events: Ignoré (toujours True).
+        with_aliases: Ignoré (toujours True).
         delta: Mode delta - s'arrête dès qu'un match connu est rencontré (défaut: False).
         timeout_seconds: Timeout en secondes (défaut: 180).
         repo_root: Racine du repo (déduit automatiquement si None).
@@ -360,6 +363,8 @@ def refresh_spnkr_db_via_api(
     Returns:
         Tuple (succès, message).
     """
+    # Note: with_highlight_events et with_aliases sont toujours True
+    # Les flags --no-* ne sont jamais passés au script d'import
     if repo_root is None:
         repo_root = Path(__file__).resolve().parent.parent.parent
     importer = repo_root / "scripts" / "spnkr_import_db.py"
@@ -393,12 +398,8 @@ def refresh_spnkr_db_via_api(
         str(int(rps)),
         "--resume",  # Crucial: ne pas supprimer les données existantes
     ]
-    # Highlight events et aliases sont activés par défaut côté import
-    # On n'ajoute les flags --no-* que si explicitement désactivés
-    if not with_highlight_events:
-        cmd.append("--no-highlight-events")
-    if not with_aliases:
-        cmd.append("--no-aliases")
+    # Toutes les données sont toujours récupérées (highlights, skill, aliases)
+    # Les flags --no-* ne sont jamais ajoutés
     # Mode delta: arrêt dès match connu (sync rapide)
     if delta:
         cmd.append("--delta")
@@ -439,12 +440,17 @@ def sync_all_players(
 ) -> tuple[bool, str]:
     """Synchronise tous les joueurs d'une DB fusionnée (table Players).
 
+    IMPORTANT: Toutes les données sont toujours récupérées (highlights, skill, aliases).
+    Les paramètres with_highlight_events et with_aliases sont forcés à True.
+
     Si la DB n'a pas de table Players, tente de déduire le joueur depuis le nom.
     Pour DuckDB v4, utilise DuckDBSyncEngine au lieu du script legacy.
 
     Returns:
         Tuple (succès_global, message_résumé).
     """
+    # Note: with_highlight_events et with_aliases sont toujours True
+    # Les flags --no-* ne sont jamais passés au script d'import
     from src.db import get_players_from_db, infer_spnkr_player_from_db_path
 
     players = []
@@ -515,8 +521,8 @@ def sync_all_players(
                 match_type=match_type,
                 max_matches=max_matches,
                 rps=rps,
-                with_highlight_events=with_highlight_events,
-                with_aliases=with_aliases,
+                with_highlight_events=True,  # Toujours True
+                with_aliases=True,  # Toujours True
                 delta=delta,
                 timeout_seconds=timeout_seconds,
             )
@@ -595,20 +601,27 @@ async def sync_player_duckdb_async(
 ) -> tuple[bool, str]:
     """Synchronise un joueur via le nouveau pipeline DuckDB (async).
 
+    IMPORTANT: Toutes les données sont toujours récupérées (highlights, skill, aliases, médailles).
+    Les paramètres sont forcés à True.
+
     Args:
         gamertag: Gamertag du joueur.
         xuid: XUID du joueur.
         delta: Mode delta (True) ou full (False).
         match_type: Type de matchs.
         max_matches: Nombre max de matchs.
-        with_highlight_events: Récupérer les highlight events.
-        with_skill: Récupérer les stats skill/MMR.
-        with_aliases: Mettre à jour les aliases.
+        with_highlight_events: Ignoré (toujours True).
+        with_skill: Ignoré (toujours True).
+        with_aliases: Ignoré (toujours True).
         repo_root: Racine du repo.
 
     Returns:
         Tuple (success, message).
     """
+    # Forcer la récupération de toutes les données
+    with_highlight_events = True
+    with_skill = True
+    with_aliases = True
     if repo_root is None:
         repo_root = Path(__file__).resolve().parent.parent.parent
 
@@ -662,20 +675,26 @@ def sync_player_duckdb(
 
     Wrapper synchrone autour de sync_player_duckdb_async().
 
+    IMPORTANT: Toutes les données sont toujours récupérées (highlights, skill, aliases, médailles).
+
     Args:
         gamertag: Gamertag du joueur.
         xuid: XUID du joueur.
         delta: Mode delta (True) ou full (False).
         match_type: Type de matchs.
         max_matches: Nombre max de matchs.
-        with_highlight_events: Récupérer les highlight events.
-        with_skill: Récupérer les stats skill/MMR.
-        with_aliases: Mettre à jour les aliases.
+        with_highlight_events: Ignoré (toujours True).
+        with_skill: Ignoré (toujours True).
+        with_aliases: Ignoré (toujours True).
         repo_root: Racine du repo.
 
     Returns:
         Tuple (success, message).
     """
+    # Forcer la récupération de toutes les données
+    with_highlight_events = True
+    with_skill = True
+    with_aliases = True
     import asyncio
 
     return asyncio.run(
@@ -710,6 +729,8 @@ def sync_player_auto(
 
     Utilise DuckDB si le joueur a une DB v4, sinon fallback sur SPNKr legacy.
 
+    IMPORTANT: Toutes les données sont toujours récupérées (highlights, skill, aliases, médailles).
+
     Args:
         gamertag: Gamertag du joueur.
         xuid: XUID du joueur.
@@ -717,14 +738,17 @@ def sync_player_auto(
         delta: Mode delta (True) ou full (False).
         match_type: Type de matchs.
         max_matches: Nombre max de matchs.
-        with_highlight_events: Récupérer les highlight events.
-        with_aliases: Mettre à jour les aliases.
+        with_highlight_events: Ignoré (toujours True).
+        with_aliases: Ignoré (toujours True).
         timeout_seconds: Timeout pour le mode legacy.
         repo_root: Racine du repo.
 
     Returns:
         Tuple (success, message).
     """
+    # Forcer la récupération de toutes les données
+    with_highlight_events = True
+    with_aliases = True
     # Priorité 1: DuckDB v4
     if is_duckdb_player(gamertag, repo_root):
         return sync_player_duckdb(

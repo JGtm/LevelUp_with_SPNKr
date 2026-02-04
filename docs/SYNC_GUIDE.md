@@ -80,10 +80,8 @@ python scripts/sync.py --delta --player MonGamertag --backfill-performance-score
 | `--player` | Nom du joueur à synchroniser (gamertag ou XUID) | Tous les joueurs |
 | `--delta` | Mode incrémental (nouveaux matchs uniquement) | Non |
 | `--full` | Mode complet (tous les matchs jusqu'à la limite) | Non |
-| `--max-matches` | Nombre max de matchs | 200 |
+| `--max-matches` | Nombre max de matchs | 200 (delta) / 1000 (full) |
 | `--match-type` | Type de matchs (`all`, `matchmaking`, `custom`) | `matchmaking` |
-| `--no-highlight-events` | Ne pas récupérer les highlight events | Récupère par défaut |
-| `--no-aliases` | Ne pas mettre à jour les alias XUID | Met à jour par défaut |
 | `--with-assets` | Télécharge les assets manquants (médailles, maps) | Non |
 | `--with-backfill` | Effectue un backfill complet après la sync | Non |
 | `--backfill-performance-scores` | Calcule les scores de performance manquants | Non |
@@ -91,6 +89,15 @@ python scripts/sync.py --delta --player MonGamertag --backfill-performance-score
 | `--apply-indexes` | Applique les index optimisés | Non |
 | `--stats` | Affiche les statistiques de la DB | Non |
 | `--verbose` | Mode verbeux | Non |
+
+**Note importante :** Toutes les données sont toujours récupérées pour chaque match synchronisé :
+- ✅ Stats de base (kills, deaths, assists, KDA, etc.)
+- ✅ Médailles
+- ✅ Personal scores
+- ✅ Score de performance
+- ✅ Highlight events (kills/deaths depuis les films)
+- ✅ Skill/MMR (données de skill par match)
+- ✅ Aliases XUID → Gamertag
 
 ---
 
@@ -114,6 +121,8 @@ python openspartan_launcher.py run+refresh --player MonGamertag --delta
 ---
 
 ## Types de Données Synchronisées
+
+**Toutes les données suivantes sont automatiquement récupérées pour chaque match synchronisé.** Il n'est pas possible de désactiver la récupération de certaines données, garantissant ainsi une base de données complète et cohérente.
 
 ### match_stats
 

@@ -8,6 +8,15 @@ Point d'entrée unique pour toutes les opérations de synchronisation :
 - Application des index
 - Backfill des données manquantes
 
+IMPORTANT: Toutes les données sont toujours récupérées pour chaque match :
+- Stats de base (kills, deaths, assists, KDA, etc.)
+- Médailles
+- Personal scores
+- Score de performance
+- Highlight events (kills/deaths depuis les films)
+- Skill/MMR (données de skill par match)
+- Aliases XUID → Gamertag
+
 Usage:
     python scripts/sync.py --help
     python scripts/sync.py --delta                    # Sync incrémentale
@@ -870,18 +879,26 @@ def sync_delta(
     Utilise automatiquement le nouveau pipeline DuckDB (Sprint 4.7) si le joueur
     a une DB DuckDB v4. Sinon, fallback sur le pipeline legacy.
 
+    IMPORTANT: Toutes les données sont toujours récupérées (highlights, skill, aliases, médailles).
+    Les paramètres with_highlight_events et with_aliases sont conservés pour compatibilité
+    mais sont toujours forcés à True.
+
     Args:
         db_path: Chemin vers la base de données.
         player: Joueur à synchroniser (gamertag ou XUID).
         match_type: Type de matchs à récupérer.
         max_matches: Nombre maximum de matchs.
-        with_highlight_events: Inclure les highlight events.
-        with_aliases: Mettre à jour les alias XUID.
+        with_highlight_events: Ignoré (toujours True).
+        with_aliases: Ignoré (toujours True).
         force_duckdb: Forcer l'utilisation du pipeline DuckDB.
 
     Returns:
         Tuple (success, message).
     """
+    # Forcer la récupération de toutes les données
+    with_highlight_events = True
+    with_aliases = True
+
     logger.info("Synchronisation incrémentale (delta)...")
 
     # Essayer le nouveau pipeline DuckDB si applicable
@@ -979,9 +996,14 @@ def _try_sync_duckdb(
 ) -> tuple[bool, str] | None:
     """Essaie de synchroniser via le nouveau pipeline DuckDB.
 
+    Force toujours with_highlight_events=True, with_skill=True, with_aliases=True.
+
     Returns:
         Tuple (success, message) si DuckDB utilisé, None sinon.
     """
+    # Forcer la récupération de toutes les données
+    with_highlight_events = True
+    with_aliases = True
     try:
         from src.ui.sync import is_duckdb_player, sync_player_duckdb
 
@@ -1041,18 +1063,26 @@ def sync_full(
     Utilise automatiquement le nouveau pipeline DuckDB (Sprint 4.7) si le joueur
     a une DB DuckDB v4. Sinon, fallback sur le pipeline legacy.
 
+    IMPORTANT: Toutes les données sont toujours récupérées (highlights, skill, aliases, médailles).
+    Les paramètres with_highlight_events et with_aliases sont conservés pour compatibilité
+    mais sont toujours forcés à True.
+
     Args:
         db_path: Chemin vers la base de données.
         player: Joueur à synchroniser (gamertag ou XUID).
         match_type: Type de matchs à récupérer.
         max_matches: Nombre maximum de matchs.
-        with_highlight_events: Inclure les highlight events.
-        with_aliases: Mettre à jour les alias XUID.
+        with_highlight_events: Ignoré (toujours True).
+        with_aliases: Ignoré (toujours True).
         force_duckdb: Forcer l'utilisation du pipeline DuckDB.
 
     Returns:
         Tuple (success, message).
     """
+    # Forcer la récupération de toutes les données
+    with_highlight_events = True
+    with_aliases = True
+
     logger.info("Synchronisation complète...")
 
     # Essayer le nouveau pipeline DuckDB si applicable
@@ -1289,7 +1319,10 @@ def print_stats(db_path: str, player: str | None = None) -> None:
 def main() -> int:
     """Point d'entrée principal."""
     parser = argparse.ArgumentParser(
-        description="Script de synchronisation unifié pour OpenSpartan Graph",
+        description="Script de synchronisation unifié pour OpenSpartan Graph\n\n"
+        "IMPORTANT: Toutes les données sont toujours récupérées pour chaque match :\n"
+        "  - Stats de base, medailles, personal scores, score de performance\n"
+        "  - Highlight events, skill/MMR, aliases XUID -> Gamertag",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemples:
@@ -1348,16 +1381,8 @@ Exemples:
         default=200,
         help="Nombre maximum de matchs à récupérer",
     )
-    parser.add_argument(
-        "--no-highlight-events",
-        action="store_true",
-        help="Ne pas récupérer les highlight events",
-    )
-    parser.add_argument(
-        "--no-aliases",
-        action="store_true",
-        help="Ne pas mettre à jour les alias XUID",
-    )
+    # Note: Les options --no-highlight-events et --no-aliases ont été supprimées.
+    # Toutes les données (highlights, skill, aliases) sont maintenant toujours récupérées.
 
     # Opérations de maintenance
     parser.add_argument(
@@ -1452,14 +1477,15 @@ Exemples:
             success = False
 
     # Synchronisation
+    # Toutes les données sont toujours récupérées (highlights, skill, aliases)
     if args.delta:
         ok, msg = sync_delta(
             db_path,
             player=args.player,
             match_type=args.match_type,
             max_matches=args.max_matches,
-            with_highlight_events=not args.no_highlight_events,
-            with_aliases=not args.no_aliases,
+            with_highlight_events=True,  # Toujours activé
+            with_aliases=True,  # Toujours activé
         )
         if not ok:
             success = False
@@ -1470,8 +1496,8 @@ Exemples:
             player=args.player,
             match_type=args.match_type,
             max_matches=args.max_matches,
-            with_highlight_events=not args.no_highlight_events,
-            with_aliases=not args.no_aliases,
+            with_highlight_events=True,  # Toujours activé
+            with_aliases=True,  # Toujours activé
         )
         if not ok:
             success = False
