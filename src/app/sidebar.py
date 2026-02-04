@@ -160,6 +160,71 @@ def render_sync_button(
 
         if ok:
             st.success(msg)
+
+            # Backfill après synchronisation si activé
+            backfill_enabled = bool(getattr(settings, "spnkr_refresh_with_backfill", False))
+            # Vérifier aussi si au moins une option de backfill est activée individuellement
+            has_any_backfill_option = any(
+                [
+                    bool(getattr(settings, "spnkr_refresh_backfill_medals", False)),
+                    bool(getattr(settings, "spnkr_refresh_backfill_events", False)),
+                    bool(getattr(settings, "spnkr_refresh_backfill_skill", False)),
+                    bool(getattr(settings, "spnkr_refresh_backfill_personal_scores", False)),
+                    bool(getattr(settings, "spnkr_refresh_backfill_performance_scores", True)),
+                    bool(getattr(settings, "spnkr_refresh_backfill_aliases", False)),
+                ]
+            )
+
+            if backfill_enabled or has_any_backfill_option:
+                import asyncio
+
+                from scripts.backfill_data import backfill_all_players
+
+                with st.spinner("Backfill des données manquantes..."):
+                    backfill_result = asyncio.run(
+                        backfill_all_players(
+                            dry_run=False,
+                            max_matches=None,
+                            requests_per_second=5,
+                            medals=bool(getattr(settings, "spnkr_refresh_backfill_medals", False)),
+                            events=bool(getattr(settings, "spnkr_refresh_backfill_events", False)),
+                            skill=bool(getattr(settings, "spnkr_refresh_backfill_skill", False)),
+                            personal_scores=bool(
+                                getattr(settings, "spnkr_refresh_backfill_personal_scores", False)
+                            ),
+                            performance_scores=bool(
+                                getattr(settings, "spnkr_refresh_backfill_performance_scores", True)
+                            ),
+                            aliases=bool(
+                                getattr(settings, "spnkr_refresh_backfill_aliases", False)
+                            ),
+                            all_data=False,  # On utilise les options individuelles
+                        )
+                    )
+
+                    if backfill_result.get("players_processed", 0) > 0:
+                        totals = backfill_result.get("total_results", {})
+                        backfill_parts = []
+                        if totals.get("medals_inserted", 0) > 0:
+                            backfill_parts.append(f"{totals['medals_inserted']} médaille(s)")
+                        if totals.get("events_inserted", 0) > 0:
+                            backfill_parts.append(f"{totals['events_inserted']} event(s)")
+                        if totals.get("skill_inserted", 0) > 0:
+                            backfill_parts.append("skill")
+                        if totals.get("personal_scores_inserted", 0) > 0:
+                            backfill_parts.append(
+                                f"{totals['personal_scores_inserted']} personal_score(s)"
+                            )
+                        if totals.get("performance_scores_inserted", 0) > 0:
+                            backfill_parts.append(
+                                f"{totals['performance_scores_inserted']} score(s) perf"
+                            )
+                        if totals.get("aliases_inserted", 0) > 0:
+                            backfill_parts.append(f"{totals['aliases_inserted']} alias(es)")
+
+                        if backfill_parts:
+                            st.info(f"Backfill: {', '.join(backfill_parts)}")
+
             if on_complete:
                 on_complete()
             return True

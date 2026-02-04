@@ -94,6 +94,71 @@ def render_settings_page(
             value=bool(getattr(settings, "spnkr_refresh_with_highlight_events", False)),
         )
 
+    with st.expander("Options du bouton Actualiser", expanded=False):
+        st.caption(
+            "Configurez ce que fait le bouton 🔄 Synchroniser dans la sidebar. "
+            "Le backfill remplit les données manquantes pour les matchs existants."
+        )
+
+        # Option pour activer le backfill complet
+        backfill_enabled = st.toggle(
+            "Activer le backfill après synchronisation",
+            value=bool(getattr(settings, "spnkr_refresh_with_backfill", False)),
+            help="Remplit automatiquement les données manquantes après chaque sync",
+        )
+
+        st.markdown("**Données à backfill :**")
+        backfill_all = st.checkbox(
+            "Toutes les données",
+            value=False,
+            help="Cochez pour backfill toutes les données, ou choisissez individuellement ci-dessous",
+            disabled=not backfill_enabled,
+        )
+
+        if backfill_all and backfill_enabled:
+            backfill_medals = True
+            backfill_events = True
+            backfill_skill = True
+            backfill_personal_scores = True
+            backfill_performance_scores = True
+            backfill_aliases = True
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                backfill_medals = st.checkbox(
+                    "Médailles",
+                    value=bool(getattr(settings, "spnkr_refresh_backfill_medals", False)),
+                    disabled=not backfill_enabled,
+                )
+                backfill_events = st.checkbox(
+                    "Highlight events",
+                    value=bool(getattr(settings, "spnkr_refresh_backfill_events", False)),
+                    disabled=not backfill_enabled,
+                )
+                backfill_skill = st.checkbox(
+                    "Stats skill/MMR",
+                    value=bool(getattr(settings, "spnkr_refresh_backfill_skill", False)),
+                    disabled=not backfill_enabled,
+                )
+            with col2:
+                backfill_personal_scores = st.checkbox(
+                    "Personal score awards",
+                    value=bool(getattr(settings, "spnkr_refresh_backfill_personal_scores", False)),
+                    disabled=not backfill_enabled,
+                )
+                backfill_performance_scores = st.checkbox(
+                    "Scores de performance",
+                    value=bool(
+                        getattr(settings, "spnkr_refresh_backfill_performance_scores", True)
+                    ),
+                    help="Calcule les scores de performance manquants (peut être activé même sans backfill général)",
+                )
+                backfill_aliases = st.checkbox(
+                    "Aliases XUID",
+                    value=bool(getattr(settings, "spnkr_refresh_backfill_aliases", False)),
+                    disabled=not backfill_enabled,
+                )
+
     with st.expander("Médias", expanded=True):
         media_enabled = st.toggle("Activer la section Médias", value=bool(settings.media_enabled))
         media_screens_dir = directory_input(
@@ -198,6 +263,13 @@ def render_settings_page(
             spnkr_refresh_max_matches=int(max_matches),
             spnkr_refresh_rps=int(rps),
             spnkr_refresh_with_highlight_events=bool(with_he),
+            spnkr_refresh_with_backfill=bool(backfill_enabled),
+            spnkr_refresh_backfill_medals=bool(backfill_medals),
+            spnkr_refresh_backfill_events=bool(backfill_events),
+            spnkr_refresh_backfill_skill=bool(backfill_skill),
+            spnkr_refresh_backfill_personal_scores=bool(backfill_personal_scores),
+            spnkr_refresh_backfill_performance_scores=bool(backfill_performance_scores),
+            spnkr_refresh_backfill_aliases=bool(backfill_aliases),
             aliases_path=str(aliases_path or "").strip(),
             profiles_path=str(profiles_path or "").strip(),
             profile_assets_download_enabled=bool(profile_assets_download_enabled),

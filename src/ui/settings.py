@@ -45,6 +45,15 @@ class AppSettings:
     spnkr_refresh_rps: int = 3
     spnkr_refresh_with_highlight_events: bool = False
 
+    # Backfill après synchronisation
+    spnkr_refresh_with_backfill: bool = False  # Backfill complet après sync
+    spnkr_refresh_backfill_medals: bool = False
+    spnkr_refresh_backfill_events: bool = False
+    spnkr_refresh_backfill_skill: bool = False
+    spnkr_refresh_backfill_personal_scores: bool = False
+    spnkr_refresh_backfill_performance_scores: bool = True  # Par défaut activé
+    spnkr_refresh_backfill_aliases: bool = False
+
     # Fichiers (overrides optionnels)
     aliases_path: str = ""
     profiles_path: str = ""
@@ -76,7 +85,7 @@ class AppSettings:
 def _coerce_bool(v: Any, default: bool) -> bool:
     if isinstance(v, bool):
         return v
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return bool(v)
     if isinstance(v, str):
         s = v.strip().lower()
@@ -102,7 +111,7 @@ def load_settings() -> AppSettings:
     if not os.path.exists(path):
         return AppSettings()
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             obj = json.load(f) or {}
     except Exception:
         return AppSettings()
@@ -114,23 +123,55 @@ def load_settings() -> AppSettings:
     s.media_enabled = _coerce_bool(obj.get("media_enabled"), s.media_enabled)
     s.media_screens_dir = str(obj.get("media_screens_dir") or "").strip()
     s.media_videos_dir = str(obj.get("media_videos_dir") or "").strip()
-    s.media_tolerance_minutes = max(0, _coerce_int(obj.get("media_tolerance_minutes"), s.media_tolerance_minutes))
-    s.refresh_clears_caches = _coerce_bool(obj.get("refresh_clears_caches"), s.refresh_clears_caches)
+    s.media_tolerance_minutes = max(
+        0, _coerce_int(obj.get("media_tolerance_minutes"), s.media_tolerance_minutes)
+    )
+    s.refresh_clears_caches = _coerce_bool(
+        obj.get("refresh_clears_caches"), s.refresh_clears_caches
+    )
     s.prefer_spnkr_db_if_available = _coerce_bool(
         obj.get("prefer_spnkr_db_if_available"), s.prefer_spnkr_db_if_available
     )
 
-    s.spnkr_refresh_on_start = _coerce_bool(obj.get("spnkr_refresh_on_start"), s.spnkr_refresh_on_start)
+    s.spnkr_refresh_on_start = _coerce_bool(
+        obj.get("spnkr_refresh_on_start"), s.spnkr_refresh_on_start
+    )
     s.spnkr_refresh_on_manual_refresh = _coerce_bool(
         obj.get("spnkr_refresh_on_manual_refresh"), s.spnkr_refresh_on_manual_refresh
     )
     mt = str(obj.get("spnkr_refresh_match_type") or s.spnkr_refresh_match_type).strip().lower()
     if mt in {"all", "matchmaking", "custom", "local"}:
         s.spnkr_refresh_match_type = mt
-    s.spnkr_refresh_max_matches = max(1, _coerce_int(obj.get("spnkr_refresh_max_matches"), s.spnkr_refresh_max_matches))
+    s.spnkr_refresh_max_matches = max(
+        1, _coerce_int(obj.get("spnkr_refresh_max_matches"), s.spnkr_refresh_max_matches)
+    )
     s.spnkr_refresh_rps = max(1, _coerce_int(obj.get("spnkr_refresh_rps"), s.spnkr_refresh_rps))
     s.spnkr_refresh_with_highlight_events = _coerce_bool(
         obj.get("spnkr_refresh_with_highlight_events"), s.spnkr_refresh_with_highlight_events
+    )
+
+    # Backfill après synchronisation
+    s.spnkr_refresh_with_backfill = _coerce_bool(
+        obj.get("spnkr_refresh_with_backfill"), s.spnkr_refresh_with_backfill
+    )
+    s.spnkr_refresh_backfill_medals = _coerce_bool(
+        obj.get("spnkr_refresh_backfill_medals"), s.spnkr_refresh_backfill_medals
+    )
+    s.spnkr_refresh_backfill_events = _coerce_bool(
+        obj.get("spnkr_refresh_backfill_events"), s.spnkr_refresh_backfill_events
+    )
+    s.spnkr_refresh_backfill_skill = _coerce_bool(
+        obj.get("spnkr_refresh_backfill_skill"), s.spnkr_refresh_backfill_skill
+    )
+    s.spnkr_refresh_backfill_personal_scores = _coerce_bool(
+        obj.get("spnkr_refresh_backfill_personal_scores"), s.spnkr_refresh_backfill_personal_scores
+    )
+    s.spnkr_refresh_backfill_performance_scores = _coerce_bool(
+        obj.get("spnkr_refresh_backfill_performance_scores"),
+        s.spnkr_refresh_backfill_performance_scores,
+    )
+    s.spnkr_refresh_backfill_aliases = _coerce_bool(
+        obj.get("spnkr_refresh_backfill_aliases"), s.spnkr_refresh_backfill_aliases
     )
 
     s.aliases_path = str(obj.get("aliases_path") or "").strip()
@@ -140,7 +181,10 @@ def load_settings() -> AppSettings:
         obj.get("profile_assets_download_enabled"), s.profile_assets_download_enabled
     )
     s.profile_assets_auto_refresh_hours = max(
-        0, _coerce_int(obj.get("profile_assets_auto_refresh_hours"), s.profile_assets_auto_refresh_hours)
+        0,
+        _coerce_int(
+            obj.get("profile_assets_auto_refresh_hours"), s.profile_assets_auto_refresh_hours
+        ),
     )
 
     s.profile_api_enabled = _coerce_bool(obj.get("profile_api_enabled"), s.profile_api_enabled)
