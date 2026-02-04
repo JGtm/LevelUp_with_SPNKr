@@ -138,7 +138,7 @@
    ```
 
 3. **Si accuracy est NULL partout** :
-   - Re-synchroniser les matchs avec `python scripts/sync.py --delta --gamertag JGtm`
+   - Re-synchroniser les matchs avec `python scripts/sync.py --delta --player JGtm`
    - Le code d'extraction est correct, mais les données existantes peuvent avoir été synchronisées avant
 
 ### Tests

@@ -6,6 +6,7 @@ depuis la base de données SPNKr.
 
 import contextlib
 import os
+import threading
 import urllib.parse
 
 import streamlit as st
@@ -197,6 +198,103 @@ def _aliases_cache_key() -> int | None:
         return None
 
 
+def _background_media_indexing(settings, db_path: str) -> None:
+    """Lance l'indexation des médias en arrière-plan (non-bloquant).
+
+    Args:
+        settings: Paramètres de l'application.
+        db_path: Chemin vers la DB DuckDB.
+    """
+    # Vérifier si les médias sont activés
+    if not bool(getattr(settings, "media_enabled", True)):
+        return
+
+    # Vérifier si les dossiers sont configurés
+    videos_dir = str(getattr(settings, "media_videos_dir", "") or "").strip()
+    screens_dir = str(getattr(settings, "media_screens_dir", "") or "").strip()
+
+    if not videos_dir and not screens_dir:
+        return
+
+    # Vérifier si c'est une DB DuckDB v4
+    if not db_path or not db_path.endswith(".duckdb"):
+        return
+
+    # Ne lancer qu'une fois par session
+    if st.session_state.get("_media_indexing_started"):
+        return
+
+    st.session_state["_media_indexing_started"] = True
+
+    def worker():
+        """Worker thread pour l'indexation."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            from pathlib import Path
+
+            from src.app.profile import resolve_xuid
+            from src.app.state import get_default_identity
+            from src.data.media_indexer import MediaIndexer
+
+            # Résoudre le XUID du propriétaire depuis le contexte actuel
+            # (joueur sélectionné dans l'app, pas hardcodé)
+            identity = get_default_identity()
+            xuid_input = st.session_state.get("xuid_input", "")
+
+            # Essayer de résoudre depuis l'input utilisateur ou l'identité par défaut
+            owner_xuid = resolve_xuid(xuid_input, db_path, identity) if xuid_input else None
+            if not owner_xuid:
+                owner_xuid = identity.xuid or identity.xuid_fallback
+
+            if not owner_xuid:
+                logger.warning("Impossible de résoudre le XUID pour l'indexation médias")
+                return
+
+            # Créer l'indexeur
+            indexer = MediaIndexer(Path(db_path), owner_xuid)
+
+            # Scanner les dossiers
+            videos_path = Path(videos_dir) if videos_dir and os.path.exists(videos_dir) else None
+            screens_path = (
+                Path(screens_dir) if screens_dir and os.path.exists(screens_dir) else None
+            )
+
+            if videos_path or screens_path:
+                result = indexer.scan_and_index(
+                    videos_dir=videos_path,
+                    screens_dir=screens_path,
+                    force_rescan=False,
+                )
+
+                # Associer avec les matchs
+                tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
+                n_associated = indexer.associate_with_matches(tolerance_minutes=tolerance)
+
+                # Générer les thumbnails pour les nouvelles vidéos
+                if videos_path:
+                    n_thumb_gen, n_thumb_errors = indexer.generate_thumbnails_for_new(videos_path)
+                    if n_thumb_gen > 0 or n_thumb_errors > 0:
+                        logger.info(
+                            f"Thumbnails: {n_thumb_gen} généré(s), {n_thumb_errors} erreur(s)"
+                        )
+
+                # Log pour debug (visible dans les logs Streamlit)
+                logger.info(
+                    f"Indexation médias: {result.n_new} nouveaux, "
+                    f"{result.n_updated} mis à jour, {n_associated} associés"
+                )
+
+        except Exception as e:
+            logger.error(f"Erreur indexation médias: {e}", exc_info=True)
+
+    # Lancer en thread daemon (ne bloque pas l'app)
+    thread = threading.Thread(target=worker, daemon=True, name="media-indexer")
+    thread.start()
+
+
 # =============================================================================
 # Application principale
 # =============================================================================
@@ -233,6 +331,11 @@ def main() -> None:
 
     DEFAULT_DB = get_default_db_path()
     _init_source_state(DEFAULT_DB, settings)
+
+    # ==========================================================================
+    # Indexation médias en arrière-plan (non-bloquant)
+    # ==========================================================================
+    _background_media_indexing(settings, DEFAULT_DB)
 
     # Support liens internes via query params (?page=...&match_id=...)
     try:

@@ -290,6 +290,86 @@ def _render_media_grid(items: pd.DataFrame, *, cols_per_row: int) -> None:
                     st.caption("Match: non associé")
 
 
+def _load_media_from_db(db_path: str, xuid: str) -> pd.DataFrame:
+    """Charge les médias depuis la BDD DuckDB.
+
+    Args:
+        db_path: Chemin vers la DB DuckDB.
+        xuid: XUID du propriétaire des médias.
+
+    Returns:
+        DataFrame avec colonnes: path, mtime, ext, kind, basename, match_id, match_start_time
+    """
+    try:
+        import duckdb
+
+        conn = duckdb.connect(db_path, read_only=True)
+        try:
+            # Vérifier si les tables existent
+            tables = conn.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'main'
+                AND table_name = 'media_files'
+                """
+            ).fetchall()
+
+            if not tables:
+                return pd.DataFrame()
+
+            # Charger les médias avec leurs associations
+            result = conn.execute(
+                """
+                SELECT
+                    mf.file_path AS path,
+                    mf.mtime,
+                    mf.mtime_paris_epoch,
+                    mf.file_ext AS ext,
+                    mf.kind,
+                    mf.file_name AS basename,
+                    mf.thumbnail_path,
+                    mma.match_id,
+                    mma.match_start_time,
+                    mma.association_confidence
+                FROM media_files mf
+                LEFT JOIN media_match_associations mma
+                    ON mf.file_path = mma.media_path
+                    AND mf.owner_xuid = mma.xuid
+                WHERE mf.owner_xuid = ?
+                ORDER BY mf.mtime_paris_epoch DESC
+                """,
+                [xuid],
+            ).fetchall()
+
+            if not result:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(
+                result,
+                columns=[
+                    "path",
+                    "mtime",
+                    "mtime_paris_epoch",
+                    "ext",
+                    "kind",
+                    "basename",
+                    "thumbnail_path",
+                    "match_id",
+                    "match_start_time",
+                    "association_confidence",
+                ],
+            )
+
+            return df
+
+        finally:
+            conn.close()
+
+    except Exception:
+        return pd.DataFrame()
+
+
 def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -> None:
     """Rend la page Bibliothèque médias."""
     st.subheader("Bibliothèque médias")
@@ -302,6 +382,21 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
     if not dirs.screens_dir and not dirs.videos_dir:
         st.info("Configure au moins un dossier dans Paramètres → Médias (captures et/ou vidéos).")
         return
+
+    # Récupérer le XUID du joueur actuel
+    db_path = st.session_state.get("db_path", "")
+    xuid_input = st.session_state.get("xuid_input", "")
+
+    # Résoudre le XUID
+    from src.app.profile import resolve_xuid
+    from src.app.state import get_default_identity
+
+    identity = get_default_identity()
+    xuid = (
+        resolve_xuid(xuid_input or "JGtm", db_path, identity)
+        or identity.xuid
+        or identity.xuid_fallback
+    )
 
     with st.expander("Options", expanded=True):
         c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
@@ -320,24 +415,48 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
         if st.button("Re-scanner les dossiers", width="stretch"):
             with contextlib.suppress(Exception):
                 index_media_dir.clear()
+            # Forcer re-indexation
+            if "_media_indexing_started" in st.session_state:
+                del st.session_state["_media_indexing_started"]
             st.rerun()
 
-    media_df = _index_all_media(settings).head(int(max_items))
+    # Charger depuis BDD si disponible
+    media_df = pd.DataFrame()
+    if db_path and db_path.endswith(".duckdb") and xuid:
+        media_df = _load_media_from_db(db_path, xuid)
+
+    # Fallback sur scan disque si BDD vide
     if media_df.empty:
-        st.info("Aucun média trouvé dans les dossiers configurés.")
+        media_df = _index_all_media(settings)
+        # Si on a scanné depuis disque, on peut essayer d'associer avec les matchs
+        if not media_df.empty:
+            windows_df = _compute_match_windows(df_full, settings)
+            assoc_df = _associate_media_to_matches(media_df, windows_df)
+        else:
+            assoc_df = pd.DataFrame()
+    else:
+        # Les associations sont déjà dans la BDD
+        assoc_df = media_df.copy()
+        # S'assurer que match_id est bien présent même si NULL
+        if "match_id" not in assoc_df.columns:
+            assoc_df["match_id"] = None
+        if "match_start_time" not in assoc_df.columns:
+            assoc_df["match_start_time"] = None
+
+    if assoc_df.empty:
+        st.info("Aucun média trouvé.")
         return
 
+    assoc_df = assoc_df.head(int(max_items))
+
     if kinds:
-        media_df = media_df.loc[media_df["kind"].isin([str(k) for k in kinds])].copy()
+        assoc_df = assoc_df.loc[assoc_df["kind"].isin([str(k) for k in kinds])].copy()
 
     if name_filter.strip():
         nf = name_filter.strip().lower()
-        media_df = media_df.loc[
-            media_df["basename"].astype(str).str.lower().str.contains(nf, na=False)
+        assoc_df = assoc_df.loc[
+            assoc_df["basename"].astype(str).str.lower().str.contains(nf, na=False)
         ].copy()
-
-    windows_df = _compute_match_windows(df_full, settings)
-    assoc_df = _associate_media_to_matches(media_df, windows_df)
 
     assigned = assoc_df.loc[assoc_df["match_id"].notna()].copy()
     unassigned = assoc_df.loc[assoc_df["match_id"].isna()].copy()

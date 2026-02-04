@@ -153,6 +153,43 @@ CREATE TABLE IF NOT EXISTS career_progression (
 );
 CREATE INDEX IF NOT EXISTS idx_career_xuid ON career_progression(xuid);
 CREATE INDEX IF NOT EXISTS idx_career_date ON career_progression(recorded_at);
+
+-- Table media_files (indexation des médias capturés)
+CREATE TABLE IF NOT EXISTS media_files (
+    file_path VARCHAR PRIMARY KEY,
+    file_hash VARCHAR NOT NULL,
+    file_name VARCHAR NOT NULL,
+    file_size BIGINT NOT NULL,
+    file_ext VARCHAR NOT NULL,
+    kind VARCHAR NOT NULL,
+    owner_xuid VARCHAR NOT NULL,
+    mtime DOUBLE NOT NULL,
+    mtime_paris_epoch DOUBLE NOT NULL,
+    thumbnail_path VARCHAR,
+    thumbnail_generated_at TIMESTAMP,
+    first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_scan_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    scan_version INTEGER DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_media_mtime ON media_files(mtime_paris_epoch DESC);
+CREATE INDEX IF NOT EXISTS idx_media_kind ON media_files(kind);
+CREATE INDEX IF NOT EXISTS idx_media_hash ON media_files(file_hash);
+CREATE INDEX IF NOT EXISTS idx_media_owner ON media_files(owner_xuid);
+
+-- Table media_match_associations (associations média ↔ match ↔ joueur)
+CREATE TABLE IF NOT EXISTS media_match_associations (
+    media_path VARCHAR NOT NULL,
+    match_id VARCHAR NOT NULL,
+    xuid VARCHAR NOT NULL,
+    match_start_time TIMESTAMP NOT NULL,
+    association_confidence DOUBLE DEFAULT 1.0,
+    associated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (media_path, match_id, xuid)
+);
+CREATE INDEX IF NOT EXISTS idx_assoc_media ON media_match_associations(media_path);
+CREATE INDEX IF NOT EXISTS idx_assoc_match ON media_match_associations(match_id, xuid);
+CREATE INDEX IF NOT EXISTS idx_assoc_xuid ON media_match_associations(xuid);
+CREATE INDEX IF NOT EXISTS idx_assoc_time ON media_match_associations(match_start_time DESC);
 """
 
 

@@ -89,7 +89,7 @@ Les médailles n'étaient **pas extraites** lors de la synchronisation DuckDB v4
 ### Immédiat
 1. **Re-synchroniser les matchs** pour remplir `medals_earned` :
    ```bash
-   python scripts/sync.py --delta --gamertag JGtm
+   python scripts/sync.py --delta --player JGtm
    ```
 
 2. **Exécuter le diagnostic** (quand environnement configuré) :

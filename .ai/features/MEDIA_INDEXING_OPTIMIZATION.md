@@ -49,8 +49,9 @@ La page "Médias" (`src/ui/pages/media_library.py`) scanne actuellement les doss
 
 ## Architecture Technique
 
-### 1. Schéma de Table DuckDB
+### 1. Schéma de Tables DuckDB
 
+**Table principale** : `media_files`
 ```sql
 CREATE TABLE IF NOT EXISTS media_files (
     -- Identifiants
@@ -62,12 +63,8 @@ CREATE TABLE IF NOT EXISTS media_files (
     file_size INTEGER NOT NULL,
     file_ext TEXT NOT NULL,
     kind TEXT NOT NULL,  -- 'image' | 'video'
-    mtime REAL NOT NULL,  -- Timestamp epoch (compatible avec code actuel)
-    
-    -- Association match
-    match_id TEXT,  -- NULL si non associé
-    match_start_time TIMESTAMP,
-    association_confidence REAL,  -- Score de confiance (0-1)
+    mtime REAL NOT NULL,  -- Timestamp epoch système
+    mtime_paris_epoch REAL NOT NULL,  -- Timestamp epoch en fuseau Paris (pour comparaisons)
     
     -- Thumbnails
     thumbnail_path TEXT,  -- Chemin vers thumbnail (GIF pour vidéos)
@@ -79,12 +76,37 @@ CREATE TABLE IF NOT EXISTS media_files (
     scan_version INTEGER DEFAULT 1,  -- Pour migrations futures
     
     -- Index pour requêtes fréquentes
-    INDEX idx_media_match_id ON media_files(match_id),
-    INDEX idx_media_mtime ON media_files(mtime DESC),
+    INDEX idx_media_mtime ON media_files(mtime_paris_epoch DESC),
     INDEX idx_media_kind ON media_files(kind),
-    INDEX idx_media_match_time ON media_files(match_id, match_start_time)
+    INDEX idx_media_hash ON media_files(file_hash)
 );
 ```
+
+**Table d'associations** : `media_match_associations` (M:N)
+```sql
+CREATE TABLE IF NOT EXISTS media_match_associations (
+    media_path TEXT NOT NULL,
+    match_id TEXT NOT NULL,
+    xuid TEXT NOT NULL,  -- Joueur propriétaire du match
+    match_start_time TIMESTAMP NOT NULL,  -- Pour tri/affichage
+    association_confidence REAL DEFAULT 1.0,  -- Score de confiance (0-1)
+    associated_at TIMESTAMP DEFAULT (datetime('now')),
+    
+    PRIMARY KEY (media_path, match_id, xuid),
+    
+    -- Index pour requêtes fréquentes
+    INDEX idx_assoc_media ON media_match_associations(media_path),
+    INDEX idx_assoc_match ON media_match_associations(match_id, xuid),
+    INDEX idx_assoc_xuid ON media_match_associations(xuid),
+    INDEX idx_assoc_time ON media_match_associations(match_start_time DESC)
+);
+```
+
+**Avantages de cette structure** :
+- ✅ Support multi-joueurs : Un média peut être associé à plusieurs matchs (différents joueurs)
+- ✅ Requêtes efficaces : Index sur toutes les colonnes fréquemment utilisées
+- ✅ Historique : `associated_at` permet de voir quand l'association a été faite
+- ✅ Confiance : Score permet révision manuelle si nécessaire
 
 ### 2. Module d'Indexation
 
@@ -295,12 +317,94 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings):
 
 ---
 
+## Questions Spécifiques Résolues
+
+### ✅ Q1 : Médias capturés pendant un match avec plusieurs joueurs
+
+**Problème** : Un média peut être associé à plusieurs joueurs (ex: Chocoboflor, Madina97294, xxdaemongamerxx, JGtm) qui ont tous accès à l'app.
+
+**Solution proposée** :
+- **Table `media_match_associations`** (relation M:N) au lieu d'une FK directe dans `media_files`
+- Permet d'associer un média à plusieurs matchs (un par joueur)
+- Structure :
+  ```sql
+  CREATE TABLE media_match_associations (
+      media_path TEXT NOT NULL,
+      match_id TEXT NOT NULL,
+      xuid TEXT NOT NULL,  -- Joueur propriétaire du match
+      association_confidence REAL,
+      associated_at TIMESTAMP DEFAULT (datetime('now')),
+      PRIMARY KEY (media_path, match_id, xuid)
+  );
+  ```
+
+**Affichage dans l'UI** :
+- Dans la page Médias : Afficher tous les matchs associés (même si d'autres joueurs)
+- Badge "Multi-joueurs" si média associé à plusieurs joueurs
+- Filtre optionnel : "Afficher médias d'autres joueurs" (déjà implémenté via `show_unassigned`)
+
+### ✅ Q2 : Médias non liés au joueur actuel
+
+**Problème** : Comment gérer les médias qui ne sont pas liés à un match du joueur dont on utilise la BDD à l'instant T ?
+
+**Solution proposée** :
+- **Section expandable "Médias non associés"** (déjà présente dans le code actuel ligne 398-401)
+- Amélioration : Sous-section "Médias associés à d'autres joueurs" si plusieurs DBs disponibles
+- Requête SQL :
+  ```sql
+  -- Médias non associés au joueur actuel
+  SELECT mf.* 
+  FROM media_files mf
+  LEFT JOIN media_match_associations mma 
+    ON mf.file_path = mma.media_path 
+    AND mma.xuid = ?
+  WHERE mma.media_path IS NULL
+  ```
+
+**UI** :
+```python
+if show_unassigned and not unassigned.empty:
+    st.divider()
+    with st.expander("📁 Médias non associés", expanded=False):
+        st.caption(f"{len(unassigned)} média(s) sans match associé")
+        _render_media_grid(unassigned, cols_per_row=int(cols_per_row))
+```
+
+### ✅ Q3 : Association par match - Fuseaux horaires
+
+**Vérification** : L'association récupère bien l'heure de début du match et sa durée.
+
+**Analyse du code actuel** :
+- ✅ `_compute_match_windows()` utilise `start_time` et `time_played_seconds` (ligne 97-151)
+- ✅ Conversion en fuseau de Paris via `_to_paris_naive()` puis `_epoch_seconds_paris()`
+- ✅ Fenêtre temporelle : `[start_time - tolérance, start_time + time_played_seconds + tolérance]`
+
+**Fuseaux horaires** :
+- ✅ L'API retourne en **UTC** (format ISO 8601 avec "Z" ou "+00:00")
+- ✅ Le code convertit en **fuseau de Paris** (`PARIS_TZ = ZoneInfo("Europe/Paris")`)
+- ✅ Les comparaisons se font en epoch seconds après conversion Paris
+
+**Recommandation** :
+- ✅ **Conserver cette logique** : Conversion UTC → Paris avant comparaison
+- ⚠️ **Vérifier** : Les `mtime` des fichiers sont en heure locale système (pas UTC)
+- ✅ **Solution** : Convertir aussi les `mtime` en Paris pour comparaison cohérente
+
+**Code à améliorer** :
+```python
+def _index_all_media(settings: AppSettings) -> pd.DataFrame:
+    # ... scan fichiers ...
+    # Convertir mtime en epoch seconds Paris (au lieu de timestamp système)
+    df["mtime_paris_epoch"] = df["mtime"].apply(
+        lambda ts: paris_epoch_seconds(datetime.fromtimestamp(ts, tz=PARIS_TZ))
+    )
+```
+
 ## Questions Ouvertes
 
 1. **Fréquence scan** : Au démarrage uniquement ou périodique (ex: toutes les heures) ?
 2. **UI feedback** : Afficher indicateur "Indexation en cours..." ?
 3. **Thumbnails images** : Générer aussi pour captures d'écran ou seulement vidéos ?
-4. **Multi-joueurs** : Table globale ou par joueur ? (Recommandation: par joueur)
+4. **Multi-joueurs** : Table globale ou par joueur ? (Recommandation: table globale avec associations M:N)
 
 ---
 

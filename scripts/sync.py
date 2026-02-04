@@ -1192,30 +1192,87 @@ def download_assets(db_path: str) -> tuple[bool, str]:
         return False, msg
 
 
-def print_stats(db_path: str) -> None:
-    """Affiche les statistiques de la base de données."""
-    logger.info("=== Statistiques de la base de données ===")
+def print_stats(db_path: str, player: str | None = None) -> None:
+    """Affiche les statistiques de la base de données.
+
+    Si player est fourni et que c'est un joueur DuckDB v4, affiche les stats
+    de sa DB spécifique au lieu de la DB unifiée.
+    """
+    # Détecter si c'est un joueur DuckDB v4
+    actual_db_path = db_path
+    is_duckdb = False
+
+    if player:
+        try:
+            from src.ui.sync import get_player_duckdb_path
+
+            duckdb_path = get_player_duckdb_path(player)
+            if duckdb_path and duckdb_path.exists():
+                actual_db_path = str(duckdb_path)
+                is_duckdb = True
+                logger.info(f"=== Statistiques DuckDB pour {player} ===")
+            else:
+                logger.info("=== Statistiques de la base de données ===")
+        except ImportError:
+            logger.info("=== Statistiques de la base de données ===")
+    else:
+        logger.info("=== Statistiques de la base de données ===")
 
     try:
-        with get_connection(db_path) as con:
+        if is_duckdb:
+            # DuckDB v4 : utiliser les noms de tables en snake_case
+            import duckdb
+
+            conn = duckdb.connect(actual_db_path, read_only=True)
+
             tables = [
-                ("MatchStats", "Matchs"),
-                ("PlayerMatchStats", "Stats joueur"),
-                ("HighlightEvents", "Highlight events"),
-                ("XuidAliases", "Alias XUID"),
-                ("MatchCache", "Cache matchs"),
+                ("match_stats", "Matchs"),
+                ("player_match_stats", "Stats joueur"),
+                ("highlight_events", "Highlight events"),
+                ("xuid_aliases", "Alias XUID"),
+                ("medals_earned", "Médailles"),
             ]
 
             for table, label in tables:
-                if _has_table(con, table):
-                    count = _count_rows(con, table)
-                    logger.info(f"  {label}: {count:,}")
-                else:
-                    logger.info(f"  {label}: (table absente)")
+                try:
+                    result = conn.execute(
+                        f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{table}'"
+                    ).fetchone()
+                    if result and result[0] > 0:
+                        count_result = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                        count = count_result[0] if count_result else 0
+                        logger.info(f"  {label}: {count:,}")
+                    else:
+                        logger.info(f"  {label}: (table absente)")
+                except Exception:
+                    logger.info(f"  {label}: (erreur)")
+
+            conn.close()
 
             # Taille du fichier
-            size_mb = os.path.getsize(db_path) / (1024 * 1024)
+            size_mb = os.path.getsize(actual_db_path) / (1024 * 1024)
             logger.info(f"  Taille: {size_mb:.2f} MB")
+        else:
+            # SQLite legacy : utiliser les noms de tables en PascalCase
+            with get_connection(actual_db_path) as con:
+                tables = [
+                    ("MatchStats", "Matchs"),
+                    ("PlayerMatchStats", "Stats joueur"),
+                    ("HighlightEvents", "Highlight events"),
+                    ("XuidAliases", "Alias XUID"),
+                    ("MatchCache", "Cache matchs"),
+                ]
+
+                for table, label in tables:
+                    if _has_table(con, table):
+                        count = _count_rows(con, table)
+                        logger.info(f"  {label}: {count:,}")
+                    else:
+                        logger.info(f"  {label}: (table absente)")
+
+                # Taille du fichier
+                size_mb = os.path.getsize(actual_db_path) / (1024 * 1024)
+                logger.info(f"  Taille: {size_mb:.2f} MB")
 
     except Exception as e:
         logger.error(f"Erreur lors de la lecture des stats: {e}")
@@ -1430,7 +1487,7 @@ Exemples:
 
     # Afficher les stats finales
     if args.delta or args.full or args.rebuild_cache:
-        print_stats(db_path)
+        print_stats(db_path, player=args.player)
 
     return 0 if success else 1
 
