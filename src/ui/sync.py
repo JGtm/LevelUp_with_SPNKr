@@ -451,7 +451,11 @@ def sync_all_players(
     """
     # Note: with_highlight_events et with_aliases sont toujours True
     # Les flags --no-* ne sont jamais passés au script d'import
-    from src.db import get_players_from_db, infer_spnkr_player_from_db_path
+    from src.db import (
+        get_players_from_db,
+        guess_xuid_from_db_path,
+        infer_spnkr_player_from_db_path,
+    )
 
     players = []
     is_duckdb = db_path.endswith(".duckdb")
@@ -486,11 +490,24 @@ def sync_all_players(
         players = get_players_from_db(db_path)
 
     if not players:
-        # Fallback: DB mono-joueur, on déduit depuis le nom
+        # Fallback: DB mono-joueur, on déduit depuis le nom du fichier
         single_player = infer_spnkr_player_from_db_path(db_path) or ""
         if not single_player:
-            return False, "Aucun joueur trouvé dans la DB."
-        players = [{"xuid": "", "gamertag": single_player, "label": single_player}]
+            # Convention OpenSpartan Workshop : <XUID>.db
+            xuid_from_path = guess_xuid_from_db_path(db_path)
+            if xuid_from_path:
+                single_player = xuid_from_path
+                players = [
+                    {"xuid": xuid_from_path, "gamertag": xuid_from_path, "label": xuid_from_path}
+                ]
+        if not players:
+            if not single_player:
+                return (
+                    False,
+                    "Aucun joueur trouvé dans la DB. Utilisez --player <gamertag ou XUID> pour une DB sans table Players.",
+                )
+            # single_player déduit via infer_spnkr_player_from_db_path (ex: spnkr_gt_XXX.db)
+            players = [{"xuid": "", "gamertag": single_player, "label": single_player}]
 
     results: list[tuple[str, bool, str]] = []
 

@@ -203,10 +203,15 @@ def _background_media_indexing(settings, db_path: str) -> None:
 
     Args:
         settings: Paramètres de l'application.
-        db_path: Chemin vers la DB DuckDB.
+        db_path: Chemin vers la DB DuckDB (utilisée pour stocker les médias).
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     # Vérifier si les médias sont activés
     if not bool(getattr(settings, "media_enabled", True)):
+        logger.debug("Indexation médias désactivée dans les paramètres")
         return
 
     # Vérifier si les dossiers sont configurés
@@ -214,17 +219,21 @@ def _background_media_indexing(settings, db_path: str) -> None:
     screens_dir = str(getattr(settings, "media_screens_dir", "") or "").strip()
 
     if not videos_dir and not screens_dir:
+        logger.debug("Aucun dossier média configuré - indexation ignorée")
         return
 
     # Vérifier si c'est une DB DuckDB v4
     if not db_path or not db_path.endswith(".duckdb"):
+        logger.debug(f"DB non DuckDB ou invalide: {db_path} - indexation ignorée")
         return
 
     # Ne lancer qu'une fois par session
     if st.session_state.get("_media_indexing_started"):
+        logger.debug("Indexation médias déjà démarrée dans cette session")
         return
 
     st.session_state["_media_indexing_started"] = True
+    logger.info("🚀 Démarrage indexation médias en arrière-plan")
 
     def worker():
         """Worker thread pour l'indexation."""
@@ -235,26 +244,14 @@ def _background_media_indexing(settings, db_path: str) -> None:
         try:
             from pathlib import Path
 
-            from src.app.profile import resolve_xuid
-            from src.app.state import get_default_identity
             from src.data.media_indexer import MediaIndexer
 
-            # Résoudre le XUID du propriétaire depuis le contexte actuel
-            # (joueur sélectionné dans l'app, pas hardcodé)
-            identity = get_default_identity()
-            xuid_input = st.session_state.get("xuid_input", "")
+            logger.info(f"📁 Indexation médias - DB: {db_path}")
+            logger.info(f"   Vidéos: {videos_dir or '(non configuré)'}")
+            logger.info(f"   Captures: {screens_dir or '(non configuré)'}")
 
-            # Essayer de résoudre depuis l'input utilisateur ou l'identité par défaut
-            owner_xuid = resolve_xuid(xuid_input, db_path, identity) if xuid_input else None
-            if not owner_xuid:
-                owner_xuid = identity.xuid or identity.xuid_fallback
-
-            if not owner_xuid:
-                logger.warning("Impossible de résoudre le XUID pour l'indexation médias")
-                return
-
-            # Créer l'indexeur
-            indexer = MediaIndexer(Path(db_path), owner_xuid)
+            # Créer l'indexeur (utilise la DB fournie pour stocker les médias)
+            indexer = MediaIndexer(Path(db_path))
 
             # Scanner les dossiers
             videos_path = Path(videos_dir) if videos_dir and os.path.exists(videos_dir) else None
@@ -262,37 +259,55 @@ def _background_media_indexing(settings, db_path: str) -> None:
                 Path(screens_dir) if screens_dir and os.path.exists(screens_dir) else None
             )
 
-            if videos_path or screens_path:
-                result = indexer.scan_and_index(
-                    videos_dir=videos_path,
-                    screens_dir=screens_path,
-                    force_rescan=False,
-                )
+            if not videos_path and not screens_path:
+                logger.warning("Aucun dossier média valide trouvé - indexation ignorée")
+                return
 
-                # Associer avec les matchs
-                tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
-                n_associated = indexer.associate_with_matches(tolerance_minutes=tolerance)
+            logger.info("📂 Scan des dossiers médias...")
+            result = indexer.scan_and_index(
+                videos_dir=videos_path,
+                screens_dir=screens_path,
+                force_rescan=False,
+            )
 
-                # Générer les thumbnails pour les nouvelles vidéos
-                if videos_path:
-                    n_thumb_gen, n_thumb_errors = indexer.generate_thumbnails_for_new(videos_path)
-                    if n_thumb_gen > 0 or n_thumb_errors > 0:
-                        logger.info(
-                            f"Thumbnails: {n_thumb_gen} généré(s), {n_thumb_errors} erreur(s)"
-                        )
+            logger.info(
+                f"✅ Scan terminé: {result.n_scanned} scannés, "
+                f"{result.n_new} nouveaux, {result.n_updated} mis à jour"
+            )
 
-                # Log pour debug (visible dans les logs Streamlit)
-                logger.info(
-                    f"Indexation médias: {result.n_new} nouveaux, "
-                    f"{result.n_updated} mis à jour, {n_associated} associés"
-                )
+            if result.errors:
+                logger.warning(f"⚠️  {len(result.errors)} erreur(s) lors du scan")
+                for err in result.errors[:5]:
+                    logger.warning(f"   - {err}")
+
+            # Associer avec les matchs de TOUS les joueurs
+            tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
+            logger.info(f"🔗 Association avec les matchs (tolérance: {tolerance} min)...")
+            n_associated = indexer.associate_with_matches(tolerance_minutes=tolerance)
+            logger.info(f"✅ {n_associated} association(s) créée(s)")
+
+            # Générer les thumbnails pour les nouvelles vidéos
+            if videos_path:
+                logger.info("🎬 Génération des thumbnails...")
+                n_thumb_gen, n_thumb_errors = indexer.generate_thumbnails_for_new(videos_path)
+                if n_thumb_gen > 0:
+                    logger.info(f"✅ {n_thumb_gen} thumbnail(s) généré(s)")
+                if n_thumb_errors > 0:
+                    logger.warning(
+                        f"⚠️  {n_thumb_errors} erreur(s) lors de la génération de thumbnails"
+                    )
+                if n_thumb_gen == 0 and n_thumb_errors == 0:
+                    logger.info("ℹ️  Aucune vidéo sans thumbnail à générer")
+
+            logger.info("✅ Indexation médias terminée avec succès")
 
         except Exception as e:
-            logger.error(f"Erreur indexation médias: {e}", exc_info=True)
+            logger.error(f"❌ Erreur indexation médias: {e}", exc_info=True)
 
     # Lancer en thread daemon (ne bloque pas l'app)
     thread = threading.Thread(target=worker, daemon=True, name="media-indexer")
     thread.start()
+    logger.debug(f"Thread d'indexation démarré: {thread.name} (daemon={thread.daemon})")
 
 
 # =============================================================================
@@ -451,6 +466,29 @@ def main() -> None:
     # Cache buster pour forcer le rechargement après sync
     cache_buster = st.session_state.get("_cache_buster", 0)
     df, db_key = load_match_dataframe(db_path, xuid, cache_buster=cache_buster)
+
+    # Debug: Informations sur le DataFrame complet (avant filtres)
+    # Désactivé par défaut - peut être activé via session_state["_show_debug_info"] = True
+    show_debug = st.session_state.get("_show_debug_info", False)
+
+    if show_debug and not df.empty:
+        st.info("🔍 **Mode Debug activé** - Informations sur les données chargées")
+        with st.expander("🔍 Debug - DataFrame complet (avant filtres)", expanded=True):
+            st.write(f"**Nombre total de matchs dans df** : {len(df)}")
+            st.write(f"**Date min dans df** : {df['start_time'].min()}")
+            st.write(f"**Date max dans df** : {df['start_time'].max()}")
+            # Vérifier les valeurs NULL
+            null_count = df["start_time"].isna().sum()
+            st.write(f"**Nombre de start_time NULL** : {null_count}")
+            if null_count > 0:
+                st.warning("⚠️ Il y a des valeurs NULL dans start_time !")
+            # Afficher les 5 derniers matchs
+            last_5_df = df.sort_values("start_time", ascending=False).head(5)
+            st.write("**5 derniers matchs dans df (par date) :**")
+            for _, row in last_5_df.iterrows():
+                st.write(
+                    f"- {row.get('start_time')} | Match ID: {row.get('match_id')} | Map: {row.get('map_name')}"
+                )
 
     if df.empty:
         st.radio(
