@@ -23,7 +23,7 @@ Ce sprint corrige les données manquantes après la migration SQLite → DuckDB 
 | **antagonists** | **?** | **?** | **?** | **?** | ✅ Script `populate_antagonists.py` existe |
 | **killer_victim_pairs** | **?** | **?** | **?** | **?** | ✅ Implémenté `--killer-victim` |
 | **match_participants** | **?** | **?** | **?** | **?** | ✅ Implémenté `--participants` |
-| sessions | 0 | - | - | - | 🟡 VIDE |
+| sessions | 80 | 323 | 36 | 4 | ✅ OK |
 | career_progression | 0 | - | - | - | 🟡 VIDE |
 | skill_history | 0 | - | - | - | 🟡 VIDE |
 
@@ -830,10 +830,12 @@ python scripts/ingest_halo_data.py --maps --from-match-stats
 
 ---
 
-## 🟠 PRIORITÉ 6 : players et friends dans metadata (Moyen)
+## 🟠 PRIORITÉ 6 : players et friends dans metadata (Moyen) — ✅ IMPLÉMENTÉ
 
-### Problème
-Les tables `players` et `friends` dans `metadata.duckdb` sont vides.
+### Problème (résolu)
+~~Les tables `players` et `friends` dans `metadata.duckdb` sont vides.~~
+
+**État 2026-02-05** : La table `players` est peuplée via `populate_metadata_players.py` (db_profiles.json + xuid_aliases). La liste d'amis est en dur dans `.streamlit/friends_defaults.json`.
 
 ### Impact détaillé
 
@@ -845,9 +847,12 @@ Les tables `players` et `friends` dans `metadata.duckdb` sont vides.
 
 ### Plan d'implémentation
 
-#### Étape 6.1 : Peupler players depuis les profils
+#### Étape 6.1 : Peupler players depuis les profils — ✅ FAIT
+
+Script : `populate_metadata_players.py` (db_profiles.json + xuid_aliases de chaque stats.duckdb)
 
 ```python
+# Référence (implémenté dans populate_metadata_players.py)
 def sync_players_from_profiles(meta_conn, profiles: dict) -> int:
     """Synchronise les joueurs depuis db_profiles.json."""
     count = 0
@@ -889,19 +894,28 @@ async def sync_friends(client, meta_conn, owner_xuid: str) -> int:
 
 ---
 
-## 🟡 PRIORITÉ 7 : sessions (Nice to have)
+## ✅ PRIORITÉ 7 : sessions (Nice to have) - IMPLÉMENTÉ
 
-### Problème
-La table `sessions` est vide. Les sessions groupent les matchs consécutifs en "sessions de jeu".
+### ~~Problème~~
+~~La table `sessions` est vide. Les sessions groupent les matchs consécutifs en "sessions de jeu".~~
 
-### Impact détaillé
+### État actuel (2026-02-05)
+
+| Joueur | Sessions | Matchs | mv_session_stats |
+|--------|----------|--------|------------------|
+| Madina97294 | 323 | 955 | ✅ |
+| JGtm | 80 | 451 | ✅ |
+| Chocoboflor | 36 | 219 | ✅ |
+| XxDaemonGamerxX | 4 | 18 | ✅ |
+
+### Impact résolu
 
 | Feature | Impact |
 |---------|--------|
-| **Vue par session** | ⚠️ Pas de regroupement des matchs |
-| **Stats de session** | ⚠️ mv_session_stats vide |
-| **Performance par session** | ⚠️ Pas de tendance |
-| **"Dernière session"** | ⚠️ Retourne tous les matchs récents |
+| **Vue par session** | ✅ Sessions calculées et persistées |
+| **Stats de session** | ✅ mv_session_stats remplie |
+| **Performance par session** | ✅ Données disponibles |
+| **"Dernière session"** | ✅ Fonctionne correctement |
 
 ### Plan d'implémentation
 
@@ -970,9 +984,34 @@ python scripts/compute_sessions.py --gamertag JGtm --gap-minutes 30
 python scripts/compute_sessions.py --all
 ```
 
+### Script créé : `scripts/compute_sessions.py`
+
+```bash
+# Calculer les sessions pour un joueur
+python scripts/compute_sessions.py --gamertag JGtm
+
+# Calculer les sessions pour tous les joueurs
+python scripts/compute_sessions.py --all
+
+# Forcer le recalcul même si des sessions existent
+python scripts/compute_sessions.py --all --force
+
+# Spécifier un gap différent (défaut: config SESSION_CONFIG.default_gap_minutes)
+python scripts/compute_sessions.py --gamertag JGtm --gap-minutes 60
+
+# Mode dry-run
+python scripts/compute_sessions.py --gamertag JGtm --dry-run
+```
+
+### Ce que le script fait :
+1. Calcule les sessions basées sur le gap temporel entre matchs
+2. Met à jour `session_id` et `session_label` dans `match_stats`
+3. Rafraîchit la vue matérialisée `mv_session_stats`
+4. Peuple la table `sessions`
+
 ### Estimation
-- **Implémentation** : 2 heures
-- **Exécution** : < 1 minute par joueur
+- **Implémentation** : ✅ Fait (2 heures)
+- **Exécution** : ~6 secondes pour tous les joueurs
 
 ---
 
@@ -1076,12 +1115,12 @@ python scripts/sync.py --all --with-career --with-skill
 | 3 | Backfill killer_victim_pairs | 🔴 Important | 1h | Aucune | ✅ Implémenté |
 | 4 | Compute antagonists | 🔴 Important | 2h | #3 | ✅ Script existe |
 | 5 | Ingérer maps dans metadata | 🟠 Moyen | 1h | Aucune | 🔲 À faire |
-| 6 | Peupler players/friends | 🟠 Moyen | 2h | Aucune | 🔲 À faire |
-| 7 | Compute sessions | 🟡 Nice to have | 2h | Aucune | 🔲 À faire |
+| 6 | Peupler players/friends | 🟠 Moyen | 2h | Aucune | ✅ Implémenté |
+| 7 | Compute sessions | 🟡 Nice to have | 2h | Aucune | ✅ Implémenté |
 | 8 | Sync career + skill history | 🟡 Nice to have | 3h | Aucune | 🔲 À faire |
 
 **Total estimé** : 17-20 heures de développement
-**Progression** : 5/9 tâches implémentées (code)
+**Progression** : 7/9 tâches implémentées (code)
 
 ---
 
@@ -1095,8 +1134,10 @@ python scripts/sync.py --all --with-career --with-skill
 | `backfill_killer_victim_pairs.py` | ✅ | `--gamertag`, `--all`, `--force` |
 | `populate_antagonists.py` | ✅ | `--gamertag`, `--all`, `--force` |
 | `resolve_missing_gamertags.py` | ✅ | `--gamertag`, `--all`, `--limit`, `--dry-run` |
+| `populate_metadata_players.py` | ✅ | `--dry-run` |
 | `recover_from_sqlite.py` | ✅ | `--gamertag`, `--all`, `--dry-run` |
-| `sync.py` | ✅ | Calcule les sessions automatiquement |
+| `sync.py` | ✅ | Sync delta + recalcule MV |
+| `compute_sessions.py` | ✅ | `--gamertag`, `--all`, `--force`, `--gap-minutes`, `--dry-run` |
 | `ingest_halo_data.py` | ✅ | Pour les référentiels |
 | `diagnose_migration_gaps.py` | ✅ | `--all`, `--json` |
 
@@ -1118,11 +1159,15 @@ python scripts/backfill_killer_victim_pairs.py --all
 # 3. Calculer les antagonists depuis killer_victim_pairs
 python scripts/populate_antagonists.py --all --force
 
+# 4. Peupler la table players dans metadata.duckdb
+#    (db_profiles.json + tous les joueurs rencontrés via xuid_aliases)
+python scripts/populate_metadata_players.py
+
 # ============================================
 # JOUR 2 - IMPORTANTS (nécessite API)
 # ============================================
 
-# 4. Backfill match_participants (récupère les participants via API)
+# 5. Backfill match_participants (récupère les participants via API)
 #    ⚠️ ATTENTION: Fait des appels API pour chaque match !
 #    Pour ~450 matchs = ~15-30 minutes par joueur
 python scripts/backfill_data.py --player JGtm --participants
@@ -1133,18 +1178,18 @@ python scripts/backfill_data.py --player XxDaemonGamerxX --participants
 # Ou pour tous en une commande (plus long)
 python scripts/backfill_data.py --all --participants
 
-# 5. Ingérer les référentiels (maps, playlists, etc.)
+# 6. Ingérer les référentiels (maps, playlists, etc.)
 python scripts/ingest_halo_data.py
 
 # ============================================
 # JOUR 3 - NICE TO HAVE
 # ============================================
 
-# 6. Sync avec calcul de sessions (sessions calculées automatiquement)
+# 7. Sync avec calcul de sessions (sessions calculées automatiquement)
 #    Note: sync.py appelle compute_sessions() automatiquement
 python scripts/sync.py --delta --gamertag JGtm
 
-# 7. Sync avec career progression et skill history
+# 8. Sync avec career progression et skill history
 python scripts/sync.py --delta --gamertag JGtm --with-career --with-skill
 
 # ============================================
@@ -1184,6 +1229,7 @@ python scripts/diagnose_migration_gaps.py --all --json --output .ai/diagnostics/
 | antagonists | > 100 entrées par joueur |
 | maps | > 20 entrées |
 | sessions | > 0 entrées |
+| players (metadata) | > 0 (db_profiles + joueurs rencontrés) |
 | career_progression | ≥ 1 entrée par joueur |
 | skill_history | ≥ 1 entrée par playlist ranked |
 
