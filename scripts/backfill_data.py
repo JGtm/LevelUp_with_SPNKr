@@ -21,6 +21,12 @@ Usage:
     # Forcer la récupération de accuracy pour TOUS les matchs
     python scripts/backfill_data.py --player JGtm --accuracy --force-accuracy
 
+    # Backfill enemy_mmr pour les matchs avec enemy_mmr NULL
+    python scripts/backfill_data.py --player JGtm --enemy-mmr
+
+    # Forcer la récupération de enemy_mmr pour TOUS les matchs
+    python scripts/backfill_data.py --player JGtm --enemy-mmr --force-enemy-mmr
+
     # Backfill pour tous les joueurs
     python scripts/backfill_data.py --all --all-data
 
@@ -355,8 +361,10 @@ def _find_matches_missing_data(
     personal_scores: bool = False,
     performance_scores: bool = False,
     accuracy: bool = False,
+    enemy_mmr: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
+    force_enemy_mmr: bool = False,
     max_matches: int | None = None,
 ) -> list[str]:
     """Trouve les matchs avec des données manquantes."""
@@ -436,6 +444,20 @@ def _find_matches_missing_data(
             # Détecter les matchs avec accuracy NULL
             conditions.append("ms.accuracy IS NULL")
 
+    if enemy_mmr:
+        if force_enemy_mmr:
+            # Mode force: inclure TOUS les matchs pour forcer la mise à jour de enemy_mmr
+            conditions.append("1=1")  # Condition toujours vraie = tous les matchs
+        else:
+            # Détecter les matchs avec enemy_mmr NULL dans player_match_stats
+            conditions.append("""
+                ms.match_id IN (
+                    SELECT match_id FROM player_match_stats
+                    WHERE xuid = ? AND enemy_mmr IS NULL
+                )
+            """)
+            params.append(xuid)
+
     if not conditions:
         return []
 
@@ -468,9 +490,11 @@ async def backfill_player_data(
     performance_scores: bool = False,
     aliases: bool = False,
     accuracy: bool = False,
+    enemy_mmr: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
+    force_enemy_mmr: bool = False,
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
 
@@ -498,13 +522,20 @@ async def backfill_player_data(
         performance_scores = True
         aliases = True
         accuracy = True
+        enemy_mmr = True
 
     # Si force_accuracy est activé sans accuracy, l'activer automatiquement
     if force_accuracy and not accuracy:
         accuracy = True
 
+    # Si force_enemy_mmr est activé sans enemy_mmr, l'activer automatiquement
+    if force_enemy_mmr and not enemy_mmr:
+        enemy_mmr = True
+
     # Vérifier qu'au moins une option est activée
-    if not any([medals, events, skill, personal_scores, performance_scores, aliases, accuracy]):
+    if not any(
+        [medals, events, skill, personal_scores, performance_scores, aliases, accuracy, enemy_mmr]
+    ):
         logger.warning(
             "Aucune option de backfill activée. Utilisez --all ou spécifiez des options."
         )
@@ -518,6 +549,7 @@ async def backfill_player_data(
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
             "accuracy_updated": 0,
+            "enemy_mmr_updated": 0,
         }
 
     # Vérifier que c'est un joueur DuckDB v4
@@ -535,6 +567,7 @@ async def backfill_player_data(
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
             "accuracy_updated": 0,
+            "enemy_mmr_updated": 0,
         }
 
     # Obtenir le chemin de la DB
@@ -551,6 +584,7 @@ async def backfill_player_data(
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
             "accuracy_updated": 0,
+            "enemy_mmr_updated": 0,
         }
 
     # Obtenir le XUID depuis la DB
@@ -701,8 +735,10 @@ async def backfill_player_data(
             personal_scores=personal_scores,
             performance_scores=performance_scores,
             accuracy=accuracy,
+            enemy_mmr=enemy_mmr,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
+            force_enemy_mmr=force_enemy_mmr,
             max_matches=max_matches,
         )
 
@@ -757,6 +793,7 @@ async def backfill_player_data(
         total_performance_scores = 0
         total_aliases = 0
         total_accuracy_updated = 0
+        total_enemy_mmr_updated = 0
 
         async with SPNKrAPIClient(
             tokens=tokens,
@@ -779,7 +816,7 @@ async def backfill_player_data(
                     skill_json = None
                     highlight_events = []
 
-                    if skill and xuids:
+                    if (skill or enemy_mmr) and xuids:
                         skill_json = await client.get_skill_stats(match_id, xuids)
 
                     if events:
@@ -794,6 +831,7 @@ async def backfill_player_data(
                         "performance_scores": 0,
                         "aliases": 0,
                         "accuracy": 0,
+                        "enemy_mmr": 0,
                     }
 
                     # Accuracy (doit être fait avant les autres car utilise transform_match_stats)
@@ -843,6 +881,36 @@ async def backfill_player_data(
                             inserted_this_match["skill"] = _insert_skill_row(conn, skill_row, xuid)
                             total_skill += inserted_this_match["skill"]
 
+                    # Enemy MMR (peut être fait indépendamment de skill si seulement enemy_mmr est demandé)
+                    if enemy_mmr and skill_json:
+                        skill_row = transform_skill_stats(skill_json, match_id, xuid)
+                        if skill_row and skill_row.enemy_mmr is not None:
+                            if force_enemy_mmr:
+                                # Forcer la mise à jour même si enemy_mmr existe déjà
+                                # Utiliser INSERT OR REPLACE pour créer la ligne si elle n'existe pas
+                                _insert_skill_row(conn, skill_row, xuid)
+                                inserted_this_match["enemy_mmr"] = 1
+                                total_enemy_mmr_updated += 1
+                            else:
+                                # Ne mettre à jour que si enemy_mmr est NULL
+                                existing = conn.execute(
+                                    "SELECT enemy_mmr FROM player_match_stats WHERE match_id = ? AND xuid = ?",
+                                    (match_id, xuid),
+                                ).fetchone()
+                                if existing is None:
+                                    # La ligne n'existe pas, l'insérer complètement
+                                    _insert_skill_row(conn, skill_row, xuid)
+                                    inserted_this_match["enemy_mmr"] = 1
+                                    total_enemy_mmr_updated += 1
+                                elif existing[0] is None:
+                                    # La ligne existe mais enemy_mmr est NULL, mettre à jour seulement enemy_mmr
+                                    conn.execute(
+                                        "UPDATE player_match_stats SET enemy_mmr = ? WHERE match_id = ? AND xuid = ?",
+                                        (skill_row.enemy_mmr, match_id, xuid),
+                                    )
+                                    inserted_this_match["enemy_mmr"] = 1
+                                    total_enemy_mmr_updated += 1
+
                     # Personal scores
                     if personal_scores:
                         personal_scores_data = extract_personal_score_awards(stats_json, xuid)
@@ -887,6 +955,8 @@ async def backfill_player_data(
                         parts.append(f"{inserted_this_match['aliases']} alias(es)")
                     if inserted_this_match.get("accuracy", 0) > 0:
                         parts.append("accuracy")
+                    if inserted_this_match.get("enemy_mmr", 0) > 0:
+                        parts.append("enemy_mmr")
 
                     if parts:
                         logger.info(f"  ✅ {', '.join(parts)} inséré(s)")
@@ -912,6 +982,7 @@ async def backfill_player_data(
             "performance_scores_inserted": total_performance_scores,
             "aliases_inserted": total_aliases,
             "accuracy_updated": total_accuracy_updated,
+            "enemy_mmr_updated": total_enemy_mmr_updated,
         }
 
     finally:
@@ -930,9 +1001,11 @@ async def backfill_all_players(
     performance_scores: bool = False,
     aliases: bool = False,
     accuracy: bool = False,
+    enemy_mmr: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
+    force_enemy_mmr: bool = False,
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
     players = list_duckdb_v4_players()
@@ -953,6 +1026,7 @@ async def backfill_all_players(
         "performance_scores_inserted": 0,
         "aliases_inserted": 0,
         "accuracy_updated": 0,
+        "enemy_mmr_updated": 0,
     }
 
     for i, player_info in enumerate(players, 1):
@@ -972,9 +1046,11 @@ async def backfill_all_players(
             performance_scores=performance_scores,
             aliases=aliases,
             accuracy=accuracy,
+            enemy_mmr=enemy_mmr,
             all_data=all_data,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
+            force_enemy_mmr=force_enemy_mmr,
         )
 
         # Agréger les résultats
@@ -1088,6 +1164,18 @@ def main() -> int:
         help="Force la récupération de accuracy pour TOUS les matchs, même si elle existe déjà",
     )
 
+    parser.add_argument(
+        "--enemy-mmr",
+        action="store_true",
+        help="Backfill enemy_mmr pour les matchs avec enemy_mmr NULL dans player_match_stats",
+    )
+
+    parser.add_argument(
+        "--force-enemy-mmr",
+        action="store_true",
+        help="Force la récupération de enemy_mmr pour TOUS les matchs, même s'il existe déjà",
+    )
+
     args = parser.parse_args()
 
     # Validation
@@ -1109,9 +1197,11 @@ def main() -> int:
                     performance_scores=args.performance_scores,
                     aliases=args.aliases,
                     accuracy=args.accuracy,
+                    enemy_mmr=args.enemy_mmr,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
+                    force_enemy_mmr=args.force_enemy_mmr,
                 )
             )
 
@@ -1130,6 +1220,8 @@ def main() -> int:
             logger.info(f"Aliases insérés: {totals['aliases_inserted']}")
             if args.accuracy:
                 logger.info(f"Accuracy mis à jour: {totals['accuracy_updated']}")
+            if args.enemy_mmr:
+                logger.info(f"Enemy MMR mis à jour: {totals['enemy_mmr_updated']}")
         else:
             result = asyncio.run(
                 backfill_player_data(
@@ -1144,9 +1236,11 @@ def main() -> int:
                     performance_scores=args.performance_scores,
                     aliases=args.aliases,
                     accuracy=args.accuracy,
+                    enemy_mmr=args.enemy_mmr,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
+                    force_enemy_mmr=args.force_enemy_mmr,
                 )
             )
 
@@ -1161,6 +1255,8 @@ def main() -> int:
             logger.info(f"Aliases insérés: {result['aliases_inserted']}")
             if args.accuracy:
                 logger.info(f"Accuracy mis à jour: {result['accuracy_updated']}")
+            if args.enemy_mmr:
+                logger.info(f"Enemy MMR mis à jour: {result['enemy_mmr_updated']}")
 
         return 0
 

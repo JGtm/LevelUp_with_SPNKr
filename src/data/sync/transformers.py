@@ -645,23 +645,14 @@ def _extract_mmr_from_skill(
     if not isinstance(value, list):
         return None
 
-    my_mmr = None
-    team_mmrs = []
-    enemy_mmrs = []
+    # Trouver notre joueur et extraire TeamMmrs
+    my_result = None
+    my_team_id = None
 
     for player in value:
         if not isinstance(player, dict):
             continue
 
-        result = player.get("Result")
-        if not isinstance(result, dict):
-            continue
-
-        mmr = _safe_float(result.get("Mmr"))
-        if mmr is None:
-            continue
-
-        # Identifier si c'est notre joueur
         player_id = player.get("Id")
         player_xuid = None
         if isinstance(player_id, str):
@@ -670,33 +661,48 @@ def _extract_mmr_from_skill(
                 player_xuid = m.group(1)
 
         if player_xuid == xuid:
-            my_mmr = mmr
-            continue
+            my_result = player.get("Result")
+            if isinstance(my_result, dict):
+                my_team_id = _safe_int(my_result.get("TeamId"))
+                break
 
-        # Déterminer l'équipe du joueur
-        player_team = result.get("TeamId")
-        if player_team is None:
-            # Essayer de trouver dans les données
-            player_team = player.get("TeamId")
+    if not my_result or my_team_id is None:
+        return None
 
-        if team_id is not None and player_team == team_id:
-            team_mmrs.append(mmr)
-        else:
-            enemy_mmrs.append(mmr)
+    # Extraire team_mmr depuis TeamMmr du joueur
+    team_mmr = _safe_float(my_result.get("TeamMmr"))
 
-    # Calculer les moyennes
-    team_mmr = None
+    # Extraire enemy_mmr depuis TeamMmrs (recommandé)
+    # TeamMmrs contient les MMR de toutes les équipes : {"0": 1200.5, "1": 1150.3}
     enemy_mmr = None
+    team_mmrs_raw = my_result.get("TeamMmrs")
+    if isinstance(team_mmrs_raw, dict):
+        my_key = str(my_team_id)
+        for k, v in team_mmrs_raw.items():
+            if k != my_key:
+                enemy_mmr = _safe_float(v)
+                break
 
-    if team_mmrs:
-        # Inclure notre MMR si on l'a trouvé
-        all_team = team_mmrs + ([my_mmr] if my_mmr else [])
-        team_mmr = sum(all_team) / len(all_team) if all_team else None
-    elif my_mmr:
-        team_mmr = my_mmr
+    # Fallback : utiliser TeamMmr d'un adversaire si TeamMmrs n'est pas disponible
+    if enemy_mmr is None:
+        enemy_team_mmrs = []
+        for player in value:
+            if not isinstance(player, dict):
+                continue
+            result = player.get("Result")
+            if not isinstance(result, dict):
+                continue
+            player_team = result.get("TeamId")
+            player_team_mmr = _safe_float(result.get("TeamMmr"))
+            if (
+                player_team is not None
+                and player_team != my_team_id
+                and player_team_mmr is not None
+            ):
+                enemy_team_mmrs.append(player_team_mmr)
 
-    if enemy_mmrs:
-        enemy_mmr = sum(enemy_mmrs) / len(enemy_mmrs)
+        if enemy_team_mmrs:
+            enemy_mmr = sum(enemy_team_mmrs) / len(enemy_team_mmrs)
 
     if team_mmr is not None and enemy_mmr is not None:
         return (team_mmr, enemy_mmr)
@@ -742,18 +748,31 @@ def transform_skill_stats(
         team_id = _safe_int(result.get("TeamId"))
         team_mmr = _safe_float(result.get("TeamMmr"))
 
-        # Calculer enemy_mmr (moyenne des autres équipes)
-        enemy_mmrs = []
-        for other in value:
-            if not isinstance(other, dict):
-                continue
-            other_result = other.get("Result", {})
-            other_team = other_result.get("TeamId")
-            other_mmr = _safe_float(other_result.get("Mmr"))
-            if other_team != team_id and other_mmr is not None:
-                enemy_mmrs.append(other_mmr)
+        # Extraire enemy_mmr depuis TeamMmrs (recommandé)
+        # TeamMmrs contient les MMR de toutes les équipes : {"0": 1200.5, "1": 1150.3}
+        enemy_mmr = None
+        team_mmrs_raw = result.get("TeamMmrs")
+        if isinstance(team_mmrs_raw, dict) and team_id is not None:
+            my_key = str(team_id)
+            for k, v in team_mmrs_raw.items():
+                if k != my_key:
+                    enemy_mmr = _safe_float(v)
+                    break
 
-        enemy_mmr = sum(enemy_mmrs) / len(enemy_mmrs) if enemy_mmrs else None
+        # Fallback : utiliser TeamMmr d'un adversaire si TeamMmrs n'est pas disponible
+        if enemy_mmr is None:
+            enemy_mmrs = []
+            for other in value:
+                if not isinstance(other, dict):
+                    continue
+                other_result = other.get("Result", {})
+                other_team = other_result.get("TeamId")
+                other_team_mmr = _safe_float(other_result.get("TeamMmr"))
+                if other_team is not None and other_team != team_id and other_team_mmr is not None:
+                    enemy_mmrs.append(other_team_mmr)
+
+            if enemy_mmrs:
+                enemy_mmr = sum(enemy_mmrs) / len(enemy_mmrs)
 
         # Extraire expected/stddev
         stat_performances = result.get("StatPerformances")
