@@ -1,0 +1,147 @@
+# Audits et Roadmap Consolidés — LevelUp
+
+> **Date** : 2026-02-05  
+> Ce fichier regroupe les audits de migration en cours et remplace les plans dispersés.
+> Les plans et analyses déjà traités sont archivés dans `.ai/archive/plans_treated_2026-02/`.
+
+---
+
+## Table des matières
+
+1. [Audit SQLite → DuckDB](#1-audit-sqlite--duckdb)
+2. [Audit Pandas → Polars](#2-audit-pandas--polars)
+3. [Plans archivés (référence)](#3-plans-archivés-référence)
+4. [Priorités actuelles](#4-priorités-actuelles)
+
+---
+
+## 1. Audit SQLite → DuckDB
+
+> **Règle projet** : SQLite est **PROSCRIT**. Tout le code applicatif doit utiliser DuckDB v4.
+> **Source détaillée** : `.ai/SQLITE_TO_DUCKDB_AUDIT.md`
+
+### Résumé
+
+| Catégorie | Fichiers | Action |
+|-----------|----------|--------|
+| **À migrer vers DuckDB** | scripts, src/db, src/ui | Remplacer SQLite par DuckDB / `DuckDBRepository` |
+| **Scripts migration** | `recover_from_sqlite.py`, `migrate_player_to_duckdb.py` | Garder SQLite en lecture seule (migration only) |
+| **Déprécié** | `src/db/loaders.py`, `src/db/connection.py` | Remplacer par DuckDB, puis supprimer |
+| **Tests** | `test_cache_integrity.py` | Adapter pour DuckDB |
+
+### Fichiers clés
+
+| Fichier | Action |
+|---------|--------|
+| `scripts/sync.py` | Sync uniquement sur `stats.duckdb`, supprimer branches SQLite |
+| `src/db/connection.py` | Support DuckDB uniquement, refuser `.db` |
+| `src/db/loaders.py` | Supprimer branche SQLite dans `has_table()` |
+| `src/ui/multiplayer.py` | Supprimer `_get_sqlite_connection()` |
+| `src/ui/sync.py` | Refuser `.db`, uniquement DuckDB |
+| Scripts : `validate_refdata_integrity`, `refetch_film_roster`, `migrate_*` | `sqlite_master` → `information_schema.tables` |
+
+---
+
+## 2. Audit Pandas → Polars
+
+> **Règle projet** : Préférer Polars à Pandas pour les gros volumes (CLAUDE.md).
+> **Source détaillée** : `.ai/PANDAS_TO_POLARS_AUDIT.md`
+
+### Résumé
+
+| Catégorie | Fichiers | Action |
+|-----------|----------|--------|
+| **À migrer vers Polars** | src/visualization, src/analysis, src/ui, src/app | Remplacer `pd.DataFrame` par `pl.DataFrame` |
+| **Couche données** | cache.py, data_loader.py | Retourner Polars au lieu de convertir en Pandas |
+| **Points de conversion** | Streamlit, Plotly | `to_pandas()` uniquement aux frontières UI |
+| **Tests** | test_*.py | Fixtures Polars, adapter assertions |
+| **Scripts** | scripts/*.py | Migrer si traitement de données |
+
+### Ordre de migration recommandé
+
+1. **Couche données** : `load_df_optimized`, `cached_load_*` → `pl.DataFrame`
+2. **Analyses** : `sessions.py`, `killer_victim.py` → supprimer versions Pandas
+3. **Visualisations** : `timeseries.py`, `distributions.py` → accepter Polars
+4. **Pages UI** : migrer page par page
+5. **Tests** : fixtures et assertions Polars
+6. **Scripts** : migrer les scripts de traitement
+
+### Équivalences principales
+
+| Pandas | Polars |
+|--------|--------|
+| `pd.to_datetime(col)` | `pl.col("col").str.to_datetime()` |
+| `pd.to_numeric(col, errors="coerce")` | `pl.col("col").cast(pl.Float64)` |
+| `df.rolling(window).mean()` | `pl.col("col").rolling_mean(window_size=window)` |
+| `pd.merge_asof(a, b)` | `a.join_asof(b)` |
+| `df.groupby().agg()` | `df.group_by().agg()` |
+
+---
+
+## 3. Plans archivés (référence)
+
+Les plans et analyses suivants ont été traités ou sont obsolètes. Ils sont archivés dans `.ai/archive/plans_treated_2026-02/`.
+
+### Sprints
+
+| Fichier | Statut | Notes |
+|---------|--------|------|
+| `SPRINT_DATA_RECOVERY_PLAN.md` | Traité | Récupération xuid_aliases, match_participants, killer_victim_pairs |
+| `SPRINT_GAMERTAG_ROSTER_FIX.md` | Traité | Table match_participants, resolve_gamertag, backfill |
+| `SPRINT_REGRESSIONS_FIX.md` | Partiellement traité | Cache.py, données, régressions |
+| `PLAN_FIX_SESSIONS_ADVANCED.md` | En attente | Logique sessions (gap + teammates_signature) |
+| `LOGIC_LEGACY_SESSIONS.md` | Référence | Documentation logique legacy |
+| `FIX_ENEMY_MMR.md` | Traité | enemy_mmr depuis TeamMmrs |
+| `REGRESSIONS_FIX_FINAL.md` | Traité | Corrections régressions |
+| `REGRESSIONS_FIX_SUMMARY.md` | Traité | Résumé |
+| `DELTA_MODE_EXPLANATION.md` | Documentation | Mode delta sync |
+
+### Diagnostics
+
+| Fichier | Statut |
+|---------|--------|
+| `CORRECTIONS_APPLIQUEES_2026-02-05.md` | Appliqué |
+| `CORRECTIONS_NULL_METADATA_2026-02-05.md` | Appliqué |
+| `CRITICAL_DATA_MISSING_2026-02-05.md` | Appliqué |
+| `DERNIER_MATCH_*.md` | Appliqué |
+| `FIRST_KILL_DEATH_*.md` | Appliqué (LOWER event_type) |
+| `FIX_*.md`, `NULL_METADATA_*.md` | Appliqué |
+| `REGRESSIONS_ANALYSIS_2026-02-03.md` | Traité |
+| `ROOT_CAUSE_FIXED.md` | Traité |
+| `MEDIA_LIBRARY_*.md` | Appliqué |
+
+### Exploration / Features
+
+| Fichier | Statut |
+|---------|--------|
+| `CRITICAL_DATA_MISSING_EXPLORATION.md` | Diagnostic terminé, correction Discovery UGC en attente |
+| `correction_plan_2026-02-02.md` | Appliqué |
+| `cleanup_report.md` | Appliqué |
+| `test_visualizations_plan.md` | Appliqué (74 tests) |
+
+---
+
+## 4. Priorités actuelles
+
+D’après la synthèse des plans :
+
+| Priorité | Tâche | Fichier(s) |
+|----------|-------|------------|
+| **Critique** | Données manquantes (noms cartes, modes) | Discovery UGC, metadata.duckdb |
+| **Haute** | Logique sessions (teammates_signature) | PLAN_FIX_SESSIONS_ADVANCED |
+| **Haute** | Audit SQLite → DuckDB | Voir §1 |
+| **Moyenne** | Audit Pandas → Polars | Voir §2 |
+| **Basse** | enemy_mmr (si non traité) | transform_skill_stats |
+
+---
+
+## Fichiers source des audits
+
+- **SQLite → DuckDB** : `.ai/SQLITE_TO_DUCKDB_AUDIT.md`
+- **Pandas → Polars** : `.ai/PANDAS_TO_POLARS_AUDIT.md`
+- **Roadmap architecture** : `.ai/ARCHITECTURE_ROADMAP.md`
+- **Journal des décisions** : `.ai/thought_log.md`
+
+---
+
+*Dernière mise à jour : 2026-02-05*

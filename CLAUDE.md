@@ -70,6 +70,8 @@ pytest tests/ -v
 - **Aucun** usage de `sqlite_master` : utiliser `information_schema.tables` (DuckDB).
 - **Seules exceptions** : les scripts de **migration** qui lisent l’ancien SQLite pour alimenter DuckDB (`recover_from_sqlite.py`, `migrate_player_to_duckdb.py`). Ils restent les seuls autorisés à ouvrir un fichier `.db`.
 - **Audit des points à migrer** : voir `.ai/SQLITE_TO_DUCKDB_AUDIT.md`.
+- **Audit Pandas → Polars** : voir `.ai/PANDAS_TO_POLARS_AUDIT.md`.
+- **Synthèse consolidée** : `.ai/CONSOLIDATED_AUDITS_AND_ROADMAP.md`.
 
 ## Architecture Multi-Joueurs (DuckDB v4)
 

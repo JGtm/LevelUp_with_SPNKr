@@ -25,6 +25,19 @@ def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> g
     Returns:
         Figure Plotly.
     """
+    if df is None or (hasattr(df, "empty") and df.empty) or len(df) == 0:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Aucune donnée disponible",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font={"size": 16},
+        )
+        return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
+
     fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
     colors = HALO_COLORS.as_dict()
 
@@ -85,7 +98,7 @@ def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> g
             y=d["ratio"],
             mode="lines",
             name="Ratio",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["green"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["green"]},
             customdata=customdata,
             hovertemplate=common_hover,
         ),
@@ -95,7 +108,7 @@ def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> g
     fig.update_layout(
         title=title,
         legend=get_legend_horizontal_bottom(),
-        margin=dict(l=40, r=20, t=80, b=90),
+        margin={"l": 40, "r": 20, "t": 80, "b": 90},
         hovermode="x unified",
         barmode="group",
         bargap=0.15,
@@ -188,14 +201,14 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str = "Assistances") -> go.
             y=smooth,
             mode="lines",
             name="Moyenne (lissée)",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["green"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["green"]},
             hovertemplate="moyenne=%{y:.2f}<extra></extra>",
         )
     )
 
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=60, b=90),
+        margin={"l": 40, "r": 20, "t": 60, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
     )
@@ -294,7 +307,7 @@ def plot_per_minute_timeseries(
             y=_rolling_mean(kpm, window=10),
             mode="lines",
             name="Moy. frags/min",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["cyan"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["cyan"]},
             hovertemplate="moy=%{y:.2f}<extra></extra>",
         )
     )
@@ -304,7 +317,7 @@ def plot_per_minute_timeseries(
             y=_rolling_mean(dpm, window=10),
             mode="lines",
             name="Moy. morts/min",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["red"], dash="dot"),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["red"], "dash": "dot"},
             hovertemplate="moy=%{y:.2f}<extra></extra>",
         )
     )
@@ -314,14 +327,14 @@ def plot_per_minute_timeseries(
             y=_rolling_mean(apm, window=10),
             mode="lines",
             name="Moy. assist./min",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["violet"], dash="dot"),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["violet"], "dash": "dot"},
             hovertemplate="moy=%{y:.2f}<extra></extra>",
         )
     )
 
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=60, b=90),
+        margin={"l": 40, "r": 20, "t": 60, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
         barmode="group",
@@ -360,12 +373,12 @@ def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
                 y=d["accuracy"],
                 mode="lines",
                 name="Accuracy",
-                line=dict(width=PLOT_CONFIG.line_width, color=colors["violet"]),
+                line={"width": PLOT_CONFIG.line_width, "color": colors["violet"]},
                 hovertemplate="précision=%{y:.2f}%<extra></extra>",
             )
         ]
     )
-    fig.update_layout(height=PLOT_CONFIG.short_height, margin=dict(l=40, r=20, t=30, b=40))
+    fig.update_layout(height=PLOT_CONFIG.short_height, margin={"l": 40, "r": 20, "t": 30, "b": 40})
     fig.update_yaxes(title_text="%", rangemode="tozero")
 
     return apply_halo_plot_style(fig, height=PLOT_CONFIG.short_height)
@@ -425,14 +438,14 @@ def plot_average_life(df: pd.DataFrame, title: str = "Durée de vie moyenne") ->
             y=_rolling_mean(y, window=10),
             mode="lines",
             name="Moyenne (lissée)",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["cyan"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["cyan"]},
             hovertemplate="moyenne=%{y:.2f}s<extra></extra>",
         )
     )
 
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=50, b=90),
+        margin={"l": 40, "r": 20, "t": 50, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
     )
@@ -528,7 +541,7 @@ def plot_spree_headshots_accuracy(
             y=d["accuracy"],
             mode="lines",
             name="Précision (%)",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["violet"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["violet"]},
             hovertemplate="précision=%{y:.2f}%<extra></extra>",
         ),
         secondary_y=True,
@@ -545,7 +558,7 @@ def plot_spree_headshots_accuracy(
 
     fig.update_layout(
         height=420,
-        margin=dict(l=40, r=50, t=30, b=90),
+        margin={"l": 40, "r": 50, "t": 30, "b": 90},
         legend=get_legend_horizontal_bottom(),
         hovermode="x unified",
         barmode="group",
@@ -634,14 +647,14 @@ def plot_performance_timeseries(
                 y=smooth,
                 mode="lines",
                 name="Moyenne (lissée)",
-                line=dict(width=PLOT_CONFIG.line_width, color=colors.get("violet", "#8B5CF6")),
+                line={"width": PLOT_CONFIG.line_width, "color": colors.get("violet", "#8B5CF6")},
                 hovertemplate="moyenne=%{y:.1f}<extra></extra>",
             )
         )
 
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=60, b=90),
+        margin={"l": 40, "r": 20, "t": 60, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
     )
