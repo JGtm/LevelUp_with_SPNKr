@@ -172,7 +172,10 @@ D’après la synthèse des plans :
 - [x] Modèle et transformers (calcul end_time)
 - [x] Engine : CREATE TABLE + migration ADD COLUMN + _insert_match_row
 - [x] backfill_data.py : --end-time, --force-end-time, logique de backfill
-- [ ] Docs : SQL_SCHEMA.md, data_lineage (optionnel)
+- [x] Docs : SQL_SCHEMA.md (data_lineage optionnel)
+- [x] **Backfill exécuté** : end_time rempli sur les données existantes
+
+**Tâche terminée.**
 
 ---
 
@@ -185,4 +188,4 @@ D’après la synthèse des plans :
 
 ---
 
-*Dernière mise à jour : 2026-02-05 (ajout §6 colonne end_time match_stats + implémentation sync + backfill)*
+*Dernière mise à jour : 2026-02-05 (§6 end_time : tâche terminée, backfill exécuté)*
