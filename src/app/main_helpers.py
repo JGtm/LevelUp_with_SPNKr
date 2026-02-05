@@ -390,6 +390,8 @@ def load_match_dataframe(
 
     if not df.empty:
         with perf_section("analysis/mark_firefight"):
-            df = mark_firefight(df)
+            import polars as pl
+
+            df = mark_firefight(pl.from_pandas(df)).to_pandas()
 
     return df, db_key

@@ -337,6 +337,7 @@ class DuckDBSyncEngine:
                 CREATE TABLE match_stats (
                     match_id VARCHAR PRIMARY KEY,
                     start_time TIMESTAMP,
+                    end_time TIMESTAMP,
                     playlist_id VARCHAR,
                     playlist_name VARCHAR,
                     map_id VARCHAR,
@@ -401,6 +402,20 @@ class DuckDBSyncEngine:
                     conn.execute("ALTER TABLE match_stats ADD COLUMN accuracy FLOAT")
                 except Exception as e:
                     logger.warning(f"Impossible d'ajouter la colonne accuracy: {e}")
+
+            # Colonne end_time (heure de fin = start_time + time_played_seconds)
+            end_time_cols = conn.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'match_stats' AND column_name = 'end_time'
+                """
+            ).fetchall()
+            if not end_time_cols:
+                logger.info("Ajout de la colonne end_time à match_stats")
+                try:
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN end_time TIMESTAMP")
+                except Exception as e:
+                    logger.warning(f"Impossible d'ajouter la colonne end_time: {e}")
 
     def _load_existing_match_ids(self) -> set[str]:
         """Charge les IDs des matchs existants depuis la DB."""
@@ -877,7 +892,7 @@ class DuckDBSyncEngine:
         # Construire la requête d'insertion
         conn.execute(
             """INSERT OR REPLACE INTO match_stats (
-                match_id, start_time, playlist_id, playlist_name,
+                match_id, start_time, end_time, playlist_id, playlist_name,
                 map_id, map_name, pair_id, pair_name,
                 game_variant_id, game_variant_name,
                 outcome, team_id, kills, deaths, assists,
@@ -886,10 +901,11 @@ class DuckDBSyncEngine:
                 my_team_score, enemy_team_score,
                 team_mmr, enemy_mmr,
                 is_firefight, teammates_signature, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 row.match_id,
                 row.start_time,
+                row.end_time,
                 row.playlist_id,
                 row.playlist_name,
                 row.map_id,

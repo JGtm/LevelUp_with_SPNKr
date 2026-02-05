@@ -17,7 +17,7 @@ import logging
 import math
 import re
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -648,9 +648,15 @@ def transform_match_stats(
     # Calculer la signature des coéquipiers
     teammates_signature = compute_teammates_signature(match_json, xuid, team_id)
 
+    # Heure de fin du match : start_time + time_played_seconds
+    end_time = None
+    if start_time is not None and time_played is not None and time_played >= 0:
+        end_time = start_time + timedelta(seconds=time_played)
+
     return MatchStatsRow(
         match_id=match_id,
         start_time=start_time,
+        end_time=end_time,
         playlist_id=playlist_id,
         playlist_name=playlist_name,
         map_id=map_id,

@@ -166,7 +166,8 @@ class MatchStatsRow:
     """
 
     match_id: str
-    start_time: datetime | None
+    start_time: datetime | None = None
+    end_time: datetime | None = None  # start_time + time_played_seconds
     playlist_id: str | None = None
     playlist_name: str | None = None
     map_id: str | None = None

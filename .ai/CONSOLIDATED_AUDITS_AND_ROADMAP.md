@@ -13,6 +13,7 @@
 3. [Plans archivés (référence)](#3-plans-archivés-référence)
 4. [Priorités actuelles](#4-priorités-actuelles)
 5. [À analyser / planifier](#5-à-analyser--planifier)
+6. [Colonne end_time (match_stats)](#6-colonne-end_time-match_stats)
 
 ---
 
@@ -45,7 +46,7 @@
 
 ## 2. Audit Pandas → Polars
 
-> **Règle projet** : Préférer Polars à Pandas pour les gros volumes (CLAUDE.md).
+> **Règle projet** : **Pandas est PROSCRIT.** Utiliser **Polars** uniquement pour DataFrames et séries (CLAUDE.md).
 > **Source détaillée** : `.ai/PANDAS_TO_POLARS_AUDIT.md`
 
 ### Résumé
@@ -151,6 +152,30 @@ D’après la synthèse des plans :
 
 ---
 
+## 6. Colonne end_time (match_stats)
+
+**Objectif** : Ajouter une colonne `end_time` (heure de fin du match) dans `match_stats`, dérivée de `start_time + time_played_seconds`, pour simplifier requêtes et affichages (médias, fenêtres temporelles, etc.).
+
+### Planification
+
+| Élément | Détail |
+|--------|--------|
+| **Colonne** | `end_time TIMESTAMP` (nullable si `time_played_seconds` manquant). |
+| **Calcul** | `end_time = start_time + (time_played_seconds || ' seconds')::INTERVAL` (DuckDB) ou en Python `start_time + timedelta(seconds=time_played_seconds or 0)`. |
+| **Sync / refresh** | Lors de l’insertion ou du remplacement d’une ligne dans `match_stats`, calculer et persister `end_time` en plus de `start_time` et `time_played_seconds`. |
+| **Fichiers à modifier** | `src/data/sync/models.py` (ajouter `end_time` à `MatchStatsRow`), `src/data/sync/transformers.py` (calculer `end_time` dans `transform_match_stats`), `src/data/sync/engine.py` (création/migration de la colonne, inclusion dans `_insert_match_row`). |
+| **Backfill** | Option `--end-time` dans `scripts/backfill_data.py` : mettre à jour `end_time` pour les lignes où `end_time IS NULL` (ou pour toutes les lignes avec `--force-end-time`). Requête type : `UPDATE match_stats SET end_time = start_time + (time_played_seconds || ' seconds')::INTERVAL WHERE end_time IS NULL AND start_time IS NOT NULL AND time_played_seconds IS NOT NULL`. |
+| **Documentation** | Mettre à jour `docs/SQL_SCHEMA.md` et `.ai/data_lineage.md` pour documenter `end_time`. |
+
+### Statut
+
+- [x] Modèle et transformers (calcul end_time)
+- [x] Engine : CREATE TABLE + migration ADD COLUMN + _insert_match_row
+- [x] backfill_data.py : --end-time, --force-end-time, logique de backfill
+- [ ] Docs : SQL_SCHEMA.md, data_lineage (optionnel)
+
+---
+
 ## Fichiers source des audits
 
 - **SQLite → DuckDB** : `.ai/SQLITE_TO_DUCKDB_AUDIT.md`
@@ -160,4 +185,4 @@ D’après la synthèse des plans :
 
 ---
 
-*Dernière mise à jour : 2026-02-05 (ajout §5 mémorisation filtres par joueur)*
+*Dernière mise à jour : 2026-02-05 (ajout §6 colonne end_time match_stats + implémentation sync + backfill)*

@@ -36,6 +36,12 @@ Usage:
     # Backfill paires killer/victim pour antagonistes
     python scripts/backfill_data.py --player JGtm --killer-victim
 
+    # Remplir l'heure de fin des matchs (end_time = start_time + time_played_seconds)
+    python scripts/backfill_data.py --player JGtm --end-time
+
+    # Forcer le recalcul de end_time pour tous les matchs
+    python scripts/backfill_data.py --player JGtm --end-time --force-end-time
+
     # Backfill pour tous les joueurs
     python scripts/backfill_data.py --all --all-data
 
@@ -472,6 +478,57 @@ def _backfill_killer_victim_pairs(conn, me_xuid: str) -> int:
     return total_pairs
 
 
+def _ensure_end_time_column(conn) -> None:
+    """S'assure que la colonne end_time existe dans match_stats."""
+    try:
+        result = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_name = 'match_stats'
+              AND column_name = 'end_time'
+            """
+        ).fetchone()
+        if result and result[0] == 0:
+            logger.info("Ajout de la colonne end_time à match_stats")
+            conn.execute("ALTER TABLE match_stats ADD COLUMN end_time TIMESTAMP")
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Note lors de la vérification de end_time: {e}")
+
+
+def _backfill_end_time(conn, force: bool = False) -> int:
+    """Met à jour end_time (start_time + time_played_seconds) pour les matchs concernés.
+
+    Returns:
+        Nombre de lignes mises à jour.
+    """
+    _ensure_end_time_column(conn)
+    try:
+        # DuckDB: start_time + (time_played_seconds * INTERVAL '1 SECOND')
+        where_clause = (
+            "WHERE start_time IS NOT NULL AND time_played_seconds IS NOT NULL"
+            if force
+            else """WHERE end_time IS NULL
+                  AND start_time IS NOT NULL
+                  AND time_played_seconds IS NOT NULL"""
+        )
+        cursor = conn.execute(
+            f"""
+            UPDATE match_stats
+            SET end_time = start_time + (time_played_seconds * INTERVAL '1 SECOND')
+            {where_clause}
+            RETURNING match_id
+            """
+        )
+        updated = cursor.fetchall()
+        conn.commit()
+        return len(updated)
+    except Exception as e:
+        logger.warning(f"Erreur backfill end_time: {e}")
+        return 0
+
+
 def _ensure_performance_score_column(conn) -> None:
     """S'assure que la colonne performance_score existe dans match_stats."""
     try:
@@ -775,6 +832,7 @@ async def backfill_player_data(
     assets: bool = False,
     participants: bool = False,
     killer_victim: bool = False,
+    end_time: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
@@ -782,6 +840,7 @@ async def backfill_player_data(
     force_aliases: bool = False,
     force_assets: bool = False,
     force_participants: bool = False,
+    force_end_time: bool = False,
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
 
@@ -813,6 +872,7 @@ async def backfill_player_data(
         assets = True
         participants = True
         killer_victim = True
+        end_time = True
 
     # Si force_accuracy est activé sans accuracy, l'activer automatiquement
     if force_accuracy and not accuracy:
@@ -831,6 +891,9 @@ async def backfill_player_data(
     if force_participants and not participants:
         participants = True
 
+    if force_end_time and not end_time:
+        end_time = True
+
     # Vérifier qu'au moins une option est activée
     if not any(
         [
@@ -845,6 +908,7 @@ async def backfill_player_data(
             assets,
             participants,
             killer_victim,
+            end_time,
             force_aliases,
         ]
     ):
@@ -865,6 +929,7 @@ async def backfill_player_data(
             "assets_updated": 0,
             "participants_inserted": 0,
             "killer_victim_pairs_inserted": 0,
+            "end_time_updated": 0,
         }
 
     # Vérifier que c'est un joueur DuckDB v4
@@ -886,6 +951,7 @@ async def backfill_player_data(
             "assets_updated": 0,
             "participants_inserted": 0,
             "killer_victim_pairs_inserted": 0,
+            "end_time_updated": 0,
         }
 
     # Obtenir le chemin de la DB
@@ -962,6 +1028,7 @@ async def backfill_player_data(
                     "assets_updated": 0,
                     "participants_inserted": 0,
                     "killer_victim_pairs_inserted": 0,
+                    "end_time_updated": 0,
                 }
         finally:
             conn.close()
@@ -1089,10 +1156,11 @@ async def backfill_player_data(
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "killer_victim_pairs_inserted": 0,
+                "end_time_updated": 0,
             }
 
-        if not match_ids and not killer_victim:
-            # Pas de matchs à traiter ET pas de killer_victim à backfill
+        if not match_ids and not killer_victim and not end_time:
+            # Pas de matchs à traiter ET pas de killer_victim ni end_time à backfill
             logger.info("Tous les matchs ont déjà toutes les données demandées")
             return {
                 "matches_checked": 0,
@@ -1101,24 +1169,34 @@ async def backfill_player_data(
                 "events_inserted": 0,
                 "skill_inserted": 0,
                 "personal_scores_inserted": 0,
+                "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "killer_victim_pairs_inserted": 0,
+                "end_time_updated": 0,
             }
-        elif not match_ids and killer_victim:
-            # Pas de matchs à traiter via API mais killer_victim à backfill
-            # On exécute directement le backfill killer_victim et on retourne
+        elif not match_ids and (killer_victim or end_time):
+            # Pas de matchs à traiter via API mais killer_victim et/ou end_time à backfill
             logger.info("Pas de données de match à backfill via API...")
             total_killer_victim_pairs = 0
-            logger.info("Backfill des paires killer/victim depuis highlight_events...")
-            total_killer_victim_pairs = _backfill_killer_victim_pairs(conn, xuid)
-            if total_killer_victim_pairs > 0:
-                logger.info(f"✅ {total_killer_victim_pairs} paires killer/victim insérées")
-            else:
-                logger.info("Aucune nouvelle paire killer/victim à insérer")
+            total_end_time_updated = 0
+            if killer_victim:
+                logger.info("Backfill des paires killer/victim depuis highlight_events...")
+                total_killer_victim_pairs = _backfill_killer_victim_pairs(conn, xuid)
+                if total_killer_victim_pairs > 0:
+                    logger.info(f"✅ {total_killer_victim_pairs} paires killer/victim insérées")
+                else:
+                    logger.info("Aucune nouvelle paire killer/victim à insérer")
+            if end_time:
+                logger.info("Backfill de l'heure de fin des matchs (end_time)...")
+                total_end_time_updated = _backfill_end_time(conn, force=force_end_time)
+                if total_end_time_updated > 0:
+                    logger.info(f"✅ {total_end_time_updated} match(s) avec end_time mis à jour")
+                else:
+                    logger.info("Aucun match à mettre à jour pour end_time")
 
             logger.info(f"Backfill terminé pour {gamertag}")
             return {
@@ -1128,12 +1206,14 @@ async def backfill_player_data(
                 "events_inserted": 0,
                 "skill_inserted": 0,
                 "personal_scores_inserted": 0,
+                "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "killer_victim_pairs_inserted": total_killer_victim_pairs,
+                "end_time_updated": total_end_time_updated,
             }
 
         # Récupérer les tokens
@@ -1147,12 +1227,14 @@ async def backfill_player_data(
                 "events_inserted": 0,
                 "skill_inserted": 0,
                 "personal_scores_inserted": 0,
+                "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "killer_victim_pairs_inserted": 0,
+                "end_time_updated": 0,
             }
 
         # Traiter les matchs
@@ -1166,6 +1248,7 @@ async def backfill_player_data(
         total_enemy_mmr_updated = 0
         total_assets_updated = 0
         total_participants_inserted = 0
+        total_end_time_updated = 0
 
         async with SPNKrAPIClient(
             tokens=tokens,
@@ -1403,6 +1486,16 @@ async def backfill_player_data(
             else:
                 logger.info("Aucune nouvelle paire killer/victim à insérer")
 
+        # Backfill end_time (start_time + time_played_seconds)
+        total_end_time_updated = 0
+        if end_time:
+            logger.info("Backfill de l'heure de fin des matchs (end_time)...")
+            total_end_time_updated = _backfill_end_time(conn, force=force_end_time)
+            if total_end_time_updated > 0:
+                logger.info(f"✅ {total_end_time_updated} match(s) avec end_time mis à jour")
+            else:
+                logger.info("Aucun match à mettre à jour pour end_time")
+
         logger.info(f"Backfill terminé pour {gamertag}")
 
         return {
@@ -1419,6 +1512,7 @@ async def backfill_player_data(
             "assets_updated": total_assets_updated,
             "participants_inserted": total_participants_inserted,
             "killer_victim_pairs_inserted": total_killer_victim_pairs,
+            "end_time_updated": total_end_time_updated,
         }
 
     finally:
@@ -1441,6 +1535,7 @@ async def backfill_all_players(
     assets: bool = False,
     participants: bool = False,
     killer_victim: bool = False,
+    end_time: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
@@ -1448,6 +1543,7 @@ async def backfill_all_players(
     force_aliases: bool = False,
     force_assets: bool = False,
     force_participants: bool = False,
+    force_end_time: bool = False,
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
     players = list_duckdb_v4_players()
@@ -1472,6 +1568,7 @@ async def backfill_all_players(
         "assets_updated": 0,
         "participants_inserted": 0,
         "killer_victim_pairs_inserted": 0,
+        "end_time_updated": 0,
     }
 
     for i, player_info in enumerate(players, 1):
@@ -1495,6 +1592,7 @@ async def backfill_all_players(
             assets=assets,
             participants=participants,
             killer_victim=killer_victim,
+            end_time=end_time,
             all_data=all_data,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
@@ -1502,6 +1600,7 @@ async def backfill_all_players(
             force_aliases=force_aliases,
             force_assets=force_assets,
             force_participants=force_participants,
+            force_end_time=force_end_time,
         )
 
         # Agréger les résultats
@@ -1594,7 +1693,7 @@ def main() -> int:
     parser.add_argument(
         "--all-data",
         action="store_true",
-        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --participants --killer-victim)",
+        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --participants --killer-victim --end-time)",
     )
 
     parser.add_argument(
@@ -1663,6 +1762,18 @@ def main() -> int:
         help="Backfill les paires killer/victim depuis highlight_events pour antagonistes",
     )
 
+    parser.add_argument(
+        "--end-time",
+        action="store_true",
+        help="Remplir l'heure de fin des matchs (end_time = start_time + time_played_seconds)",
+    )
+
+    parser.add_argument(
+        "--force-end-time",
+        action="store_true",
+        help="Recalculer end_time pour tous les matchs, même déjà remplis",
+    )
+
     args = parser.parse_args()
 
     # Validation
@@ -1688,6 +1799,7 @@ def main() -> int:
                     assets=args.assets,
                     participants=args.participants,
                     killer_victim=args.killer_victim,
+                    end_time=args.end_time,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
@@ -1695,6 +1807,7 @@ def main() -> int:
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
                     force_participants=args.force_participants,
+                    force_end_time=args.force_end_time,
                 )
             )
 
@@ -1723,6 +1836,8 @@ def main() -> int:
                 logger.info(
                     f"Paires killer/victim insérées: {totals['killer_victim_pairs_inserted']}"
                 )
+            if args.end_time:
+                logger.info(f"End time mis à jour: {totals['end_time_updated']}")
         else:
             result = asyncio.run(
                 backfill_player_data(
@@ -1741,6 +1856,7 @@ def main() -> int:
                     assets=args.assets,
                     participants=args.participants,
                     killer_victim=args.killer_victim,
+                    end_time=args.end_time,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
@@ -1748,6 +1864,7 @@ def main() -> int:
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
                     force_participants=args.force_participants,
+                    force_end_time=args.force_end_time,
                 )
             )
 
@@ -1772,6 +1889,8 @@ def main() -> int:
                 logger.info(
                     f"Paires killer/victim insérées: {result['killer_victim_pairs_inserted']}"
                 )
+            if args.end_time:
+                logger.info(f"End time mis à jour: {result['end_time_updated']}")
 
         return 0
 

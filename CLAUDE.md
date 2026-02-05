@@ -58,10 +58,17 @@ pytest tests/ -v
 
 1. Répondre en français
 2. Utiliser Pydantic v2 pour valider les données
-3. Préférer Polars à Pandas pour les gros volumes
+3. **Pandas est PROSCRIT** - Utiliser **Polars** uniquement pour les DataFrames et séries (voir § Pandas interdit ci-dessous)
 4. Utiliser DuckDBRepository pour l'accès aux données
 5. Documenter les décisions dans `.ai/thought_log.md`
 6. **SQLite est PROSCRIT** - Aucun fallback SQLite, tout le code doit utiliser DuckDB v4 uniquement
+
+## ⛔ Pandas interdit (règle critique)
+
+- **Aucun** `import pandas` ni `import pandas as pd` dans le code applicatif (analyse, UI, sync, repositories, scripts).
+- **Polars uniquement** : `import polars as pl` ; utiliser `pl.DataFrame`, `pl.Series`, `pl.LazyFrame`.
+- À la frontière avec des librairies qui exigent du NumPy/Pandas (ex. certains composants Streamlit/Plotly), convertir au dernier moment avec `.to_pandas()` ou `.to_numpy()` et ne pas faire remonter du Pandas dans les modules métier.
+- **Audit des points à migrer** : voir `.ai/PANDAS_TO_POLARS_AUDIT.md` et `.ai/CONSOLIDATED_AUDITS_AND_ROADMAP.md`.
 
 ## ⛔ SQLite interdit (règle critique)
 
@@ -89,7 +96,7 @@ Chaque joueur a sa propre DB : `data/players/{gamertag}/stats.duckdb`
 | Composant | Usage |
 |-----------|-------|
 | **DuckDB** | Moteur de requêtes OLAP |
-| **Polars** | DataFrames haute performance |
+| **Polars** | DataFrames et séries (Pandas interdit) |
 | **Pydantic v2** | Validation des données |
 | **Streamlit** | Interface utilisateur |
 | **SPNKr** | API Halo Infinite |

@@ -118,6 +118,7 @@ Faits des matchs (1 ligne = 1 match joué).
 |---------|------|-------------|
 | `match_id` | VARCHAR PK | ID unique du match |
 | `start_time` | TIMESTAMP | Début du match (UTC) |
+| `end_time` | TIMESTAMP | Fin du match (UTC), dérivé : start_time + time_played_seconds |
 | `playlist_id` | VARCHAR | FK → playlists |
 | `map_id` | VARCHAR | FK → maps |
 | `game_variant_id` | VARCHAR | FK → game_modes |

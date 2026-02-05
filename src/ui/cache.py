@@ -140,7 +140,10 @@ def cached_compute_sessions_db(
         df0["session_id"] = pd.Series(dtype=int)
         df0["session_label"] = pd.Series(dtype=str)
         return df0
-    df0 = mark_firefight(df0)
+    import polars as pl
+
+    df0_pl = mark_firefight(pl.from_pandas(df0))
+    df0 = df0_pl.to_pandas()
     if (not include_firefight) and ("is_firefight" in df0.columns):
         df0 = df0.loc[~df0["is_firefight"]].copy()
 
