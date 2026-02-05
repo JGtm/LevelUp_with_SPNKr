@@ -167,6 +167,7 @@ CREATE INDEX IF NOT EXISTS idx_career_xuid ON career_progression(xuid);
 CREATE INDEX IF NOT EXISTS idx_career_date ON career_progression(recorded_at);
 
 -- Table media_files (indexation des médias capturés)
+-- Note: Pas de owner_xuid - les associations se font via media_match_associations
 CREATE TABLE IF NOT EXISTS media_files (
     file_path VARCHAR PRIMARY KEY,
     file_hash VARCHAR NOT NULL,
@@ -174,7 +175,6 @@ CREATE TABLE IF NOT EXISTS media_files (
     file_size BIGINT NOT NULL,
     file_ext VARCHAR NOT NULL,
     kind VARCHAR NOT NULL,
-    owner_xuid VARCHAR NOT NULL,
     mtime DOUBLE NOT NULL,
     mtime_paris_epoch DOUBLE NOT NULL,
     thumbnail_path VARCHAR,
@@ -186,7 +186,6 @@ CREATE TABLE IF NOT EXISTS media_files (
 CREATE INDEX IF NOT EXISTS idx_media_mtime ON media_files(mtime_paris_epoch DESC);
 CREATE INDEX IF NOT EXISTS idx_media_kind ON media_files(kind);
 CREATE INDEX IF NOT EXISTS idx_media_hash ON media_files(file_hash);
-CREATE INDEX IF NOT EXISTS idx_media_owner ON media_files(owner_xuid);
 
 -- Table media_match_associations (associations média ↔ match ↔ joueur)
 CREATE TABLE IF NOT EXISTS media_match_associations (
@@ -282,6 +281,9 @@ class DuckDBSyncEngine:
         if conn is None:
             return
 
+        # S'assurer que match_stats existe avec toutes les colonnes nécessaires
+        self._ensure_match_stats_table()
+
         # Tables de sync (nouvelles)
         for stmt in SYNC_SCHEMA_DDL.split(";"):
             stmt = stmt.strip()
@@ -292,6 +294,89 @@ class DuckDBSyncEngine:
                     # Index déjà existant ou autre erreur non fatale
                     if "already exists" not in str(e).lower():
                         logger.warning(f"Schema DDL warning: {e}")
+
+    def _ensure_match_stats_table(self) -> None:
+        """S'assure que la table match_stats existe avec toutes les colonnes nécessaires."""
+        conn = self._connection
+        if conn is None:
+            return
+
+        # Vérifier si la table existe
+        tables = conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_name = 'match_stats'"
+        ).fetchall()
+
+        if not tables:
+            # Créer la table complète
+            logger.info("Création de la table match_stats")
+            conn.execute("""
+                CREATE TABLE match_stats (
+                    match_id VARCHAR PRIMARY KEY,
+                    start_time TIMESTAMP,
+                    playlist_id VARCHAR,
+                    playlist_name VARCHAR,
+                    map_id VARCHAR,
+                    map_name VARCHAR,
+                    pair_id VARCHAR,
+                    pair_name VARCHAR,
+                    game_variant_id VARCHAR,
+                    game_variant_name VARCHAR,
+                    outcome TINYINT,
+                    team_id TINYINT,
+                    rank SMALLINT,
+                    kills SMALLINT,
+                    deaths SMALLINT,
+                    assists SMALLINT,
+                    kda FLOAT,
+                    accuracy FLOAT,
+                    headshot_kills SMALLINT,
+                    max_killing_spree SMALLINT,
+                    time_played_seconds INTEGER,
+                    avg_life_seconds FLOAT,
+                    my_team_score SMALLINT,
+                    enemy_team_score SMALLINT,
+                    team_mmr FLOAT,
+                    enemy_mmr FLOAT,
+                    damage_dealt FLOAT,
+                    damage_taken FLOAT,
+                    shots_fired INTEGER,
+                    shots_hit INTEGER,
+                    grenade_kills SMALLINT,
+                    melee_kills SMALLINT,
+                    power_weapon_kills SMALLINT,
+                    score INTEGER,
+                    personal_score INTEGER,
+                    mode_category VARCHAR,
+                    is_ranked BOOLEAN DEFAULT FALSE,
+                    is_firefight BOOLEAN DEFAULT FALSE,
+                    left_early BOOLEAN DEFAULT FALSE,
+                    session_id VARCHAR,
+                    session_label VARCHAR,
+                    performance_score FLOAT,
+                    teammates_signature VARCHAR,
+                    known_teammates_count SMALLINT,
+                    is_with_friends BOOLEAN,
+                    friends_xuids VARCHAR,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+            """)
+        else:
+            # Vérifier si la colonne accuracy existe
+            columns = conn.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'match_stats' AND column_name = 'accuracy'
+                """
+            ).fetchall()
+
+            if not columns:
+                # Ajouter la colonne accuracy si elle manque
+                logger.info("Ajout de la colonne accuracy à match_stats")
+                try:
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN accuracy FLOAT")
+                except Exception as e:
+                    logger.warning(f"Impossible d'ajouter la colonne accuracy: {e}")
 
     def _load_existing_match_ids(self) -> set[str]:
         """Charge les IDs des matchs existants depuis la DB."""

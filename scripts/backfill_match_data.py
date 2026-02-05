@@ -8,6 +8,7 @@ Usage:
     python scripts/backfill_match_data.py --gamertag JGtm
     python scripts/backfill_match_data.py --gamertag JGtm --limit 50
     python scripts/backfill_match_data.py --gamertag JGtm --with-events --with-medals
+    python scripts/backfill_match_data.py --gamertag JGtm --force-accuracy
 """
 
 from __future__ import annotations
@@ -40,14 +41,23 @@ logger = logging.getLogger(__name__)
 PLAYERS_DIR = REPO_ROOT / "data" / "players"
 
 
-def get_matches_needing_backfill(conn: duckdb.DuckDBPyConnection, limit: int = 0) -> list[str]:
+def get_matches_needing_backfill(
+    conn: duckdb.DuckDBPyConnection, limit: int = 0, force_accuracy: bool = False
+) -> list[str]:
     """Récupère les IDs des matchs avec données manquantes."""
-    query = """
+    conditions = [
+        "time_played_seconds IS NULL",
+        "avg_life_seconds IS NULL",
+        "damage_dealt IS NULL",
+    ]
+
+    if force_accuracy:
+        conditions.append("accuracy IS NULL")
+
+    query = f"""
         SELECT match_id
         FROM match_stats
-        WHERE time_played_seconds IS NULL
-           OR avg_life_seconds IS NULL
-           OR damage_dealt IS NULL
+        WHERE {' OR '.join(conditions)}
         ORDER BY start_time DESC
     """
     if limit > 0:
@@ -81,6 +91,7 @@ async def backfill_match(
     *,
     with_events: bool = False,
     with_aliases: bool = False,
+    force_accuracy: bool = False,
 ) -> dict:
     """Backfill un match unique."""
     result = {"updated": False, "events": 0, "aliases": 0, "error": None}
@@ -98,28 +109,29 @@ async def backfill_match(
             result["error"] = "Transformation échouée"
             return result
 
-        # Mettre à jour les colonnes manquantes
-        update_query = """
-            UPDATE match_stats SET
-                time_played_seconds = COALESCE(time_played_seconds, ?),
-                avg_life_seconds = COALESCE(avg_life_seconds, ?),
-                damage_dealt = COALESCE(damage_dealt, ?),
-                damage_taken = COALESCE(damage_taken, ?),
-                shots_fired = COALESCE(shots_fired, ?),
-                shots_hit = COALESCE(shots_hit, ?),
-                grenade_kills = COALESCE(grenade_kills, ?),
-                melee_kills = COALESCE(melee_kills, ?),
-                power_weapon_kills = COALESCE(power_weapon_kills, ?),
-                score = COALESCE(score, ?),
-                personal_score = COALESCE(personal_score, ?),
-                my_team_score = COALESCE(my_team_score, ?),
-                enemy_team_score = COALESCE(enemy_team_score, ?),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE match_id = ?
-        """
-        conn.execute(
-            update_query,
-            (
+        # Construire la requête UPDATE selon si on force accuracy ou non
+        if force_accuracy:
+            # Forcer la mise à jour de accuracy même si elle existe déjà
+            update_query = """
+                UPDATE match_stats SET
+                    time_played_seconds = COALESCE(time_played_seconds, ?),
+                    avg_life_seconds = COALESCE(avg_life_seconds, ?),
+                    damage_dealt = COALESCE(damage_dealt, ?),
+                    damage_taken = COALESCE(damage_taken, ?),
+                    shots_fired = COALESCE(shots_fired, ?),
+                    shots_hit = COALESCE(shots_hit, ?),
+                    grenade_kills = COALESCE(grenade_kills, ?),
+                    melee_kills = COALESCE(melee_kills, ?),
+                    power_weapon_kills = COALESCE(power_weapon_kills, ?),
+                    score = COALESCE(score, ?),
+                    personal_score = COALESCE(personal_score, ?),
+                    my_team_score = COALESCE(my_team_score, ?),
+                    enemy_team_score = COALESCE(enemy_team_score, ?),
+                    accuracy = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE match_id = ?
+            """
+            params = (
                 row.time_played_seconds,
                 row.avg_life_seconds,
                 row.damage_dealt,
@@ -133,9 +145,49 @@ async def backfill_match(
                 row.personal_score,
                 row.my_team_score,
                 row.enemy_team_score,
+                row.accuracy,
                 match_id,
-            ),
-        )
+            )
+        else:
+            # Comportement normal : ne mettre à jour accuracy que si NULL
+            update_query = """
+                UPDATE match_stats SET
+                    time_played_seconds = COALESCE(time_played_seconds, ?),
+                    avg_life_seconds = COALESCE(avg_life_seconds, ?),
+                    damage_dealt = COALESCE(damage_dealt, ?),
+                    damage_taken = COALESCE(damage_taken, ?),
+                    shots_fired = COALESCE(shots_fired, ?),
+                    shots_hit = COALESCE(shots_hit, ?),
+                    grenade_kills = COALESCE(grenade_kills, ?),
+                    melee_kills = COALESCE(melee_kills, ?),
+                    power_weapon_kills = COALESCE(power_weapon_kills, ?),
+                    score = COALESCE(score, ?),
+                    personal_score = COALESCE(personal_score, ?),
+                    my_team_score = COALESCE(my_team_score, ?),
+                    enemy_team_score = COALESCE(enemy_team_score, ?),
+                    accuracy = COALESCE(accuracy, ?),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE match_id = ?
+            """
+            params = (
+                row.time_played_seconds,
+                row.avg_life_seconds,
+                row.damage_dealt,
+                row.damage_taken,
+                row.shots_fired,
+                row.shots_hit,
+                row.grenade_kills,
+                row.melee_kills,
+                row.power_weapon_kills,
+                row.score,
+                row.personal_score,
+                row.my_team_score,
+                row.enemy_team_score,
+                row.accuracy,
+                match_id,
+            )
+
+        conn.execute(update_query, params)
         result["updated"] = True
 
         # Highlight events
@@ -225,8 +277,13 @@ async def main_async(args: argparse.Namespace) -> int:
         match_ids = get_matches_without_events(conn, args.limit)
         logger.info(f"{len(match_ids)} matchs sans highlight_events")
     else:
-        match_ids = get_matches_needing_backfill(conn, args.limit)
-        logger.info(f"{len(match_ids)} matchs avec données manquantes")
+        match_ids = get_matches_needing_backfill(
+            conn, args.limit, force_accuracy=args.force_accuracy
+        )
+        if args.force_accuracy:
+            logger.info(f"{len(match_ids)} matchs avec données manquantes (incluant accuracy NULL)")
+        else:
+            logger.info(f"{len(match_ids)} matchs avec données manquantes")
 
     if not match_ids:
         logger.info("Rien à backfill!")
@@ -254,6 +311,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 xuid,
                 with_events=args.with_events,
                 with_aliases=args.with_aliases,
+                force_accuracy=args.force_accuracy,
             )
 
             if result["updated"]:
@@ -278,6 +336,8 @@ async def main_async(args: argparse.Namespace) -> int:
     logger.info(f"  Matchs traités: {len(match_ids)}")
     logger.info(f"  Mis à jour: {updated}")
     logger.info(f"  Erreurs: {errors}")
+    if args.force_accuracy:
+        logger.info("  Mode: Force accuracy activé")
     if args.with_events:
         logger.info(f"  Events ajoutés: {total_events}")
     if args.with_aliases:
@@ -295,6 +355,11 @@ def main() -> int:
     parser.add_argument("--rps", type=int, default=5, help="Requêtes par seconde")
     parser.add_argument("--with-events", action="store_true", help="Récupérer highlight_events")
     parser.add_argument("--with-aliases", action="store_true", help="Mettre à jour xuid_aliases")
+    parser.add_argument(
+        "--force-accuracy",
+        action="store_true",
+        help="Forcer la récupération de accuracy même si elle existe déjà (inclut les matchs avec accuracy NULL)",
+    )
 
     args = parser.parse_args()
     return asyncio.run(main_async(args))

@@ -15,6 +15,12 @@ Usage:
     # Calculer les scores de performance manquants
     python scripts/backfill_data.py --player JGtm --performance-scores
 
+    # Backfill la précision (accuracy) pour les matchs avec accuracy NULL
+    python scripts/backfill_data.py --player JGtm --accuracy
+
+    # Forcer la récupération de accuracy pour TOUS les matchs
+    python scripts/backfill_data.py --player JGtm --accuracy --force-accuracy
+
     # Backfill pour tous les joueurs
     python scripts/backfill_data.py --all --all-data
 
@@ -48,6 +54,7 @@ from src.data.sync.transformers import (
     extract_personal_score_awards,
     extract_xuids_from_match,
     transform_highlight_events,
+    transform_match_stats,
     transform_personal_score_awards,
     transform_skill_stats,
 )
@@ -347,7 +354,9 @@ def _find_matches_missing_data(
     skill: bool = False,
     personal_scores: bool = False,
     performance_scores: bool = False,
+    accuracy: bool = False,
     force_medals: bool = False,
+    force_accuracy: bool = False,
     max_matches: int | None = None,
 ) -> list[str]:
     """Trouve les matchs avec des données manquantes."""
@@ -418,6 +427,15 @@ def _find_matches_missing_data(
             # En cas d'erreur, considérer que tous les matchs sont concernés
             conditions.append("1=1")
 
+    if accuracy:
+        if force_accuracy:
+            # Mode force: inclure TOUS les matchs pour forcer la mise à jour de accuracy
+            # Mais seulement si accuracy est activé
+            conditions.append("1=1")  # Condition toujours vraie = tous les matchs
+        else:
+            # Détecter les matchs avec accuracy NULL
+            conditions.append("ms.accuracy IS NULL")
+
     if not conditions:
         return []
 
@@ -449,8 +467,10 @@ async def backfill_player_data(
     personal_scores: bool = False,
     performance_scores: bool = False,
     aliases: bool = False,
+    accuracy: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
+    force_accuracy: bool = False,
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
 
@@ -477,9 +497,14 @@ async def backfill_player_data(
         personal_scores = True
         performance_scores = True
         aliases = True
+        accuracy = True
+
+    # Si force_accuracy est activé sans accuracy, l'activer automatiquement
+    if force_accuracy and not accuracy:
+        accuracy = True
 
     # Vérifier qu'au moins une option est activée
-    if not any([medals, events, skill, personal_scores, performance_scores, aliases]):
+    if not any([medals, events, skill, personal_scores, performance_scores, aliases, accuracy]):
         logger.warning(
             "Aucune option de backfill activée. Utilisez --all ou spécifiez des options."
         )
@@ -492,6 +517,7 @@ async def backfill_player_data(
             "personal_scores_inserted": 0,
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
+            "accuracy_updated": 0,
         }
 
     # Vérifier que c'est un joueur DuckDB v4
@@ -508,6 +534,7 @@ async def backfill_player_data(
             "personal_scores_inserted": 0,
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
+            "accuracy_updated": 0,
         }
 
     # Obtenir le chemin de la DB
@@ -523,6 +550,7 @@ async def backfill_player_data(
             "personal_scores_inserted": 0,
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
+            "accuracy_updated": 0,
         }
 
     # Obtenir le XUID depuis la DB
@@ -574,6 +602,7 @@ async def backfill_player_data(
                     "skill_inserted": 0,
                     "personal_scores_inserted": 0,
                     "aliases_inserted": 0,
+                    "accuracy_updated": 0,
                 }
         finally:
             conn.close()
@@ -643,6 +672,25 @@ async def backfill_player_data(
             # Si la migration échoue, continuer quand même
             logger.warning(f"Note: Migration du schéma échouée (continuation): {e}")
 
+        # S'assurer que la colonne accuracy existe si nécessaire
+        if accuracy:
+            try:
+                col_check = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM information_schema.columns
+                    WHERE table_name = 'match_stats'
+                      AND column_name = 'accuracy'
+                    """
+                ).fetchone()
+
+                if not col_check or col_check[0] == 0:
+                    logger.info("Ajout de la colonne accuracy à match_stats")
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN accuracy FLOAT")
+                    conn.commit()
+            except Exception as e:
+                logger.warning(f"Note lors de la vérification de accuracy: {e}")
+
         # Trouver les matchs avec données manquantes
         match_ids = _find_matches_missing_data(
             conn,
@@ -652,7 +700,9 @@ async def backfill_player_data(
             skill=skill,
             personal_scores=personal_scores,
             performance_scores=performance_scores,
+            accuracy=accuracy,
             force_medals=force_medals,
+            force_accuracy=force_accuracy,
             max_matches=max_matches,
         )
 
@@ -668,6 +718,7 @@ async def backfill_player_data(
                 "skill_inserted": 0,
                 "personal_scores_inserted": 0,
                 "aliases_inserted": 0,
+                "accuracy_updated": 0,
             }
 
         if not match_ids:
@@ -680,6 +731,7 @@ async def backfill_player_data(
                 "skill_inserted": 0,
                 "personal_scores_inserted": 0,
                 "aliases_inserted": 0,
+                "accuracy_updated": 0,
             }
 
         # Récupérer les tokens
@@ -694,6 +746,7 @@ async def backfill_player_data(
                 "skill_inserted": 0,
                 "personal_scores_inserted": 0,
                 "aliases_inserted": 0,
+                "accuracy_updated": 0,
             }
 
         # Traiter les matchs
@@ -703,6 +756,7 @@ async def backfill_player_data(
         total_personal_scores = 0
         total_performance_scores = 0
         total_aliases = 0
+        total_accuracy_updated = 0
 
         async with SPNKrAPIClient(
             tokens=tokens,
@@ -739,7 +793,34 @@ async def backfill_player_data(
                         "personal_scores": 0,
                         "performance_scores": 0,
                         "aliases": 0,
+                        "accuracy": 0,
                     }
+
+                    # Accuracy (doit être fait avant les autres car utilise transform_match_stats)
+                    if accuracy:
+                        match_row = transform_match_stats(stats_json, xuid)
+                        if match_row and match_row.accuracy is not None:
+                            if force_accuracy:
+                                # Forcer la mise à jour même si accuracy existe déjà
+                                conn.execute(
+                                    "UPDATE match_stats SET accuracy = ? WHERE match_id = ?",
+                                    (match_row.accuracy, match_id),
+                                )
+                                inserted_this_match["accuracy"] = 1
+                                total_accuracy_updated += 1
+                            else:
+                                # Ne mettre à jour que si accuracy est NULL
+                                existing = conn.execute(
+                                    "SELECT accuracy FROM match_stats WHERE match_id = ?",
+                                    (match_id,),
+                                ).fetchone()
+                                if existing and existing[0] is None:
+                                    conn.execute(
+                                        "UPDATE match_stats SET accuracy = ? WHERE match_id = ?",
+                                        (match_row.accuracy, match_id),
+                                    )
+                                    inserted_this_match["accuracy"] = 1
+                                    total_accuracy_updated += 1
 
                     # Médailles
                     if medals:
@@ -804,6 +885,8 @@ async def backfill_player_data(
                         parts.append("performance_score")
                     if inserted_this_match["aliases"] > 0:
                         parts.append(f"{inserted_this_match['aliases']} alias(es)")
+                    if inserted_this_match.get("accuracy", 0) > 0:
+                        parts.append("accuracy")
 
                     if parts:
                         logger.info(f"  ✅ {', '.join(parts)} inséré(s)")
@@ -828,6 +911,7 @@ async def backfill_player_data(
             "personal_scores_inserted": total_personal_scores,
             "performance_scores_inserted": total_performance_scores,
             "aliases_inserted": total_aliases,
+            "accuracy_updated": total_accuracy_updated,
         }
 
     finally:
@@ -845,8 +929,10 @@ async def backfill_all_players(
     personal_scores: bool = False,
     performance_scores: bool = False,
     aliases: bool = False,
+    accuracy: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
+    force_accuracy: bool = False,
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
     players = list_duckdb_v4_players()
@@ -866,6 +952,7 @@ async def backfill_all_players(
         "personal_scores_inserted": 0,
         "performance_scores_inserted": 0,
         "aliases_inserted": 0,
+        "accuracy_updated": 0,
     }
 
     for i, player_info in enumerate(players, 1):
@@ -884,8 +971,10 @@ async def backfill_all_players(
             personal_scores=personal_scores,
             performance_scores=performance_scores,
             aliases=aliases,
+            accuracy=accuracy,
             all_data=all_data,
             force_medals=force_medals,
+            force_accuracy=force_accuracy,
         )
 
         # Agréger les résultats
@@ -987,6 +1076,18 @@ def main() -> int:
         help="Force le rescan de TOUS les matchs pour les médailles, même s'ils en ont déjà",
     )
 
+    parser.add_argument(
+        "--accuracy",
+        action="store_true",
+        help="Backfill la précision (accuracy) pour les matchs avec accuracy NULL",
+    )
+
+    parser.add_argument(
+        "--force-accuracy",
+        action="store_true",
+        help="Force la récupération de accuracy pour TOUS les matchs, même si elle existe déjà",
+    )
+
     args = parser.parse_args()
 
     # Validation
@@ -1007,8 +1108,10 @@ def main() -> int:
                     personal_scores=args.personal_scores,
                     performance_scores=args.performance_scores,
                     aliases=args.aliases,
+                    accuracy=args.accuracy,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
+                    force_accuracy=args.force_accuracy,
                 )
             )
 
@@ -1025,6 +1128,8 @@ def main() -> int:
             logger.info(f"Personal scores insérés: {totals['personal_scores_inserted']}")
             logger.info(f"Scores de performance calculés: {totals['performance_scores_inserted']}")
             logger.info(f"Aliases insérés: {totals['aliases_inserted']}")
+            if args.accuracy:
+                logger.info(f"Accuracy mis à jour: {totals['accuracy_updated']}")
         else:
             result = asyncio.run(
                 backfill_player_data(
@@ -1038,8 +1143,10 @@ def main() -> int:
                     personal_scores=args.personal_scores,
                     performance_scores=args.performance_scores,
                     aliases=args.aliases,
+                    accuracy=args.accuracy,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
+                    force_accuracy=args.force_accuracy,
                 )
             )
 
@@ -1052,6 +1159,8 @@ def main() -> int:
             logger.info(f"Personal scores insérés: {result['personal_scores_inserted']}")
             logger.info(f"Scores de performance calculés: {result['performance_scores_inserted']}")
             logger.info(f"Aliases insérés: {result['aliases_inserted']}")
+            if args.accuracy:
+                logger.info(f"Accuracy mis à jour: {result['accuracy_updated']}")
 
         return 0
 
