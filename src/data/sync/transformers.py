@@ -26,6 +26,7 @@ import duckdb
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.data.sync.models import (
     HighlightEventRow,
+    KillerVictimPairRow,
     MatchParticipantRow,
     MatchStatsRow,
     MedalEarnedRow,
@@ -1037,6 +1038,68 @@ def extract_aliases(
         )
 
     return aliases
+
+
+def build_players_lookup(match_json: dict[str, Any]) -> dict[str, str]:
+    """Construit un dictionnaire XUID → Gamertag depuis le JSON du match.
+
+    Args:
+        match_json: JSON brut du match (clé Players).
+
+    Returns:
+        Dict mapping xuid (str) → gamertag (str).
+    """
+    aliases = extract_aliases(match_json)
+    return {a.xuid: a.gamertag for a in aliases}
+
+
+def extract_killer_victim_pairs_from_highlight_events(
+    events: list[dict[str, Any]],
+    match_id: str,
+    *,
+    players_lookup: dict[str, str] | None = None,
+) -> list[KillerVictimPairRow]:
+    """Extrait les paires killer→victim depuis les highlight events de type Kill.
+
+    Args:
+        events: Liste d'events (dicts avec event_type, xuid, victim_xuid, etc.).
+        match_id: ID du match.
+        players_lookup: Optionnel, mapping xuid → gamertag pour enrichir les rows.
+
+    Returns:
+        Liste de KillerVictimPairRow.
+    """
+    rows = []
+    lookup = players_lookup or {}
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "Kill":
+            continue
+
+        killer_xuid = _safe_str(event.get("xuid"))
+        victim_xuid = _safe_str(event.get("victim_xuid"))
+        if not killer_xuid or not victim_xuid:
+            continue
+
+        killer_gamertag = _safe_str(event.get("gamertag")) or lookup.get(killer_xuid)
+        victim_gamertag = _safe_str(event.get("victim_gamertag")) or lookup.get(victim_xuid)
+        time_ms = _safe_int(event.get("time_ms"))
+
+        rows.append(
+            KillerVictimPairRow(
+                match_id=match_id,
+                killer_xuid=killer_xuid,
+                victim_xuid=victim_xuid,
+                killer_gamertag=killer_gamertag,
+                victim_gamertag=victim_gamertag,
+                kill_count=1,
+                time_ms=time_ms,
+            )
+        )
+
+    return rows
 
 
 def _extract_xuid(player: dict[str, Any] | str) -> str | None:

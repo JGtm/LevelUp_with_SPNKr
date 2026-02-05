@@ -69,6 +69,7 @@ from src.analysis.sessions import (
     SESSION_CUTOFF_HOUR,
     compute_sessions,
     compute_sessions_with_context,
+    compute_sessions_with_context_polars,
     is_session_potentially_active,
 )
 from src.analysis.stats import (
@@ -85,6 +86,7 @@ __all__ = [
     "compute_global_ratio",
     "compute_sessions",
     "compute_sessions_with_context",
+    "compute_sessions_with_context_polars",
     "is_session_potentially_active",
     "DEFAULT_SESSION_GAP_MINUTES",
     "SESSION_CUTOFF_HOUR",
