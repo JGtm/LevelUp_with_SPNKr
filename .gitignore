@@ -12,6 +12,11 @@ Thumbs.db
 .vscode/
 build/
 dist/
+*.egg-info/
+*.egg
+
+# Fichier accidentel Windows (nul = device réservé)
+nul
 *.spec
 app_settings.json
 xuid_aliases.json
