@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
+from plotly.subplots import make_subplots
 
+from src.analysis.stats import compute_mode_category_averages, extract_mode_category, format_mmss
 from src.config import HALO_COLORS
-from src.analysis.stats import format_mmss, extract_mode_category, compute_mode_category_averages
-from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 from src.ui.pages.match_view_helpers import os_card
-
+from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
 # =============================================================================
 # Graphiques Expected vs Actual
@@ -39,14 +38,25 @@ def render_expected_vs_actual(
             os_card("Écart MMR", "-")
         else:
             dm = float(delta_mmr)
-            col = "var(--color-win)" if dm > 0 else ("var(--color-loss)" if dm < 0 else "var(--color-tie)")
+            col = (
+                "var(--color-win)"
+                if dm > 0
+                else ("var(--color-loss)" if dm < 0 else "var(--color-tie)")
+            )
             os_card("Écart MMR", f"{dm:+.1f}", "équipe - adverse", accent=col, kpi_color=col)
 
     def _ev_card(title: str, perf: dict, *, mode: str) -> None:
         count = perf.get("count")
         expected = perf.get("expected")
-        if count is None or expected is None:
+
+        # Si count est disponible mais expected est None (DuckDB v4), afficher quand même la valeur réelle
+        if count is None:
             os_card(title, "-", "")
+            return
+
+        # Si expected est None, afficher seulement la valeur réelle sans comparaison
+        if expected is None:
+            os_card(title, f"{float(count):.0f}", "Valeur réelle (comparaison indisponible)")
             return
 
         delta = float(count) - float(expected)
@@ -160,21 +170,8 @@ def render_expected_vs_actual(
             ),
             secondary_y=False,
         )
-    
-    exp_fig.add_trace(
-        go.Scatter(
-            x=labels,
-            y=[real_ratio_f] * len(labels),
-            mode="lines+markers",
-            name="Ratio réel",
-            line=dict(color=HALO_COLORS.amber, width=4),
-            marker=dict(size=7),
-            hovertemplate="ratio (réel): %{y:.2f}<extra></extra>",
-        ),
-        secondary_y=True,
-    )
-    
-    # Ratio moyen historique (si disponible)
+
+    # Ratio moyen historique (si disponible) - affiché comme ligne de référence
     hist_ratio = hist_avgs.get("avg_ratio")
     if hist_ratio is not None and hist_avgs.get("match_count", 0) >= 10:
         exp_fig.add_trace(
@@ -192,11 +189,30 @@ def render_expected_vs_actual(
     exp_fig.update_layout(
         barmode="group",
         height=360,
-        margin=dict(l=40, r=20, t=30, b=90),
+        margin=dict(l=40, r=20, t=50, b=90),  # Augmenter le top margin pour l'annotation
         legend=get_legend_horizontal_bottom(),
+        annotations=[
+            dict(
+                x=1.0,  # Position à droite
+                y=1.05,  # Au-dessus du graphique
+                xref="paper",
+                yref="paper",
+                text=f"Ratio K/D/A: <b>{real_ratio_f:.2f}</b>",
+                showarrow=False,
+                font=dict(size=14, color=HALO_COLORS.amber),
+                bgcolor="rgba(0,0,0,0.5)",
+                bordercolor=HALO_COLORS.amber,
+                borderwidth=1,
+                borderpad=4,
+            )
+        ],
     )
     exp_fig.update_yaxes(title_text="F / D / A", rangemode="tozero", secondary_y=False)
-    exp_fig.update_yaxes(title_text="Ratio", secondary_y=True)
+    # Masquer l'axe secondaire si pas de ratio historique (pour éviter confusion)
+    if hist_ratio is None:
+        exp_fig.update_yaxes(visible=False, secondary_y=True)
+    else:
+        exp_fig.update_yaxes(title_text="Ratio", secondary_y=True)
     st.plotly_chart(exp_fig, width="stretch")
 
     # Folie meurtrière / Tirs à la tête

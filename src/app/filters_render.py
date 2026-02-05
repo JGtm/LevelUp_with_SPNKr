@@ -520,16 +520,76 @@ def apply_filters(
     if "map_ui" not in dff.columns:
         dff["map_ui"] = dff["map_name"].apply(normalize_map_label_fn)
 
+    # Debug: Afficher l'état des filtres avant application
+    # Désactivé par défaut - peut être activé via session_state["_show_debug_info"] = True
+    show_debug = st.session_state.get("_show_debug_info", False)
+    if show_debug:
+        st.write(
+            f"🔍 **Debug filtres** - Avant application des filtres checkboxes: {len(dff)} matchs"
+        )
+        st.write(
+            f"- Playlists sélectionnées: {filter_state.playlists_selected if filter_state.playlists_selected else 'Toutes'}"
+        )
+        st.write(
+            f"- Modes sélectionnés: {filter_state.modes_selected if filter_state.modes_selected else 'Tous'}"
+        )
+        st.write(
+            f"- Cartes sélectionnées: {filter_state.maps_selected if filter_state.maps_selected else 'Toutes'}"
+        )
+        # Vérifier les matchs récents qui pourraient être exclus
+        recent_matches = dff.sort_values("start_time", ascending=False).head(5)
+        st.write("**5 matchs les plus récents avant filtres checkboxes:**")
+        for _, row in recent_matches.iterrows():
+            map_ui = (
+                row.get("map_ui")
+                if "map_ui" in row
+                else normalize_map_label_fn(row.get("map_name"))
+            )
+            playlist_ui = (
+                row.get("playlist_ui") if "playlist_ui" in row else (row.get("playlist_name") or "")
+            )
+            mode_ui = (
+                row.get("mode_ui")
+                if "mode_ui" in row
+                else normalize_mode_label_fn(row.get("pair_name"))
+            )
+            st.write(
+                f"- {row.get('start_time')} | Map: {map_ui} | Playlist: {playlist_ui} | Mode: {mode_ui}"
+            )
+
     # Application des filtres checkboxes
     if filter_state.playlists_selected:
+        before = len(dff)
         dff = dff.loc[dff["playlist_ui"].fillna("").isin(filter_state.playlists_selected)]
+        if show_debug:
+            st.write(f"🔍 Après filtre playlists: {before} → {len(dff)} matchs")
+            null_playlists = dff["playlist_ui"].isna().sum()
+            if null_playlists > 0:
+                st.warning(f"⚠️ {null_playlists} matchs avec playlist_ui=NULL exclus par le filtre")
     if filter_state.modes_selected:
+        before = len(dff)
         dff = dff.loc[dff["mode_ui"].fillna("").isin(filter_state.modes_selected)]
+        if show_debug:
+            st.write(f"🔍 Après filtre modes: {before} → {len(dff)} matchs")
+            null_modes = dff["mode_ui"].isna().sum()
+            if null_modes > 0:
+                st.warning(f"⚠️ {null_modes} matchs avec mode_ui=NULL exclus par le filtre")
     if filter_state.maps_selected:
+        before = len(dff)
         dff = dff.loc[dff["map_ui"].fillna("").isin(filter_state.maps_selected)]
+        if show_debug:
+            st.write(f"🔍 Après filtre cartes: {before} → {len(dff)} matchs")
+            null_maps = dff["map_ui"].isna().sum()
+            if null_maps > 0:
+                st.warning(f"⚠️ {null_maps} matchs avec map_ui=NULL exclus par le filtre")
 
     if filter_state.filter_mode == "Période":
+        before = len(dff)
         mask = (dff["date"] >= filter_state.start_d) & (dff["date"] <= filter_state.end_d)
         dff = dff.loc[mask].copy()
+        if show_debug:
+            st.write(
+                f"🔍 Après filtre période ({filter_state.start_d} à {filter_state.end_d}): {before} → {len(dff)} matchs"
+            )
 
     return dff

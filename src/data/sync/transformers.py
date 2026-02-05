@@ -310,6 +310,18 @@ def _extract_public_name(match_info: dict[str, Any], key: str) -> str | None:
     return None
 
 
+def _is_uuid(value: str | None) -> bool:
+    """Vérifie si une chaîne est un UUID (format standard)."""
+    if not value or not isinstance(value, str):
+        return False
+    # Format UUID standard: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 caractères)
+    uuid_pattern = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        re.IGNORECASE,
+    )
+    return bool(uuid_pattern.match(value.strip()))
+
+
 def _is_ranked_playlist(match_info: dict[str, Any]) -> bool:
     """Détermine si le match est ranked."""
     playlist = match_info.get("Playlist")
@@ -449,15 +461,50 @@ def create_metadata_resolver(
                 cache[cache_key] = None
                 return None
 
-            # Requête pour récupérer le nom
+            # Détecter dynamiquement la colonne ID (asset_id ou uuid)
+            id_column = None
+            for col_candidate in ["asset_id", "uuid"]:
+                try:
+                    # Tester si la colonne existe
+                    conn.execute(f"SELECT {col_candidate} FROM {table_name} LIMIT 1").fetchone()
+                    id_column = col_candidate
+                    break
+                except Exception:
+                    continue
+
+            if not id_column:
+                logger.debug(f"Aucune colonne ID trouvée dans {table_name} (essayé asset_id, uuid)")
+                cache[cache_key] = None
+                return None
+
+            # Détecter dynamiquement la colonne de nom (public_name, name_fr, name_en, name)
+            name_column = None
+            for col_candidate in ["public_name", "name_fr", "name_en", "name"]:
+                try:
+                    # Tester si la colonne existe
+                    conn.execute(f"SELECT {col_candidate} FROM {table_name} LIMIT 1").fetchone()
+                    name_column = col_candidate
+                    break
+                except Exception:
+                    continue
+
+            if not name_column:
+                logger.debug(f"Aucune colonne de nom trouvée dans {table_name}")
+                cache[cache_key] = None
+                return None
+
+            # Requête pour récupérer le nom avec les colonnes détectées
             result = conn.execute(
-                f"SELECT public_name FROM {table_name} WHERE asset_id = ?",
+                f"SELECT {name_column} FROM {table_name} WHERE {id_column} = ?",
                 [asset_id],
             ).fetchone()
 
             if result and result[0]:
                 name = str(result[0])
                 cache[cache_key] = name
+                logger.debug(
+                    f"Résolu {asset_type} {asset_id} → {name} depuis {table_name}.{name_column}"
+                )
                 return name
 
             cache[cache_key] = None
@@ -536,15 +583,28 @@ def transform_match_stats(
     game_variant_name = _extract_public_name(match_info, "UgcGameVariant")
 
     # Résolution depuis les référentiels si les noms sont NULL mais les IDs sont présents
+    # OU si les noms sont des UUIDs (fallback précédent qui a stocké l'ID)
     if metadata_resolver:
-        if playlist_id and not playlist_name:
-            playlist_name = metadata_resolver("playlist", playlist_id)
-        if map_id and not map_name:
-            map_name = metadata_resolver("map", map_id)
-        if pair_id and not pair_name:
-            pair_name = metadata_resolver("pair", pair_id)
-        if game_variant_id and not game_variant_name:
-            game_variant_name = metadata_resolver("game_variant", game_variant_id)
+        # Vérifier si playlist_name est un UUID (format UUID standard)
+        if playlist_id and (not playlist_name or _is_uuid(playlist_name)):
+            resolved = metadata_resolver("playlist", playlist_id)
+            if resolved:
+                playlist_name = resolved
+        # Vérifier si map_name est un UUID
+        if map_id and (not map_name or _is_uuid(map_name)):
+            resolved = metadata_resolver("map", map_id)
+            if resolved:
+                map_name = resolved
+        # Vérifier si pair_name est un UUID
+        if pair_id and (not pair_name or _is_uuid(pair_name)):
+            resolved = metadata_resolver("pair", pair_id)
+            if resolved:
+                pair_name = resolved
+        # Vérifier si game_variant_name est un UUID
+        if game_variant_id and (not game_variant_name or _is_uuid(game_variant_name)):
+            resolved = metadata_resolver("game_variant", game_variant_id)
+            if resolved:
+                game_variant_name = resolved
 
     # Fallback sur les IDs si les noms sont toujours NULL
     playlist_name = playlist_name or playlist_id

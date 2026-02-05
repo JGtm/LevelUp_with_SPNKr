@@ -177,9 +177,9 @@ def render_timeseries_page(
                     life_col,
                     "kills",
                     color_col="outcome",
-                    title="Durée de vie vs Kills",
+                    title="Durée de vie vs frags",
                     x_label="Durée de vie (s)",
-                    y_label="Kills",
+                    y_label="Frags",
                     show_trendline=True,
                 )
                 st.plotly_chart(fig_corr1, width="stretch")

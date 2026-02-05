@@ -176,13 +176,46 @@ def get_players_from_db(db_path: str) -> list[dict[str, Any]]:
 
 
 def has_table(db_path: str, table_name: str) -> bool:
+    """Vérifie si une table existe dans la base de données.
+
+    Supporte SQLite (sqlite_master) et DuckDB v4 (information_schema.tables).
+    Pour DuckDB, convertit automatiquement le nom de table en snake_case.
+    """
     if not db_path or not table_name:
         return False
     try:
-        with get_connection(db_path) as con:
-            cur = con.cursor()
-            cur.execute(queries.HAS_TABLE, (table_name,))
-            return cur.fetchone() is not None
+        # Détecter DuckDB v4
+        is_duckdb = db_path.endswith(".duckdb") or db_path.endswith("stats.duckdb")
+
+        if is_duckdb:
+            # DuckDB utilise information_schema.tables et snake_case
+            import duckdb
+
+            conn = duckdb.connect(db_path, read_only=True)
+            try:
+                # Convertir le nom de table en snake_case pour DuckDB
+                # Ex: "HighlightEvents" -> "highlight_events"
+                table_name_normalized = table_name.lower()
+                # Si c'est PascalCase, convertir en snake_case
+                if table_name != table_name.lower():
+                    import re
+
+                    # Convertir PascalCase en snake_case
+                    table_name_normalized = re.sub(r"(?<!^)(?=[A-Z])", "_", table_name).lower()
+
+                result = conn.execute(
+                    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+                    [table_name_normalized],
+                ).fetchone()
+                return result is not None
+            finally:
+                conn.close()
+        else:
+            # SQLite legacy
+            with get_connection(db_path) as con:
+                cur = con.cursor()
+                cur.execute(queries.HAS_TABLE, (table_name,))
+                return cur.fetchone() is not None
     except Exception:
         return False
 

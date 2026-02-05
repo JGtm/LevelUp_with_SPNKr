@@ -18,6 +18,7 @@ import streamlit as st
 
 from src.analysis.performance_config import SCORE_THRESHOLDS
 from src.analysis.performance_score import compute_relative_performance_score
+from src.app.helpers import normalize_map_label
 from src.config import HALO_COLORS, OUTCOME_CODES
 from src.ui import (
     AppSettings,
@@ -186,18 +187,29 @@ def render_match_view(
     last_mode_ui = row.get("mode_ui") or normalize_mode_label_fn(
         str(last_pair) if last_pair else None
     )
+
+    # Normaliser les labels pour masquer les UUIDs non résolus
+    map_display = normalize_map_label(last_map) if last_map else None
+    if not map_display:
+        map_display = "-"
+
+    playlist_display = (
+        last_playlist_fr
+        or (translate_playlist_name(str(last_playlist)) if last_playlist else None)
+        or "-"
+    )
+    mode_display = (
+        last_mode_ui
+        or last_pair_fr
+        or (normalize_mode_label_fn(str(last_pair)) if last_pair else None)
+        or last_mode
+        or "-"
+    )
+
     row_cols = st.columns(3)
-    row_cols[0].metric(" ", str(last_map) if last_map else "-")
-    row_cols[1].metric(
-        " ",
-        str(last_playlist_fr or last_playlist) if (last_playlist_fr or last_playlist) else "-",
-    )
-    row_cols[2].metric(
-        " ",
-        str(last_mode_ui or last_pair_fr or last_pair or last_mode)
-        if (last_mode_ui or last_pair_fr or last_pair or last_mode)
-        else "-",
-    )
+    row_cols[0].metric(" ", map_display)
+    row_cols[1].metric(" ", playlist_display)
+    row_cols[2].metric(" ", mode_display)
 
     # Miniature de la carte
     map_id = row.get("map_id")
@@ -219,6 +231,26 @@ def render_match_view(
             "Stats détaillées indisponibles pour ce match (PlayerMatchStats manquant ou format inattendu)."
         )
     else:
+        # Enrichir pm avec les valeurs réelles depuis row si elles sont manquantes (DuckDB v4)
+        if pm.get("kills", {}).get("count") is None:
+            kills_val = row.get("kills")
+            if kills_val is not None:
+                pm.setdefault("kills", {})["count"] = (
+                    float(kills_val) if kills_val == kills_val else None
+                )
+        if pm.get("deaths", {}).get("count") is None:
+            deaths_val = row.get("deaths")
+            if deaths_val is not None:
+                pm.setdefault("deaths", {})["count"] = (
+                    float(deaths_val) if deaths_val == deaths_val else None
+                )
+        if pm.get("assists", {}).get("count") is None:
+            assists_val = row.get("assists")
+            if assists_val is not None:
+                pm.setdefault("assists", {})["count"] = (
+                    float(assists_val) if assists_val == assists_val else None
+                )
+
         render_expected_vs_actual(row, pm, colors, df_full=df_full)
 
     # Section Participation (PersonalScores) - Sprint 8.2

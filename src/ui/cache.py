@@ -170,18 +170,21 @@ def cached_load_player_match_result(
 
             repo = DuckDBRepository(db_path, str(xuid).strip())
             mmr_data = repo.load_match_mmr_batch([match_id])
+            team_mmr = None
+            enemy_mmr = None
             if match_id in mmr_data:
                 team_mmr, enemy_mmr = mmr_data[match_id]
-                return {
-                    "team_id": None,  # Non disponible dans DuckDB v4
-                    "team_mmr": team_mmr,
-                    "enemy_mmr": enemy_mmr,
-                    "team_mmrs": None,  # Non disponible dans DuckDB v4
-                    "kills": {"count": None, "expected": None, "stddev": None},
-                    "deaths": {"count": None, "expected": None, "stddev": None},
-                    "assists": {"count": None, "expected": None, "stddev": None},
-                }
-            return None
+            # Toujours retourner un dict même si les MMR sont None
+            # Les valeurs kills/deaths/assists seront enrichies depuis row dans match_view.py
+            return {
+                "team_id": None,  # Non disponible dans DuckDB v4
+                "team_mmr": team_mmr,
+                "enemy_mmr": enemy_mmr,
+                "team_mmrs": None,  # Non disponible dans DuckDB v4
+                "kills": {"count": None, "expected": None, "stddev": None},
+                "deaths": {"count": None, "expected": None, "stddev": None},
+                "assists": {"count": None, "expected": None, "stddev": None},
+            }
         except Exception:
             return None
 
