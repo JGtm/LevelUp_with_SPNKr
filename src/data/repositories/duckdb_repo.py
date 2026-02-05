@@ -590,7 +590,7 @@ class DuckDBRepository:
 
         Args:
             match_ids: Liste des IDs de matchs.
-            event_type: Type d'événement ("Kill" ou "Death").
+            event_type: Type d'événement ("Kill" ou "Death"). Accepte toute casse.
 
         Returns:
             Dict {match_id: time_ms} pour le premier événement de chaque match.
@@ -608,17 +608,21 @@ class DuckDBRepository:
             if not tables:
                 return {}
 
+            # Normaliser event_type pour gérer les différences de casse
+            # Les données peuvent contenir "kill"/"death" (minuscules) ou "Kill"/"Death" (majuscules)
+            event_type_normalized = event_type.lower()
+
             placeholders = ", ".join(["?" for _ in match_ids])
             result = conn.execute(
                 f"""
                 SELECT match_id, MIN(time_ms) as first_time
                 FROM highlight_events
                 WHERE match_id IN ({placeholders})
-                  AND event_type = ?
+                  AND LOWER(event_type) = ?
                   AND xuid = ?
                 GROUP BY match_id
                 """,
-                [*match_ids, event_type, self._xuid],
+                [*match_ids, event_type_normalized, self._xuid],
             )
             return {row[0]: row[1] for row in result.fetchall()}
         except Exception:
