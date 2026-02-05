@@ -14,6 +14,7 @@ Note: cette page ne dépend pas de métadonnées dans les noms de fichiers.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import html
 import os
 import urllib.parse
@@ -49,23 +50,29 @@ def _build_app_url(page: str, **params: str) -> str:
     return "?" + urllib.parse.urlencode(qp)
 
 
-def _open_match_button(match_id: str) -> None:
+def _open_match_button(match_id: str, *, unique_suffix: str | None = None) -> None:
+    """Affiche un bouton pour ouvrir la page Match.
+
+    Args:
+        match_id: ID du match à ouvrir
+        unique_suffix: Suffixe optionnel pour rendre la clé unique (ex: path_hash ou stable_id)
+    """
     mid = str(match_id or "").strip()
     if not mid:
         st.caption("Match inconnu")
         return
 
-    url = _build_app_url("Match", match_id=mid)
-    safe_url = html.escape(url, quote=True)
-    st.markdown(
-        f"""
-        <a href="{safe_url}" target="_blank" rel="noopener noreferrer"
-           style="display:block;text-align:center;padding:6px 10px;border-radius:10px;
-                  border:1px solid rgba(255,255,255,0.18);text-decoration:none;"
-        >Ouvrir le match</a>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Rendre la clé unique en incluant le suffixe si fourni
+    # Cela évite les clés dupliquées quand plusieurs médias ont le même match_id
+    button_key = f"open_match_{mid}_{unique_suffix}" if unique_suffix else f"open_match_{mid}"
+
+    # Utiliser _pending_page au lieu de modifier directement "page"
+    # car le widget segmented_control avec key="page" est déjà instancié
+    # consume_pending_page() s'occupera de mettre à jour "page" au prochain rendu
+    if st.button("Ouvrir le match", key=button_key, use_container_width=True):
+        st.session_state["_pending_page"] = "Match"
+        st.session_state["_pending_match_id"] = mid
+        st.rerun()
 
 
 def _epoch_seconds_paris(dt_value: datetime | None) -> float | None:
@@ -238,7 +245,20 @@ def _associate_media_to_matches(media_df: pd.DataFrame, windows_df: pd.DataFrame
     return joined.sort_values("mtime", ascending=False).reset_index(drop=True)
 
 
-def _render_media_grid(items: pd.DataFrame, *, cols_per_row: int) -> None:
+def _placeholder_html(base: str, hint: str = "Cliquer pour afficher la miniature") -> str:
+    """HTML du placeholder vidéo (sans charger la miniature)."""
+    return (
+        "<div style='padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);'>"
+        "<div style='font-size:34px;line-height:1'>🎬</div>"
+        "<div style='opacity:0.85;margin-top:6px'>" + html.escape(base) + "</div>"
+        "<div style='font-size:11px;opacity:0.6;margin-top:4px'>" + html.escape(hint) + "</div>"
+        "</div>"
+    )
+
+
+def _render_media_grid(
+    items: pd.DataFrame, *, cols_per_row: int, render_context: str = "default"
+) -> None:
     if items is None or items.empty:
         st.info("Aucun média à afficher avec ces filtres.")
         return
@@ -249,56 +269,223 @@ def _render_media_grid(items: pd.DataFrame, *, cols_per_row: int) -> None:
     if cols_per_row > 8:
         cols_per_row = 8
 
+    # Ajouter un identifiant stable au DataFrame AVANT le rendu
+    # pour éviter que les clés session_state changent à chaque rendu
+    items = items.copy()
+    items["_stable_id"] = items.reset_index().index
+
     rows = items.to_dict(orient="records")
     for i in range(0, len(rows), cols_per_row):
         chunk = rows[i : i + cols_per_row]
-        cols = st.columns(len(chunk))
-        for c, rec in zip(cols, chunk, strict=False):
-            with c:
-                path = str(rec.get("path") or "").strip()
-                kind = str(rec.get("kind") or "")
-                base = str(rec.get("basename") or os.path.basename(path))
-                mid = rec.get("match_id")
+        # TOUJOURS créer cols_per_row colonnes, même si len(chunk) < cols_per_row
+        # pour éviter que les images prennent toute la largeur
+        cols = st.columns(cols_per_row)
+        for col_idx in range(cols_per_row):
+            with cols[col_idx]:
+                if col_idx < len(chunk):
+                    rec = chunk[col_idx]
+                    path = str(rec.get("path") or "").strip()
+                    kind = str(rec.get("kind") or "")
+                    base = str(rec.get("basename") or os.path.basename(path))
+                    mid = rec.get("match_id")
 
-                if kind == "image" and path:
-                    try:
-                        st.image(path, width="stretch")
-                    except Exception:
-                        st.caption(base)
-                else:
-                    st.markdown(
-                        "<div style='padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);'>"
-                        "<div style='font-size:34px;line-height:1'>🎬</div>"
-                        "<div style='opacity:0.85;margin-top:6px'>" + html.escape(base) + "</div>"
-                        "</div>",
-                        unsafe_allow_html=True,
-                    )
-                    if path:
-                        preview_key = f"media_preview::{hash(path)}"
-                        if st.button("Aperçu", key=preview_key, width="stretch"):
-                            st.session_state[preview_key + "::open"] = True
-                        if st.session_state.get(preview_key + "::open"):
+                    if kind == "image" and path:
+                        try:
+                            st.image(path, width="stretch")
+                        except Exception:
+                            st.caption(base)
+                    else:
+                        # Vidéo : afficher la miniature seulement au clic (évite tout charger à l'ouverture)
+                        # Clé stable : hash du path + match_id + contexte + identifiant stable du média
+                        # (pas de position dans la grille pour éviter l'instabilité)
+                        thumb_path = str(rec.get("thumbnail_path") or "").strip()
+                        path_hash = hashlib.md5(path.encode()).hexdigest()
+                        match_id_part = (
+                            str(mid).strip() if isinstance(mid, str) and mid.strip() else "no_match"
+                        )
+                        # Utiliser l'ID stable au lieu de i et col_idx
+                        stable_id = rec.get("_stable_id", 0)
+                        thumb_key = f"thumb_show::{path_hash}::{match_id_part}::{render_context}::{stable_id}"
+                        show_thumb = st.session_state.get(thumb_key, False)
+
+                        if show_thumb and thumb_path and os.path.exists(thumb_path):
                             try:
-                                st.video(path)
+                                st.image(thumb_path, width="stretch")
                             except Exception:
-                                st.caption(path)
+                                st.markdown(_placeholder_html(base), unsafe_allow_html=True)
+                            if st.button("Masquer miniature", key=thumb_key + "::btn"):
+                                st.session_state[thumb_key] = False
+                                st.rerun()
+                        else:
+                            st.markdown(
+                                _placeholder_html(base, "Cliquer pour afficher la miniature"),
+                                unsafe_allow_html=True,
+                            )
+                            if thumb_path and os.path.exists(thumb_path):
+                                if st.button("Afficher miniature", key=thumb_key + "::btn"):
+                                    st.session_state[thumb_key] = True
+                                    st.rerun()
+                            else:
+                                st.caption("(pas de miniature générée)")
+                        if path:
+                            preview_key = f"media_preview::{path_hash}::{match_id_part}::{render_context}::{stable_id}"
+                            if st.button("Aperçu", key=preview_key, width="stretch"):
+                                st.session_state[preview_key + "::open"] = True
+                            if st.session_state.get(preview_key + "::open"):
+                                try:
+                                    st.video(path)
+                                except Exception:
+                                    st.caption(path)
 
-                st.caption(base)
-                if isinstance(mid, str) and mid.strip():
-                    _open_match_button(mid)
-                else:
-                    st.caption("Match: non associé")
+                    st.caption(base)
+                    # Ne pas afficher le bouton "Ouvrir le match" si on est dans un contexte de groupe
+                    # (le bouton est déjà affiché avant la grille dans l'expander)
+                    if (
+                        isinstance(mid, str)
+                        and mid.strip()
+                        and not render_context.startswith("match_")
+                    ):
+                        # Utiliser le stable_id pour rendre la clé unique même si plusieurs médias ont le même match_id
+                        stable_id = rec.get("_stable_id", 0)
+                        _open_match_button(mid, unique_suffix=str(stable_id))
+                    elif isinstance(mid, str) and mid.strip():
+                        # Dans un groupe de match, le bouton est déjà affiché avant la grille
+                        pass
+                    else:
+                        st.caption("Match: non associé")
 
 
-def _load_media_from_db(db_path: str, xuid: str) -> pd.DataFrame:
+def _load_match_windows_from_db(db_path: str) -> pd.DataFrame:
+    """Charge les fenêtres temporelles des matchs depuis la DB pour le diagnostic.
+
+    Note: Cette fonction charge depuis toutes les DBs joueurs disponibles,
+    pas seulement celle du joueur actuel, car l'association se fait multi-joueurs.
+    """
+    try:
+        import duckdb
+
+        from src.utils.paths import PLAYER_DB_FILENAME, PLAYERS_DIR
+
+        all_windows = []
+
+        # Parcourir toutes les DBs joueurs
+        if PLAYERS_DIR.exists():
+            for player_dir in PLAYERS_DIR.iterdir():
+                if not player_dir.is_dir():
+                    continue
+
+                player_db = player_dir / PLAYER_DB_FILENAME
+                if not player_db.exists():
+                    continue
+
+                try:
+                    conn = duckdb.connect(str(player_db), read_only=True)
+                    try:
+                        # Vérifier si la table existe
+                        tables = conn.execute(
+                            """
+                            SELECT table_name
+                            FROM information_schema.tables
+                            WHERE table_schema = 'main'
+                            AND table_name = 'match_stats'
+                            """
+                        ).fetchall()
+
+                        if not tables:
+                            continue
+
+                        # Charger les matchs avec start_time
+                        matches = conn.execute(
+                            """
+                            SELECT match_id, start_time, time_played_seconds
+                            FROM match_stats
+                            WHERE start_time IS NOT NULL
+                            """
+                        ).fetchall()
+
+                        if matches:
+                            for match_id, start_time, time_played in matches:
+                                try:
+                                    # Convertir start_time
+                                    if isinstance(start_time, datetime):
+                                        dt_start = start_time
+                                    elif isinstance(start_time, str):
+                                        if start_time.endswith("Z"):
+                                            dt_start = datetime.fromisoformat(
+                                                start_time[:-1] + "+00:00"
+                                            )
+                                        elif "+" in start_time or start_time.count("-") > 2:
+                                            dt_start = datetime.fromisoformat(start_time)
+                                        else:
+                                            dt_start = datetime.fromisoformat(start_time + "+00:00")
+                                    else:
+                                        continue
+
+                                    # Convertir en epoch Paris
+                                    start_epoch = _epoch_seconds_paris(dt_start)
+                                    if start_epoch is None:
+                                        continue
+
+                                    # Calculer fin
+                                    duration = float(time_played or 0) if time_played else 12 * 60
+                                    end_epoch = start_epoch + duration
+
+                                    all_windows.append(
+                                        {
+                                            "match_id": str(match_id),
+                                            "start_epoch": start_epoch,
+                                            "end_epoch": end_epoch,
+                                            "start_time": dt_start,
+                                        }
+                                    )
+                                except Exception:
+                                    continue
+                    finally:
+                        conn.close()
+                except Exception:
+                    continue
+
+        if not all_windows:
+            return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
+
+        df = pd.DataFrame(all_windows)
+        return df.sort_values("start_epoch", ascending=True).reset_index(drop=True)
+
+    except Exception:
+        return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
+
+
+def _gamertag_from_db_path(db_path: str) -> str | None:
+    """Extrait le gamertag (nom du dossier joueur) depuis le chemin de la DB."""
+    if not db_path:
+        return None
+    try:
+        from pathlib import Path
+
+        p = Path(db_path)
+        # data/players/JGtm/stats.duckdb -> JGtm
+        if p.name and p.name.endswith(".duckdb"):
+            return p.parent.name or None
+        return None
+    except Exception:
+        return None
+
+
+def _load_media_from_db(
+    db_path: str,
+    xuid: str | None = None,
+    gamertag: str | None = None,
+) -> pd.DataFrame:
     """Charge les médias depuis la BDD DuckDB.
 
     Args:
         db_path: Chemin vers la DB DuckDB.
-        xuid: XUID du propriétaire des médias.
+        xuid: XUID du joueur pour filtrer les associations (optionnel).
+        gamertag: Gamertag (nom du dossier) pour inclure les associations stockées
+                  avec le nom du dossier quand sync_meta n'a pas de xuid.
 
     Returns:
-        DataFrame avec colonnes: path, mtime, ext, kind, basename, match_id, match_start_time
+        DataFrame avec colonnes: path, mtime, ext, kind, basename, match_id, match_start_time, xuid
     """
     try:
         import duckdb
@@ -318,29 +505,66 @@ def _load_media_from_db(db_path: str, xuid: str) -> pd.DataFrame:
             if not tables:
                 return pd.DataFrame()
 
-            # Charger les médias avec leurs associations
-            result = conn.execute(
-                """
-                SELECT
-                    mf.file_path AS path,
-                    mf.mtime,
-                    mf.mtime_paris_epoch,
-                    mf.file_ext AS ext,
-                    mf.kind,
-                    mf.file_name AS basename,
-                    mf.thumbnail_path,
-                    mma.match_id,
-                    mma.match_start_time,
-                    mma.association_confidence
-                FROM media_files mf
-                LEFT JOIN media_match_associations mma
-                    ON mf.file_path = mma.media_path
-                    AND mf.owner_xuid = mma.xuid
-                WHERE mf.owner_xuid = ?
-                ORDER BY mf.mtime_paris_epoch DESC
-                """,
-                [xuid],
-            ).fetchall()
+            # Charger les médias avec leurs associations.
+            # Si xuid est fourni, on accepte mma.xuid = xuid OU mma.xuid = gamertag
+            # (l'indexeur peut stocker le gamertag en fallback quand sync_meta n'a pas de xuid).
+            if xuid or gamertag:
+                # Inclure les associations que l'indexeur a stockées avec xuid OU gamertag (fallback).
+                uids = [u for u in (xuid, gamertag) if u]
+                uids = list(dict.fromkeys(uids))  # dédupliquer
+                if not uids:
+                    uid_filter = "1=0"
+                    params: list[str] = []
+                elif len(uids) == 1:
+                    uid_filter = "mma.xuid = ?"
+                    params = [uids[0]]
+                else:
+                    uid_filter = "(mma.xuid = ? OR mma.xuid = ?)"
+                    params = list(uids[:2])
+                result = conn.execute(
+                    f"""
+                    SELECT DISTINCT
+                        mf.file_path AS path,
+                        mf.mtime,
+                        mf.mtime_paris_epoch,
+                        mf.file_ext AS ext,
+                        mf.kind,
+                        mf.file_name AS basename,
+                        mf.thumbnail_path,
+                        mma.match_id,
+                        mma.match_start_time,
+                        mma.association_confidence,
+                        mma.xuid
+                    FROM media_files mf
+                    LEFT JOIN media_match_associations mma
+                        ON mf.file_path = mma.media_path
+                        AND ({uid_filter})
+                    ORDER BY mf.mtime_paris_epoch DESC
+                    """,
+                    params,
+                ).fetchall()
+            else:
+                # Charger tous les médias avec toutes leurs associations
+                result = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        mf.file_path AS path,
+                        mf.mtime,
+                        mf.mtime_paris_epoch,
+                        mf.file_ext AS ext,
+                        mf.kind,
+                        mf.file_name AS basename,
+                        mf.thumbnail_path,
+                        mma.match_id,
+                        mma.match_start_time,
+                        mma.association_confidence,
+                        mma.xuid
+                    FROM media_files mf
+                    LEFT JOIN media_match_associations mma
+                        ON mf.file_path = mma.media_path
+                    ORDER BY mf.mtime_paris_epoch DESC
+                    """
+                ).fetchall()
 
             if not result:
                 return pd.DataFrame()
@@ -358,6 +582,7 @@ def _load_media_from_db(db_path: str, xuid: str) -> pd.DataFrame:
                     "match_id",
                     "match_start_time",
                     "association_confidence",
+                    "xuid",
                 ],
             )
 
@@ -412,58 +637,104 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
         )
         name_filter = st.text_input("Filtre nom de fichier", value="", placeholder="ex: 2026-01")
 
-        if st.button("Re-scanner les dossiers", width="stretch"):
-            with contextlib.suppress(Exception):
-                index_media_dir.clear()
-            # Forcer re-indexation en BDD
-            if "_media_indexing_started" in st.session_state:
-                del st.session_state["_media_indexing_started"]
+        col_scan, col_thumbs = st.columns(2)
+        with col_scan:
+            if st.button("Re-scanner les dossiers", width="stretch"):
+                with contextlib.suppress(Exception):
+                    index_media_dir.clear()
+                # Forcer re-indexation en BDD
+                if "_media_indexing_started" in st.session_state:
+                    del st.session_state["_media_indexing_started"]
 
-            # Lancer l'indexation manuellement si DB DuckDB disponible
-            if db_path and db_path.endswith(".duckdb") and xuid:
-                try:
-                    from pathlib import Path
+                # Lancer l'indexation manuellement si DB DuckDB disponible
+                if db_path and db_path.endswith(".duckdb"):
+                    try:
+                        from pathlib import Path
 
-                    from src.data.media_indexer import MediaIndexer
+                        from src.data.media_indexer import MediaIndexer
 
-                    videos_path = (
-                        Path(dirs.videos_dir)
-                        if dirs.videos_dir and os.path.exists(dirs.videos_dir)
-                        else None
-                    )
-                    screens_path = (
-                        Path(dirs.screens_dir)
-                        if dirs.screens_dir and os.path.exists(dirs.screens_dir)
-                        else None
-                    )
+                        videos_path = (
+                            Path(dirs.videos_dir)
+                            if dirs.videos_dir and os.path.exists(dirs.videos_dir)
+                            else None
+                        )
+                        screens_path = (
+                            Path(dirs.screens_dir)
+                            if dirs.screens_dir and os.path.exists(dirs.screens_dir)
+                            else None
+                        )
 
-                    if videos_path or screens_path:
-                        with st.spinner("Indexation en cours..."):
-                            indexer = MediaIndexer(Path(db_path), xuid)
-                            result = indexer.scan_and_index(
-                                videos_dir=videos_path,
-                                screens_dir=screens_path,
-                                force_rescan=True,
-                            )
-                            tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
-                            n_associated = indexer.associate_with_matches(
-                                tolerance_minutes=tolerance
+                        if videos_path or screens_path:
+                            with st.spinner("Indexation en cours..."):
+                                indexer = MediaIndexer(Path(db_path))
+                                result = indexer.scan_and_index(
+                                    videos_dir=videos_path,
+                                    screens_dir=screens_path,
+                                    force_rescan=True,
+                                )
+                                tolerance = int(
+                                    getattr(settings, "media_tolerance_minutes", 5) or 5
+                                )
+                                n_associated = indexer.associate_with_matches(
+                                    tolerance_minutes=tolerance
+                                )
+                                n_thumb_gen, n_thumb_err = 0, 0
+                                if videos_path:
+                                    n_thumb_gen, n_thumb_err = indexer.generate_thumbnails_for_new(
+                                        videos_path
+                                    )
+                                msg = (
+                                    f"Indexation terminée: {result.n_new} nouveaux, "
+                                    f"{result.n_updated} mis à jour, {n_associated} association(s)"
+                                )
+                                if n_thumb_gen or n_thumb_err:
+                                    msg += f" — {n_thumb_gen} thumbnail(s), {n_thumb_err} erreur(s)"
+                                st.success(msg)
+                    except Exception as e:
+                        st.error(f"Erreur lors de l'indexation: {e}")
+
+                st.rerun()
+
+        with col_thumbs:
+            if st.button(
+                "Générer les thumbnails",
+                width="stretch",
+                help="Génère les miniatures pour les vidéos sans thumbnail (indépendant des associations)",
+            ):
+                if (
+                    db_path
+                    and db_path.endswith(".duckdb")
+                    and dirs.videos_dir
+                    and os.path.exists(dirs.videos_dir)
+                ):
+                    try:
+                        from pathlib import Path
+
+                        from src.data.media_indexer import MediaIndexer
+
+                        with st.spinner("Génération des thumbnails..."):
+                            indexer = MediaIndexer(Path(db_path))
+                            n_gen, n_err = indexer.generate_thumbnails_for_new(
+                                Path(dirs.videos_dir)
                             )
                             st.success(
-                                f"Indexation terminée: {result.n_new} nouveaux, "
-                                f"{result.n_updated} mis à jour, {n_associated} associés"
+                                f"{n_gen} thumbnail(s) généré(s)"
+                                + (f", {n_err} erreur(s)" if n_err else "")
                             )
-                except Exception as e:
-                    st.error(f"Erreur lors de l'indexation: {e}")
-
-            st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur: {e}")
+                    st.rerun()
+                else:
+                    st.warning("Configure un dossier vidéos dans Paramètres → Médias.")
 
     # Charger depuis BDD si disponible
     media_df = pd.DataFrame()
     using_db = False
     windows_df = pd.DataFrame()  # Initialiser pour le diagnostic
-    if db_path and db_path.endswith(".duckdb") and xuid:
-        media_df = _load_media_from_db(db_path, xuid)
+    if db_path and db_path.endswith(".duckdb"):
+        # Charger les médias avec associations pour le joueur actuel (ou tous si xuid=None)
+        gamertag = _gamertag_from_db_path(db_path)
+        media_df = _load_media_from_db(db_path, xuid=xuid, gamertag=gamertag)
         using_db = not media_df.empty
 
     # Fallback sur scan disque si BDD vide
@@ -483,8 +754,9 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
             assoc_df["match_id"] = None
         if "match_start_time" not in assoc_df.columns:
             assoc_df["match_start_time"] = None
-        # Calculer windows_df pour le diagnostic même si on utilise la BDD
-        windows_df = _compute_match_windows(df_full, settings)
+        # Calculer windows_df pour le diagnostic depuis la DB des médias (pas df_full)
+        # car l'association se fait depuis toutes les DBs joueurs, pas seulement celle du joueur actuel
+        windows_df = _load_match_windows_from_db(db_path) if db_path else pd.DataFrame()
 
     # Diagnostic : afficher info si médias non associés depuis BDD
     if using_db and not assoc_df.empty:
@@ -513,6 +785,13 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
     assigned = assoc_df.loc[assoc_df["match_id"].notna()].copy()
     unassigned = assoc_df.loc[assoc_df["match_id"].isna()].copy()
 
+    # DÉDUPLIQUER : Un média peut avoir plusieurs associations (multi-joueurs)
+    # On garde une seule ligne par média/match pour l'affichage
+    if not assigned.empty:
+        assigned = assigned.drop_duplicates(subset=["path", "match_id"], keep="first")
+    if not unassigned.empty:
+        unassigned = unassigned.drop_duplicates(subset=["path"], keep="first")
+
     # Diagnostic unifié : afficher un seul message informatif
     if not using_db:
         # Si on utilise le scan disque (fallback), informer l'utilisateur
@@ -520,22 +799,20 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
             "ℹ️ Les médias sont chargés depuis le scan disque (pas encore indexés en BDD). "
             "Cliquez sur 'Re-scanner les dossiers' pour indexer en BDD et associer automatiquement."
         )
-    elif windows_df.empty:
-        # Compter combien de matchs ont start_time NULL pour diagnostic
-        null_start_count = 0
-        if df_full is not None and not df_full.empty and "start_time" in df_full.columns:
-            null_start_count = df_full["start_time"].isna().sum()
-
-        if null_start_count > 0:
-            st.warning(
-                f"⚠️ Aucune fenêtre temporelle disponible : {null_start_count} match(s) ont une date de départ manquante (`start_time` NULL). "
-                "Vérifiez la synchronisation des données."
-            )
-        else:
-            st.warning(
-                "⚠️ Aucune fenêtre temporelle de match disponible pour l'association. "
-                "Vérifiez que les matchs ont bien des dates de départ (`start_time`)."
-            )
+    elif windows_df.empty and assigned.empty:
+        # Afficher le warning seulement si on n'a AUCUNE association ET que windows_df est vide
+        # (si on a déjà des associations, pas besoin d'afficher ce message)
+        st.warning(
+            "⚠️ Aucune fenêtre temporelle de match disponible pour l'association.\n\n"
+            "**Causes possibles :**\n"
+            "- Aucun match avec `start_time` valide dans les DBs joueurs\n"
+            "- Les matchs n'ont pas été synchronisés correctement\n"
+            "- Problème de conversion de dates/timezone\n\n"
+            "**Solution :**\n"
+            "1. Vérifier que les matchs ont bien des dates de départ (`start_time`)\n"
+            "2. Cliquer sur 'Re-scanner les dossiers' pour forcer l'association\n"
+            "3. Vérifier les logs pour plus de détails"
+        )
     elif assigned.empty and not unassigned.empty and using_db:
         # Seulement afficher ce message si windows_df n'est pas vide et qu'on utilise la BDD
         tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
@@ -547,10 +824,7 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
 
     # Affichage
     if not group_by_match:
-        _render_media_grid(assoc_df, cols_per_row=int(cols_per_row))
-        return
-        st.subheader(f"Médias non associés ({len(unassigned)})")
-        _render_media_grid(unassigned, cols_per_row=int(cols_per_row))
+        _render_media_grid(assoc_df, cols_per_row=int(cols_per_row), render_context="all")
         return
 
     if not assigned.empty:
@@ -572,9 +846,13 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
             with st.expander(label, expanded=False):
                 _open_match_button(str(match_id))
                 g2 = g.sort_values("mtime", ascending=True).copy()
-                _render_media_grid(g2, cols_per_row=int(cols_per_row))
+                # Dédupliquer une dernière fois par sécurité (au cas où plusieurs xuid pour même média/match)
+                g2 = g2.drop_duplicates(subset=["path"], keep="first")
+                _render_media_grid(
+                    g2, cols_per_row=int(cols_per_row), render_context=f"match_{match_id}"
+                )
 
     if show_unassigned and not unassigned.empty:
         st.divider()
         st.subheader("Non associés")
-        _render_media_grid(unassigned, cols_per_row=int(cols_per_row))
+        _render_media_grid(unassigned, cols_per_row=int(cols_per_row), render_context="unassigned")
