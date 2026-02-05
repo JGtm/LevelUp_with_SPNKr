@@ -107,6 +107,7 @@ matches = repo.load_matches(limit=100)
 - Supprimer du code sans validation
 - Ajouter des dépendances sans justification
 - Utiliser les loaders legacy
+- **SQLite** : aucun `sqlite3`, aucune base `.db`, aucun fallback SQLite. Données = DuckDB v4 uniquement (sauf scripts de migration documentés dans `.ai/SQLITE_TO_DUCKDB_AUDIT.md`)
 
 ## FORMAT DE RÉPONSE
 Objectif → Analyse → Proposition → Code → Tests → Commit message

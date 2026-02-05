@@ -63,6 +63,14 @@ pytest tests/ -v
 5. Documenter les décisions dans `.ai/thought_log.md`
 6. **SQLite est PROSCRIT** - Aucun fallback SQLite, tout le code doit utiliser DuckDB v4 uniquement
 
+## ⛔ SQLite interdit (règle critique)
+
+- **Aucun** `import sqlite3` ni `sqlite3.connect()` dans le code applicatif (UI, sync, repositories, loaders).
+- **Aucun** fallback sur une base `.db` (SQLite) : si une base est attendue, elle doit être `.duckdb`.
+- **Aucun** usage de `sqlite_master` : utiliser `information_schema.tables` (DuckDB).
+- **Seules exceptions** : les scripts de **migration** qui lisent l’ancien SQLite pour alimenter DuckDB (`recover_from_sqlite.py`, `migrate_player_to_duckdb.py`). Ils restent les seuls autorisés à ouvrir un fichier `.db`.
+- **Audit des points à migrer** : voir `.ai/SQLITE_TO_DUCKDB_AUDIT.md`.
+
 ## Architecture Multi-Joueurs (DuckDB v4)
 
 Chaque joueur a sa propre DB : `data/players/{gamertag}/stats.duckdb`

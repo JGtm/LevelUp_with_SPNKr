@@ -8,7 +8,7 @@
 
 - **Weapon Stats par arme** : NON DISPONIBLE dans l'API (vérifié 2026-02-02)
 - **Film Chunks** : NON EXPLOITABLES pour l'identification d'armes
-- **SQLite** : PROSCRIT - Tout le code doit utiliser DuckDB v4 uniquement
+- **SQLite** : PROSCRIT - Tout le code doit utiliser DuckDB v4 uniquement. Aucun fallback SQLite. Audit des points à migrer : `.ai/SQLITE_TO_DUCKDB_AUDIT.md`
 
 ## ⚠️ RÈGLE CRITIQUE : Chargement Multi-Joueurs
 
