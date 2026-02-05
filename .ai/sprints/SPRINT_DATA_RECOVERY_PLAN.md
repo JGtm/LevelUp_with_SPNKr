@@ -39,6 +39,29 @@ Ce sprint corrige les données manquantes après la migration SQLite → DuckDB 
 - ⚠️ L'API Halo ne retourne plus les `highlight_events` pour les anciens matchs (~574 matchs sur 955 pour Madina97294)
 - Les données killer_victim_pairs ne peuvent être calculées que sur les matchs ayant des highlight_events (381/955 pour Madina)
 
+### Mise à jour 2026-02-05 (Récupération depuis SQLite)
+
+**Script créé : `scripts/recover_from_sqlite.py`**
+
+Récupère les données depuis les anciennes bases SQLite (`spnkr_gt_*.db`) :
+
+| Joueur | match_participants | xuid_aliases |
+|--------|-------------------|--------------|
+| Madina97294 | 18,869 | 3,696 |
+| JGtm | 4,186 | 2,257 |
+| Chocoboflor | 103 | 70 |
+| XxDaemonGamerxX | 159 | 78 |
+| **TOTAL** | **23,317** | **6,101** |
+
+**Commande utilisée :**
+```bash
+python scripts/recover_from_sqlite.py --all
+```
+
+**Couverture gamertag :**
+- ~30% des XUIDs ont un gamertag connu (depuis HighlightEvents + TeammatesAggregate)
+- ~70% restent sans gamertag (joueurs vus uniquement dans les 574 matchs sans highlight_events)
+
 ---
 
 ## 🔴 PRIORITÉ 1 : xuid_aliases (Critique)
