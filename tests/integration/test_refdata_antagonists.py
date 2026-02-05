@@ -107,43 +107,43 @@ def temp_duckdb(tmp_path):
     # Highlight events pour match-001
     events = [
         # Mes kills (je suis xuid_me)
-        ("match-001", "Kill", 10000, "xuid_me", "Me", 50),
-        ("match-001", "Death", 10002, "xuid_enemy1", "Enemy1", 20),
-        ("match-001", "Kill", 20000, "xuid_me", "Me", 50),
-        ("match-001", "Death", 20003, "xuid_enemy1", "Enemy1", 20),
-        ("match-001", "Kill", 30000, "xuid_me", "Me", 50),
-        ("match-001", "Death", 30001, "xuid_enemy2", "Enemy2", 20),
+        (1, "match-001", "Kill", 10000, "xuid_me", "Me", 50),
+        (2, "match-001", "Death", 10002, "xuid_enemy1", "Enemy1", 20),
+        (3, "match-001", "Kill", 20000, "xuid_me", "Me", 50),
+        (4, "match-001", "Death", 20003, "xuid_enemy1", "Enemy1", 20),
+        (5, "match-001", "Kill", 30000, "xuid_me", "Me", 50),
+        (6, "match-001", "Death", 30001, "xuid_enemy2", "Enemy2", 20),
         # Mes deaths
-        ("match-001", "Death", 40000, "xuid_me", "Me", 20),
-        ("match-001", "Kill", 40002, "xuid_enemy1", "Enemy1", 50),
-        ("match-001", "Death", 50000, "xuid_me", "Me", 20),
-        ("match-001", "Kill", 50001, "xuid_enemy1", "Enemy1", 50),
+        (7, "match-001", "Death", 40000, "xuid_me", "Me", 20),
+        (8, "match-001", "Kill", 40002, "xuid_enemy1", "Enemy1", 50),
+        (9, "match-001", "Death", 50000, "xuid_me", "Me", 20),
+        (10, "match-001", "Kill", 50001, "xuid_enemy1", "Enemy1", 50),
     ]
     for event in events:
         conn.execute(
-            "INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag, type_hint) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag, type_hint) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             event,
         )
 
     # Paires killer_victim calculées
     kv_pairs = [
-        ("match-001", "xuid_me", "Me", "xuid_enemy1", "Enemy1", 2, 15000),
-        ("match-001", "xuid_me", "Me", "xuid_enemy2", "Enemy2", 1, 30000),
-        ("match-001", "xuid_enemy1", "Enemy1", "xuid_me", "Me", 2, 45000),
+        (1, "match-001", "xuid_me", "Me", "xuid_enemy1", "Enemy1", 2, 15000),
+        (2, "match-001", "xuid_me", "Me", "xuid_enemy2", "Enemy2", 1, 30000),
+        (3, "match-001", "xuid_enemy1", "Enemy1", "xuid_me", "Me", 2, 45000),
     ]
     for pair in kv_pairs:
         conn.execute(
             "INSERT INTO killer_victim_pairs "
-            "(match_id, killer_xuid, killer_gamertag, victim_xuid, victim_gamertag, kill_count, time_ms) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(id, match_id, killer_xuid, killer_gamertag, victim_xuid, victim_gamertag, kill_count, time_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             pair,
         )
 
     conn.commit()
     conn.close()
 
-    return db_path
+    return str(db_path)
 
 
 @pytest.fixture

@@ -24,6 +24,7 @@ from typing import Any
 import duckdb
 
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
+from src.data.domain.refdata import PERSONAL_SCORE_POINTS
 from src.data.sync.models import (
     HighlightEventRow,
     KillerVictimPairRow,
@@ -1448,7 +1449,9 @@ def extract_personal_score_awards(
             continue
 
         count = _safe_int(ps.get("Count")) or 0
-        total_score = _safe_int(ps.get("TotalPersonalScoreAwarded")) or 0
+        total_score = _safe_int(ps.get("TotalPersonalScoreAwarded"))
+        if total_score is None:
+            total_score = count * PERSONAL_SCORE_POINTS.get(name_id, 0)
 
         result.append(
             {

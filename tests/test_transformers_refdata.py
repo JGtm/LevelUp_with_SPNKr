@@ -190,19 +190,19 @@ class TestExtractGameVariantCategory:
     def test_extract_slayer_category(self, slayer_match_json):
         """Test extraction catégorie Slayer (6)."""
         category = extract_game_variant_category(slayer_match_json)
-        assert category == GameVariantCategory.SLAYER
+        assert category == GameVariantCategory.MULTIPLAYER_SLAYER
         assert category == 6
 
     def test_extract_ctf_category(self, ctf_match_json):
         """Test extraction catégorie CTF (15)."""
         category = extract_game_variant_category(ctf_match_json)
-        assert category == GameVariantCategory.CAPTURE_THE_FLAG
+        assert category == GameVariantCategory.MULTIPLAYER_CTF
         assert category == 15
 
     def test_extract_oddball_category(self, oddball_match_json):
         """Test extraction catégorie Oddball (18)."""
         category = extract_game_variant_category(oddball_match_json)
-        assert category == GameVariantCategory.ODDBALL
+        assert category == GameVariantCategory.MULTIPLAYER_ODDBALL
         assert category == 18
 
     def test_fallback_to_ugc_variant(self, match_without_category):
@@ -296,10 +296,11 @@ class TestExtractPersonalScoreAwards:
         """Test extraction des awards CTF."""
         awards = extract_personal_score_awards(ctf_match_json, "2533274792546123")
 
+        # extract retourne des dicts avec name_id, count, total_score
         assert len(awards) == 3
 
-        # Vérifier les types d'awards
-        award_ids = {a.award_name_id for a in awards}
+        # Vérifier les types d'awards (extract retourne des dicts)
+        award_ids = {a["name_id"] for a in awards}
         assert PersonalScoreNameId.KILLED_PLAYER in award_ids
         assert PersonalScoreNameId.FLAG_CAPTURED in award_ids
         assert PersonalScoreNameId.FLAG_RETURNED in award_ids
@@ -309,18 +310,14 @@ class TestExtractPersonalScoreAwards:
         awards = extract_personal_score_awards(ctf_match_json, "2533274792546123")
 
         # FLAG_CAPTURED = 300 points × 1 = 300
-        flag_capture = next(
-            a for a in awards if a.award_name_id == PersonalScoreNameId.FLAG_CAPTURED
-        )
-        assert flag_capture.count == 1
-        assert flag_capture.total_points == 300
+        flag_capture = next(a for a in awards if a["name_id"] == PersonalScoreNameId.FLAG_CAPTURED)
+        assert flag_capture["count"] == 1
+        assert flag_capture["total_score"] == 300
 
-        # FLAG_RETURNED = 100 points × 3 = 300
-        flag_return = next(
-            a for a in awards if a.award_name_id == PersonalScoreNameId.FLAG_RETURNED
-        )
-        assert flag_return.count == 3
-        assert flag_return.total_points == 300
+        # FLAG_RETURNED = 25 points × 3 = 75 (valeur refdata)
+        flag_return = next(a for a in awards if a["name_id"] == PersonalScoreNameId.FLAG_RETURNED)
+        assert flag_return["count"] == 3
+        assert flag_return["total_score"] == 75
 
     def test_no_awards_for_slayer(self, slayer_match_json):
         """Test pas d'awards si pas de PersonalScores dans le JSON."""
@@ -344,17 +341,17 @@ class TestGameVariantCategoryEnum:
 
     def test_common_categories(self):
         """Test valeurs des catégories communes."""
-        assert GameVariantCategory.SLAYER == 6
-        assert GameVariantCategory.CAPTURE_THE_FLAG == 15
-        assert GameVariantCategory.ODDBALL == 18
-        assert GameVariantCategory.STRONGHOLDS == 22
-        assert GameVariantCategory.FIREFIGHT_PVE == 27
+        assert GameVariantCategory.MULTIPLAYER_SLAYER == 6
+        assert GameVariantCategory.MULTIPLAYER_CTF == 15
+        assert GameVariantCategory.MULTIPLAYER_ODDBALL == 18
+        assert GameVariantCategory.MULTIPLAYER_STRONGHOLDS == 11
+        assert GameVariantCategory.MULTIPLAYER_FIREFIGHT == 42
 
     def test_category_from_value(self):
         """Test création depuis valeur."""
         cat = GameVariantCategory(6)
-        assert cat == GameVariantCategory.SLAYER
-        assert cat.name == "SLAYER"
+        assert cat == GameVariantCategory.MULTIPLAYER_SLAYER
+        assert cat.name == "MULTIPLAYER_SLAYER"
 
     def test_invalid_category(self):
         """Test catégorie invalide lève ValueError."""
@@ -384,12 +381,12 @@ class TestRefDataIntegration:
         assert len(awards) == 3
 
         # 3. Vérifier la cohérence
-        total_points = sum(a.total_points for a in awards)
+        total_points = sum(a["total_score"] for a in awards)
         assert total_points > 0
 
         # 4. Vérifier les kills
         kills_award = next(
-            (a for a in awards if a.award_name_id == PersonalScoreNameId.KILLED_PLAYER), None
+            (a for a in awards if a["name_id"] == PersonalScoreNameId.KILLED_PLAYER), None
         )
         assert kills_award is not None
-        assert kills_award.count == row.kills
+        assert kills_award["count"] == row.kills

@@ -3,9 +3,7 @@
 Tests spécifiques pour les nouvelles méthodes ajoutées pour corriger les régressions.
 """
 
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
 import duckdb
 import pytest
@@ -14,12 +12,10 @@ from src.data.repositories.duckdb_repo import DuckDBRepository
 
 
 @pytest.fixture
-def repo_with_data():
+def repo_with_data(tmp_path):
     """Crée un repository DuckDB avec des données de test."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
-
-    conn = duckdb.connect(db_path)
+    db_path = tmp_path / "test_repo.duckdb"
+    conn = duckdb.connect(str(db_path))
 
     # Créer les tables
     conn.execute("""
@@ -80,56 +76,30 @@ def repo_with_data():
     )
 
     # Highlight events pour match_id_1 (self + friend dans même équipe)
-    conn.execute(
-        """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
-    """,
-        [match_id_1, "Kill", 1000, xuid_self, "PlayerSelf"],
-    )
-
-    conn.execute(
-        """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
-    """,
-        [match_id_1, "Kill", 2000, xuid_friend, "PlayerFriend"],
-    )
-
-    # Highlight events pour match_id_2 (self + friend dans même équipe)
-    conn.execute(
-        """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
-    """,
-        [match_id_2, "Kill", 1000, xuid_self, "PlayerSelf"],
-    )
-
-    conn.execute(
-        """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
-    """,
-        [match_id_2, "Kill", 2000, xuid_friend, "PlayerFriend"],
-    )
-
-    # Highlight events pour match_id_3 (self seul, équipe différente)
-    conn.execute(
-        """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
-    """,
-        [match_id_3, "Kill", 1000, xuid_self, "PlayerSelf"],
-    )
+    for idx, (mid, evt, tm, uid, gt) in enumerate(
+        [
+            (match_id_1, "Kill", 1000, xuid_self, "PlayerSelf"),
+            (match_id_1, "Kill", 2000, xuid_friend, "PlayerFriend"),
+            (match_id_2, "Kill", 1000, xuid_self, "PlayerSelf"),
+            (match_id_2, "Kill", 2000, xuid_friend, "PlayerFriend"),
+            (match_id_3, "Kill", 1000, xuid_self, "PlayerSelf"),
+        ],
+        start=1,
+    ):
+        conn.execute(
+            """
+            INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            [idx, mid, evt, tm, uid, gt],
+        )
 
     conn.commit()
     conn.close()
 
-    repo = DuckDBRepository(db_path, xuid_self)
+    repo = DuckDBRepository(str(db_path), xuid_self)
 
     yield repo, xuid_self, xuid_friend, xuid_enemy, match_id_1, match_id_2, match_id_3
-
-    Path(db_path).unlink(missing_ok=True)
 
 
 def test_load_match_rosters_basic(repo_with_data):
@@ -166,31 +136,26 @@ def test_load_match_rosters_nonexistent_match(repo_with_data):
     assert result is None
 
 
-def test_load_match_rosters_no_highlight_events():
+def test_load_match_rosters_no_highlight_events(tmp_path):
     """Test que load_match_rosters retourne None si pas de highlight_events."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
+    db_path = tmp_path / "test_no_events.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE match_stats (
+            match_id VARCHAR PRIMARY KEY,
+            team_id INTEGER
+        )
+    """)
+    conn.execute("""
+        INSERT INTO match_stats (match_id, team_id) VALUES ('match_1', 0)
+    """)
+    conn.commit()
+    conn.close()
 
-    try:
-        conn = duckdb.connect(db_path)
-        conn.execute("""
-            CREATE TABLE match_stats (
-                match_id VARCHAR PRIMARY KEY,
-                team_id INTEGER
-            )
-        """)
-        conn.execute("""
-            INSERT INTO match_stats (match_id, team_id) VALUES ('match_1', 0)
-        """)
-        conn.commit()
-        conn.close()
+    repo = DuckDBRepository(str(db_path), "2533274823110022")
+    result = repo.load_match_rosters("match_1")
 
-        repo = DuckDBRepository(db_path, "2533274823110022")
-        result = repo.load_match_rosters("match_1")
-
-        assert result is None, "Doit retourner None si pas de highlight_events"
-    finally:
-        Path(db_path).unlink(missing_ok=True)
+    assert result is None, "Doit retourner None si pas de highlight_events"
 
 
 def test_load_matches_with_teammate_basic(repo_with_data):
@@ -239,33 +204,29 @@ def test_load_same_team_match_ids_no_same_team(repo_with_data):
     assert len(result) == 0
 
 
-def test_load_first_event_times_uses_information_schema():
+def test_load_first_event_times_uses_information_schema(tmp_path):
     """Test que load_first_event_times utilise information_schema et non sqlite_master."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
+    db_path = tmp_path / "test_info_schema.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE highlight_events (
+            id INTEGER PRIMARY KEY,
+            match_id VARCHAR,
+            event_type VARCHAR,
+            time_ms INTEGER,
+            xuid VARCHAR
+        )
+    """)
+    conn.execute("""
+        INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid)
+        VALUES (1, 'match_1', 'Kill', 1000, '2533274823110022')
+    """)
+    conn.commit()
+    conn.close()
 
-    try:
-        conn = duckdb.connect(db_path)
-        conn.execute("""
-            CREATE TABLE highlight_events (
-                match_id VARCHAR,
-                event_type VARCHAR,
-                time_ms INTEGER,
-                xuid VARCHAR
-            )
-        """)
-        conn.execute("""
-            INSERT INTO highlight_events (match_id, event_type, time_ms, xuid)
-            VALUES ('match_1', 'Kill', 1000, '2533274823110022')
-        """)
-        conn.commit()
-        conn.close()
+    repo = DuckDBRepository(str(db_path), "2533274823110022")
+    result = repo.load_first_event_times(["match_1"], "Kill")
 
-        repo = DuckDBRepository(db_path, "2533274823110022")
-        result = repo.load_first_event_times(["match_1"], "Kill")
-
-        # Si la méthode utilise sqlite_master, elle échouera avec DuckDB
-        # Si elle utilise information_schema, elle fonctionnera
-        assert isinstance(result, dict)
-    finally:
-        Path(db_path).unlink(missing_ok=True)
+    # Si la méthode utilise sqlite_master, elle échouera avec DuckDB
+    # Si elle utilise information_schema, elle fonctionnera
+    assert isinstance(result, dict)

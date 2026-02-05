@@ -4,9 +4,7 @@ Ces tests vérifient que les données critiques (accuracy, médailles, events)
 sont correctement stockées et accessibles.
 """
 
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
 import duckdb
 import pytest
@@ -15,12 +13,10 @@ from scripts.diagnose_player_db import diagnose
 
 
 @pytest.fixture
-def test_db_with_accuracy():
+def test_db_with_accuracy(tmp_path):
     """Crée une DB de test avec des données d'accuracy."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
-
-    conn = duckdb.connect(db_path)
+    db_path = tmp_path / "test_accuracy.duckdb"
+    conn = duckdb.connect(str(db_path))
 
     conn.execute("""
         CREATE TABLE match_stats (
@@ -60,18 +56,14 @@ def test_db_with_accuracy():
     conn.commit()
     conn.close()
 
-    yield db_path
-
-    Path(db_path).unlink(missing_ok=True)
+    yield str(db_path)
 
 
 @pytest.fixture
-def test_db_with_medals():
+def test_db_with_medals(tmp_path):
     """Crée une DB de test avec des médailles."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
-
-    conn = duckdb.connect(db_path)
+    db_path = tmp_path / "test_medals.duckdb"
+    conn = duckdb.connect(str(db_path))
 
     conn.execute("""
         CREATE TABLE medals_earned (
@@ -100,18 +92,14 @@ def test_db_with_medals():
     conn.commit()
     conn.close()
 
-    yield db_path
-
-    Path(db_path).unlink(missing_ok=True)
+    yield str(db_path)
 
 
 @pytest.fixture
-def test_db_with_events():
+def test_db_with_events(tmp_path):
     """Crée une DB de test avec des highlight events."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
-
-    conn = duckdb.connect(db_path)
+    db_path = tmp_path / "test_events.duckdb"
+    conn = duckdb.connect(str(db_path))
 
     conn.execute("""
         CREATE TABLE highlight_events (
@@ -142,9 +130,7 @@ def test_db_with_events():
     conn.commit()
     conn.close()
 
-    yield db_path
-
-    Path(db_path).unlink(missing_ok=True)
+    yield str(db_path)
 
 
 def test_diagnose_detects_accuracy_data(test_db_with_accuracy):
@@ -184,24 +170,19 @@ def test_diagnose_detects_highlight_events(test_db_with_events):
     assert events["distinct_types"] == 2, "Doit détecter 2 types d'événements"
 
 
-def test_diagnose_handles_missing_tables():
+def test_diagnose_handles_missing_tables(tmp_path):
     """Test que le diagnostic gère correctement les tables manquantes."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
+    db_path = tmp_path / "test_minimal.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("CREATE TABLE match_stats (match_id VARCHAR PRIMARY KEY)")
+    conn.commit()
+    conn.close()
 
-    try:
-        conn = duckdb.connect(db_path)
-        conn.execute("CREATE TABLE match_stats (match_id VARCHAR PRIMARY KEY)")
-        conn.commit()
-        conn.close()
+    results = diagnose(str(db_path))
 
-        results = diagnose(db_path)
-
-        # medals_earned et highlight_events n'existent pas, mais le diagnostic ne doit pas crasher
-        assert "match_stats" in results
-        assert "medals" in results or "highlight_events" in results
-    finally:
-        Path(db_path).unlink(missing_ok=True)
+    # medals_earned et highlight_events n'existent pas, mais le diagnostic ne doit pas crasher
+    assert "match_stats" in results
+    assert "medals" in results or "highlight_events" in results
 
 
 def test_accuracy_not_all_null(test_db_with_accuracy):

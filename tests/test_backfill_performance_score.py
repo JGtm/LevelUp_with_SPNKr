@@ -8,7 +8,7 @@ Ce fichier teste :
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import duckdb
@@ -56,7 +56,7 @@ def temp_duckdb_with_matches(tmp_path: Path) -> tuple[Path, str]:
             """,
             (
                 f"match-{i:03d}",
-                base_time.replace(hour=12 + i),
+                base_time + timedelta(hours=i),
                 10 + i,
                 8,
                 3,
@@ -78,7 +78,7 @@ def temp_duckdb_with_matches(tmp_path: Path) -> tuple[Path, str]:
             """,
             (
                 f"match-{i:03d}",
-                base_time.replace(hour=12 + i),
+                base_time + timedelta(hours=i),
                 15,
                 6,
                 4,
@@ -232,7 +232,7 @@ class TestComputePerformanceScoreForMatch:
                 """,
                 (
                     f"match-{i:03d}",
-                    base_time.replace(hour=12 + i),
+                    base_time + timedelta(hours=i),
                     10,
                     8,
                     3,

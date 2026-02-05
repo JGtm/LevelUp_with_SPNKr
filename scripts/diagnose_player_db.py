@@ -72,7 +72,7 @@ def diagnose(db_path: str) -> dict:
                 SELECT
                     COUNT(*) as total,
                     COUNT(DISTINCT match_id) as distinct_matches,
-                    COUNT(DISTINCT medal_id) as distinct_medals
+                    COUNT(DISTINCT medal_name_id) as distinct_medals
                 FROM medals_earned
             """).fetchone()
             results["medals"] = {

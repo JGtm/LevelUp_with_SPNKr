@@ -216,26 +216,27 @@ class TestModels:
         row = PersonalScoreAwardRow(
             match_id="match-123",
             xuid="2533274792546123",
-            award_name_id=PersonalScoreNameId.FLAG_CAPTURED,
-            count=2,
-            total_points=600,
+            award_name="Drapeau capturé",
+            award_category="objective",
+            award_count=2,
+            award_score=600,
         )
 
         assert row.match_id == "match-123"
-        assert row.award_name_id == PersonalScoreNameId.FLAG_CAPTURED
-        assert row.count == 2
-        assert row.total_points == 600
+        assert row.award_name == "Drapeau capturé"
+        assert row.award_count == 2
+        assert row.award_score == 600
 
     def test_personal_score_award_row_defaults(self):
         """Test valeurs par défaut de PersonalScoreAwardRow."""
         row = PersonalScoreAwardRow(
             match_id="match-123",
             xuid="2533274792546123",
-            award_name_id=1024030246,
+            award_name="Kill",
         )
 
-        assert row.count == 1
-        assert row.total_points == 0
+        assert row.award_count == 1
+        assert row.award_score == 0
 
 
 # =============================================================================
@@ -265,18 +266,16 @@ class TestTransformers:
 
         assert len(awards) == 4
 
-        # Vérifier les types d'awards
-        award_ids = {a.award_name_id for a in awards}
+        # Vérifier les types d'awards (extract retourne des dicts avec name_id)
+        award_ids = {a["name_id"] for a in awards}
         assert PersonalScoreNameId.KILLED_PLAYER in award_ids
         assert PersonalScoreNameId.FLAG_CAPTURED in award_ids
         assert PersonalScoreNameId.KILL_ASSIST in award_ids
 
         # Vérifier les points calculés
-        flag_capture = next(
-            a for a in awards if a.award_name_id == PersonalScoreNameId.FLAG_CAPTURED
-        )
-        assert flag_capture.count == 2
-        assert flag_capture.total_points == 600  # 2 × 300
+        flag_capture = next(a for a in awards if a["name_id"] == PersonalScoreNameId.FLAG_CAPTURED)
+        assert flag_capture["count"] == 2
+        assert flag_capture["total_score"] == 600  # 2 × 300
 
     def test_extract_personal_score_awards_empty(self):
         """Test extraction sans PersonalScores."""

@@ -8,7 +8,7 @@ Ce fichier teste :
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import duckdb
@@ -150,13 +150,32 @@ class TestPerformanceScoreCalculation:
             CREATE TABLE match_stats (
                 match_id VARCHAR PRIMARY KEY,
                 start_time TIMESTAMP,
+                playlist_id VARCHAR,
+                playlist_name VARCHAR,
+                map_id VARCHAR,
+                map_name VARCHAR,
+                pair_id VARCHAR,
+                pair_name VARCHAR,
+                game_variant_id VARCHAR,
+                game_variant_name VARCHAR,
+                outcome INTEGER,
+                team_id INTEGER,
                 kills INTEGER,
                 deaths INTEGER,
                 assists INTEGER,
                 kda FLOAT,
                 accuracy FLOAT,
+                headshot_kills INTEGER,
+                max_killing_spree INTEGER,
                 time_played_seconds INTEGER,
                 avg_life_seconds FLOAT,
+                my_team_score INTEGER,
+                enemy_team_score INTEGER,
+                team_mmr FLOAT,
+                enemy_mmr FLOAT,
+                is_firefight BOOLEAN,
+                teammates_signature VARCHAR,
+                updated_at TIMESTAMP,
                 performance_score FLOAT
             )
             """
@@ -173,7 +192,7 @@ class TestPerformanceScoreCalculation:
                 """,
                 (
                     f"hist-match-{i:03d}",
-                    base_time.replace(hour=12 + i),
+                    base_time + timedelta(hours=i),
                     10 + i,  # Kills varient
                     8,  # Deaths constants
                     3,  # Assists constants
@@ -220,13 +239,33 @@ class TestPerformanceScoreCalculation:
             CREATE TABLE match_stats (
                 match_id VARCHAR PRIMARY KEY,
                 start_time TIMESTAMP,
+                playlist_id VARCHAR,
+                playlist_name VARCHAR,
+                map_id VARCHAR,
+                map_name VARCHAR,
+                pair_id VARCHAR,
+                pair_name VARCHAR,
+                game_variant_id VARCHAR,
+                game_variant_name VARCHAR,
+                outcome INTEGER,
+                team_id INTEGER,
                 kills INTEGER,
                 deaths INTEGER,
                 assists INTEGER,
                 kda FLOAT,
                 accuracy FLOAT,
+                headshot_kills INTEGER,
+                max_killing_spree INTEGER,
                 time_played_seconds INTEGER,
-                performance_score FLOAT
+                avg_life_seconds FLOAT,
+                my_team_score INTEGER,
+                enemy_team_score INTEGER,
+                team_mmr FLOAT,
+                enemy_mmr FLOAT,
+                is_firefight BOOLEAN,
+                performance_score FLOAT,
+                teammates_signature VARCHAR,
+                updated_at TIMESTAMP
             )
             """
         )
@@ -242,7 +281,7 @@ class TestPerformanceScoreCalculation:
                 """,
                 (
                     f"hist-match-{i:03d}",
-                    base_time.replace(hour=12 + i),
+                    base_time + timedelta(hours=i),
                     10,
                     8,
                     3,
@@ -288,13 +327,32 @@ class TestPerformanceScoreCalculation:
             CREATE TABLE match_stats (
                 match_id VARCHAR PRIMARY KEY,
                 start_time TIMESTAMP,
+                playlist_id VARCHAR,
+                playlist_name VARCHAR,
+                map_id VARCHAR,
+                map_name VARCHAR,
+                pair_id VARCHAR,
+                pair_name VARCHAR,
+                game_variant_id VARCHAR,
+                game_variant_name VARCHAR,
+                outcome INTEGER,
+                team_id INTEGER,
                 kills INTEGER,
                 deaths INTEGER,
                 assists INTEGER,
                 kda FLOAT,
                 accuracy FLOAT,
+                headshot_kills INTEGER,
+                max_killing_spree INTEGER,
                 time_played_seconds INTEGER,
-                performance_score FLOAT
+                avg_life_seconds FLOAT,
+                my_team_score INTEGER,
+                enemy_team_score INTEGER,
+                team_mmr FLOAT,
+                enemy_mmr FLOAT,
+                performance_score FLOAT,
+                teammates_signature VARCHAR,
+                updated_at TIMESTAMP
             )
             """
         )
@@ -362,13 +420,33 @@ class TestPerformanceScoreCalculation:
             CREATE TABLE match_stats (
                 match_id VARCHAR PRIMARY KEY,
                 start_time TIMESTAMP,
+                playlist_id VARCHAR,
+                playlist_name VARCHAR,
+                map_id VARCHAR,
+                map_name VARCHAR,
+                pair_id VARCHAR,
+                pair_name VARCHAR,
+                game_variant_id VARCHAR,
+                game_variant_name VARCHAR,
+                outcome INTEGER,
+                team_id INTEGER,
                 kills INTEGER,
                 deaths INTEGER,
                 assists INTEGER,
                 kda FLOAT,
                 accuracy FLOAT,
+                headshot_kills INTEGER,
+                max_killing_spree INTEGER,
                 time_played_seconds INTEGER,
-                performance_score FLOAT
+                avg_life_seconds FLOAT,
+                my_team_score INTEGER,
+                enemy_team_score INTEGER,
+                team_mmr FLOAT,
+                enemy_mmr FLOAT,
+                is_firefight BOOLEAN,
+                performance_score FLOAT,
+                teammates_signature VARCHAR,
+                updated_at TIMESTAMP
             )
             """
         )
@@ -433,6 +511,7 @@ class TestPerformanceScoreIntegration:
                 team_mmr FLOAT,
                 enemy_mmr FLOAT,
                 is_firefight BOOLEAN,
+                teammates_signature VARCHAR,
                 updated_at TIMESTAMP,
                 performance_score FLOAT
             )
@@ -450,7 +529,7 @@ class TestPerformanceScoreIntegration:
                 """,
                 (
                     f"hist-{i:03d}",
-                    base_time.replace(hour=12 + i),
+                    base_time + timedelta(hours=i),
                     10 + i,
                     8,
                     3,

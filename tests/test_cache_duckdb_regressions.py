@@ -4,9 +4,7 @@ Ces tests vérifient que les fonctions qui retournaient des valeurs vides
 pour DuckDB v4 fonctionnent maintenant correctement.
 """
 
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
 import duckdb
 import pytest
@@ -20,12 +18,10 @@ from src.ui.cache import (
 
 
 @pytest.fixture
-def temp_duckdb():
+def temp_duckdb(tmp_path):
     """Crée une base DuckDB temporaire avec des données de test."""
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
-
-    conn = duckdb.connect(db_path)
+    db_path = tmp_path / "test_stats.duckdb"
+    conn = duckdb.connect(str(db_path))
 
     # Créer les tables nécessaires
     conn.execute("""
@@ -79,36 +75,33 @@ def temp_duckdb():
     # Highlight events pour match_id_1 (les deux joueurs présents)
     conn.execute(
         """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
+        VALUES (?, ?, ?, ?, ?, ?)
     """,
-        [match_id_1, "Kill", 1000, xuid_self, "PlayerSelf"],
+        [1, match_id_1, "Kill", 1000, xuid_self, "PlayerSelf"],
     )
 
     conn.execute(
         """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
+        VALUES (?, ?, ?, ?, ?, ?)
     """,
-        [match_id_1, "Kill", 2000, xuid_friend, "PlayerFriend"],
+        [2, match_id_1, "Kill", 2000, xuid_friend, "PlayerFriend"],
     )
 
     # Highlight events pour match_id_2 (seulement self)
     conn.execute(
         """
-        INSERT INTO highlight_events (match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
+        VALUES (?, ?, ?, ?, ?, ?)
     """,
-        [match_id_2, "Kill", 1000, xuid_self, "PlayerSelf"],
+        [3, match_id_2, "Kill", 1000, xuid_self, "PlayerSelf"],
     )
 
     conn.commit()
     conn.close()
 
-    yield db_path, xuid_self, xuid_friend, match_id_1, match_id_2
-
-    # Cleanup
-    Path(db_path).unlink(missing_ok=True)
+    yield str(db_path), xuid_self, xuid_friend, match_id_1, match_id_2
 
 
 def test_cached_load_match_rosters_not_none(temp_duckdb):
@@ -242,31 +235,21 @@ def test_duckdb_repo_load_same_team_match_ids(temp_duckdb):
     assert match_id_1 in result
 
 
-def test_information_schema_not_sqlite_master():
+def test_information_schema_not_sqlite_master(tmp_path):
     """Test que les requêtes utilisent information_schema et non sqlite_master."""
     # Ce test vérifie que le bug sqlite_master → information_schema est corrigé
-    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
-        db_path = f.name
+    db_path = tmp_path / "test.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("CREATE TABLE test_table (id INTEGER)")
 
-    try:
-        conn = duckdb.connect(db_path)
-        conn.execute("CREATE TABLE test_table (id INTEGER)")
+    # Vérifier que information_schema fonctionne
+    result = conn.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'main' AND table_name = 'test_table'
+    """).fetchall()
 
-        # Vérifier que information_schema fonctionne
-        result = conn.execute("""
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema = 'main' AND table_name = 'test_table'
-        """).fetchall()
+    assert len(result) == 1, "information_schema doit fonctionner avec DuckDB"
 
-        assert len(result) == 1, "information_schema doit fonctionner avec DuckDB"
-
-        # Vérifier que sqlite_master ne fonctionne PAS avec DuckDB
-        try:
-            conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            pytest.fail("sqlite_master ne doit pas fonctionner avec DuckDB")
-        except Exception:
-            pass  # Attendu
-
-        conn.close()
-    finally:
-        Path(db_path).unlink(missing_ok=True)
+    # DuckDB supporte sqlite_master pour compatibilité - on vérifie surtout
+    # que information_schema fonctionne (requis pour les requêtes du projet)
+    conn.close()
