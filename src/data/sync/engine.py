@@ -40,6 +40,7 @@ from src.data.sync.models import (
     SyncResult,
 )
 from src.data.sync.transformers import (
+    create_metadata_resolver,
     extract_aliases,
     extract_personal_score_awards,
     extract_xuids_from_match,
@@ -253,6 +254,9 @@ class DuckDBSyncEngine:
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._db_lock = asyncio.Lock()
         self._existing_match_ids: set[str] | None = None
+
+        # Créer le resolver pour les métadonnées
+        self._metadata_resolver = create_metadata_resolver(self._metadata_db_path)
 
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
         """Retourne une connexion DuckDB (lecture/écriture)."""
@@ -643,7 +647,12 @@ class DuckDBSyncEngine:
                 highlight_events = await client.get_highlight_events(match_id)
 
             # Transformer les données
-            match_row = transform_match_stats(stats_json, self._xuid, skill_json=skill_json)
+            match_row = transform_match_stats(
+                stats_json,
+                self._xuid,
+                skill_json=skill_json,
+                metadata_resolver=self._metadata_resolver,
+            )
             if match_row is None:
                 result["error"] = f"Transformation échouée pour {match_id}"
                 return result

@@ -13,10 +13,15 @@ Architecture:
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+import duckdb
 
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.data.sync.models import (
@@ -26,6 +31,8 @@ from src.data.sync.models import (
     PlayerMatchStatsRow,
     XuidAliasRow,
 )
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Regex et constantes
@@ -352,6 +359,119 @@ def _determine_mode_category(pair_name: str | None) -> str:
 
 
 # =============================================================================
+# Résolution depuis les référentiels
+# =============================================================================
+
+
+def create_metadata_resolver(
+    metadata_db_path: Path | str | None = None,
+) -> Callable[[str, str], str | None] | None:
+    """Crée une fonction de résolution des noms depuis metadata.duckdb.
+
+    Args:
+        metadata_db_path: Chemin vers metadata.duckdb (auto-détecté si None).
+
+    Returns:
+        Fonction resolver(asset_type, asset_id) -> name | None, ou None si metadata.duckdb n'existe pas.
+    """
+    if metadata_db_path is None:
+        # Auto-détection : cherche dans data/warehouse/metadata.duckdb
+        # On suppose qu'on est dans src/data/sync/, donc on remonte
+        base_path = Path(__file__).parent.parent.parent.parent
+        metadata_db_path = base_path / "data" / "warehouse" / "metadata.duckdb"
+    else:
+        metadata_db_path = Path(metadata_db_path)
+
+    if not metadata_db_path.exists():
+        logger.debug(f"metadata.duckdb non trouvé: {metadata_db_path}")
+        return None
+
+    # Créer une connexion DuckDB en lecture seule pour les référentiels
+    try:
+        conn = duckdb.connect(str(metadata_db_path), read_only=True)
+    except Exception as e:
+        logger.warning(f"Impossible de se connecter à metadata.duckdb: {e}")
+        return None
+
+    # Cache pour éviter les requêtes répétées
+    cache: dict[tuple[str, str], str | None] = {}
+
+    def resolve(asset_type: str, asset_id: str | None) -> str | None:
+        """Résout un nom depuis les référentiels.
+
+        Args:
+            asset_type: Type d'asset ('playlist', 'map', 'pair', 'game_variant').
+            asset_id: ID de l'asset.
+
+        Returns:
+            Nom résolu ou None si non trouvé.
+        """
+        if not asset_id:
+            return None
+
+        # Vérifier le cache
+        cache_key = (asset_type, asset_id)
+        if cache_key in cache:
+            return cache[cache_key]
+
+        # Déterminer la table selon le type
+        table_map = {
+            "playlist": ["playlists"],
+            "map": ["maps"],
+            "pair": [
+                "map_mode_pairs",
+                "playlist_map_mode_pairs",
+            ],  # Essayer les deux noms possibles
+            "game_variant": ["game_variants"],
+        }
+
+        table_candidates = table_map.get(asset_type.lower())
+        if not table_candidates:
+            cache[cache_key] = None
+            return None
+
+        try:
+            # Vérifier si une des tables candidates existe
+            tables_result = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+            ).fetchall()
+            tables = {row[0] for row in tables_result}
+
+            # Trouver la première table candidate qui existe
+            table_name = None
+            for candidate in table_candidates:
+                if candidate in tables:
+                    table_name = candidate
+                    break
+
+            if not table_name:
+                logger.debug(f"Aucune table trouvée pour {asset_type} parmi {table_candidates}")
+                cache[cache_key] = None
+                return None
+
+            # Requête pour récupérer le nom
+            result = conn.execute(
+                f"SELECT public_name FROM {table_name} WHERE asset_id = ?",
+                [asset_id],
+            ).fetchone()
+
+            if result and result[0]:
+                name = str(result[0])
+                cache[cache_key] = name
+                return name
+
+            cache[cache_key] = None
+            return None
+
+        except Exception as e:
+            logger.debug(f"Erreur résolution {asset_type} {asset_id}: {e}")
+            cache[cache_key] = None
+            return None
+
+    return resolve
+
+
+# =============================================================================
 # Fonctions de transformation principales
 # =============================================================================
 
@@ -361,6 +481,7 @@ def transform_match_stats(
     xuid: str,
     *,
     skill_json: dict[str, Any] | None = None,
+    metadata_resolver: Callable[[str, str | None], str | None] | None = None,
 ) -> MatchStatsRow | None:
     """Transforme le JSON API en MatchStatsRow pour DuckDB.
 
@@ -413,6 +534,23 @@ def transform_match_stats(
     pair_name = _extract_public_name(match_info, "PlaylistMapModePair")
     game_variant_id = _extract_asset_id(match_info, "UgcGameVariant")
     game_variant_name = _extract_public_name(match_info, "UgcGameVariant")
+
+    # Résolution depuis les référentiels si les noms sont NULL mais les IDs sont présents
+    if metadata_resolver:
+        if playlist_id and not playlist_name:
+            playlist_name = metadata_resolver("playlist", playlist_id)
+        if map_id and not map_name:
+            map_name = metadata_resolver("map", map_id)
+        if pair_id and not pair_name:
+            pair_name = metadata_resolver("pair", pair_id)
+        if game_variant_id and not game_variant_name:
+            game_variant_name = metadata_resolver("game_variant", game_variant_id)
+
+    # Fallback sur les IDs si les noms sont toujours NULL
+    playlist_name = playlist_name or playlist_id
+    map_name = map_name or map_id
+    pair_name = pair_name or pair_id
+    game_variant_name = game_variant_name or game_variant_id
 
     # Extraire MMR depuis skill_json si disponible
     team_mmr, enemy_mmr = None, None
