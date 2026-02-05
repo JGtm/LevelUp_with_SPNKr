@@ -21,13 +21,16 @@ Le mode est configurable via AppSettings.repository_mode.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING
 
 import pandas as pd
 import streamlit as st
 
-from src.analysis import compute_sessions, mark_firefight
+logger = logging.getLogger(__name__)
+
+from src.analysis import compute_sessions, compute_sessions_with_context_polars, mark_firefight
 from src.db import (
     get_cache_stats,
     get_match_session_info,
@@ -84,7 +87,54 @@ def cached_compute_sessions_db(
     include_firefight: bool,
     gap_minutes: int,
 ) -> pd.DataFrame:
-    """Compute sessions sur la base (cache)."""
+    """Compute sessions sur la base (cache) avec logique avancée (gap + coéquipiers)."""
+    # DuckDB v4 : charger directement en Polars depuis la DB
+    if _is_duckdb_v4_path(db_path):
+        try:
+            import duckdb
+
+            conn = duckdb.connect(db_path, read_only=True)
+
+            # Construire la requête SQL
+            firefight_filter = "" if include_firefight else "AND is_firefight = FALSE"
+
+            query = f"""
+                SELECT
+                    match_id,
+                    start_time,
+                    teammates_signature,
+                    is_firefight
+                FROM match_stats
+                WHERE start_time IS NOT NULL
+                {firefight_filter}
+                ORDER BY start_time ASC
+            """
+
+            # Charger en Polars
+            df_pl = conn.execute(query).pl()
+            conn.close()
+
+            if df_pl.is_empty():
+                return pd.DataFrame(
+                    columns=["match_id", "start_time", "session_id", "session_label"]
+                )
+
+            # Calculer les sessions avec la logique avancée
+            df_pl = compute_sessions_with_context_polars(
+                df_pl,
+                gap_minutes=gap_minutes,
+                teammates_column="teammates_signature",
+            )
+
+            # Convertir en Pandas pour compatibilité UI
+            return df_pl.to_pandas()
+
+        except Exception as e:
+            logger.warning(f"Erreur calcul sessions Polars, fallback Pandas: {e}")
+            # Fallback sur l'ancienne méthode
+            pass
+
+    # Legacy SQLite ou fallback : utiliser Pandas
     df0 = load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
     if df0.empty:
         df0["session_id"] = pd.Series(dtype=int)
@@ -93,6 +143,27 @@ def cached_compute_sessions_db(
     df0 = mark_firefight(df0)
     if (not include_firefight) and ("is_firefight" in df0.columns):
         df0 = df0.loc[~df0["is_firefight"]].copy()
+
+    # Essayer d'utiliser la logique avancée si teammates_signature est disponible
+    if "teammates_signature" in df0.columns:
+        try:
+            import polars as pl
+
+            df_pl = pl.from_pandas(df0[["match_id", "start_time", "teammates_signature"]])
+            df_pl = compute_sessions_with_context_polars(
+                df_pl,
+                gap_minutes=gap_minutes,
+                teammates_column="teammates_signature",
+            )
+            # Fusionner les résultats avec le DataFrame original
+            df_result = df0.copy()
+            df_sessions = df_pl.select(["match_id", "session_id", "session_label"]).to_pandas()
+            df_result = df_result.merge(df_sessions, on="match_id", how="left")
+            return df_result
+        except Exception:
+            # Fallback sur logique simple
+            pass
+
     return compute_sessions(df0, gap_minutes=int(gap_minutes))
 
 

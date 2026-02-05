@@ -412,9 +412,10 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
     try:
         # Import des modules nécessaires
         import pandas as pd
+        import polars as pl
 
         from src.analysis.filters import mark_firefight
-        from src.analysis.sessions import compute_sessions
+        from src.analysis.sessions import compute_sessions, compute_sessions_with_context_polars
         from src.db.loaders import get_players_from_db, load_matches
 
         with get_connection(db_path) as con:
@@ -487,9 +488,30 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
                 # Marquer Firefight
                 df = mark_firefight(df)
 
-                # Calculer les sessions
+                # Calculer les sessions avec logique avancée (gap + coéquipiers)
                 logger.info(f"  Calcul des sessions pour {len(df)} matchs...")
-                df = compute_sessions(df, gap_minutes=45)
+                # Essayer d'utiliser la logique avancée si teammates_signature est disponible
+                if "teammates_signature" in df.columns:
+                    try:
+                        df_pl = pl.from_pandas(
+                            df[["match_id", "start_time", "teammates_signature"]]
+                        )
+                        df_pl = compute_sessions_with_context_polars(
+                            df_pl,
+                            gap_minutes=45,
+                            teammates_column="teammates_signature",
+                        )
+                        # Fusionner les résultats avec le DataFrame original
+                        df_sessions = df_pl.select(
+                            ["match_id", "session_id", "session_label"]
+                        ).to_pandas()
+                        df = df.merge(df_sessions, on="match_id", how="left")
+                    except Exception as e:
+                        logger.warning(f"Erreur calcul sessions avancées, fallback simple: {e}")
+                        df = compute_sessions(df, gap_minutes=45)
+                else:
+                    # Fallback sur logique simple si teammates_signature n'est pas disponible
+                    df = compute_sessions(df, gap_minutes=45)
 
                 # Préparer les données pour insertion
                 logger.info(f"  Insertion de {len(df)} matchs dans MatchCache...")

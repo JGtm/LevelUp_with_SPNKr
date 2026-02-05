@@ -885,8 +885,8 @@ class DuckDBSyncEngine:
                 time_played_seconds, avg_life_seconds,
                 my_team_score, enemy_team_score,
                 team_mmr, enemy_mmr,
-                is_firefight, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                is_firefight, teammates_signature, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 row.match_id,
                 row.start_time,
@@ -914,6 +914,7 @@ class DuckDBSyncEngine:
                 row.team_mmr,
                 row.enemy_mmr,
                 row.is_firefight,
+                row.teammates_signature,
                 datetime.now(timezone.utc),
             ),
         )

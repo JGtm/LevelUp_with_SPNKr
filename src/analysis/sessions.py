@@ -13,9 +13,9 @@ from __future__ import annotations
 from datetime import datetime, time, timezone
 
 import pandas as pd
+import polars as pl
 
 from src.config import SESSION_CONFIG
-
 
 # =============================================================================
 # Configuration des sessions améliorées
@@ -30,24 +30,24 @@ SESSION_CUTOFF_HOUR = 8
 
 def compute_sessions(df: pd.DataFrame, gap_minutes: int | None = None) -> pd.DataFrame:
     """Regroupe les parties consécutives en sessions (mode legacy).
-    
+
     ATTENTION: Cette fonction ne prend PAS en compte les coéquipiers.
     Pour des sessions plus précises, utiliser les données pré-calculées
     dans MatchCache (colonnes session_id, session_label).
-    
+
     Une nouvelle session commence quand l'écart entre deux parties
     dépasse le seuil défini.
-    
+
     Args:
         df: DataFrame avec colonne start_time.
         gap_minutes: Écart maximum entre parties (default: SESSION_CONFIG.default_gap_minutes).
-        
+
     Returns:
         DataFrame avec colonnes session_id et session_label ajoutées.
     """
     if gap_minutes is None:
         gap_minutes = SESSION_CONFIG.default_gap_minutes
-        
+
     if df.empty:
         d = df.copy()
         d["session_id"] = pd.Series(dtype=int)
@@ -68,7 +68,7 @@ def compute_sessions(df: pd.DataFrame, gap_minutes: int | None = None) -> pd.Dat
         cnt = int(row["count"])
         labels[sid] = f"{start:%d/%m/%Y} {start:%H:%M}–{end:%H:%M} ({cnt})"
     d["session_label"] = d["session_id"].map(labels)
-    
+
     return d
 
 
@@ -79,18 +79,18 @@ def compute_sessions_with_context(
     teammates_column: str | None = "teammates_signature",
 ) -> pd.DataFrame:
     """Regroupe les parties en sessions avec logique avancée.
-    
+
     Règles :
     1. Un gap > gap_minutes entre deux matchs = nouvelle session
     2. Un changement de coéquipiers = nouvelle session (si teammates_column existe)
     3. Les matchs avant cutoff_hour sont regroupés avec la veille
-    
+
     Args:
         df: DataFrame avec colonnes start_time et optionnellement teammates_signature.
         gap_minutes: Gap maximum entre matchs d'une même session.
         cutoff_hour: Heure de coupure (avant = session potentiellement de la veille).
         teammates_column: Nom de la colonne contenant la signature des coéquipiers.
-        
+
     Returns:
         DataFrame avec colonnes session_id et session_label ajoutées.
     """
@@ -99,26 +99,26 @@ def compute_sessions_with_context(
         d["session_id"] = pd.Series(dtype=int)
         d["session_label"] = pd.Series(dtype=str)
         return d
-    
+
     d = df.sort_values("start_time").copy()
-    
+
     # Calcul des conditions de nouvelle session
     gaps = d["start_time"].diff().dt.total_seconds().fillna(0)
     gap_break = (gaps > (gap_minutes * 60)).astype(int)
-    
+
     # Changement de coéquipiers ?
     if teammates_column and teammates_column in d.columns:
         teammates_break = (d[teammates_column] != d[teammates_column].shift(1)).astype(int)
         teammates_break.iloc[0] = 0  # Premier match : pas de rupture
     else:
         teammates_break = pd.Series(0, index=d.index)
-    
+
     # Nouvelle session si gap OU changement de coéquipiers
     new_session = ((gap_break == 1) | (teammates_break == 1)).astype(int)
     new_session.iloc[0] = 1  # Premier match = première session
-    
+
     d["session_id"] = new_session.cumsum().astype(int) - 1  # Commence à 0
-    
+
     # Génère les labels de session
     g = d.groupby("session_id")["start_time"].agg(["min", "max", "count"])
     labels = {}
@@ -128,7 +128,7 @@ def compute_sessions_with_context(
         cnt = int(row["count"])
         labels[sid] = f"{start:%d/%m/%y %H:%M}–{end:%H:%M} ({cnt})"
     d["session_label"] = d["session_id"].map(labels)
-    
+
     return d
 
 
@@ -137,50 +137,137 @@ def is_session_potentially_active(
     cutoff_hour: int = SESSION_CUTOFF_HOUR,
 ) -> bool:
     """Détermine si une session est potentiellement encore en cours.
-    
+
     Une session est considérée "potentiellement active" si :
     - Le dernier match est aujourd'hui après cutoff_hour
     - Ou le dernier match est hier après cutoff_hour et on est avant cutoff_hour aujourd'hui
-    
+
     Args:
         last_match_time: Datetime du dernier match de la session.
         cutoff_hour: Heure de coupure.
-        
+
     Returns:
         True si la session pourrait encore être en cours.
     """
     now = datetime.now(timezone.utc)
-    
+
     # Convertir en aware datetime si nécessaire
     if last_match_time.tzinfo is None:
         last_match_time = last_match_time.replace(tzinfo=timezone.utc)
-    
+
     # Si le dernier match est aujourd'hui
     if last_match_time.date() == now.date():
         return True
-    
+
     # Si le dernier match est hier et on est avant l'heure de coupure
     yesterday = (now - pd.Timedelta(days=1)).date()
     today_cutoff = datetime.combine(now.date(), time(cutoff_hour, 0), tzinfo=timezone.utc)
-    
+
     if last_match_time.date() == yesterday and now < today_cutoff:
         return True
-    
+
     return False
+
+
+def compute_sessions_with_context_polars(
+    df: pl.DataFrame,
+    gap_minutes: int = DEFAULT_SESSION_GAP_MINUTES,
+    cutoff_hour: int = SESSION_CUTOFF_HOUR,
+    teammates_column: str | None = "teammates_signature",
+) -> pl.DataFrame:
+    """Version Polars de compute_sessions_with_context.
+
+    Règles :
+    1. Gap > gap_minutes = nouvelle session
+    2. Changement de teammates_signature = nouvelle session
+    3. Heure de coupure pour sessions "en cours"
+
+    Args:
+        df: DataFrame Polars avec colonnes start_time et optionnellement teammates_signature.
+        gap_minutes: Gap maximum entre matchs.
+        cutoff_hour: Heure de coupure.
+        teammates_column: Nom de la colonne teammates_signature.
+
+    Returns:
+        DataFrame avec colonnes session_id et session_label ajoutées.
+    """
+    if df.is_empty():
+        return df.with_columns(
+            [
+                pl.lit(None).cast(pl.Int64).alias("session_id"),
+                pl.lit(None).cast(pl.Utf8).alias("session_label"),
+            ]
+        )
+
+    # Trier par start_time
+    df_sorted = df.sort("start_time")
+
+    # Calculer les gaps (en secondes)
+    gaps = df_sorted["start_time"].diff().dt.total_seconds().fill_null(0)
+    gap_break = (gaps > (gap_minutes * 60)).cast(pl.Int8)
+
+    # Changement de coéquipiers ?
+    if teammates_column and teammates_column in df_sorted.columns:
+        teammates_break = (
+            df_sorted[teammates_column] != df_sorted[teammates_column].shift(1)
+        ).cast(pl.Int8)
+        teammates_break = teammates_break.fill_null(0)
+    else:
+        teammates_break = pl.lit(0).cast(pl.Int8)
+
+    # Nouvelle session si gap OU changement de coéquipiers
+    new_session = ((gap_break == 1) | (teammates_break == 1)).cast(pl.Int8)
+    new_session = new_session.fill_null(1)  # Premier match = première session
+
+    # Calculer session_id (cum_sum en Polars, pas cumsum Pandas)
+    session_id = new_session.cum_sum() - 1
+
+    # Générer les labels
+    df_with_session = df_sorted.with_columns(session_id.alias("session_id"))
+
+    session_labels = (
+        df_with_session.group_by("session_id")
+        .agg(
+            [
+                pl.col("start_time").min().alias("start"),
+                pl.col("start_time").max().alias("end"),
+                pl.count().alias("count"),
+            ]
+        )
+        .with_columns(
+            pl.format(
+                "{} {}–{} ({})",
+                pl.col("start").dt.strftime("%d/%m/%Y"),
+                pl.col("start").dt.strftime("%H:%M"),
+                pl.col("end").dt.strftime("%H:%M"),
+                pl.col("count"),
+            ).alias("session_label")
+        )
+        .select(["session_id", "session_label"])
+    )
+
+    # Joindre les labels
+    df_result = df_with_session.join(
+        session_labels,
+        on="session_id",
+        how="left",
+    )
+
+    return df_result
 
 
 def get_bucket_label(days: float) -> tuple[str, str]:
     """Détermine le type de bucket temporel selon la plage de dates.
-    
+
     Args:
         days: Nombre de jours dans la plage.
-        
+
     Returns:
         Tuple (bucket_type, bucket_label) où bucket_type est utilisé
         pour le groupement pandas et bucket_label pour l'affichage.
     """
     cfg = SESSION_CONFIG
-    
+
     if days < cfg.bucket_threshold_hourly:
         return "match", "partie"
     elif days <= cfg.bucket_threshold_daily:

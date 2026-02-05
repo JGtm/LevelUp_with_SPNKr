@@ -643,6 +643,9 @@ def transform_match_stats(
     # Déterminer si le joueur a quitté prématurément
     left_early = outcome == 4  # DidNotFinish
 
+    # Calculer la signature des coéquipiers
+    teammates_signature = compute_teammates_signature(match_json, xuid, team_id)
+
     return MatchStatsRow(
         match_id=match_id,
         start_time=start_time,
@@ -684,6 +687,7 @@ def transform_match_stats(
         is_ranked=is_ranked,
         is_firefight=is_firefight,
         left_early=left_early,
+        teammates_signature=teammates_signature,
     )
 
 
@@ -1033,6 +1037,79 @@ def extract_aliases(
         )
 
     return aliases
+
+
+def _extract_xuid(player: dict[str, Any] | str) -> str | None:
+    """Extrait le XUID d'un joueur depuis son PlayerId.
+
+    Args:
+        player: Dict joueur ou PlayerId (str).
+
+    Returns:
+        XUID (str) ou None.
+    """
+    pid = player if isinstance(player, str) else player.get("PlayerId")
+
+    if not pid:
+        return None
+
+    if isinstance(pid, str):
+        m = XUID_RE.search(pid)
+        if m:
+            return m.group(1)
+    elif isinstance(pid, dict):
+        xuid_val = pid.get("Xuid") or pid.get("xuid")
+        if xuid_val is not None:
+            return str(xuid_val)
+        else:
+            try:
+                s = json.dumps(pid)
+                m = XUID_RE.search(s)
+                if m:
+                    return m.group(1)
+            except (TypeError, ValueError):
+                pass
+
+    return None
+
+
+def compute_teammates_signature(
+    match_json: dict[str, Any],
+    my_xuid: str,
+    my_team_id: int | None,
+) -> str | None:
+    """Calcule la signature des coéquipiers pour un match.
+
+    Args:
+        match_json: JSON du match depuis l'API.
+        my_xuid: XUID du joueur principal.
+        my_team_id: ID de l'équipe du joueur.
+
+    Returns:
+        Signature (XUIDs triés séparés par virgule) ou None.
+    """
+    players = match_json.get("Players")
+    if not players or my_team_id is None:
+        return None
+
+    # Extraire les XUIDs des coéquipiers (même équipe, excluant moi)
+    teammate_xuids = []
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+
+        xuid = _extract_xuid(player)
+        team_id = _safe_int(player.get("LastTeamId"))
+
+        if xuid and team_id == my_team_id and xuid != my_xuid:
+            teammate_xuids.append(xuid)
+
+    if not teammate_xuids:
+        return None
+
+    # Trier et joindre pour créer une signature stable
+    teammate_xuids.sort()
+    return ",".join(teammate_xuids)
 
 
 def extract_xuids_from_match(match_json: dict[str, Any]) -> list[int]:

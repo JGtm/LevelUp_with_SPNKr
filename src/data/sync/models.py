@@ -207,6 +207,7 @@ class MatchStatsRow:
     is_ranked: bool = False
     is_firefight: bool = False
     left_early: bool = False
+    teammates_signature: str | None = None
 
 
 @dataclass
