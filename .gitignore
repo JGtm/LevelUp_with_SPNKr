@@ -4,6 +4,7 @@ __pycache__/
 out/
 .streamlit/*
 !.streamlit/secrets.toml.example
+!.streamlit/friends_defaults.json
 .env
 .env.local
 .DS_Store

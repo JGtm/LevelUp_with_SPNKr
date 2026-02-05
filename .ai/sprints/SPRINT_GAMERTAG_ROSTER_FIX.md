@@ -41,18 +41,16 @@ SELECT * FROM match_stats WHERE xuid = friend_xuid  -- Jamais de résultat
 
 ---
 
-## 📊 État actuel des tables
+## 📊 État actuel des tables (post-récupération 2026-02-05)
 
-| Table | État | Problème |
-|-------|------|----------|
-| `xuid_aliases` | ❌ Vide (0 lignes) | Jamais peuplée lors de la migration |
-| `teammates_aggregate` | ✅ 853 lignes | Gamertags propres, mais pas team_id par match |
-| `highlight_events` | ⚠️ 201k lignes | Gamertags corrompus (NUL chars) |
-| `killer_victim_pairs` | ❌ Vide (0 lignes) | Non peuplée |
-| `antagonists` | ❌ Vide (0 lignes) | Non peuplée |
-| `player_match_stats` | ⚠️ 449 lignes | Que le joueur principal, pas les coéquipiers |
-
-**Table manquante** : `match_participants` - stockerait xuid, team_id, outcome de TOUS les joueurs par match
+| Table | État | Notes |
+|-------|------|-------|
+| `xuid_aliases` | ✅ Peuplée | Récupérée depuis SQLite + API SPNKr (`resolve_missing_gamertags.py`) |
+| `match_participants` | ✅ Peuplée | Récupérée depuis SQLite (`recover_from_sqlite.py`) |
+| `teammates_aggregate` | ✅ Présente | Gamertags propres |
+| `highlight_events` | ⚠️ Limité | Données anciennes sans film pour certains matchs |
+| `killer_victim_pairs` | ✅ Peuplée | Backfill via `--killer-victim` |
+| `antagonists` | ✅ Script existe | `populate_antagonists.py --all --force` |
 
 ---
 
@@ -393,15 +391,23 @@ db.close()
 ## 🔧 Commandes finales
 
 ```bash
-# 1. Après implémentation, backfill toutes les données
-python scripts/backfill_data.py --player JGtm --participants --force-aliases
+# 1. Récupération depuis SQLite (si DB legacy disponible)
+python scripts/recover_from_sqlite.py --all
 
-# 2. Pour tous les joueurs
-python scripts/backfill_data.py --all --participants --force-aliases
+# 2. Résolution XUIDs manquants via API (tokens .env.local requis)
+python scripts/resolve_missing_gamertags.py --all
 
-# 3. Vérification
-python scripts/diagnose_player_db.py --player JGtm --check-tables
+# 3. Backfill participants + killer_victim + aliases
+python scripts/backfill_data.py --all --participants --killer-victim --force-aliases
+
+# 4. Antagonistes
+python scripts/populate_antagonists.py --all --force
+
+# 5. Vérification
+python scripts/diagnose_migration_gaps.py --all
 ```
+
+**Liste d'amis (stockée en dur)** : `.streamlit/friends_defaults.json` — chaque joueur (JGtm, Madina97294, Chocoboflor, XxDaemonGamerxX) a les 3 autres comme amis par défaut dans les filtres coéquipiers.
 
 ---
 
@@ -666,35 +672,42 @@ def render_antagonists_tab():
 
 ---
 
-## 📁 Fichiers à modifier
+## 📁 Fichiers modifiés / créés
 
-| Fichier | Modifications |
-|---------|---------------|
-| `src/data/sync/engine.py` | Ajouter table `match_participants`, intégrer extraction |
-| `src/data/sync/transformers.py` | Ajouter `extract_participants()` |
-| `src/data/sync/models.py` | Ajouter `MatchParticipantRow` |
-| `src/data/repositories/duckdb_repo.py` | Corriger requêtes coéquipiers, ajouter `resolve_gamertag()` |
-| `scripts/backfill_data.py` | Ajouter options `--participants`, `--killer-victim`, `--antagonists` |
-| `scripts/populate_antagonists.py` | Adapter pour DuckDB (plus de SQLite legacy) |
-| `src/ui/pages/match_view.py` | Intégrer graphiques antagonistes |
-| `src/ui/cache.py` | Adapter `cached_friend_matches_df()` si nécessaire |
+| Fichier | Statut |
+|---------|--------|
+| `src/data/sync/engine.py` | ✅ Table `match_participants`, extraction |
+| `src/data/sync/transformers.py` | ✅ `extract_participants()` |
+| `src/data/sync/models.py` | ✅ `MatchParticipantRow` |
+| `src/data/repositories/duckdb_repo.py` | ✅ `resolve_gamertag()`, `load_same_team_match_ids()` |
+| `scripts/backfill_data.py` | ✅ `--participants`, `--killer-victim` |
+| `scripts/recover_from_sqlite.py` | ✅ Récupération SQLite → DuckDB |
+| `scripts/resolve_missing_gamertags.py` | ✅ XUID → gamertag via API SPNKr |
+| `.streamlit/friends_defaults.json` | ✅ Liste d'amis en dur (4 joueurs) |
+| `scripts/populate_antagonists.py` | ✅ Adapté DuckDB |
+| `src/ui/pages/match_view.py` | 🔲 Intégration graphiques antagonistes (à faire) |
 
 ---
 
 ## ✅ Critères de succès
 
-> **Note**: Implémentation code complète (2026-02-05). Backfill des données requis.
+> **Note**: Implémentation code complète (2026-02-05). Récupération des données effectuée.
 
 ### Tables et données
-- [x] `match_participants` : Schema créé, extraction implémentée (`--participants`)
-- [ ] `xuid_aliases` : À remplir via backfill (existant)
-- [x] `killer_victim_pairs` : Schema existant, backfill implémenté (`--killer-victim`)
-- [ ] `antagonists` : À implémenter (agrégation)
+- [x] `match_participants` : Schema créé, extraction + récupération SQLite
+- [x] `xuid_aliases` : Récupérée (SQLite, xuid_aliases.json, API SPNKr)
+- [x] `killer_victim_pairs` : Backfill implémenté (`--killer-victim`)
+- [x] `antagonists` : Script `populate_antagonists.py` disponible
 
 ### Fonctionnalités UI
 - [x] "Mes coéquipiers" : `load_same_team_match_ids()` corrigé
 - [x] Roster du dernier match : `resolve_gamertags_batch()` intégré
 - [x] Némésis : Utilise la résolution gamertag centralisée
+- [x] Liste d'amis : `.streamlit/friends_defaults.json` (JGtm, Madina97294, Chocoboflor, XxDaemonGamerxX)
+
+### Scripts de récupération
+- [x] `recover_from_sqlite.py` : match_participants + xuid_aliases depuis SQLite legacy
+- [x] `resolve_missing_gamertags.py` : XUID → gamertag via API SPNKr `get_users_by_id()`
 
 ### Code implémenté
 - [x] `src/data/sync/engine.py` : DDL match_participants + insertion
