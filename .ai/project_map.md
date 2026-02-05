@@ -99,6 +99,8 @@ data/
 | `player_match_stats` | Données MMR/skill |
 | `highlight_events` | Événements film |
 | `xuid_aliases` | Mapping XUID→Gamertag |
+| `killer_victim_pairs` | Paires killer→victim avec timestamps |
+| `match_participants` | Participants par match (xuid, team) ⚠️ À CRÉER |
 | `career_progression` | Historique rangs |
 | `sync_meta` | Métadonnées sync |
 | `mv_*` | Vues matérialisées |
@@ -148,6 +150,14 @@ data/
 | `docs/BACKUP_RESTORE.md` | Backup/Restore |
 | `docs/FAQ.md` | Questions fréquentes |
 
+### Documentation IA (.ai/)
+
+| Document | Contenu |
+|----------|---------|
+| `.ai/DATA_KILLER_VICTIM.md` | Guide killer/victim et antagonistes |
+| `.ai/sprints/SPRINT_GAMERTAG_ROSTER_FIX.md` | Sprint correction gamertags et roster |
+| `.ai/API_LIMITATIONS.md` | Limitations connues de l'API |
+
 ## Problèmes Connus
 
 ### 🔴 CRITIQUE - Données Manquantes en BDD (2026-02-05)
@@ -173,7 +183,25 @@ data/
 - `src/data/sync/engine.py` : Synchronisation et insertion en BDD
 - `src/data/repositories/duckdb_repo.py` : Récupération depuis BDD
 
+## Sprint en Cours
+
+**Sprint Gamertag & Roster Fix** (2026-02-05)  
+📄 `.ai/sprints/SPRINT_GAMERTAG_ROSTER_FIX.md`
+
+Objectifs :
+- Créer `match_participants` pour restaurer la logique coéquipiers
+- Backfill `killer_victim_pairs` depuis `highlight_events`
+- Corriger les gamertags corrompus (NUL chars)
+- Intégrer les graphiques antagonistes dans l'UI
+
+Tables concernées :
+- `killer_victim_pairs` : ❌ Vide → À peupler
+- `xuid_aliases` : ❌ Vide → À peupler
+- `match_participants` : ❌ N'existe pas → À créer
+- `antagonists` : ❌ Vide → À peupler
+
 ## Dernière Mise à Jour
 
+**2026-02-05** : Sprint Gamertag & Roster Fix initié + Documentation killer_victim  
 **2026-02-05** : 🔴 Problème critique identifié - Données manquantes en BDD (en exploration)  
 **2026-02-01** : Phase 6 terminée - Documentation & Branding "LevelUp"

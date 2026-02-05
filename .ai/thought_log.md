@@ -7,6 +7,46 @@
 
 ## Journal
 
+### [2026-02-05] - 📊 Sprint Gamertag/Roster : Documentation killer_victim_pairs
+
+**Statut** : ✅ Documentation complète créée
+
+**Contexte** :
+L'utilisateur demande où sont stockées les données "qui a tué qui" avec timestamps.
+
+**RÉSULTAT DE L'ANALYSE** :
+
+1. **Table `killer_victim_pairs`** : Existe mais est **VIDE** (0 lignes)
+   - Schéma : `killer_xuid`, `victim_xuid`, `time_ms`, etc.
+   - Destinée à stocker les paires killer→victim
+
+2. **Source de données** : `highlight_events`
+   - Events `kill` : contiennent le killer (xuid, gamertag, time_ms)
+   - Events `death` : contiennent la victime (xuid, gamertag, time_ms)
+   - Pairing possible par timestamp (±5ms) :
+     ```
+     kill @ 40528ms (quisqueyano159) → death @ 40529ms (Ale8037)
+     ```
+
+3. **Modules existants** (bien documentés, mais données manquantes) :
+   - `src/analysis/killer_victim.py` : Algorithme de pairing + fonctions Polars
+   - `src/visualization/antagonist_charts.py` : Graphiques Plotly (non intégrés UI)
+   - `scripts/populate_antagonists.py` : Cherche DB SQLite legacy (obsolète)
+
+**Actions prises** :
+- ✅ Sprint mis à jour avec Phase 6 (backfill killer_victim_pairs)
+- ✅ Sprint mis à jour avec Phase 7 (intégration graphiques UI)
+- ✅ Documentation IA créée : `.ai/DATA_KILLER_VICTIM.md`
+- ✅ `project_map.md` mis à jour avec les tables manquantes
+
+**Commandes de backfill** (à implémenter) :
+```bash
+python scripts/backfill_data.py --player JGtm --killer-victim
+python scripts/populate_antagonists.py --gamertag JGtm --force
+```
+
+---
+
 ### [2026-02-05] - 🔴 CRITIQUE : Données Manquantes en BDD — DIAGNOSTIC TERMINÉ
 
 **Statut** : ✅ **CAUSE RACINE IDENTIFIÉE** - Prêt pour la phase correction
