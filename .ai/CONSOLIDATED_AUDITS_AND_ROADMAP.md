@@ -12,6 +12,7 @@
 2. [Audit Pandas → Polars](#2-audit-pandas--polars)
 3. [Plans archivés (référence)](#3-plans-archivés-référence)
 4. [Priorités actuelles](#4-priorités-actuelles)
+5. [À analyser / planifier](#5-à-analyser--planifier)
 
 ---
 
@@ -135,6 +136,21 @@ D’après la synthèse des plans :
 
 ---
 
+## 5. À analyser / planifier
+
+Éléments à étudier et à planifier avant mise en œuvre.
+
+### Mémorisation des filtres par joueur
+
+| Élément | Description |
+|--------|--------------|
+| **Objectif** | Se souvenir des filtres activés/désactivés pour le joueur sélectionné (persistance par gamertag). |
+| **À analyser** | Où sont définis les filtres (sidebar, pages), quel état est pertinent (modes, cartes, plage de dates, etc.), et où persister (session, `app_settings.json`, ou stockage par joueur dans `data/players/{gamertag}/` ou profil utilisateur). |
+| **À planifier** | Spécification du format de stockage, chargement au changement de joueur, mise à jour à chaque modification des filtres, impact sur l’URL/query params si pertinent. |
+| **Fichiers probables** | UI Streamlit (sidebar, pages avec filtres), éventuel module settings ou state par joueur. |
+
+---
+
 ## Fichiers source des audits
 
 - **SQLite → DuckDB** : `.ai/SQLITE_TO_DUCKDB_AUDIT.md`
@@ -144,4 +160,4 @@ D’après la synthèse des plans :
 
 ---
 
-*Dernière mise à jour : 2026-02-05*
+*Dernière mise à jour : 2026-02-05 (ajout §5 mémorisation filtres par joueur)*
