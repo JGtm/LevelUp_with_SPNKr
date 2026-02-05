@@ -7,6 +7,58 @@
 
 ## Journal
 
+### [2026-02-05] - 🔴 CORRECTION CRITIQUE : Chargement des stats coéquipiers (Multi-DB)
+
+**Statut** : ✅ **CORRIGÉ** - Ne plus refaire cette erreur !
+
+**Contexte** :
+L'onglet "Mes coéquipiers" affichait les mêmes valeurs pour tous les joueurs (ex: JGtm, Madina97294, Chocoboflor avaient tous 1.02, 1.38, 0.48 en stats/min).
+
+**CAUSE RACINE** :
+```python
+# ❌ CODE INCORRECT (le xuid est IGNORÉ pour DuckDB v4)
+f1_df = load_df_optimized(db_path, f1_xuid, db_key=db_key)
+f2_df = load_df_optimized(db_path, f2_xuid, db_key=db_key)
+# → Charge TOUJOURS depuis la DB du joueur principal, pas celle du coéquipier !
+```
+
+**SOLUTION** :
+```python
+# ✅ CODE CORRECT - Charger depuis la DB de chaque coéquipier
+f1_df = _load_teammate_stats_from_own_db(f1_gamertag, match_ids, db_path)
+f2_df = _load_teammate_stats_from_own_db(f2_gamertag, match_ids, db_path)
+# → Construit le chemin data/players/{gamertag}/stats.duckdb
+```
+
+**RÈGLE À RETENIR** :
+
+| ❌ NE JAMAIS FAIRE | ✅ TOUJOURS FAIRE |
+|-------------------|-------------------|
+| `load_df_optimized(db_path, autre_xuid)` | `_load_teammate_stats_from_own_db(gamertag, match_ids, db_path)` |
+| Passer le xuid d'un autre joueur | Construire le chemin vers sa DB |
+
+**Pourquoi le xuid est ignoré ?**
+- Dans l'architecture DuckDB v4, chaque joueur a sa propre DB : `data/players/{gamertag}/stats.duckdb`
+- `load_df_optimized()` charge depuis `db_path` et ignore le paramètre `xuid`
+- Pour charger les stats d'un coéquipier, il faut charger depuis **SA** DB
+
+**Fichiers modifiés** :
+- `src/ui/pages/teammates.py` : Ajout de `_load_teammate_stats_from_own_db()`, correction de 3 appels
+- `CLAUDE.md` : Ajout de la documentation sur l'architecture multi-joueurs
+
+**Mémo rapide** :
+```
+Pour afficher les stats d'un coéquipier sur des matchs communs :
+1. Identifier les match_id communs (via teammates_aggregate ou filtres)
+2. Obtenir le gamertag du coéquipier (display_name_from_xuid)
+3. Charger depuis data/players/{gamertag}/stats.duckdb
+4. Filtrer sur les match_id communs
+```
+
+**Rappel SQLite** : **PROSCRIT** - Aucun fallback SQLite dans le projet.
+
+---
+
 ### [2026-02-03 PM] - 🔴 ANALYSE CRITIQUE : 12 Régressions majeures identifiées
 
 **Statut** : ⚠️ **ANALYSE COMPLÈTE** - Plan de correction en 5 sprints créé

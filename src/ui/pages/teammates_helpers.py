@@ -195,18 +195,31 @@ def render_friends_history_table(
         lambda r: _format_score_label(r.get("my_team_score"), r.get("enemy_team_score")), axis=1
     )
 
-    def _mmr_tuple(match_id: str):
-        pm = cached_load_player_match_result(db_path, str(match_id), xuid.strip(), db_key=db_key)
-        if not isinstance(pm, dict):
-            return (None, None)
-        return (pm.get("team_mmr"), pm.get("enemy_mmr"))
+    # Utiliser les colonnes MMR du DataFrame si elles existent (DuckDB v4 les charge déjà)
+    # Sinon, fallback vers des requêtes individuelles (legacy ou colonnes manquantes)
+    if "team_mmr" not in friends_table.columns or friends_table["team_mmr"].isna().all():
 
-    mmr_pairs = friends_table["match_id"].astype(str).apply(_mmr_tuple)
-    friends_table["team_mmr"] = mmr_pairs.apply(lambda t: t[0])
-    friends_table["enemy_mmr"] = mmr_pairs.apply(lambda t: t[1])
+        def _mmr_tuple(match_id: str):
+            pm = cached_load_player_match_result(
+                db_path, str(match_id), xuid.strip(), db_key=db_key
+            )
+            if not isinstance(pm, dict):
+                return (None, None)
+            return (pm.get("team_mmr"), pm.get("enemy_mmr"))
+
+        mmr_pairs = friends_table["match_id"].astype(str).apply(_mmr_tuple)
+        friends_table["team_mmr"] = mmr_pairs.apply(lambda t: t[0])
+        friends_table["enemy_mmr"] = mmr_pairs.apply(lambda t: t[1])
+
+    # S'assurer que les colonnes existent
+    if "team_mmr" not in friends_table.columns:
+        friends_table["team_mmr"] = None
+    if "enemy_mmr" not in friends_table.columns:
+        friends_table["enemy_mmr"] = None
+
     friends_table["delta_mmr"] = friends_table.apply(
-        lambda r: (float(r.get("team_mmr")) - float(r.get("enemy_mmr")))
-        if (r.get("team_mmr") is not None and r.get("enemy_mmr") is not None)
+        lambda r: (float(r["team_mmr"]) - float(r["enemy_mmr"]))
+        if (pd.notna(r.get("team_mmr")) and pd.notna(r.get("enemy_mmr")))
         else None,
         axis=1,
     )

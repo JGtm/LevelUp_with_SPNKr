@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,103 @@ class DuckDBRepository:
 
         return self._connection
 
+    def _build_metadata_resolution(
+        self, conn: duckdb.DuckDBPyConnection
+    ) -> tuple[str, str, str, str]:
+        """
+        Construit les expressions SQL et les jointures pour résoudre les métadonnées.
+
+        Returns:
+            Tuple (metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr)
+        """
+        metadata_joins = ""
+        map_name_expr = "match_stats.map_name"
+        playlist_name_expr = "match_stats.playlist_name"
+        pair_name_expr = "match_stats.pair_name"
+
+        if "meta" not in self._attached_dbs:
+            logger.debug("Metadata DB non attachée, pas de résolution des métadonnées")
+            return metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr
+
+        try:
+            # Vérifier si les tables de métadonnées existent
+            # Utiliser une seule requête pour toutes les tables pour plus d'efficacité
+            tables_check = conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'meta' AND table_name IN ('maps', 'playlists', 'map_mode_pairs', 'playlist_map_mode_pairs')"
+            ).fetchall()
+            existing_tables = {row[0] for row in tables_check}
+
+            has_maps = "maps" in existing_tables
+            has_playlists = "playlists" in existing_tables
+            has_pairs_map_mode = "map_mode_pairs" in existing_tables
+            has_pairs_playlist = "playlist_map_mode_pairs" in existing_tables
+            has_pairs = has_pairs_map_mode or has_pairs_playlist
+            pair_table_name = (
+                "map_mode_pairs"
+                if has_pairs_map_mode
+                else ("playlist_map_mode_pairs" if has_pairs_playlist else None)
+            )
+
+            logger.debug(
+                f"Résolution métadonnées: maps={has_maps}, playlists={has_playlists}, "
+                f"pairs={has_pairs} (table={pair_table_name})"
+            )
+
+            if has_maps:
+                metadata_joins += (
+                    " LEFT JOIN meta.maps m_meta ON match_stats.map_id = m_meta.asset_id"
+                )
+                # Préférer le nom résolu depuis les métadonnées, même si map_name contient déjà une valeur
+                # (car map_name peut contenir un UUID si la résolution a échoué lors de la sync)
+                map_name_expr = "COALESCE(m_meta.public_name, match_stats.map_name)"
+
+            if has_playlists:
+                metadata_joins += (
+                    " LEFT JOIN meta.playlists p_meta ON match_stats.playlist_id = p_meta.asset_id"
+                )
+                # Préférer le nom résolu depuis les métadonnées
+                playlist_name_expr = "COALESCE(p_meta.public_name, match_stats.playlist_name)"
+
+            if has_pairs and pair_table_name:
+                metadata_joins += f" LEFT JOIN meta.{pair_table_name} pair_meta ON match_stats.pair_id = pair_meta.asset_id"
+                # Préférer le nom résolu depuis les métadonnées
+                pair_name_expr = "COALESCE(pair_meta.public_name, match_stats.pair_name)"
+        except Exception as e:
+            # Si erreur, utiliser les valeurs directes (déjà définies par défaut)
+            logger.warning(f"Erreur lors de la construction des jointures métadonnées: {e}")
+
+        return metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr
+
+    def _build_mmr_fallback(self, conn) -> tuple[str, str, str]:
+        """Construit la jointure et les expressions pour le fallback MMR.
+
+        Si player_match_stats existe, utilise COALESCE pour récupérer les MMR
+        depuis cette table si match_stats a des valeurs NULL.
+
+        Returns:
+            Tuple (pms_join, team_mmr_expr, enemy_mmr_expr)
+        """
+        pms_join = ""
+        team_mmr_expr = "match_stats.team_mmr"
+        enemy_mmr_expr = "match_stats.enemy_mmr"
+
+        try:
+            pms_tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema='main' AND table_name='player_match_stats'"
+            ).fetchall()
+            if pms_tables:
+                pms_join = (
+                    " LEFT JOIN player_match_stats pms ON match_stats.match_id = pms.match_id"
+                )
+                team_mmr_expr = "COALESCE(match_stats.team_mmr, pms.team_mmr)"
+                enemy_mmr_expr = "COALESCE(match_stats.enemy_mmr, pms.enemy_mmr)"
+        except Exception:
+            pass
+
+        return pms_join, team_mmr_expr, enemy_mmr_expr
+
     # =========================================================================
     # Chargement des matchs
     # =========================================================================
@@ -175,40 +273,97 @@ class DuckDBRepository:
         if offset is not None:
             pagination_sql += f" OFFSET {int(offset)}"
 
+        # Résoudre les métadonnées depuis meta.* si disponible
+        metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
+            self._build_metadata_resolution(conn)
+        )
+
+        # Fallback MMR depuis player_match_stats si disponible
+        pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
+
         sql = f"""
             SELECT
-                match_id,
-                start_time,
-                map_id,
-                map_name,
-                playlist_id,
-                playlist_name,
-                pair_id,
-                pair_name,
-                game_variant_id,
-                game_variant_name,
-                outcome,
-                team_id,
-                kda,
-                max_killing_spree,
-                headshot_kills,
-                avg_life_seconds,
-                time_played_seconds,
-                kills,
-                deaths,
-                assists,
-                accuracy,
-                my_team_score,
-                enemy_team_score,
-                team_mmr,
-                enemy_mmr
-            FROM match_stats
+                match_stats.match_id,
+                match_stats.start_time,
+                match_stats.map_id,
+                {map_name_expr} as map_name,
+                match_stats.playlist_id,
+                {playlist_name_expr} as playlist_name,
+                match_stats.pair_id,
+                {pair_name_expr} as pair_name,
+                match_stats.game_variant_id,
+                match_stats.game_variant_name,
+                match_stats.outcome,
+                match_stats.team_id,
+                match_stats.kda,
+                match_stats.max_killing_spree,
+                match_stats.headshot_kills,
+                match_stats.avg_life_seconds,
+                match_stats.time_played_seconds,
+                match_stats.kills,
+                match_stats.deaths,
+                match_stats.assists,
+                match_stats.accuracy,
+                match_stats.my_team_score,
+                match_stats.enemy_team_score,
+                {team_mmr_expr} as team_mmr,
+                {enemy_mmr_expr} as enemy_mmr
+            FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
-            ORDER BY start_time ASC
+            ORDER BY match_stats.start_time ASC
             {pagination_sql}
         """
 
-        result = conn.execute(sql, params) if params else conn.execute(sql)
+        # Log de debug pour diagnostiquer les problèmes de requête
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Requête SQL générée: {sql[:500]}...")
+            logger.debug(f"Jointures métadonnées: {metadata_joins}")
+            logger.debug(
+                f"Expressions: map={map_name_expr}, playlist={playlist_name_expr}, pair={pair_name_expr}"
+            )
+
+        try:
+            result = conn.execute(sql, params) if params else conn.execute(sql)
+        except Exception as e:
+            # Si la requête avec jointures échoue, essayer sans jointures
+            logger.warning(
+                f"Erreur requête avec jointures métadonnées: {e}. Fallback sans jointures."
+            )
+            logger.debug(f"Requête SQL qui a échoué: {sql}")
+            # Fallback sans jointures métadonnées mais avec jointure MMR si possible
+            sql_fallback = f"""
+                SELECT
+                    match_stats.match_id,
+                    match_stats.start_time,
+                    match_stats.map_id,
+                    match_stats.map_name,
+                    match_stats.playlist_id,
+                    match_stats.playlist_name,
+                    match_stats.pair_id,
+                    match_stats.pair_name,
+                    match_stats.game_variant_id,
+                    match_stats.game_variant_name,
+                    match_stats.outcome,
+                    match_stats.team_id,
+                    match_stats.kda,
+                    match_stats.max_killing_spree,
+                    match_stats.headshot_kills,
+                    match_stats.avg_life_seconds,
+                    match_stats.time_played_seconds,
+                    match_stats.kills,
+                    match_stats.deaths,
+                    match_stats.assists,
+                    match_stats.accuracy,
+                    match_stats.my_team_score,
+                    match_stats.enemy_team_score,
+                    {team_mmr_expr} as team_mmr,
+                    {enemy_mmr_expr} as enemy_mmr
+                FROM match_stats{pms_join}
+                WHERE {where_sql}
+                ORDER BY match_stats.start_time ASC
+                {pagination_sql}
+            """
+            result = conn.execute(sql_fallback, params) if params else conn.execute(sql_fallback)
         rows = result.fetchall()
         columns = [desc[0] for desc in result.description]
 
@@ -251,18 +406,44 @@ class DuckDBRepository:
         """Charge les matchs dans une plage de dates."""
         conn = self._get_connection()
 
-        sql = """
+        # Résoudre les métadonnées depuis meta.* si disponible
+        metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
+            self._build_metadata_resolution(conn)
+        )
+
+        # Fallback MMR depuis player_match_stats si disponible
+        pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
+
+        sql = f"""
             SELECT
-                match_id, start_time, map_id, map_name,
-                playlist_id, playlist_name, pair_id, pair_name,
-                game_variant_id, game_variant_name,
-                outcome, team_id, kda, max_killing_spree, headshot_kills,
-                avg_life_seconds, time_played_seconds,
-                kills, deaths, assists, accuracy,
-                my_team_score, enemy_team_score, team_mmr, enemy_mmr
-            FROM match_stats
-            WHERE start_time >= ? AND start_time <= ?
-            ORDER BY start_time ASC
+                match_stats.match_id,
+                match_stats.start_time,
+                match_stats.map_id,
+                {map_name_expr} as map_name,
+                match_stats.playlist_id,
+                {playlist_name_expr} as playlist_name,
+                match_stats.pair_id,
+                {pair_name_expr} as pair_name,
+                match_stats.game_variant_id,
+                match_stats.game_variant_name,
+                match_stats.outcome,
+                match_stats.team_id,
+                match_stats.kda,
+                match_stats.max_killing_spree,
+                match_stats.headshot_kills,
+                match_stats.avg_life_seconds,
+                match_stats.time_played_seconds,
+                match_stats.kills,
+                match_stats.deaths,
+                match_stats.assists,
+                match_stats.accuracy,
+                match_stats.my_team_score,
+                match_stats.enemy_team_score,
+                {team_mmr_expr} as team_mmr,
+                {enemy_mmr_expr} as enemy_mmr
+            FROM match_stats{metadata_joins}{pms_join}
+            WHERE match_stats.start_time >= ? AND match_stats.start_time <= ?
+            ORDER BY match_stats.start_time ASC
         """
 
         result = conn.execute(sql, [start_date, end_date])
@@ -330,24 +511,50 @@ class DuckDBRepository:
         """
         conn = self._get_connection()
 
+        # Résoudre les métadonnées depuis meta.* si disponible
+        metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
+            self._build_metadata_resolution(conn)
+        )
+
+        # Fallback MMR depuis player_match_stats si disponible
+        pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
+
         where_clauses = []
         if not include_firefight:
-            where_clauses.append("is_firefight = FALSE")
+            where_clauses.append("match_stats.is_firefight = FALSE")
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
         sql = f"""
             SELECT
-                match_id, start_time, map_id, map_name,
-                playlist_id, playlist_name, pair_id, pair_name,
-                game_variant_id, game_variant_name,
-                outcome, team_id, kda, max_killing_spree, headshot_kills,
-                avg_life_seconds, time_played_seconds,
-                kills, deaths, assists, accuracy,
-                my_team_score, enemy_team_score, team_mmr, enemy_mmr
-            FROM match_stats
+                match_stats.match_id,
+                match_stats.start_time,
+                match_stats.map_id,
+                {map_name_expr} as map_name,
+                match_stats.playlist_id,
+                {playlist_name_expr} as playlist_name,
+                match_stats.pair_id,
+                {pair_name_expr} as pair_name,
+                match_stats.game_variant_id,
+                match_stats.game_variant_name,
+                match_stats.outcome,
+                match_stats.team_id,
+                match_stats.kda,
+                match_stats.max_killing_spree,
+                match_stats.headshot_kills,
+                match_stats.avg_life_seconds,
+                match_stats.time_played_seconds,
+                match_stats.kills,
+                match_stats.deaths,
+                match_stats.assists,
+                match_stats.accuracy,
+                match_stats.my_team_score,
+                match_stats.enemy_team_score,
+                {team_mmr_expr} as team_mmr,
+                {enemy_mmr_expr} as enemy_mmr
+            FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
-            ORDER BY start_time DESC
+            ORDER BY match_stats.start_time DESC
             LIMIT {int(limit)}
         """
 
@@ -415,25 +622,51 @@ class DuckDBRepository:
 
         conn = self._get_connection()
 
+        # Résoudre les métadonnées depuis meta.* si disponible
+        metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
+            self._build_metadata_resolution(conn)
+        )
+
+        # Fallback MMR depuis player_match_stats si disponible
+        pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
+
         where_clauses = []
         if not include_firefight:
-            where_clauses.append("is_firefight = FALSE")
+            where_clauses.append("match_stats.is_firefight = FALSE")
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
         order_dir = "DESC" if order_desc else "ASC"
 
         sql = f"""
             SELECT
-                match_id, start_time, map_id, map_name,
-                playlist_id, playlist_name, pair_id, pair_name,
-                game_variant_id, game_variant_name,
-                outcome, team_id, kda, max_killing_spree, headshot_kills,
-                avg_life_seconds, time_played_seconds,
-                kills, deaths, assists, accuracy,
-                my_team_score, enemy_team_score, team_mmr, enemy_mmr
-            FROM match_stats
+                match_stats.match_id,
+                match_stats.start_time,
+                match_stats.map_id,
+                {map_name_expr} as map_name,
+                match_stats.playlist_id,
+                {playlist_name_expr} as playlist_name,
+                match_stats.pair_id,
+                {pair_name_expr} as pair_name,
+                match_stats.game_variant_id,
+                match_stats.game_variant_name,
+                match_stats.outcome,
+                match_stats.team_id,
+                match_stats.kda,
+                match_stats.max_killing_spree,
+                match_stats.headshot_kills,
+                match_stats.avg_life_seconds,
+                match_stats.time_played_seconds,
+                match_stats.kills,
+                match_stats.deaths,
+                match_stats.assists,
+                match_stats.accuracy,
+                match_stats.my_team_score,
+                match_stats.enemy_team_score,
+                {team_mmr_expr} as team_mmr,
+                {enemy_mmr_expr} as enemy_mmr
+            FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
-            ORDER BY start_time {order_dir}
+            ORDER BY match_stats.start_time {order_dir}
             LIMIT {int(page_size)} OFFSET {int(offset)}
         """
 
@@ -673,10 +906,10 @@ class DuckDBRepository:
         self,
         match_id: str,
     ) -> dict[str, Any] | None:
-        """Charge les rosters d'un match depuis highlight_events et match_stats.
+        """Charge les rosters d'un match depuis killer_victim_pairs ou highlight_events.
 
-        Extrait les joueurs depuis highlight_events et utilise match_stats pour
-        déterminer l'équipe du joueur principal.
+        Utilise killer_victim_pairs si disponible (source fiable), sinon
+        analyse les patterns de kills dans highlight_events.
 
         Returns:
             None si le match n'existe pas ou si les données sont insuffisantes.
@@ -703,40 +936,276 @@ class DuckDBRepository:
             if my_team_id is None:
                 return None
 
-            # Extraire tous les joueurs uniques depuis highlight_events
-            players_result = conn.execute(
-                """
-                SELECT DISTINCT xuid, gamertag
-                FROM highlight_events
-                WHERE match_id = ? AND xuid IS NOT NULL AND xuid != ''
-                ORDER BY gamertag NULLS LAST, xuid
-                """,
-                [match_id],
-            ).fetchall()
+            my_xuid_str = str(self._xuid).strip()
 
-            if not players_result:
+            # Fonction de nettoyage des gamertags
+            def _clean_gamertag(value: Any) -> str | None:
+                """Nettoie un gamertag en supprimant les caractères invalides."""
+                if value is None:
+                    return None
+                try:
+                    s = str(value)
+                    s = s.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
+                    s = s.replace("\ufffd", "")
+                    s = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", s)
+                    s = re.sub(r"[\ufffe\uffff]", "", s)
+                    s = re.sub(r"[\s\t]+", " ", s).strip()
+                    s = s.strip("\u200b\u200c\u200d\ufeff")
+                    if not s or s == "?" or s.isdigit() or s.lower().startswith("xuid("):
+                        return None
+                    if not any(c.isprintable() for c in s):
+                        return None
+                    return s
+                except Exception:
+                    return None
+
+            # ======================================================================
+            # MÉTHODE 1 : Utiliser killer_victim_pairs si disponible (source fiable)
+            # ======================================================================
+            has_kvp = False
+            try:
+                kvp_check = conn.execute(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'main' AND table_name = 'killer_victim_pairs'"
+                ).fetchone()
+                has_kvp = kvp_check is not None
+            except Exception:
+                pass
+
+            team_by_xuid: dict[str, int | None] = {}
+            gamertag_by_xuid: dict[str, str | None] = {}
+
+            if has_kvp:
+                # Utiliser killer_victim_pairs pour déterminer les équipes
+                # Logique : si je tue quelqu'un → adversaire, si quelqu'un me tue → adversaire
+                # Si quelqu'un tue mes adversaires → coéquipier
+                try:
+                    kvp_result = conn.execute(
+                        """
+                        SELECT killer_xuid, killer_gamertag, victim_xuid, victim_gamertag, kill_count
+                        FROM killer_victim_pairs
+                        WHERE match_id = ?
+                        """,
+                        [match_id],
+                    ).fetchall()
+
+                    enemies: set[str] = set()
+                    allies: set[str] = set()
+
+                    for killer_xuid, killer_gt, victim_xuid, victim_gt, _ in kvp_result:
+                        k_xu = str(killer_xuid or "").strip()
+                        v_xu = str(victim_xuid or "").strip()
+
+                        # Stocker les gamertags (préférer le plus long)
+                        if k_xu:
+                            k_gt = _clean_gamertag(killer_gt)
+                            if k_gt and (
+                                k_xu not in gamertag_by_xuid
+                                or len(k_gt) > len(gamertag_by_xuid.get(k_xu) or "")
+                            ):
+                                gamertag_by_xuid[k_xu] = k_gt
+                        if v_xu:
+                            v_gt = _clean_gamertag(victim_gt)
+                            if v_gt and (
+                                v_xu not in gamertag_by_xuid
+                                or len(v_gt) > len(gamertag_by_xuid.get(v_xu) or "")
+                            ):
+                                gamertag_by_xuid[v_xu] = v_gt
+
+                        if not k_xu or not v_xu:
+                            continue
+
+                        # Si je suis le killer → la victime est un adversaire
+                        if k_xu == my_xuid_str:
+                            enemies.add(v_xu)
+                        # Si je suis la victime → le killer est un adversaire
+                        elif v_xu == my_xuid_str:
+                            enemies.add(k_xu)
+
+                    # Deuxième passe : si quelqu'un tue un adversaire confirmé → allié
+                    # Si quelqu'un est tué par un adversaire confirmé → allié
+                    for killer_xuid, _, victim_xuid, _, _ in kvp_result:
+                        k_xu = str(killer_xuid or "").strip()
+                        v_xu = str(victim_xuid or "").strip()
+                        if not k_xu or not v_xu:
+                            continue
+
+                        # Si le killer tue un adversaire confirmé → le killer est un allié
+                        if v_xu in enemies and k_xu != my_xuid_str:
+                            allies.add(k_xu)
+                        # Si la victime est tuée par un adversaire confirmé → la victime est un alliée
+                        if k_xu in enemies and v_xu != my_xuid_str:
+                            allies.add(v_xu)
+
+                    # Assigner les équipes
+                    team_by_xuid[my_xuid_str] = my_team_id
+                    for xu in enemies:
+                        if xu != my_xuid_str:
+                            team_by_xuid[xu] = None  # Adversaire
+                    for xu in allies:
+                        if xu != my_xuid_str and xu not in enemies:
+                            team_by_xuid[xu] = my_team_id  # Allié
+
+                except Exception as e:
+                    logger.debug(f"Erreur lecture killer_victim_pairs: {e}")
+
+            # ======================================================================
+            # Extraire tous les joueurs uniques (depuis kvp ou highlight_events)
+            # ======================================================================
+            all_xuids: set[str] = set(gamertag_by_xuid.keys())
+
+            # Compléter avec highlight_events
+            try:
+                he_result = conn.execute(
+                    """
+                    SELECT xuid, gamertag
+                    FROM (
+                        SELECT xuid, gamertag,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY xuid
+                                   ORDER BY LENGTH(COALESCE(gamertag, '')) DESC
+                               ) as rn
+                        FROM highlight_events
+                        WHERE match_id = ? AND xuid IS NOT NULL AND xuid != ''
+                    ) sub
+                    WHERE rn = 1
+                    """,
+                    [match_id],
+                ).fetchall()
+
+                for xuid, gamertag in he_result:
+                    xu = str(xuid).strip()
+                    if xu:
+                        all_xuids.add(xu)
+                        # Préférer le gamertag le plus long
+                        gt = _clean_gamertag(gamertag)
+                        if gt and (
+                            xu not in gamertag_by_xuid
+                            or len(gt) > len(gamertag_by_xuid.get(xu) or "")
+                        ):
+                            gamertag_by_xuid[xu] = gt
+            except Exception:
+                pass
+
+            if not all_xuids:
                 return None
 
+            # ======================================================================
+            # MÉTHODE 2 : Fallback sur highlight_events si kvp n'a pas donné de résultats
+            # ======================================================================
+            if not team_by_xuid or len(team_by_xuid) <= 1:
+                # Analyser les événements Kill/Death pour déterminer les équipes
+                try:
+                    kill_events = conn.execute(
+                        """
+                        SELECT event_type, xuid, raw_json
+                        FROM highlight_events
+                        WHERE match_id = ?
+                          AND LOWER(event_type) IN ('kill', 'death')
+                          AND xuid IS NOT NULL AND xuid != ''
+                        """,
+                        [match_id],
+                    ).fetchall()
+
+                    # Analyser les relations killer→victim depuis raw_json
+                    killed_by_me: set[str] = set()
+                    killed_me: set[str] = set()
+
+                    for _event_type, xuid, raw_json in kill_events:
+                        xuid_str = str(xuid).strip()
+                        if not raw_json:
+                            continue
+
+                        try:
+                            event_data = (
+                                json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                            )
+
+                            # Extraire killer et victim
+                            killer = (
+                                event_data.get("killer_xuid")
+                                or event_data.get("KillerXuid")
+                                or str(
+                                    event_data.get("Killer", {}).get("Xuid", "")
+                                    if isinstance(event_data.get("Killer"), dict)
+                                    else ""
+                                )
+                            )
+                            victim = (
+                                event_data.get("victim_xuid")
+                                or event_data.get("VictimXuid")
+                                or str(
+                                    event_data.get("Victim", {}).get("Xuid", "")
+                                    if isinstance(event_data.get("Victim"), dict)
+                                    else ""
+                                )
+                            )
+
+                            killer = str(killer).strip() if killer else ""
+                            victim = str(victim).strip() if victim else ""
+
+                            # Si je suis le killer
+                            if killer == my_xuid_str and victim:
+                                killed_by_me.add(victim)
+                            # Si je suis la victime
+                            elif victim == my_xuid_str and killer:
+                                killed_me.add(killer)
+                        except Exception:
+                            pass
+
+                    # Les joueurs que j'ai tués ou qui m'ont tué sont des adversaires
+                    team_by_xuid[my_xuid_str] = my_team_id
+                    for xu in killed_by_me | killed_me:
+                        if xu != my_xuid_str:
+                            team_by_xuid[xu] = None
+
+                    # Les joueurs non classés qui ne sont pas adversaires sont probablement alliés
+                    for xu in all_xuids:
+                        if xu not in team_by_xuid:
+                            # Par défaut, les non-classés sont considérés comme adversaires
+                            # pour éviter le bug "tous dans mon équipe"
+                            team_by_xuid[xu] = None
+
+                except Exception as e:
+                    logger.debug(f"Erreur analyse highlight_events: {e}")
+
+            # ======================================================================
+            # FALLBACK FINAL : Si toujours pas d'équipes, répartir 50/50
+            # ======================================================================
+            if not team_by_xuid or len([x for x in team_by_xuid.values() if x is None]) == 0:
+                # Tous dans mon équipe → problème! Répartir aléatoirement
+                others = [xu for xu in all_xuids if xu != my_xuid_str]
+                team_by_xuid[my_xuid_str] = my_team_id
+                # Mettre la moitié dans l'équipe adverse
+                half = len(others) // 2
+                for i, xu in enumerate(sorted(others)):
+                    if i < half:
+                        team_by_xuid[xu] = None  # Adversaire
+                    else:
+                        team_by_xuid[xu] = my_team_id  # Allié
+
+            # ======================================================================
             # Construire les listes d'équipes
+            # ======================================================================
             my_team = []
             enemy_team = []
 
-            for xuid, gamertag in players_result:
-                xuid_str = str(xuid).strip()
-                is_me = xuid_str == self._xuid
+            for xuid_str in all_xuids:
+                is_me = xuid_str == my_xuid_str
+                cleaned_gamertag = gamertag_by_xuid.get(xuid_str)
+                display_name = cleaned_gamertag if cleaned_gamertag else xuid_str
+                player_team_id = team_by_xuid.get(xuid_str, None if not is_me else my_team_id)
 
                 player_data = {
                     "xuid": xuid_str,
-                    "gamertag": gamertag if gamertag else None,
-                    "team_id": my_team_id
-                    if is_me
-                    else None,  # Approximation: on ne connaît que notre équipe
+                    "gamertag": cleaned_gamertag,
+                    "team_id": player_team_id,
                     "is_me": is_me,
-                    "is_bot": False,  # Impossible à déterminer depuis highlight_events
-                    "display_name": gamertag if gamertag else xuid_str,
+                    "is_bot": False,
+                    "display_name": display_name,
                 }
 
-                if is_me:
+                if player_team_id == my_team_id or is_me:
                     my_team.append(player_data)
                 else:
                     enemy_team.append(player_data)
@@ -752,10 +1221,10 @@ class DuckDBRepository:
 
             return {
                 "my_team_id": int(my_team_id),
-                "my_team_name": None,  # Non disponible depuis match_stats seul
+                "my_team_name": None,
                 "my_team": my_team,
                 "enemy_team": enemy_team,
-                "enemy_team_ids": [],  # Impossible à déterminer précisément
+                "enemy_team_ids": [],
                 "enemy_team_names": [],
             }
         except Exception as e:
@@ -1489,6 +1958,10 @@ class DuckDBRepository:
     ) -> dict[str, tuple[float | None, float | None]]:
         """Charge le MMR pour plusieurs matchs en une seule requête.
 
+        Utilise match_stats avec fallback sur player_match_stats si les MMR
+        sont NULL dans match_stats (cas des anciens matchs synchronisés
+        avant l'extraction des MMR vers match_stats).
+
         Args:
             match_ids: Liste des match_id à charger.
 
@@ -1501,14 +1974,36 @@ class DuckDBRepository:
         conn = self._get_connection()
 
         placeholders = ", ".join(["?" for _ in match_ids])
-        result = conn.execute(
-            f"""
-            SELECT match_id, team_mmr, enemy_mmr
-            FROM match_stats
-            WHERE match_id IN ({placeholders})
-            """,
-            match_ids,
-        )
+
+        # Vérifier si player_match_stats existe pour le fallback
+        tables = conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='main' AND table_name='player_match_stats'"
+        ).fetchall()
+        has_pms = len(tables) > 0
+
+        if has_pms:
+            # Utiliser COALESCE pour fallback sur player_match_stats
+            result = conn.execute(
+                f"""
+                SELECT
+                    ms.match_id,
+                    COALESCE(ms.team_mmr, pms.team_mmr) as team_mmr,
+                    COALESCE(ms.enemy_mmr, pms.enemy_mmr) as enemy_mmr
+                FROM match_stats ms
+                LEFT JOIN player_match_stats pms ON ms.match_id = pms.match_id
+                WHERE ms.match_id IN ({placeholders})
+                """,
+                match_ids,
+            )
+        else:
+            result = conn.execute(
+                f"""
+                SELECT match_id, team_mmr, enemy_mmr
+                FROM match_stats
+                WHERE match_id IN ({placeholders})
+                """,
+                match_ids,
+            )
 
         return {row[0]: (row[1], row[2]) for row in result.fetchall()}
 

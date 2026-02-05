@@ -8,6 +8,25 @@
 
 - **Weapon Stats par arme** : NON DISPONIBLE dans l'API (vérifié 2026-02-02)
 - **Film Chunks** : NON EXPLOITABLES pour l'identification d'armes
+- **SQLite** : PROSCRIT - Tout le code doit utiliser DuckDB v4 uniquement
+
+## ⚠️ RÈGLE CRITIQUE : Chargement Multi-Joueurs
+
+**NE JAMAIS** passer le xuid d'un coéquipier à `load_df_optimized(db_path, xuid)` !
+Le xuid est IGNORÉ pour DuckDB v4 et ça charge toujours depuis `db_path`.
+
+**TOUJOURS** utiliser `_load_teammate_stats_from_own_db(gamertag, match_ids, db_path)`
+pour charger les stats d'un coéquipier depuis **SA propre DB**.
+
+```python
+# ❌ FAUX - Charge depuis db_path (joueur principal), pas le coéquipier
+teammate_df = load_df_optimized(db_path, teammate_xuid)
+
+# ✅ CORRECT - Charge depuis data/players/{gamertag}/stats.duckdb
+teammate_df = _load_teammate_stats_from_own_db(gamertag, match_ids, db_path)
+```
+
+Voir `src/ui/pages/teammates.py` pour l'implémentation de référence.
 
 ## État Actuel (2026-02-02)
 

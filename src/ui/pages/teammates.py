@@ -41,6 +41,53 @@ from src.ui.perf import perf_section
 from src.visualization import plot_map_ratio_with_winloss
 
 # =============================================================================
+# Helper - Chargement des stats coéquipiers depuis leurs propres DBs
+# =============================================================================
+
+
+def _load_teammate_stats_from_own_db(
+    teammate_gamertag: str,
+    match_ids: set[str],
+    reference_db_path: str,
+) -> pd.DataFrame:
+    """Charge les stats d'un coéquipier depuis sa propre DB si disponible.
+
+    Dans l'architecture DuckDB v4, chaque joueur a sa propre DB :
+    data/players/{gamertag}/stats.duckdb
+
+    Pour afficher les stats d'un coéquipier sur des matchs communs,
+    on doit aller chercher dans SA DB, pas dans celle du joueur principal.
+
+    Args:
+        teammate_gamertag: Gamertag du coéquipier.
+        match_ids: Set des match_id à filtrer.
+        reference_db_path: Chemin vers la DB de référence (pour déduire le dossier parent).
+
+    Returns:
+        DataFrame des stats du coéquipier (filtré sur match_ids), ou vide si DB non trouvée.
+    """
+    from pathlib import Path
+
+    # Construire le chemin vers la DB du coéquipier
+    # reference_db_path = data/players/{mon_gamertag}/stats.duckdb
+    # On veut : data/players/{teammate_gamertag}/stats.duckdb
+    base_dir = Path(reference_db_path).parent.parent  # Remonter de {gamertag}/stats.duckdb
+    teammate_db_path = base_dir / teammate_gamertag / "stats.duckdb"
+
+    if not teammate_db_path.exists():
+        return pd.DataFrame()
+
+    try:
+        # Charger depuis la DB du coéquipier
+        df = load_df_optimized(str(teammate_db_path), "", db_key=None)
+        if df.empty:
+            return df
+        return df.loc[df["match_id"].astype(str).isin(match_ids)].copy()
+    except Exception:
+        return pd.DataFrame()
+
+
+# =============================================================================
 # Helpers Sprint 8.2 - Radar de complémentarité
 # =============================================================================
 
@@ -379,8 +426,8 @@ def _render_single_teammate_view(
             f"{stats_sub.assists_per_minute:.2f}" if stats_sub.assists_per_minute else "-",
         )
 
-        friend_df = load_df_optimized(db_path, friend_xuid, db_key=db_key)
-        friend_sub = friend_df.loc[friend_df["match_id"].astype(str).isin(shared_ids)].copy()
+        # Charger les stats du coéquipier depuis SA propre DB
+        friend_sub = _load_teammate_stats_from_own_db(name, shared_ids, db_path)
 
         # Graphes côte à côte
         render_comparison_charts(
@@ -528,14 +575,13 @@ def _render_multi_teammate_view(
                 ids = per_friend_ids.get(str(fx), set())
                 if not ids:
                     continue
-                try:
-                    fr_df = load_df_optimized(db_path, str(fx), db_key=db_key)
-                except Exception:
-                    continue
-                fr_sub = fr_df.loc[fr_df["match_id"].astype(str).isin(ids)].copy()
+                # Obtenir le gamertag et charger depuis la DB du coéquipier
+                fx_gamertag = display_name_from_xuid(str(fx))
+                ids_str = {str(x) for x in ids}
+                fr_sub = _load_teammate_stats_from_own_db(fx_gamertag, ids_str, db_path)
                 if fr_sub.empty:
                     continue
-                series.append((display_name_from_xuid(str(fx)), fr_sub))
+                series.append((fx_gamertag, fr_sub))
         colors_by_name = assign_player_colors_fn([n for n, _ in series])
 
         breakdown_all = compute_map_breakdown(sub_all)
@@ -662,10 +708,11 @@ def _render_trio_view(
         st.caption("Impossible de déterminer une session trio (données insuffisantes).")
 
     me_df = base_for_trio.loc[base_for_trio["match_id"].isin(trio_ids)].copy()
-    f1_df = load_df_optimized(db_path, f1_xuid, db_key=db_key)
-    f2_df = load_df_optimized(db_path, f2_xuid, db_key=db_key)
-    f1_df = f1_df.loc[f1_df["match_id"].isin(trio_ids)].copy()
-    f2_df = f2_df.loc[f2_df["match_id"].isin(trio_ids)].copy()
+
+    # Charger les stats des coéquipiers depuis LEURS propres DBs
+    trio_ids_str = {str(x) for x in trio_ids}
+    f1_df = _load_teammate_stats_from_own_db(f1_name, trio_ids_str, db_path)
+    f2_df = _load_teammate_stats_from_own_db(f2_name, trio_ids_str, db_path)
 
     me_df = me_df.sort_values("start_time")
 

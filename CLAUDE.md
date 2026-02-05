@@ -61,6 +61,18 @@ pytest tests/ -v
 3. Préférer Polars à Pandas pour les gros volumes
 4. Utiliser DuckDBRepository pour l'accès aux données
 5. Documenter les décisions dans `.ai/thought_log.md`
+6. **SQLite est PROSCRIT** - Aucun fallback SQLite, tout le code doit utiliser DuckDB v4 uniquement
+
+## Architecture Multi-Joueurs (DuckDB v4)
+
+Chaque joueur a sa propre DB : `data/players/{gamertag}/stats.duckdb`
+
+**Pour afficher les stats d'un coéquipier** sur des matchs communs :
+1. Identifier les `match_id` communs via `teammates_aggregate` ou filtres
+2. Charger les stats du coéquipier depuis **SA propre DB** (pas celle du joueur principal)
+3. Utiliser `_load_teammate_stats_from_own_db(gamertag, match_ids, reference_db_path)`
+
+**Important** : Ne jamais passer le xuid d'un coéquipier à `load_df_optimized(db_path, xuid)` car le xuid est ignoré pour DuckDB v4. Il faut construire le chemin vers la DB du coéquipier.
 
 ## Stack Technique
 

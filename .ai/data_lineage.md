@@ -150,6 +150,47 @@ Destination: data/players/{gamertag}/stats.duckdb
 - Index sur colonnes fréquemment filtrées (`start_time`, `playlist_id`)
 - Colonnes GENERATED pour les calculs (`net_kills`, `accuracy`)
 
+## ⚠️ RÈGLE CRITIQUE : Chargement Stats Multi-Joueurs
+
+Dans l'architecture DuckDB v4, **chaque joueur a sa propre DB**.
+
+### ❌ Erreur fréquente
+
+```python
+# FAUX - le xuid est IGNORÉ pour DuckDB v4
+teammate_df = load_df_optimized(db_path, teammate_xuid, db_key=db_key)
+# → Charge toujours depuis db_path (joueur principal) !
+```
+
+### ✅ Bonne pratique
+
+```python
+# CORRECT - Charger depuis la DB du coéquipier
+from pathlib import Path
+
+def _load_teammate_stats_from_own_db(gamertag, match_ids, reference_db_path):
+    base_dir = Path(reference_db_path).parent.parent
+    teammate_db = base_dir / gamertag / "stats.duckdb"
+    if not teammate_db.exists():
+        return pd.DataFrame()
+    df = load_df_optimized(str(teammate_db), "", db_key=None)
+    return df[df["match_id"].isin(match_ids)]
+```
+
+### Flux correct pour afficher stats coéquipier
+
+```
+1. Identifier match_id communs (teammates_aggregate)
+      ↓
+2. Obtenir gamertag coéquipier (display_name_from_xuid)
+      ↓
+3. Construire chemin: data/players/{gamertag}/stats.duckdb
+      ↓
+4. Charger depuis cette DB
+      ↓
+5. Filtrer sur match_id communs
+```
+
 ## Problèmes Connus
 
 - Aucun problème majeur identifié
