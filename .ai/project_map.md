@@ -200,8 +200,27 @@ Tables concernées :
 - `match_participants` : ❌ N'existe pas → À créer
 - `antagonists` : ❌ Vide → À peupler
 
+## Exploration Complète du Projet
+
+Une exploration détaillée de tout le projet (modules, scripts, tests, docs) a été refaite le **2026-02-05** :
+
+📄 **`.ai/explore/PROJECT_EXPLORE_2026-02-05.md`**
+
+Contenu :
+- Vue d’ensemble (stack, points d’entrée, règles critiques)
+- Arborescence `src/` complète (rôle de chaque module : app, data, ui, analysis, visualization, db, ai, utils)
+- Scripts catégorisés (~100) : sync, backup, migration, backfill, diagnostic, analyse/recherche, API, tests
+- Tests listés par thème
+- Documentation `docs/` et `.ai/`
+- Structure données et config
+- Flux d’entrée et dépendances
+- Référence aux audits (SQLite, Pandas→Polars, problèmes connus)
+
+Consulter ce fichier pour une cartographie exhaustive ; le présent `project_map.md` reste la cartographie vivante (état, problèmes, sprints).
+
 ## Dernière Mise à Jour
 
+**2026-02-05** : Exploration complète du projet refaite → `.ai/explore/PROJECT_EXPLORE_2026-02-05.md`  
 **2026-02-05** : Sprint Gamertag & Roster Fix initié + Documentation killer_victim  
 **2026-02-05** : 🔴 Problème critique identifié - Données manquantes en BDD (en exploration)  
 **2026-02-01** : Phase 6 terminée - Documentation & Branding "LevelUp"
