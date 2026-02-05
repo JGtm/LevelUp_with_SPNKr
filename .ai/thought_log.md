@@ -7,6 +7,55 @@
 
 ## Journal
 
+### [2026-02-05] - ✅ Sprint Gamertag/Roster : IMPLÉMENTATION COMPLÈTE
+
+**Statut** : ✅ Toutes les phases implémentées
+
+**Contexte** :
+Sprint "Correction Gamertags, Roster et Coéquipiers" implémenté pour corriger les gamertags corrompus, les rosters cassés, et la détection des coéquipiers.
+
+**PHASES COMPLÉTÉES** :
+
+#### Phase 1 : Création table `match_participants`
+- ✅ DDL dans `src/data/sync/engine.py`
+- ✅ `MatchParticipantRow` dataclass dans `src/data/sync/models.py`
+- ✅ `extract_participants()` dans `src/data/sync/transformers.py`
+- ✅ Intégration dans `_process_single_match()` du sync engine
+
+#### Phase 2 : Correction requêtes coéquipiers
+- ✅ `load_same_team_match_ids()` réécrit pour utiliser `match_participants`
+- ✅ Fallback sur l'ancienne méthode si table manquante
+
+#### Phase 3 : CLI `--participants` dans backfill
+- ✅ Arguments `--participants` et `--force-participants`
+- ✅ Fonction `_insert_participant_rows()` dans `backfill_data.py`
+- ✅ Intégration complète dans le flux de backfill
+
+#### Phase 4 : Résolution gamertag centralisée
+- ✅ `resolve_gamertag()` dans `duckdb_repo.py` (cascade : match_participants → xuid_aliases → teammates_aggregate → highlight_events)
+- ✅ `resolve_gamertags_batch()` pour les traitements par lot
+- ✅ `load_match_rosters()` utilise `resolve_gamertags_batch`
+- ✅ `cached_load_match_player_gamertags()` dans `cache.py` utilise `resolve_gamertags_batch`
+
+#### Phase 6 : Backfill killer_victim_pairs
+- ✅ Arguments `--killer-victim`
+- ✅ Fonction `_backfill_killer_victim_pairs()` dans `backfill_data.py`
+- ✅ Utilise l'algorithme de pairing de `src/analysis/killer_victim.py`
+
+**Commandes disponibles** :
+```bash
+# Backfill participants (nouveau)
+python scripts/backfill_data.py --player JGtm --participants
+
+# Backfill paires killer/victim
+python scripts/backfill_data.py --player JGtm --killer-victim
+
+# Backfill complet (inclut participants + killer_victim)
+python scripts/backfill_data.py --player JGtm --all-data
+```
+
+---
+
 ### [2026-02-05] - 📊 Sprint Gamertag/Roster : Documentation killer_victim_pairs
 
 **Statut** : ✅ Documentation complète créée

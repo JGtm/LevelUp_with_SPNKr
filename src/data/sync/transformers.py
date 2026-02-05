@@ -26,6 +26,7 @@ import duckdb
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.data.sync.models import (
     HighlightEventRow,
+    MatchParticipantRow,
     MatchStatsRow,
     MedalEarnedRow,
     PlayerMatchStatsRow,
@@ -1072,6 +1073,84 @@ def extract_xuids_from_match(match_json: dict[str, Any]) -> list[int]:
             continue
 
     return xuids
+
+
+def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow]:
+    """Extrait tous les participants d'un match (xuid, team_id, outcome, gamertag).
+
+    Source : MatchStats.Players[] (JSON API propre, pas les films corrompus).
+
+    Cette fonction permet de reconstruire le roster complet d'un match,
+    incluant les équipes et les outcomes, ce qui est nécessaire pour :
+    - Identifier les coéquipiers vs adversaires
+    - Corriger les requêtes de "Mes coéquipiers"
+    - Avoir des gamertags propres pour le roster
+
+    Args:
+        match_json: JSON brut de l'API SPNKr (MatchStats).
+
+    Returns:
+        Liste de MatchParticipantRow avec tous les joueurs du match.
+    """
+    match_id = match_json.get("MatchId")
+    if not isinstance(match_id, str):
+        return []
+
+    players = match_json.get("Players")
+    if not isinstance(players, list):
+        return []
+
+    rows = []
+    seen_xuids = set()
+
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+
+        # Extraire le XUID
+        pid = player.get("PlayerId")
+        xuid = None
+        if isinstance(pid, str):
+            m = XUID_RE.search(pid)
+            if m:
+                xuid = m.group(1)
+        elif isinstance(pid, dict):
+            xuid_val = pid.get("Xuid") or pid.get("xuid")
+            if xuid_val is not None:
+                xuid = str(xuid_val)
+            else:
+                try:
+                    s = json.dumps(pid)
+                    m = XUID_RE.search(s)
+                    if m:
+                        xuid = m.group(1)
+                except (TypeError, ValueError):
+                    pass
+
+        if not xuid or xuid in seen_xuids:
+            continue
+
+        seen_xuids.add(xuid)
+
+        # Extraire team_id et outcome
+        team_id = _safe_int(player.get("LastTeamId"))
+        outcome = _safe_int(player.get("Outcome"))
+
+        # Extraire et normaliser le gamertag
+        gamertag_raw = player.get("PlayerGamertag") or player.get("Gamertag")
+        gamertag = _normalize_gamertag(gamertag_raw)
+
+        rows.append(
+            MatchParticipantRow(
+                match_id=match_id,
+                xuid=xuid,
+                team_id=team_id,
+                outcome=outcome,
+                gamertag=gamertag,
+            )
+        )
+
+    return rows
 
 
 # =============================================================================

@@ -28,6 +28,7 @@ class SyncOptions:
         with_highlight_events: Récupérer les highlight events (kills/deaths).
         with_skill: Récupérer les données MMR/skill.
         with_aliases: Mettre à jour les aliases XUID → Gamertag.
+        with_participants: Extraire les participants de chaque match (roster complet).
         with_assets: Récupérer les assets (maps, playlists).
         requests_per_second: Rate limiting API (requêtes/seconde).
         parallel_matches: Nombre de matchs traités en parallèle.
@@ -38,6 +39,7 @@ class SyncOptions:
     with_highlight_events: bool = True
     with_skill: bool = True
     with_aliases: bool = True
+    with_participants: bool = True  # Sprint Gamertag Roster Fix
     with_assets: bool = True
     requests_per_second: int = 5
     parallel_matches: int = 3
@@ -293,6 +295,26 @@ class PersonalScoreAwardRow:
     award_category: str | None = None
     award_count: int = 1
     award_score: int = 0
+
+
+@dataclass
+class MatchParticipantRow:
+    """Ligne pour la table match_participants.
+
+    Stocke TOUS les joueurs d'un match avec leurs informations d'équipe.
+    Source : MatchStats.Players[] (API propre, pas les films corrompus).
+
+    Permet de :
+    - Reconstruire le roster complet d'un match
+    - Identifier les coéquipiers et adversaires
+    - Avoir des gamertags propres (vs highlight_events corrompus)
+    """
+
+    match_id: str
+    xuid: str
+    team_id: int | None = None
+    outcome: int | None = None
+    gamertag: str | None = None
 
 
 # =============================================================================

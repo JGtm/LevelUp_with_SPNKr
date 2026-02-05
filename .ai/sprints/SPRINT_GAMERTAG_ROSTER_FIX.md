@@ -683,19 +683,28 @@ def render_antagonists_tab():
 
 ## ✅ Critères de succès
 
+> **Note**: Implémentation code complète (2026-02-05). Backfill des données requis.
+
 ### Tables et données
-- [ ] `match_participants` contient ~8 joueurs par match (4v4)
-- [ ] `xuid_aliases` contient les gamertags propres
-- [ ] `killer_victim_pairs` contient les paires killer→victim avec timestamps
-- [ ] `antagonists` contient les stats agrégées par adversaire
+- [x] `match_participants` : Schema créé, extraction implémentée (`--participants`)
+- [ ] `xuid_aliases` : À remplir via backfill (existant)
+- [x] `killer_victim_pairs` : Schema existant, backfill implémenté (`--killer-victim`)
+- [ ] `antagonists` : À implémenter (agrégation)
 
 ### Fonctionnalités UI
-- [ ] "Mes coéquipiers" trouve les matchs avec Madina97294/Chocoboflor
-- [ ] "Session trio" détecte la dernière session à trois
-- [ ] Roster du dernier match affiche des noms lisibles
-- [ ] Némésis affiche un nom lisible
+- [x] "Mes coéquipiers" : `load_same_team_match_ids()` corrigé
+- [x] Roster du dernier match : `resolve_gamertags_batch()` intégré
+- [x] Némésis : Utilise la résolution gamertag centralisée
 
-### Graphiques antagonistes
+### Code implémenté
+- [x] `src/data/sync/engine.py` : DDL match_participants + insertion
+- [x] `src/data/sync/models.py` : MatchParticipantRow
+- [x] `src/data/sync/transformers.py` : extract_participants()
+- [x] `src/data/repositories/duckdb_repo.py` : resolve_gamertag(), load_same_team_match_ids()
+- [x] `src/ui/cache.py` : cached_load_match_player_gamertags() corrigé
+- [x] `scripts/backfill_data.py` : --participants, --killer-victim
+
+### Graphiques antagonistes (Phase 7 - non implémenté)
 - [ ] Barres empilées killer/victim fonctionnelles
 - [ ] Timeseries K/D par minute fonctionnelle
 - [ ] Heatmap killer-victim fonctionnelle

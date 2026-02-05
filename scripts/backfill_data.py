@@ -33,6 +33,9 @@ Usage:
     # Forcer la ré-extraction des aliases (gamertags)
     python scripts/backfill_data.py --player JGtm --force-aliases
 
+    # Backfill paires killer/victim pour antagonistes
+    python scripts/backfill_data.py --player JGtm --killer-victim
+
     # Backfill pour tous les joueurs
     python scripts/backfill_data.py --all --all-data
 
@@ -59,6 +62,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from src.analysis.killer_victim import KVPair, compute_killer_victim_pairs
 from src.data.sync.api_client import (
     SPNKrAPIClient,
     enrich_match_info_with_assets,
@@ -67,6 +71,7 @@ from src.data.sync.api_client import (
 from src.data.sync.transformers import (
     extract_aliases,
     extract_medals,
+    extract_participants,
     extract_personal_score_awards,
     extract_xuids_from_match,
     transform_highlight_events,
@@ -254,6 +259,219 @@ def _insert_alias_rows(conn, rows: list) -> int:
     return inserted
 
 
+def _insert_participant_rows(conn, rows: list) -> int:
+    """Insère les participants dans la table match_participants.
+
+    Sprint Gamertag Roster Fix : Cette fonction permet de backfill
+    les participants de chaque match pour obtenir des gamertags propres
+    et des informations d'équipe fiables.
+    """
+    if not rows:
+        return 0
+
+    # S'assurer que la table existe
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS match_participants (
+            match_id VARCHAR NOT NULL,
+            xuid VARCHAR NOT NULL,
+            team_id INTEGER,
+            outcome INTEGER,
+            gamertag VARCHAR,
+            PRIMARY KEY (match_id, xuid)
+        )
+    """)
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_participants_xuid ON match_participants(xuid)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_participants_team ON match_participants(match_id, team_id)"
+        )
+    except Exception:
+        pass
+
+    inserted = 0
+    for row in rows:
+        try:
+            conn.execute(
+                """INSERT OR REPLACE INTO match_participants
+                   (match_id, xuid, team_id, outcome, gamertag)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    row.match_id,
+                    row.xuid,
+                    row.team_id,
+                    row.outcome,
+                    row.gamertag,
+                ),
+            )
+            inserted += 1
+        except Exception as e:
+            logger.warning(f"Erreur insertion participant {row.xuid} pour {row.match_id}: {e}")
+
+    return inserted
+
+
+def _backfill_killer_victim_pairs(conn, me_xuid: str) -> int:
+    """Extrait les paires killer/victim depuis highlight_events.
+
+    Sprint Gamertag Roster Fix Phase 6 : Utilise l'algorithme de pairing
+    de src/analysis/killer_victim.py pour apparier les events kill/death par timestamp.
+
+    Args:
+        conn: Connexion DuckDB.
+        me_xuid: XUID du joueur principal (pour référence).
+
+    Returns:
+        Nombre de paires insérées.
+    """
+    # S'assurer que la table existe (sans id auto-increment pour DuckDB)
+    # Drop et recreate pour être sûr de la structure
+    conn.execute("DROP TABLE IF EXISTS killer_victim_pairs")
+    conn.execute("""
+        CREATE TABLE killer_victim_pairs (
+            match_id VARCHAR NOT NULL,
+            killer_xuid VARCHAR NOT NULL,
+            killer_gamertag VARCHAR,
+            victim_xuid VARCHAR NOT NULL,
+            victim_gamertag VARCHAR,
+            kill_count INTEGER DEFAULT 1,
+            time_ms INTEGER,
+            is_validated BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Table killer_victim_pairs (re)créée")
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_match ON killer_victim_pairs(match_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_killer ON killer_victim_pairs(killer_xuid)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_victim ON killer_victim_pairs(victim_xuid)")
+    except Exception:
+        pass
+
+    # Charger tous les matchs avec highlight events de type kill/death
+    # Note: LOWER() pour comparaison insensible à la casse
+    try:
+        matches = conn.execute("""
+            SELECT DISTINCT match_id
+            FROM highlight_events
+            WHERE LOWER(event_type) IN ('kill', 'death')
+        """).fetchall()
+    except Exception as e:
+        logger.warning(f"Erreur lecture highlight_events: {e}")
+        return 0
+
+    if not matches:
+        logger.info("Aucun match avec highlight events kill/death trouvé")
+        return 0
+
+    logger.info(f"Trouvé {len(matches)} matchs avec highlight events kill/death")
+    total_pairs = 0
+    skipped_no_pairs = 0
+    logged_debug = False
+
+    for (match_id,) in matches:
+        # Charger les events du match
+        try:
+            events = conn.execute(
+                """
+                SELECT event_type, time_ms, xuid, gamertag
+                FROM highlight_events
+                WHERE match_id = ?
+                  AND LOWER(event_type) IN ('kill', 'death')
+                ORDER BY time_ms
+            """,
+                [match_id],
+            ).fetchall()
+        except Exception:
+            continue
+
+        if not events:
+            continue
+
+        # Convertir en dicts pour l'algorithme
+        event_dicts = [
+            {
+                "event_type": row[0],
+                "time_ms": row[1],
+                "xuid": row[2],
+                "gamertag": row[3],
+            }
+            for row in events
+        ]
+
+        # Debug: compter les types d'events
+        kills_count = sum(
+            1 for e in event_dicts if str(e.get("event_type") or "").lower() == "kill"
+        )
+        deaths_count = sum(
+            1 for e in event_dicts if str(e.get("event_type") or "").lower() == "death"
+        )
+        time_ms_null = sum(1 for e in event_dicts if e.get("time_ms") is None)
+
+        # Log premier match nouveau traité pour debug
+        is_first_match = not logged_debug
+        if is_first_match:
+            logged_debug = True
+            sample_types = {str(e.get("event_type")) for e in event_dicts[:10]}
+            logger.info(f"  [DEBUG] Sample event_types: {sample_types}")
+            logger.info(
+                f"  [DEBUG] Match {match_id[:20]}...: {len(events)} events, {kills_count} kills, {deaths_count} deaths, {time_ms_null} sans time_ms"
+            )
+
+        if kills_count == 0 or deaths_count == 0:
+            skipped_no_pairs += 1
+            continue
+
+        # Calculer les paires avec l'algorithme validé
+        pairs: list[KVPair] = compute_killer_victim_pairs(event_dicts, tolerance_ms=5)
+
+        # Debug: log le nombre de paires calculées pour le premier match
+        if is_first_match:
+            logger.info(f"  [DEBUG] Paires calculées: {len(pairs)}")
+            if pairs:
+                logger.info(
+                    f"  [DEBUG] Première paire: killer={pairs[0].killer_xuid}, victim={pairs[0].victim_xuid}, time={pairs[0].time_ms}"
+                )
+
+        if not pairs:
+            skipped_no_pairs += 1
+            continue
+
+        # Insérer les paires
+        insert_errors = 0
+        for p in pairs:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO killer_victim_pairs
+                    (match_id, killer_xuid, killer_gamertag, victim_xuid, victim_gamertag, kill_count, time_ms)
+                    VALUES (?, ?, ?, ?, ?, 1, ?)
+                """,
+                    [
+                        match_id,
+                        p.killer_xuid,
+                        p.killer_gamertag,
+                        p.victim_xuid,
+                        p.victim_gamertag,
+                        p.time_ms,
+                    ],
+                )
+                total_pairs += 1
+            except Exception as e:
+                insert_errors += 1
+                if insert_errors == 1:
+                    logger.warning(f"  Erreur INSERT: {e}")
+
+        if insert_errors > 0 and not logged_debug:
+            logger.info(f"  [DEBUG] {insert_errors} erreurs d'insertion sur {len(pairs)} paires")
+
+    if skipped_no_pairs > 0:
+        logger.info(
+            f"  Matchs skippés (pas de kills/deaths ou algorithme vide): {skipped_no_pairs}"
+        )
+
+    return total_pairs
+
+
 def _ensure_performance_score_column(conn) -> None:
     """S'assure que la colonne performance_score existe dans match_stats."""
     try:
@@ -376,11 +594,13 @@ def _find_matches_missing_data(
     accuracy: bool = False,
     enemy_mmr: bool = False,
     assets: bool = False,
+    participants: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
+    force_participants: bool = False,
     max_matches: int | None = None,
 ) -> list[str]:
     """Trouve les matchs avec des données manquantes."""
@@ -491,6 +711,34 @@ def _find_matches_missing_data(
         # Inclure tous les matchs pour ré-extraire les aliases (encodage corrigé)
         conditions.append("1=1")
 
+    if participants:
+        if force_participants:
+            # Mode force: inclure TOUS les matchs pour réinsérer les participants
+            conditions.append("1=1")
+        else:
+            # Vérifier si la table match_participants existe
+            try:
+                table_exists = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM information_schema.tables
+                    WHERE table_schema = 'main' AND table_name = 'match_participants'
+                    """
+                ).fetchone()
+                if table_exists and table_exists[0] > 0:
+                    # Table existe, trouver les matchs sans participants
+                    conditions.append("""
+                        ms.match_id NOT IN (
+                            SELECT DISTINCT match_id FROM match_participants
+                        )
+                    """)
+                else:
+                    # Table n'existe pas, tous les matchs sont concernés
+                    conditions.append("1=1")
+            except Exception:
+                # En cas d'erreur, considérer que tous les matchs sont concernés
+                conditions.append("1=1")
+
     if not conditions:
         return []
 
@@ -525,12 +773,15 @@ async def backfill_player_data(
     accuracy: bool = False,
     enemy_mmr: bool = False,
     assets: bool = False,
+    participants: bool = False,
+    killer_victim: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
+    force_participants: bool = False,
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
 
@@ -560,6 +811,8 @@ async def backfill_player_data(
         accuracy = True
         enemy_mmr = True
         assets = True
+        participants = True
+        killer_victim = True
 
     # Si force_accuracy est activé sans accuracy, l'activer automatiquement
     if force_accuracy and not accuracy:
@@ -575,6 +828,9 @@ async def backfill_player_data(
     if force_assets and not assets:
         assets = True
 
+    if force_participants and not participants:
+        participants = True
+
     # Vérifier qu'au moins une option est activée
     if not any(
         [
@@ -587,6 +843,8 @@ async def backfill_player_data(
             accuracy,
             enemy_mmr,
             assets,
+            participants,
+            killer_victim,
             force_aliases,
         ]
     ):
@@ -605,6 +863,8 @@ async def backfill_player_data(
             "accuracy_updated": 0,
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
+            "participants_inserted": 0,
+            "killer_victim_pairs_inserted": 0,
         }
 
     # Vérifier que c'est un joueur DuckDB v4
@@ -624,6 +884,8 @@ async def backfill_player_data(
             "accuracy_updated": 0,
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
+            "participants_inserted": 0,
+            "killer_victim_pairs_inserted": 0,
         }
 
     # Obtenir le chemin de la DB
@@ -642,6 +904,8 @@ async def backfill_player_data(
             "accuracy_updated": 0,
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
+            "participants_inserted": 0,
+            "killer_victim_pairs_inserted": 0,
         }
 
     # Obtenir le XUID depuis la DB
@@ -696,6 +960,8 @@ async def backfill_player_data(
                     "accuracy_updated": 0,
                     "enemy_mmr_updated": 0,
                     "assets_updated": 0,
+                    "participants_inserted": 0,
+                    "killer_victim_pairs_inserted": 0,
                 }
         finally:
             conn.close()
@@ -796,11 +1062,13 @@ async def backfill_player_data(
             accuracy=accuracy,
             enemy_mmr=enemy_mmr,
             assets=assets,
+            participants=participants,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
             force_enemy_mmr=force_enemy_mmr,
             force_aliases=force_aliases,
             force_assets=force_assets,
+            force_participants=force_participants,
             max_matches=max_matches,
         )
 
@@ -819,9 +1087,12 @@ async def backfill_player_data(
                 "accuracy_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
+                "participants_inserted": 0,
+                "killer_victim_pairs_inserted": 0,
             }
 
-        if not match_ids:
+        if not match_ids and not killer_victim:
+            # Pas de matchs à traiter ET pas de killer_victim à backfill
             logger.info("Tous les matchs ont déjà toutes les données demandées")
             return {
                 "matches_checked": 0,
@@ -834,6 +1105,35 @@ async def backfill_player_data(
                 "accuracy_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
+                "participants_inserted": 0,
+                "killer_victim_pairs_inserted": 0,
+            }
+        elif not match_ids and killer_victim:
+            # Pas de matchs à traiter via API mais killer_victim à backfill
+            # On exécute directement le backfill killer_victim et on retourne
+            logger.info("Pas de données de match à backfill via API...")
+            total_killer_victim_pairs = 0
+            logger.info("Backfill des paires killer/victim depuis highlight_events...")
+            total_killer_victim_pairs = _backfill_killer_victim_pairs(conn, xuid)
+            if total_killer_victim_pairs > 0:
+                logger.info(f"✅ {total_killer_victim_pairs} paires killer/victim insérées")
+            else:
+                logger.info("Aucune nouvelle paire killer/victim à insérer")
+
+            logger.info(f"Backfill terminé pour {gamertag}")
+            return {
+                "matches_checked": 0,
+                "matches_missing_data": 0,
+                "medals_inserted": 0,
+                "events_inserted": 0,
+                "skill_inserted": 0,
+                "personal_scores_inserted": 0,
+                "aliases_inserted": 0,
+                "accuracy_updated": 0,
+                "enemy_mmr_updated": 0,
+                "assets_updated": 0,
+                "participants_inserted": 0,
+                "killer_victim_pairs_inserted": total_killer_victim_pairs,
             }
 
         # Récupérer les tokens
@@ -851,6 +1151,8 @@ async def backfill_player_data(
                 "accuracy_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
+                "participants_inserted": 0,
+                "killer_victim_pairs_inserted": 0,
             }
 
         # Traiter les matchs
@@ -863,6 +1165,7 @@ async def backfill_player_data(
         total_accuracy_updated = 0
         total_enemy_mmr_updated = 0
         total_assets_updated = 0
+        total_participants_inserted = 0
 
         async with SPNKrAPIClient(
             tokens=tokens,
@@ -906,6 +1209,7 @@ async def backfill_player_data(
                         "accuracy": 0,
                         "enemy_mmr": 0,
                         "assets": 0,
+                        "participants": 0,
                     }
 
                     # Assets (noms playlist/map/pair) — mise à jour match_stats
@@ -1037,6 +1341,15 @@ async def backfill_player_data(
                             inserted_this_match["aliases"] = _insert_alias_rows(conn, alias_rows)
                             total_aliases += inserted_this_match["aliases"]
 
+                    # Participants (Sprint Gamertag Roster Fix)
+                    if participants:
+                        participant_rows = extract_participants(stats_json)
+                        if participant_rows:
+                            inserted_this_match["participants"] = _insert_participant_rows(
+                                conn, participant_rows
+                            )
+                            total_participants_inserted += inserted_this_match["participants"]
+
                     # Performance scores (calculé après récupération des données)
                     if performance_scores and _compute_performance_score_for_match(conn, match_id):
                         inserted_this_match["performance_scores"] = 1
@@ -1065,6 +1378,8 @@ async def backfill_player_data(
                         parts.append("enemy_mmr")
                     if inserted_this_match.get("assets", 0) > 0:
                         parts.append("noms assets")
+                    if inserted_this_match.get("participants", 0) > 0:
+                        parts.append(f"{inserted_this_match['participants']} participant(s)")
 
                     if parts:
                         logger.info(f"  ✅ {', '.join(parts)} inséré(s)")
@@ -1077,6 +1392,16 @@ async def backfill_player_data(
 
                     traceback.print_exc()
                     continue
+
+        # Phase 6 : Backfill killer_victim_pairs (ne nécessite pas d'API)
+        total_killer_victim_pairs = 0
+        if killer_victim:
+            logger.info("Backfill des paires killer/victim depuis highlight_events...")
+            total_killer_victim_pairs = _backfill_killer_victim_pairs(conn, xuid)
+            if total_killer_victim_pairs > 0:
+                logger.info(f"✅ {total_killer_victim_pairs} paires killer/victim insérées")
+            else:
+                logger.info("Aucune nouvelle paire killer/victim à insérer")
 
         logger.info(f"Backfill terminé pour {gamertag}")
 
@@ -1092,6 +1417,8 @@ async def backfill_player_data(
             "accuracy_updated": total_accuracy_updated,
             "enemy_mmr_updated": total_enemy_mmr_updated,
             "assets_updated": total_assets_updated,
+            "participants_inserted": total_participants_inserted,
+            "killer_victim_pairs_inserted": total_killer_victim_pairs,
         }
 
     finally:
@@ -1112,12 +1439,15 @@ async def backfill_all_players(
     accuracy: bool = False,
     enemy_mmr: bool = False,
     assets: bool = False,
+    participants: bool = False,
+    killer_victim: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
+    force_participants: bool = False,
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
     players = list_duckdb_v4_players()
@@ -1140,6 +1470,8 @@ async def backfill_all_players(
         "accuracy_updated": 0,
         "enemy_mmr_updated": 0,
         "assets_updated": 0,
+        "participants_inserted": 0,
+        "killer_victim_pairs_inserted": 0,
     }
 
     for i, player_info in enumerate(players, 1):
@@ -1161,12 +1493,15 @@ async def backfill_all_players(
             accuracy=accuracy,
             enemy_mmr=enemy_mmr,
             assets=assets,
+            participants=participants,
+            killer_victim=killer_victim,
             all_data=all_data,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
             force_enemy_mmr=force_enemy_mmr,
             force_aliases=force_aliases,
             force_assets=force_assets,
+            force_participants=force_participants,
         )
 
         # Agréger les résultats
@@ -1259,7 +1594,7 @@ def main() -> int:
     parser.add_argument(
         "--all-data",
         action="store_true",
-        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases)",
+        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --participants --killer-victim)",
     )
 
     parser.add_argument(
@@ -1310,6 +1645,24 @@ def main() -> int:
         help="Force la ré-extraction des aliases pour tous les matchs (encodage corrigé)",
     )
 
+    parser.add_argument(
+        "--participants",
+        action="store_true",
+        help="Backfill les participants de match (table match_participants pour rosters/coéquipiers)",
+    )
+
+    parser.add_argument(
+        "--force-participants",
+        action="store_true",
+        help="Force la ré-extraction des participants pour tous les matchs",
+    )
+
+    parser.add_argument(
+        "--killer-victim",
+        action="store_true",
+        help="Backfill les paires killer/victim depuis highlight_events pour antagonistes",
+    )
+
     args = parser.parse_args()
 
     # Validation
@@ -1333,12 +1686,15 @@ def main() -> int:
                     accuracy=args.accuracy,
                     enemy_mmr=args.enemy_mmr,
                     assets=args.assets,
+                    participants=args.participants,
+                    killer_victim=args.killer_victim,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
+                    force_participants=args.force_participants,
                 )
             )
 
@@ -1361,6 +1717,12 @@ def main() -> int:
                 logger.info(f"Enemy MMR mis à jour: {totals['enemy_mmr_updated']}")
             if args.assets:
                 logger.info(f"Noms assets mis à jour: {totals['assets_updated']}")
+            if args.participants:
+                logger.info(f"Participants insérés: {totals['participants_inserted']}")
+            if args.killer_victim:
+                logger.info(
+                    f"Paires killer/victim insérées: {totals['killer_victim_pairs_inserted']}"
+                )
         else:
             result = asyncio.run(
                 backfill_player_data(
@@ -1377,12 +1739,15 @@ def main() -> int:
                     accuracy=args.accuracy,
                     enemy_mmr=args.enemy_mmr,
                     assets=args.assets,
+                    participants=args.participants,
+                    killer_victim=args.killer_victim,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
+                    force_participants=args.force_participants,
                 )
             )
 
@@ -1401,6 +1766,12 @@ def main() -> int:
                 logger.info(f"Enemy MMR mis à jour: {result['enemy_mmr_updated']}")
             if args.assets:
                 logger.info(f"Noms assets mis à jour: {result['assets_updated']}")
+            if args.participants:
+                logger.info(f"Participants insérés: {result['participants_inserted']}")
+            if args.killer_victim:
+                logger.info(
+                    f"Paires killer/victim insérées: {result['killer_victim_pairs_inserted']}"
+                )
 
         return 0
 

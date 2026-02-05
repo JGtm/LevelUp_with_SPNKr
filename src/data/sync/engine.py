@@ -47,6 +47,7 @@ from src.data.sync.models import (
 from src.data.sync.transformers import (
     create_metadata_resolver,
     extract_aliases,
+    extract_participants,
     extract_personal_score_awards,
     extract_xuids_from_match,
     transform_highlight_events,
@@ -137,6 +138,20 @@ CREATE TABLE IF NOT EXISTS personal_score_awards (
 CREATE INDEX IF NOT EXISTS idx_psa_match ON personal_score_awards(match_id);
 CREATE INDEX IF NOT EXISTS idx_psa_xuid ON personal_score_awards(xuid);
 CREATE INDEX IF NOT EXISTS idx_psa_category ON personal_score_awards(award_category);
+
+-- Table match_participants (Sprint Gamertag Roster Fix)
+-- Stocke TOUS les joueurs de chaque match avec leurs team_id/outcome/gamertag propres
+-- Source : MatchStats.Players[] (API propre, pas les films corrompus)
+CREATE TABLE IF NOT EXISTS match_participants (
+    match_id VARCHAR NOT NULL,
+    xuid VARCHAR NOT NULL,
+    team_id INTEGER,
+    outcome INTEGER,
+    gamertag VARCHAR,
+    PRIMARY KEY (match_id, xuid)
+);
+CREATE INDEX IF NOT EXISTS idx_participants_xuid ON match_participants(xuid);
+CREATE INDEX IF NOT EXISTS idx_participants_team ON match_participants(match_id, team_id);
 
 -- Table xuid_aliases (correspondances XUID → Gamertag)
 CREATE TABLE IF NOT EXISTS xuid_aliases (
@@ -678,6 +693,11 @@ class DuckDBSyncEngine:
             if options.with_aliases:
                 alias_rows = extract_aliases(stats_json)
 
+            # Sprint Gamertag Roster Fix: Extraire les participants (roster complet)
+            participant_rows = []
+            if options.with_participants:
+                participant_rows = extract_participants(stats_json)
+
             # Sprint 8.2: Extraire PersonalScores
             personal_scores = extract_personal_score_awards(stats_json, self._xuid)
             personal_score_rows = []
@@ -710,6 +730,10 @@ class DuckDBSyncEngine:
                 if medal_rows:
                     self._insert_medal_rows(medal_rows)
                     result["medals"] = len(medal_rows)
+
+                if participant_rows:
+                    self._insert_participant_rows(participant_rows)
+                    result["participants"] = len(participant_rows)
 
                 if alias_rows:
                     self._insert_alias_rows(alias_rows)
@@ -1018,6 +1042,32 @@ class DuckDBSyncEngine:
                         row.match_id,
                         row.medal_name_id,
                         row.count,
+                    ),
+                )
+
+    def _insert_participant_rows(self, rows: list) -> None:
+        """Insère les lignes match_participants (roster complet du match).
+
+        Sprint Gamertag Roster Fix : permet de stocker tous les joueurs
+        d'un match avec leurs team_id, outcome et gamertag propres.
+        """
+        if not rows:
+            return
+
+        conn = self._get_connection()
+
+        for row in rows:
+            with contextlib.suppress(Exception):
+                conn.execute(
+                    """INSERT OR REPLACE INTO match_participants (
+                        match_id, xuid, team_id, outcome, gamertag
+                    ) VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        row.match_id,
+                        row.xuid,
+                        row.team_id,
+                        row.outcome,
+                        row.gamertag,
                     ),
                 )
 

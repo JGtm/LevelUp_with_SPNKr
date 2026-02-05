@@ -1187,12 +1187,19 @@ class DuckDBRepository:
             # ======================================================================
             # Construire les listes d'équipes
             # ======================================================================
+            # Sprint Gamertag Roster Fix : Utiliser resolve_gamertags_batch pour
+            # obtenir des gamertags propres depuis match_participants/xuid_aliases
+            resolved_gamertags = self.resolve_gamertags_batch(list(all_xuids), match_id=match_id)
+
             my_team = []
             enemy_team = []
 
             for xuid_str in all_xuids:
                 is_me = xuid_str == my_xuid_str
-                cleaned_gamertag = gamertag_by_xuid.get(xuid_str)
+                # Priorité : gamertag résolu > gamertag extrait > XUID
+                cleaned_gamertag = resolved_gamertags.get(xuid_str) or gamertag_by_xuid.get(
+                    xuid_str
+                )
                 display_name = cleaned_gamertag if cleaned_gamertag else xuid_str
                 player_team_id = team_by_xuid.get(xuid_str, None if not is_me else my_team_id)
 
@@ -1276,7 +1283,9 @@ class DuckDBRepository:
     ) -> list[str]:
         """Retourne les match_id où les deux joueurs étaient dans la même équipe.
 
-        Utilise match_stats pour vérifier le team_id.
+        Sprint Gamertag Roster Fix : Utilise match_participants si disponible
+        pour une détermination précise des équipes. Sinon, fallback sur
+        highlight_events.
 
         Args:
             teammate_xuid: XUID du coéquipier.
@@ -1286,21 +1295,41 @@ class DuckDBRepository:
         """
         conn = self._get_connection()
 
+        # Essayer avec match_participants d'abord (source fiable)
+        if self._has_table("match_participants"):
+            try:
+                result = conn.execute(
+                    """
+                    SELECT DISTINCT me.match_id
+                    FROM match_participants me
+                    INNER JOIN match_participants tm
+                        ON me.match_id = tm.match_id
+                        AND me.team_id = tm.team_id
+                    WHERE me.xuid = ? AND tm.xuid = ?
+                    ORDER BY me.match_id DESC
+                    """,
+                    [self._xuid, teammate_xuid],
+                )
+                match_ids = [row[0] for row in result.fetchall()]
+                if match_ids:
+                    return match_ids
+            except Exception as e:
+                logger.debug(f"Erreur match_participants: {e}")
+
+        # Fallback: utiliser highlight_events pour trouver les matchs communs
+        # puis vérifier team_id dans match_stats (moins précis)
         try:
-            # Trouver les matchs où les deux joueurs ont le même team_id
             result = conn.execute(
                 """
-                SELECT DISTINCT ms1.match_id
-                FROM match_stats ms1
-                INNER JOIN match_stats ms2 ON ms1.match_id = ms2.match_id
-                WHERE ms1.team_id = ms2.team_id
-                  AND ms1.match_id IN (
-                      SELECT DISTINCT match_id FROM highlight_events WHERE xuid = ?
-                  )
-                  AND ms2.match_id IN (
-                      SELECT DISTINCT match_id FROM highlight_events WHERE xuid = ?
-                  )
-                ORDER BY ms1.match_id DESC
+                SELECT DISTINCT ms.match_id
+                FROM match_stats ms
+                WHERE ms.match_id IN (
+                    SELECT DISTINCT match_id FROM highlight_events WHERE xuid = ?
+                )
+                AND ms.match_id IN (
+                    SELECT DISTINCT match_id FROM highlight_events WHERE xuid = ?
+                )
+                ORDER BY ms.match_id DESC
                 """,
                 [self._xuid, teammate_xuid],
             )
@@ -2572,3 +2601,154 @@ class DuckDBRepository:
             return count > 0
         except Exception:
             return False
+
+    # =========================================================================
+    # Sprint Gamertag Roster Fix : Helpers et résolution
+    # =========================================================================
+
+    def _has_table(self, table_name: str) -> bool:
+        """Vérifie si une table existe dans la DB."""
+        conn = self._get_connection()
+        try:
+            result = conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = ?",
+                [table_name],
+            ).fetchone()
+            return result is not None
+        except Exception:
+            return False
+
+    def has_match_participants(self) -> bool:
+        """Vérifie si la table match_participants existe et contient des données."""
+        conn = self._get_connection()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM match_participants").fetchone()[0]
+            return count > 0
+        except Exception:
+            return False
+
+    def resolve_gamertag(
+        self,
+        xuid: str,
+        *,
+        match_id: str | None = None,
+    ) -> str | None:
+        """Résout un XUID en gamertag avec cascade de sources.
+
+        Sprint Gamertag Roster Fix : Fonction centralisée pour obtenir un
+        gamertag propre à partir d'un XUID, en utilisant plusieurs sources.
+
+        Priorité des sources:
+        1. match_participants (pour ce match spécifique) - gamertags API propres
+        2. xuid_aliases (source officielle API)
+        3. teammates_aggregate (historique des coéquipiers)
+        4. highlight_events (nettoyé avec extraction ASCII)
+
+        Args:
+            xuid: XUID du joueur à résoudre.
+            match_id: ID du match (optionnel, améliore la résolution contextuelle).
+
+        Returns:
+            Gamertag propre ou None si non trouvé.
+        """
+        conn = self._get_connection()
+        xuid = str(xuid).strip()
+
+        # 1. match_participants (si match_id fourni et table existe)
+        if match_id and self._has_table("match_participants"):
+            try:
+                result = conn.execute(
+                    "SELECT gamertag FROM match_participants WHERE match_id = ? AND xuid = ?",
+                    [match_id, xuid],
+                ).fetchone()
+                if result and result[0]:
+                    return result[0]
+            except Exception:
+                pass
+
+        # 2. xuid_aliases
+        try:
+            result = conn.execute(
+                "SELECT gamertag FROM xuid_aliases WHERE xuid = ?",
+                [xuid],
+            ).fetchone()
+            if result and result[0]:
+                return result[0]
+        except Exception:
+            pass
+
+        # 3. teammates_aggregate
+        try:
+            result = conn.execute(
+                "SELECT teammate_gamertag FROM teammates_aggregate WHERE teammate_xuid = ?",
+                [xuid],
+            ).fetchone()
+            if result and result[0]:
+                return result[0]
+        except Exception:
+            pass
+
+        # 4. highlight_events avec extraction ASCII
+        if match_id:
+            try:
+                result = conn.execute(
+                    "SELECT gamertag FROM highlight_events WHERE match_id = ? AND xuid = ? LIMIT 1",
+                    [match_id, xuid],
+                ).fetchone()
+                if result and result[0]:
+                    cleaned = self._extract_ascii_token(result[0])
+                    if cleaned:
+                        return cleaned
+            except Exception:
+                pass
+
+        return None
+
+    def _extract_ascii_token(self, value: str | None) -> str | None:
+        """Extrait un token ASCII plausible depuis un gamertag corrompu.
+
+        Les gamertags provenant de highlight_events peuvent contenir des
+        caractères NUL et de contrôle (ex: 'juan1\\x00\\x00\\x00\\x00').
+        Cette fonction extrait la partie lisible.
+
+        Args:
+            value: Gamertag potentiellement corrompu.
+
+        Returns:
+            Token ASCII nettoyé ou None si rien de plausible.
+        """
+        if value is None:
+            return None
+
+        try:
+            # Extraire tous les tokens alphanumériques
+            parts = re.findall(r"[A-Za-z0-9]+", str(value or ""))
+            if not parts:
+                return None
+
+            # Prendre le plus long (probablement le gamertag)
+            parts.sort(key=len, reverse=True)
+            token = parts[0]
+
+            # Minimum 3 caractères pour être un gamertag valide
+            return token if len(token) >= 3 else None
+        except Exception:
+            return None
+
+    def resolve_gamertags_batch(
+        self,
+        xuids: list[str],
+        *,
+        match_id: str | None = None,
+    ) -> dict[str, str | None]:
+        """Résout plusieurs XUIDs en gamertags en batch.
+
+        Args:
+            xuids: Liste des XUIDs à résoudre.
+            match_id: ID du match (optionnel).
+
+        Returns:
+            Dict {xuid: gamertag} pour chaque XUID.
+        """
+        return {xuid: self.resolve_gamertag(xuid, match_id=match_id) for xuid in xuids}

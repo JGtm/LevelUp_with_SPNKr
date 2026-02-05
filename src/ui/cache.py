@@ -316,41 +316,47 @@ def cached_load_match_player_gamertags(
 ):
     """Charge les gamertags des joueurs d'un match (cache).
 
-    Utilise la table highlight_events pour DuckDB, sinon fallback legacy.
+    Sprint Gamertag Roster Fix : Utilise DuckDBRepository.resolve_gamertags_batch
+    pour obtenir des gamertags propres depuis match_participants/xuid_aliases.
     """
     _ = db_key
-    # DuckDB v4 : extraire les gamertags depuis highlight_events ou xuid_aliases
+    # DuckDB v4 : utiliser le repository pour résolution centralisée
     if _is_duckdb_v4_path(db_path):
         try:
             import duckdb
 
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
             conn = duckdb.connect(db_path, read_only=True)
 
-            # Essayer d'abord depuis highlight_events pour ce match
+            # Récupérer tous les XUIDs du match depuis highlight_events
             try:
                 result = conn.execute(
                     """
-                    SELECT DISTINCT xuid, gamertag
+                    SELECT DISTINCT xuid
                     FROM highlight_events
                     WHERE match_id = ?
                       AND xuid IS NOT NULL
-                      AND gamertag IS NOT NULL
+                      AND xuid != ''
                     """,
                     [match_id],
                 ).fetchall()
-                if result:
-                    conn.close()
-                    return {str(row[0]): str(row[1]) for row in result if row[0] and row[1]}
-            except Exception:
-                pass
-
-            # Fallback: utiliser xuid_aliases (moins précis pour ce match spécifique)
-            try:
-                result = conn.execute(
-                    "SELECT xuid, gamertag FROM xuid_aliases WHERE xuid IS NOT NULL"
-                ).fetchall()
+                xuids = [str(row[0]) for row in result if row[0]]
                 conn.close()
-                return {str(row[0]): str(row[1]) for row in result if row[0] and row[1]}
+
+                if not xuids:
+                    return {}
+
+                # Utiliser le repository pour la résolution centralisée
+                # Note: on a besoin du xuid du joueur principal pour le repo,
+                # mais on peut utiliser un XUID factice car resolve_gamertags_batch
+                # ne dépend pas du xuid du repo
+                repo = DuckDBRepository(db_path, xuids[0] if xuids else "")
+                return {
+                    xuid: gt
+                    for xuid, gt in repo.resolve_gamertags_batch(xuids, match_id=match_id).items()
+                    if gt
+                }
             except Exception:
                 conn.close()
                 return {}
