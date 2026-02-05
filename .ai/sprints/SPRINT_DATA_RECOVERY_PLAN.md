@@ -1071,6 +1071,7 @@ python scripts/sync.py --all --with-career --with-skill
 | # | Tâche | Priorité | Effort | Dépendances | État |
 |---|-------|----------|--------|-------------|------|
 | 1 | Backfill xuid_aliases | 🔴 Critique | 2h | Aucune | ✅ Implémenté |
+| 1b | Résoudre XUIDs manquants via API | 🔴 Critique | 1h | #1 | ✅ Implémenté |
 | 2 | Créer + backfill match_participants | 🔴 Critique | 4h | #1 | ✅ Implémenté |
 | 3 | Backfill killer_victim_pairs | 🔴 Important | 1h | Aucune | ✅ Implémenté |
 | 4 | Compute antagonists | 🔴 Important | 2h | #3 | ✅ Script existe |
@@ -1080,7 +1081,7 @@ python scripts/sync.py --all --with-career --with-skill
 | 8 | Sync career + skill history | 🟡 Nice to have | 3h | Aucune | 🔲 À faire |
 
 **Total estimé** : 17-20 heures de développement
-**Progression** : 4/8 tâches implémentées (code), exécution à faire
+**Progression** : 5/9 tâches implémentées (code)
 
 ---
 
@@ -1093,6 +1094,8 @@ python scripts/sync.py --all --with-career --with-skill
 | `backfill_data.py` | ✅ | `--force-aliases`, `--participants`, `--killer-victim`, `--all-data` |
 | `backfill_killer_victim_pairs.py` | ✅ | `--gamertag`, `--all`, `--force` |
 | `populate_antagonists.py` | ✅ | `--gamertag`, `--all`, `--force` |
+| `resolve_missing_gamertags.py` | ✅ | `--gamertag`, `--all`, `--limit`, `--dry-run` |
+| `recover_from_sqlite.py` | ✅ | `--gamertag`, `--all`, `--dry-run` |
 | `sync.py` | ✅ | Calcule les sessions automatiquement |
 | `ingest_halo_data.py` | ✅ | Pour les référentiels |
 | `diagnose_migration_gaps.py` | ✅ | `--all`, `--json` |
@@ -1186,4 +1189,58 @@ python scripts/diagnose_migration_gaps.py --all --json --output .ai/diagnostics/
 
 ---
 
+---
+
+## 📝 Mise à jour 2026-02-05 : Résolution XUIDs via API SPNKr
+
+### Nouveau script : `resolve_missing_gamertags.py`
+
+Script créé pour résoudre les XUIDs manquants dans `xuid_aliases` via l'API SPNKr.
+
+**Fonctionnalités :**
+- Utilise `client.profile.get_users_by_id()` pour résoudre XUIDs → gamertags en batch
+- Gestion du rate limiting (429) avec retry automatique
+- Filtrage des XUIDs invalides (données corrompues)
+- Support `.env.local` pour les credentials OAuth Azure
+
+**Usage :**
+```bash
+# Dry-run pour voir les XUIDs manquants
+python scripts/resolve_missing_gamertags.py --all --dry-run
+
+# Résoudre pour un joueur
+python scripts/resolve_missing_gamertags.py --gamertag Madina97294
+
+# Résoudre pour tous (attention: rate limiting)
+python scripts/resolve_missing_gamertags.py --all
+
+# Limiter le nombre de XUIDs
+python scripts/resolve_missing_gamertags.py --gamertag Madina97294 --limit 100
+```
+
+**Résultats du 2026-02-05 :**
+
+| Joueur | XUIDs manquants | Statut |
+|--------|-----------------|--------|
+| Chocoboflor | 0 | ✅ Complet |
+| JGtm | 0 | ✅ Complet |
+| Madina97294 | ~8600 | 🔄 Rate limited |
+| XxDaemonGamerxX | ~8 (invalides) | ⚠️ Données corrompues |
+
+**Limitations API :**
+- L'API profile est fortement rate-limited (~1 req/sec)
+- Pour 8600 XUIDs avec batches de 20 : ~430 requêtes × 3s = ~20 minutes
+- Nécessite une exécution progressive avec pauses
+
+**Prérequis :**
+- Fichier `.env.local` avec credentials OAuth Azure :
+  ```
+  SPNKR_AZURE_CLIENT_ID=...
+  SPNKR_AZURE_CLIENT_SECRET=...
+  SPNKR_OAUTH_REFRESH_TOKEN=...
+  ```
+
+---
+
 *Document créé le 2026-02-05*
+*Dernière mise à jour : 2026-02-05 (ajout resolve_missing_gamertags.py)*
