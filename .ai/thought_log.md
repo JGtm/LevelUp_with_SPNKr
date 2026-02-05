@@ -7,6 +7,35 @@
 
 ## Journal
 
+### [2026-02-05] - 🔴 CRITIQUE : Données Manquantes en BDD — DIAGNOSTIC TERMINÉ
+
+**Statut** : ✅ **CAUSE RACINE IDENTIFIÉE** - Prêt pour la phase correction
+
+**Contexte** :
+L'utilisateur signale que plusieurs données ne sont plus enregistrées en BDD :
+1. Noms des cartes, modes et playlists (`playlist_name`, `map_name`, `pair_name`, `game_variant_name` sont NULL)
+2. Noms des joueurs par match non récupérés correctement
+3. Joueurs non affectés à l'équipe adverse
+4. Nom de l'équipe adverse non récupéré
+5. Valeurs "attendues" pour frags et morts (`kills_expected`, `deaths_expected`, `assists_expected` sont NULL)
+
+**CAUSES CONFIRMÉES** :
+1. **Discovery UGC jamais appelé** : `client.get_asset()` n'est pas utilisé dans `_process_single_match()`. L'option `with_assets=True` existe mais n'est jamais vérifiée.
+2. **metadata.duckdb absent** : Le dossier `data/warehouse/` n'existe pas → `create_metadata_resolver()` retourne `None` → aucune résolution depuis référentiels.
+3. **Fallback sur IDs** : Sans PublicName (API) ni metadata_resolver, les noms deviennent les UUID.
+4. **StatPerformances** : À vérifier avec logs si l'API skill renvoie la structure attendue.
+
+**Actions prises** :
+- ✅ Diagnostic complet documenté dans `.ai/explore/CRITICAL_DATA_MISSING_EXPLORATION.md`
+- ✅ Script de vérification SQL créé : `scripts/diagnostic_critical_data.py`
+- ✅ Proposition d'implémentation Discovery UGC (référence spnkr_import_db.py)
+
+**Prochaines étapes (phase correction)** :
+1. Implémenter les appels Discovery UGC dans `_process_single_match()` quand `options.with_assets=True`
+2. Enrichir `MatchInfo` avec les PublicName avant de passer à `transform_match_stats()`
+
+---
+
 ### [2026-02-05] - 🔴 CORRECTION CRITIQUE : Chargement des stats coéquipiers (Multi-DB)
 
 **Statut** : ✅ **CORRIGÉ** - Ne plus refaire cette erreur !

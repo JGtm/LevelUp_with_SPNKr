@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Guillaume", email = ""}
+    {name = "Guillaume", email = "guillaume@example.com"}
 ]
 keywords = ["halo", "infinite", "stats", "visualization", "streamlit", "duckdb", "analytics"]
 classifiers = [

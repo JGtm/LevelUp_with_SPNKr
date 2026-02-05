@@ -148,6 +148,32 @@ data/
 | `docs/BACKUP_RESTORE.md` | Backup/Restore |
 | `docs/FAQ.md` | Questions fréquentes |
 
+## Problèmes Connus
+
+### 🔴 CRITIQUE - Données Manquantes en BDD (2026-02-05)
+
+**Priorité** : HAUTE  
+**Status** : 🔍 EN EXPLORATION
+
+**Problèmes identifiés** :
+1. Noms des cartes, modes et playlists non enregistrés (`playlist_name`, `map_name`, `pair_name`, `game_variant_name` sont NULL)
+2. Noms des joueurs par match non récupérés correctement
+3. Joueurs non affectés à l'équipe adverse
+4. Nom de l'équipe adverse non récupéré
+5. Valeurs "attendues" pour frags et morts non récupérées (`kills_expected`, `deaths_expected`, `assists_expected` sont NULL)
+
+**Commit de référence** : `1a6115007272619985485be0f94cc69e6be5c2d2` (fonctionnait correctement)
+
+**Documentation** :
+- Diagnostic : `.ai/diagnostics/CRITICAL_DATA_MISSING_2026-02-05.md`
+- Exploration : `.ai/explore/CRITICAL_DATA_MISSING_EXPLORATION.md`
+
+**Fichiers concernés** :
+- `src/data/sync/transformers.py` : Extraction des données depuis JSON
+- `src/data/sync/engine.py` : Synchronisation et insertion en BDD
+- `src/data/repositories/duckdb_repo.py` : Récupération depuis BDD
+
 ## Dernière Mise à Jour
 
+**2026-02-05** : 🔴 Problème critique identifié - Données manquantes en BDD (en exploration)  
 **2026-02-01** : Phase 6 terminée - Documentation & Branding "LevelUp"

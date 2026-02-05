@@ -834,7 +834,7 @@ def transform_skill_stats(
             if enemy_mmrs:
                 enemy_mmr = sum(enemy_mmrs) / len(enemy_mmrs)
 
-        # Extraire expected/stddev
+        # Extraire expected/stddev (aligné legacy loaders.py et API : Kills, Deaths, Assists)
         stat_performances = result.get("StatPerformances")
         kills_expected = None
         kills_stddev = None
@@ -843,22 +843,37 @@ def transform_skill_stats(
         assists_expected = None
         assists_stddev = None
 
-        if isinstance(stat_performances, dict):
-            for stat_name, perf in stat_performances.items():
-                if not isinstance(perf, dict):
-                    continue
-                expected = _safe_float(perf.get("Expected"))
-                stddev = _safe_float(perf.get("StdDev"))
+        def _perf_value(sp: dict | None, key: str, subkey: str) -> float | None:
+            """Récupère StatPerformances[key][subkey] avec variantes de casse."""
+            if not isinstance(sp, dict):
+                return None
+            for k, v in sp.items():
+                if k and k.lower() == key.lower() and isinstance(v, dict):
+                    return _safe_float(v.get(subkey))
+            return None
 
-                if stat_name.lower() == "kills":
-                    kills_expected = expected
-                    kills_stddev = stddev
-                elif stat_name.lower() == "deaths":
-                    deaths_expected = expected
-                    deaths_stddev = stddev
-                elif stat_name.lower() == "assists":
-                    assists_expected = expected
-                    assists_stddev = stddev
+        if isinstance(stat_performances, dict):
+            # Accès direct (API retourne Kills, Deaths, Assists)
+            kills_expected = _perf_value(stat_performances, "Kills", "Expected")
+            kills_stddev = _perf_value(stat_performances, "Kills", "StdDev")
+            deaths_expected = _perf_value(stat_performances, "Deaths", "Expected")
+            deaths_stddev = _perf_value(stat_performances, "Deaths", "StdDev")
+            assists_expected = _perf_value(stat_performances, "Assists", "Expected")
+            assists_stddev = _perf_value(stat_performances, "Assists", "StdDev")
+
+            # Fallback: itération si structure différente
+            if kills_expected is None and deaths_expected is None and assists_expected is None:
+                for stat_name, perf in stat_performances.items():
+                    if not isinstance(perf, dict):
+                        continue
+                    expected = _safe_float(perf.get("Expected"))
+                    stddev = _safe_float(perf.get("StdDev"))
+                    if stat_name and stat_name.lower() == "kills":
+                        kills_expected, kills_stddev = expected, stddev
+                    elif stat_name and stat_name.lower() == "deaths":
+                        deaths_expected, deaths_stddev = expected, stddev
+                    elif stat_name and stat_name.lower() == "assists":
+                        assists_expected, assists_stddev = expected, stddev
 
         return PlayerMatchStatsRow(
             match_id=match_id,
@@ -930,12 +945,32 @@ def transform_highlight_events(
     return rows
 
 
+def _normalize_gamertag(raw: str | bytes | Any) -> str | None:
+    """Normalise un gamertag pour éviter troncature et problèmes d'encodage.
+
+    Aligné avec le script legacy spnkr_import_db (_extract_gamertags_from_match_stats).
+    Utilise str().strip() comme le legacy et gère les bytes mal encodés.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8", errors="replace")
+        except Exception:
+            return None
+    s = str(raw).strip() if raw else ""
+    return s if s else None
+
+
 def extract_aliases(
     match_json: dict[str, Any],
     *,
     source: str = "match_roster",
 ) -> list[XuidAliasRow]:
     """Extrait les paires XUID → Gamertag d'un match.
+
+    Aligné avec le script legacy spnkr_import_db (_extract_gamertags_from_match_stats).
+    Gère correctement l'encodage des gamertags (évite troncature/mojibake).
 
     Args:
         match_json: JSON brut du match.
@@ -957,28 +992,32 @@ def extract_aliases(
             continue
 
         pid = player.get("PlayerId")
-        gamertag = player.get("PlayerGamertag") or player.get("Gamertag")
+        gamertag_raw = player.get("PlayerGamertag") or player.get("Gamertag")
 
-        # Extraire le XUID
+        # Extraire le XUID (aligné legacy: str ou json.dumps pour dict)
         xuid = None
         if isinstance(pid, str):
             m = XUID_RE.search(pid)
             if m:
                 xuid = m.group(1)
         elif isinstance(pid, dict):
-            # Format {"Xuid": 123456789}
             xuid_val = pid.get("Xuid") or pid.get("xuid")
-            if xuid_val:
+            if xuid_val is not None:
                 xuid = str(xuid_val)
+            else:
+                try:
+                    s = json.dumps(pid)
+                    m = XUID_RE.search(s)
+                    if m:
+                        xuid = m.group(1)
+                except (TypeError, ValueError):
+                    pass
 
         if not xuid or xuid in seen_xuids:
             continue
 
-        # Nettoyer le gamertag
-        if not gamertag or not isinstance(gamertag, str):
-            continue
-
-        gt = gamertag.strip()
+        # Nettoyer et normaliser le gamertag (évite troncature/encodage)
+        gt = _normalize_gamertag(gamertag_raw)
         if not gt:
             continue
 

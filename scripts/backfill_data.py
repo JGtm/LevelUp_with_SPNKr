@@ -27,6 +27,12 @@ Usage:
     # Forcer la récupération de enemy_mmr pour TOUS les matchs
     python scripts/backfill_data.py --player JGtm --enemy-mmr --force-enemy-mmr
 
+    # Récupérer les noms (playlist, map, pair) via Discovery UGC
+    python scripts/backfill_data.py --player JGtm --assets
+
+    # Forcer la ré-extraction des aliases (gamertags)
+    python scripts/backfill_data.py --player JGtm --force-aliases
+
     # Backfill pour tous les joueurs
     python scripts/backfill_data.py --all --all-data
 
@@ -53,7 +59,11 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.data.sync.api_client import SPNKrAPIClient, get_tokens_from_env
+from src.data.sync.api_client import (
+    SPNKrAPIClient,
+    enrich_match_info_with_assets,
+    get_tokens_from_env,
+)
 from src.data.sync.transformers import (
     extract_aliases,
     extract_medals,
@@ -215,10 +225,13 @@ def _insert_personal_score_rows(conn, rows: list) -> int:
 
 
 def _insert_alias_rows(conn, rows: list) -> int:
-    """Insère les aliases XUID."""
+    """Insère les aliases XUID (XuidAliasRow n'a pas updated_at, utiliser last_seen)."""
     if not rows:
         return 0
 
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
     inserted = 0
     for row in rows:
         try:
@@ -231,7 +244,7 @@ def _insert_alias_rows(conn, rows: list) -> int:
                     row.gamertag,
                     row.last_seen.isoformat() if row.last_seen else None,
                     row.source,
-                    row.updated_at.isoformat() if row.updated_at else None,
+                    now.isoformat(),
                 ),
             )
             inserted += 1
@@ -362,9 +375,12 @@ def _find_matches_missing_data(
     performance_scores: bool = False,
     accuracy: bool = False,
     enemy_mmr: bool = False,
+    assets: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     force_enemy_mmr: bool = False,
+    force_aliases: bool = False,
+    force_assets: bool = False,
     max_matches: int | None = None,
 ) -> list[str]:
     """Trouve les matchs avec des données manquantes."""
@@ -458,6 +474,23 @@ def _find_matches_missing_data(
             """)
             params.append(xuid)
 
+    if assets:
+        if force_assets:
+            conditions.append("1=1")
+        else:
+            # Matchs où les "noms" sont en fait des UUID (fallback du sync)
+            # Quand le nom manque, transform_match_stats stocke l'ID dans la colonne name
+            conditions.append("""
+                ms.playlist_name IS NULL OR ms.playlist_name = ms.playlist_id
+                OR ms.map_name IS NULL OR ms.map_name = ms.map_id
+                OR ms.pair_name IS NULL OR ms.pair_name = ms.pair_id
+                OR ms.game_variant_name IS NULL OR ms.game_variant_name = ms.game_variant_id
+            """)
+
+    if force_aliases:
+        # Inclure tous les matchs pour ré-extraire les aliases (encodage corrigé)
+        conditions.append("1=1")
+
     if not conditions:
         return []
 
@@ -491,10 +524,13 @@ async def backfill_player_data(
     aliases: bool = False,
     accuracy: bool = False,
     enemy_mmr: bool = False,
+    assets: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     force_enemy_mmr: bool = False,
+    force_aliases: bool = False,
+    force_assets: bool = False,
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
 
@@ -523,6 +559,7 @@ async def backfill_player_data(
         aliases = True
         accuracy = True
         enemy_mmr = True
+        assets = True
 
     # Si force_accuracy est activé sans accuracy, l'activer automatiquement
     if force_accuracy and not accuracy:
@@ -532,9 +569,26 @@ async def backfill_player_data(
     if force_enemy_mmr and not enemy_mmr:
         enemy_mmr = True
 
+    if force_aliases and not aliases:
+        aliases = True
+
+    if force_assets and not assets:
+        assets = True
+
     # Vérifier qu'au moins une option est activée
     if not any(
-        [medals, events, skill, personal_scores, performance_scores, aliases, accuracy, enemy_mmr]
+        [
+            medals,
+            events,
+            skill,
+            personal_scores,
+            performance_scores,
+            aliases,
+            accuracy,
+            enemy_mmr,
+            assets,
+            force_aliases,
+        ]
     ):
         logger.warning(
             "Aucune option de backfill activée. Utilisez --all ou spécifiez des options."
@@ -550,6 +604,7 @@ async def backfill_player_data(
             "aliases_inserted": 0,
             "accuracy_updated": 0,
             "enemy_mmr_updated": 0,
+            "assets_updated": 0,
         }
 
     # Vérifier que c'est un joueur DuckDB v4
@@ -568,6 +623,7 @@ async def backfill_player_data(
             "aliases_inserted": 0,
             "accuracy_updated": 0,
             "enemy_mmr_updated": 0,
+            "assets_updated": 0,
         }
 
     # Obtenir le chemin de la DB
@@ -585,6 +641,7 @@ async def backfill_player_data(
             "aliases_inserted": 0,
             "accuracy_updated": 0,
             "enemy_mmr_updated": 0,
+            "assets_updated": 0,
         }
 
     # Obtenir le XUID depuis la DB
@@ -637,6 +694,8 @@ async def backfill_player_data(
                     "personal_scores_inserted": 0,
                     "aliases_inserted": 0,
                     "accuracy_updated": 0,
+                    "enemy_mmr_updated": 0,
+                    "assets_updated": 0,
                 }
         finally:
             conn.close()
@@ -736,9 +795,12 @@ async def backfill_player_data(
             performance_scores=performance_scores,
             accuracy=accuracy,
             enemy_mmr=enemy_mmr,
+            assets=assets,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
             force_enemy_mmr=force_enemy_mmr,
+            force_aliases=force_aliases,
+            force_assets=force_assets,
             max_matches=max_matches,
         )
 
@@ -755,6 +817,8 @@ async def backfill_player_data(
                 "personal_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
+                "enemy_mmr_updated": 0,
+                "assets_updated": 0,
             }
 
         if not match_ids:
@@ -768,6 +832,8 @@ async def backfill_player_data(
                 "personal_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
+                "enemy_mmr_updated": 0,
+                "assets_updated": 0,
             }
 
         # Récupérer les tokens
@@ -783,6 +849,8 @@ async def backfill_player_data(
                 "personal_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
+                "enemy_mmr_updated": 0,
+                "assets_updated": 0,
             }
 
         # Traiter les matchs
@@ -794,6 +862,7 @@ async def backfill_player_data(
         total_aliases = 0
         total_accuracy_updated = 0
         total_enemy_mmr_updated = 0
+        total_assets_updated = 0
 
         async with SPNKrAPIClient(
             tokens=tokens,
@@ -808,6 +877,10 @@ async def backfill_player_data(
                     if not stats_json:
                         logger.warning(f"Impossible de récupérer {match_id}")
                         continue
+
+                    # Enrichir avec les noms depuis Discovery UGC (playlist, map, pair, game_variant)
+                    if assets:
+                        await enrich_match_info_with_assets(client, stats_json)
 
                     # Extraire les XUIDs pour skill
                     xuids = extract_xuids_from_match(stats_json)
@@ -832,7 +905,40 @@ async def backfill_player_data(
                         "aliases": 0,
                         "accuracy": 0,
                         "enemy_mmr": 0,
+                        "assets": 0,
                     }
+
+                    # Assets (noms playlist/map/pair) — mise à jour match_stats
+                    if assets:
+                        from src.data.sync.transformers import create_metadata_resolver
+
+                        metadata_resolver = create_metadata_resolver(None)
+                        match_row = transform_match_stats(
+                            stats_json, xuid, metadata_resolver=metadata_resolver
+                        )
+                        if match_row and (
+                            match_row.playlist_name
+                            or match_row.map_name
+                            or match_row.pair_name
+                            or match_row.game_variant_name
+                        ):
+                            conn.execute(
+                                """UPDATE match_stats SET
+                                    playlist_name = COALESCE(?, playlist_name),
+                                    map_name = COALESCE(?, map_name),
+                                    pair_name = COALESCE(?, pair_name),
+                                    game_variant_name = COALESCE(?, game_variant_name)
+                                    WHERE match_id = ?""",
+                                (
+                                    match_row.playlist_name,
+                                    match_row.map_name,
+                                    match_row.pair_name,
+                                    match_row.game_variant_name,
+                                    match_id,
+                                ),
+                            )
+                            inserted_this_match["assets"] = 1
+                            total_assets_updated += 1
 
                     # Accuracy (doit être fait avant les autres car utilise transform_match_stats)
                     if accuracy:
@@ -957,6 +1063,8 @@ async def backfill_player_data(
                         parts.append("accuracy")
                     if inserted_this_match.get("enemy_mmr", 0) > 0:
                         parts.append("enemy_mmr")
+                    if inserted_this_match.get("assets", 0) > 0:
+                        parts.append("noms assets")
 
                     if parts:
                         logger.info(f"  ✅ {', '.join(parts)} inséré(s)")
@@ -983,6 +1091,7 @@ async def backfill_player_data(
             "aliases_inserted": total_aliases,
             "accuracy_updated": total_accuracy_updated,
             "enemy_mmr_updated": total_enemy_mmr_updated,
+            "assets_updated": total_assets_updated,
         }
 
     finally:
@@ -1002,10 +1111,13 @@ async def backfill_all_players(
     aliases: bool = False,
     accuracy: bool = False,
     enemy_mmr: bool = False,
+    assets: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     force_enemy_mmr: bool = False,
+    force_aliases: bool = False,
+    force_assets: bool = False,
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
     players = list_duckdb_v4_players()
@@ -1027,6 +1139,7 @@ async def backfill_all_players(
         "aliases_inserted": 0,
         "accuracy_updated": 0,
         "enemy_mmr_updated": 0,
+        "assets_updated": 0,
     }
 
     for i, player_info in enumerate(players, 1):
@@ -1047,10 +1160,13 @@ async def backfill_all_players(
             aliases=aliases,
             accuracy=accuracy,
             enemy_mmr=enemy_mmr,
+            assets=assets,
             all_data=all_data,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
             force_enemy_mmr=force_enemy_mmr,
+            force_aliases=force_aliases,
+            force_assets=force_assets,
         )
 
         # Agréger les résultats
@@ -1176,6 +1292,24 @@ def main() -> int:
         help="Force la récupération de enemy_mmr pour TOUS les matchs, même s'il existe déjà",
     )
 
+    parser.add_argument(
+        "--assets",
+        action="store_true",
+        help="Récupérer les noms (playlist, map, pair, game_variant) via Discovery UGC",
+    )
+
+    parser.add_argument(
+        "--force-assets",
+        action="store_true",
+        help="Force la récupération des noms pour TOUS les matchs",
+    )
+
+    parser.add_argument(
+        "--force-aliases",
+        action="store_true",
+        help="Force la ré-extraction des aliases pour tous les matchs (encodage corrigé)",
+    )
+
     args = parser.parse_args()
 
     # Validation
@@ -1198,10 +1332,13 @@ def main() -> int:
                     aliases=args.aliases,
                     accuracy=args.accuracy,
                     enemy_mmr=args.enemy_mmr,
+                    assets=args.assets,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
                     force_enemy_mmr=args.force_enemy_mmr,
+                    force_aliases=args.force_aliases,
+                    force_assets=args.force_assets,
                 )
             )
 
@@ -1222,6 +1359,8 @@ def main() -> int:
                 logger.info(f"Accuracy mis à jour: {totals['accuracy_updated']}")
             if args.enemy_mmr:
                 logger.info(f"Enemy MMR mis à jour: {totals['enemy_mmr_updated']}")
+            if args.assets:
+                logger.info(f"Noms assets mis à jour: {totals['assets_updated']}")
         else:
             result = asyncio.run(
                 backfill_player_data(
@@ -1237,10 +1376,13 @@ def main() -> int:
                     aliases=args.aliases,
                     accuracy=args.accuracy,
                     enemy_mmr=args.enemy_mmr,
+                    assets=args.assets,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
                     force_enemy_mmr=args.force_enemy_mmr,
+                    force_aliases=args.force_aliases,
+                    force_assets=args.force_assets,
                 )
             )
 
@@ -1257,6 +1399,8 @@ def main() -> int:
                 logger.info(f"Accuracy mis à jour: {result['accuracy_updated']}")
             if args.enemy_mmr:
                 logger.info(f"Enemy MMR mis à jour: {result['enemy_mmr_updated']}")
+            if args.assets:
+                logger.info(f"Noms assets mis à jour: {result['assets_updated']}")
 
         return 0
 

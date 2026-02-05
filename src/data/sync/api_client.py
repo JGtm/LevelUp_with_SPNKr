@@ -795,3 +795,39 @@ class SPNKrAPIClient:
             pass
 
         return None
+
+
+async def enrich_match_info_with_assets(client: SPNKrAPIClient, stats_json: dict[str, Any]) -> None:
+    """Enrichit MatchInfo avec les PublicName depuis Discovery UGC (in-place).
+
+    Utilisé par le moteur de sync et le script backfill pour récupérer
+    les noms des playlists, maps, pairs et game variants.
+    """
+    match_info = stats_json.get("MatchInfo")
+    if not isinstance(match_info, dict):
+        return
+
+    ASSET_KEYS = [
+        ("Playlist", "Playlists"),
+        ("MapVariant", "Maps"),
+        ("PlaylistMapModePair", "PlaylistMapModePairs"),
+        ("UgcGameVariant", "GameVariants"),
+    ]
+
+    for json_key, api_type in ASSET_KEYS:
+        ref = match_info.get(json_key)
+        if not isinstance(ref, dict):
+            continue
+        aid = ref.get("AssetId")
+        vid = ref.get("VersionId")
+        if not aid or not vid:
+            continue
+
+        try:
+            asset = await client.get_asset(api_type, aid, vid)
+            if isinstance(asset, dict):
+                name = asset.get("PublicName")
+                if isinstance(name, str) and name.strip():
+                    ref["PublicName"] = name.strip()
+        except Exception as e:
+            logger.debug(f"Asset {api_type} {aid}: {e}")

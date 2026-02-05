@@ -31,7 +31,12 @@ from typing import Any
 
 import duckdb
 
-from src.data.sync.api_client import SPNKrAPIClient, Tokens, get_tokens_from_env
+from src.data.sync.api_client import (
+    SPNKrAPIClient,
+    Tokens,
+    enrich_match_info_with_assets,
+    get_tokens_from_env,
+)
 from src.data.sync.models import (
     CareerRankData,
     MatchStatsRow,
@@ -632,6 +637,10 @@ class DuckDBSyncEngine:
             if stats_json is None:
                 result["error"] = f"Impossible de récupérer {match_id}"
                 return result
+
+            # Enrichir MatchInfo avec les PublicName depuis Discovery UGC (noms cartes/playlists)
+            if options.with_assets:
+                await enrich_match_info_with_assets(client, stats_json)
 
             # Extraire les XUIDs pour l'appel skill
             xuids = extract_xuids_from_match(stats_json)
