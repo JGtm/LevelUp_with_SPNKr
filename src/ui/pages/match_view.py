@@ -253,12 +253,13 @@ def render_match_view(
 
         render_expected_vs_actual(row, pm, colors, df_full=df_full, db_path=db_path, xuid=xuid)
 
-    # Section Participation (PersonalScores) - Sprint 8.2
+    # Section Participation (PersonalScores) - Radar unifié 6 axes
     render_participation_section(
         db_path=db_path,
         match_id=match_id,
         xuid=xuid,
         db_key=db_key,
+        match_row=row,
     )
 
     # Némésis / Souffre-douleur

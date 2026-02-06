@@ -777,32 +777,69 @@ def render_participation_trend_section(
         if (df_a is None or df_a.is_empty()) and (df_b is None or df_b.is_empty()):
             return
 
-        from src.ui.components.radar_chart import create_participation_radar
-        from src.visualization import aggregate_participation_for_radar
+        from src.ui.components.radar_chart import create_participation_profile_radar
+        from src.visualization.participation_radar import (
+            RADAR_AXIS_LINES,
+            compute_participation_profile,
+            get_radar_thresholds,
+        )
 
-        radar_data = []
+        thresholds = get_radar_thresholds(db_path) if db_path else None
+
+        def _match_row_from_df(dff: pd.DataFrame) -> dict | None:
+            if dff.empty:
+                return None
+            return {
+                "deaths": int(dff["deaths"].sum()) if "deaths" in dff.columns else 0,
+                "time_played_seconds": float(dff["time_played_seconds"].sum())
+                if "time_played_seconds" in dff.columns
+                else 600.0 * len(dff),
+                "pair_name": dff["pair_name"].iloc[0]
+                if "pair_name" in dff.columns and len(dff) > 0
+                else None,
+            }
+
+        profiles = []
 
         if df_a is not None and not df_a.is_empty():
-            data_a = aggregate_participation_for_radar(
-                df_a, name="Session A", color=SESSION_COLORS["session_a"]
+            match_row_a = _match_row_from_df(df_session_a)
+            profile_a = compute_participation_profile(
+                df_a,
+                match_row=match_row_a,
+                name="Session A",
+                color=SESSION_COLORS["session_a"],
+                pair_name=match_row_a.get("pair_name") if match_row_a else None,
+                thresholds=thresholds,
             )
-            radar_data.append(data_a)
+            profiles.append(profile_a)
 
         if df_b is not None and not df_b.is_empty():
-            data_b = aggregate_participation_for_radar(
-                df_b, name="Session B", color=SESSION_COLORS["session_b"]
+            match_row_b = _match_row_from_df(df_session_b)
+            profile_b = compute_participation_profile(
+                df_b,
+                match_row=match_row_b,
+                name="Session B",
+                color=SESSION_COLORS["session_b"],
+                pair_name=match_row_b.get("pair_name") if match_row_b else None,
+                thresholds=thresholds,
             )
-            radar_data.append(data_b)
+            profiles.append(profile_b)
 
-        if not radar_data:
+        if not profiles:
             return
 
         st.markdown("---")
         st.markdown("#### 🎯 Évolution du profil de participation")
         st.caption("Comparaison de la contribution au score entre les deux sessions")
 
-        fig = create_participation_radar(radar_data, title="", height=380)
-        st.plotly_chart(fig, width="stretch")
+        col_radar, col_legend = st.columns([2, 1])
+        with col_radar:
+            fig = create_participation_profile_radar(profiles, title="", height=380)
+            st.plotly_chart(fig, use_container_width=True)
+        with col_legend:
+            st.markdown("**Axes**")
+            for line in RADAR_AXIS_LINES:
+                st.markdown(line)
 
     except Exception:
         pass  # Ne pas bloquer la page en cas d'erreur

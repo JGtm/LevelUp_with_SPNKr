@@ -7,6 +7,27 @@
 
 ## Journal
 
+### [2026-02-06] - ✅ Radar participation unifié : implémentation + raffinements
+
+**Statut** : ✅ **Terminé**
+
+**Contexte** :
+Refonte de la section "Participation au match" : un seul radar à 6 axes, réutilisable.
+
+**Réalisations** :
+- `src/visualization/participation_radar.py` : `RADAR_THRESHOLDS`, `RADAR_AXIS_LINES`, `compute_participation_profile()`, `compute_global_radar_thresholds()`, `get_radar_thresholds()`
+- `src/ui/components/radar_chart.py` : `create_participation_profile_radar()` (thème Halo)
+- `src/ui/pages/match_view_participation.py` : radar + légende sur même rangée (2/3 + 1/3)
+- `src/ui/pages/teammates.py` : Complémentarité avec radar unifié
+- `src/ui/pages/session_compare.py` : Comparaison sessions migrée
+- `tests/test_participation_radar.py` : tests unitaires
+
+**Raffinements** : Seuils globaux (meilleur match hors Firefight/BTB, facteur 0.85) ; Survie = mélange morts/min + durée vie moy (50/50) ; Légende des axes à droite du radar ; Thème sombre cohérent.
+
+**Document** : `.ai/features/RADAR_PARTICIPATION_UNIFIE_PLAN.md`
+
+---
+
 ### [2026-02-06] - ✅ Sprint 3 TERMINÉ : Migration SQLite → DuckDB Complète
 
 **Statut** : ✅ **TERMINÉ** - Toutes les tâches du sprint complétées

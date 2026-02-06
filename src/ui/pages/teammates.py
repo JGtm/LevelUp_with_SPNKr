@@ -95,7 +95,7 @@ def _load_teammate_stats_from_own_db(
 
 
 # =============================================================================
-# Helpers Sprint 8.2 - Radar de complémentarité
+# Radar de complémentarité (profil participation 6 axes)
 # =============================================================================
 
 
@@ -110,110 +110,128 @@ def _render_synergy_radar(
     xuid: str | None = None,
     friend_xuid: str | None = None,
 ) -> None:
-    """Affiche le radar de complémentarité entre moi et un coéquipier.
+    """Affiche le radar de complémentarité (6 axes) entre moi et un coéquipier.
 
-    Montre le profil de jeu (% kills, % assists, % objectifs, K/D, précision).
-    Utilise les PersonalScores si disponibles pour les % objectifs.
+    Objectifs, Combat, Support, Score, Impact, Survie.
+    Utilise PersonalScores depuis ma DB et la DB du coéquipier.
 
     Args:
         sub: DataFrame de mes matchs.
         friend_sub: DataFrame des matchs du coéquipier.
         me_name: Mon nom.
-        friend_name: Nom du coéquipier.
+        friend_name: Nom (gamertag) du coéquipier.
         colors_by_name: Mapping nom → couleur.
-        db_path: Chemin vers la DB (pour PersonalScores).
-        xuid: Mon XUID (pour PersonalScores).
-        friend_xuid: XUID du coéquipier (pour PersonalScores).
+        db_path: Chemin vers ma DB.
+        xuid: Mon XUID.
+        friend_xuid: XUID du coéquipier (non utilisé pour le chargement).
     """
     if sub.empty or friend_sub.empty:
         return
 
-    from src.ui.components.radar_chart import create_teammate_synergy_radar
-
-    # Récupérer db_path et xuid depuis session_state si non fournis
     if db_path is None:
         db_path = st.session_state.get("db_path", "")
     if xuid is None:
         xuid = st.session_state.get("xuid", "")
 
-    # Obtenir les match_ids partagés
-    shared_match_ids = list(set(sub["match_id"].tolist()) & set(friend_sub["match_id"].tolist()))
+    shared_match_ids = list(
+        set(sub["match_id"].astype(str)) & set(friend_sub["match_id"].astype(str))
+    )
+    if not shared_match_ids:
+        return
 
-    # Essayer de charger les PersonalScores pour les % objectifs
-    my_obj_pct = 0.0
-    friend_obj_pct = 0.0
+    from pathlib import Path
 
-    if db_path and xuid and shared_match_ids:
+    from src.data.repositories import DuckDBRepository
+    from src.ui.components.radar_chart import create_participation_profile_radar
+    from src.visualization.participation_radar import (
+        RADAR_AXIS_LINES,
+        compute_participation_profile,
+        get_radar_thresholds,
+    )
+
+    profiles = []
+
+    thresholds = get_radar_thresholds(db_path) if db_path else None
+
+    # Mon profil
+    try:
+        repo = DuckDBRepository(db_path, xuid or "")
+        if repo.has_personal_score_awards():
+            my_ps = repo.load_personal_score_awards_as_polars(match_ids=shared_match_ids)
+            if not my_ps.is_empty():
+                match_row_me = {
+                    "deaths": int(sub["deaths"].sum()) if "deaths" in sub.columns else 0,
+                    "time_played_seconds": float(sub["time_played_seconds"].sum())
+                    if "time_played_seconds" in sub.columns
+                    else 600.0 * len(sub),
+                    "pair_name": sub["pair_name"].iloc[0]
+                    if "pair_name" in sub.columns and len(sub) > 0
+                    else None,
+                }
+                profile_me = compute_participation_profile(
+                    my_ps,
+                    match_row=match_row_me,
+                    name=me_name,
+                    color=colors_by_name.get(me_name, "#636EFA"),
+                    pair_name=match_row_me.get("pair_name"),
+                    thresholds=thresholds,
+                )
+                profiles.append(profile_me)
+    except Exception:
+        pass
+
+    # Profil du coéquipier (depuis sa DB)
+    base_dir = Path(db_path).parent.parent
+    friend_db_path = base_dir / friend_name / "stats.duckdb"
+    if friend_db_path.exists():
         try:
-            from src.data.repositories import DuckDBRepository
-            from src.visualization import compute_participation_percentages
-
-            repo = DuckDBRepository(db_path, xuid)
-            if repo.has_personal_score_awards():
-                # Mes données
-                my_ps = repo.load_personal_score_awards_as_polars(match_ids=shared_match_ids)
-                if not my_ps.is_empty():
-                    my_pcts = compute_participation_percentages(my_ps)
-                    my_obj_pct = my_pcts.get("objectives_pct", 0)
-
-                # Données du coéquipier (si on a son XUID et qu'il est dans la même DB)
-                # Note: Les PersonalScores du coéquipier ne sont pas stockés dans notre DB
-                # On garde 0 pour lui sauf si on a une autre source
+            friend_repo = DuckDBRepository(str(friend_db_path), "")
+            if friend_repo.has_personal_score_awards():
+                friend_ps = friend_repo.load_personal_score_awards_as_polars(
+                    match_ids=shared_match_ids
+                )
+                if not friend_ps.is_empty():
+                    match_row_fr = {
+                        "deaths": int(friend_sub["deaths"].sum())
+                        if "deaths" in friend_sub.columns
+                        else 0,
+                        "time_played_seconds": float(friend_sub["time_played_seconds"].sum())
+                        if "time_played_seconds" in friend_sub.columns
+                        else 600.0 * len(friend_sub),
+                        "pair_name": friend_sub["pair_name"].iloc[0]
+                        if "pair_name" in friend_sub.columns and len(friend_sub) > 0
+                        else None,
+                    }
+                    profile_fr = compute_participation_profile(
+                        friend_ps,
+                        match_row=match_row_fr,
+                        name=friend_name,
+                        color=colors_by_name.get(friend_name, "#EF553B"),
+                        pair_name=match_row_fr.get("pair_name"),
+                        thresholds=thresholds,
+                    )
+                    profiles.append(profile_fr)
         except Exception:
             pass
 
-    # Calculer les stats agrégées pour chaque joueur
-    def compute_profile(df: pd.DataFrame, obj_pct: float = 0.0) -> dict:
-        total_kills = df["kills"].sum()
-        total_deaths = df["deaths"].sum()
-        total_assists = df["assists"].sum()
-        total_actions = total_kills + total_assists
-
-        return {
-            "kills_pct": (total_kills / total_actions * 100) if total_actions > 0 else 0,
-            "assists_pct": (total_assists / total_actions * 100) if total_actions > 0 else 0,
-            "objectives_pct": obj_pct,
-            "kd_ratio": total_kills / max(total_deaths, 1),
-            "accuracy": df["accuracy"].mean() if "accuracy" in df.columns else 0,
-        }
-
-    my_profile = compute_profile(sub, my_obj_pct)
-    my_profile["name"] = me_name
-    my_profile["color"] = colors_by_name.get(me_name, "#636EFA")
-
-    friend_profile = compute_profile(friend_sub, friend_obj_pct)
-    friend_profile["name"] = friend_name
-    friend_profile["color"] = colors_by_name.get(friend_name, "#EF553B")
+    if not profiles:
+        st.subheader("🤝 Complémentarité")
+        st.info("Données de participation indisponibles (PersonalScores manquants).")
+        return
 
     st.subheader("🤝 Complémentarité")
-
-    # Afficher le radar
-    fig = create_teammate_synergy_radar(
-        me_data=my_profile,
-        teammate_data=friend_profile,
-        title="",
-        height=350,
-    )
-    st.plotly_chart(fig, width="stretch")
-
-    # Analyse textuelle de la complémentarité
-    my_kills_pct = my_profile["kills_pct"]
-    friend_kills_pct = friend_profile["kills_pct"]
-
-    analysis_parts = []
-
-    if abs(my_kills_pct - friend_kills_pct) > 20:
-        if my_kills_pct > friend_kills_pct:
-            analysis_parts.append(f"Tu es plus orienté frags, {friend_name} supporte davantage")
-        else:
-            analysis_parts.append(f"{friend_name} est plus orienté frags, tu supportes davantage")
-    else:
-        analysis_parts.append("Vous avez un style de jeu comparable")
-
-    if my_obj_pct > 10:
-        analysis_parts.append(f"Tu contribues {my_obj_pct:.0f}% aux objectifs")
-
-    st.caption(f"💡 **Profil** : {'. '.join(analysis_parts)}.")
+    col_radar, col_legend = st.columns([2, 1])
+    with col_radar:
+        fig = create_participation_profile_radar(
+            profiles,
+            title="Profil de participation",
+            height=380,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    with col_legend:
+        st.markdown("**Axes**")
+        for line in RADAR_AXIS_LINES:
+            st.markdown(line)
 
 
 def render_teammates_page(

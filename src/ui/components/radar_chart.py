@@ -9,6 +9,9 @@ from typing import Any
 
 import plotly.graph_objects as go
 
+from src.config import THEME_COLORS
+from src.visualization.theme import apply_halo_plot_style
+
 
 def create_radar_chart(
     data: list[dict[str, Any]],
@@ -423,6 +426,143 @@ def create_participation_radar(
     )
 
     return fig
+
+
+# =============================================================================
+# Radar de participation unifié (6 axes) - Réutilisable Dernier match / Coéquipiers
+# =============================================================================
+
+
+def create_participation_profile_radar(
+    profiles: list[dict[str, Any]],
+    *,
+    title: str = "Profil de participation",
+    height: int = 400,
+) -> go.Figure:
+    """Crée un radar à 6 axes : Objectifs, Combat, Support, Score, Impact, Survie.
+
+    Conçu pour être réutilisable dans Dernier match et Mes coéquipiers.
+    Les profils doivent être au format retourné par compute_participation_profile().
+
+    Args:
+        profiles: Liste de dicts avec format:
+            [
+                {
+                    "name": "Moi" | "Coéquipier" | "Ce match",
+                    "objectifs_raw": 300,
+                    "combat_raw": 800,
+                    "support_raw": 150,
+                    "score_raw": 1200,
+                    "impact_raw": 120.0,  # pts/min
+                    "survie_raw": 0.8,     # 0-1
+                    "objectifs_norm": 0.375,
+                    "combat_norm": 0.53,
+                    ...
+                    "color": "#636EFA",
+                },
+                ...
+            ]
+        title: Titre du graphe.
+        height: Hauteur en pixels.
+
+    Returns:
+        Figure Plotly.
+    """
+    categories = ["Objectifs", "Combat", "Support", "Score", "Impact", "Survie"]
+
+    if not profiles:
+        fig = go.Figure()
+        fig.update_layout(
+            title={"text": title, "x": 0.5, "xanchor": "center"},
+            height=height,
+        )
+        return fig
+
+    fig = go.Figure()
+
+    for item in profiles:
+        name = item.get("name", "")
+        color = item.get("color")
+
+        # Valeurs normalisées (0-1) pour le tracé
+        obj_n = item.get("objectifs_norm") or 0
+        combat_n = item.get("combat_norm") or 0
+        support_n = item.get("support_norm") or 0
+        score_n = item.get("score_norm") or 0
+        impact_n = item.get("impact_norm") or 0
+        survie_n = item.get("survie_norm") or 0
+
+        values = [obj_n, combat_n, support_n, score_n, impact_n, survie_n, obj_n]
+        theta = categories + [categories[0]]
+
+        # Valeurs brutes pour le hover
+        obj_r = item.get("objectifs_raw") or 0
+        combat_r = item.get("combat_raw") or 0
+        support_r = item.get("support_raw") or 0
+        score_r = item.get("score_raw") or 0
+        impact_r = item.get("impact_raw") or 0
+        survie_pct = (item.get("survie_raw") or 0) * 100
+
+        customdata = [
+            [f"{int(obj_r):,} pts"],
+            [f"{int(combat_r):,} pts"],
+            [f"{int(support_r):,} pts"],
+            [f"{int(score_r):,} pts"],
+            [f"{impact_r:.1f} pts/min"],
+            [f"{survie_pct:.0f}% survie"],
+            [f"{int(obj_r):,} pts"],
+        ]
+
+        fig.add_trace(
+            go.Scatterpolar(
+                r=values,
+                theta=theta,
+                name=name,
+                fill="toself",
+                line={"width": 2, "color": color} if color else {"width": 2},
+                fillcolor=color,
+                opacity=0.3,
+                customdata=customdata,
+                hovertemplate="%{theta}: %{customdata[0]}<extra>%{fullData.name}</extra>",
+            )
+        )
+
+    fig.update_layout(
+        polar={
+            "radialaxis": {
+                "visible": True,
+                "range": [0, 1.1],
+                "showticklabels": False,
+                "gridcolor": "rgba(255,255,255,0.12)",
+                "tickfont": {"color": THEME_COLORS.text_primary},
+            },
+            "angularaxis": {
+                "gridcolor": "rgba(255,255,255,0.12)",
+                "linecolor": THEME_COLORS.border,
+                "tickfont": {"color": THEME_COLORS.text_primary},
+            },
+            "bgcolor": THEME_COLORS.bg_plot_rgba(1.0),
+        },
+        showlegend=len(profiles) > 1,
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": -0.12,
+            "x": 0.5,
+            "xanchor": "center",
+            "font": {"color": THEME_COLORS.text_primary},
+        },
+        title={
+            "text": title,
+            "x": 0.5,
+            "xanchor": "center",
+            "font": {"color": THEME_COLORS.text_primary},
+        },
+        height=height,
+        margin={"l": 70, "r": 70, "t": 60 if title else 30, "b": 60},
+    )
+
+    return apply_halo_plot_style(fig, title=None, height=None)
 
 
 def create_teammate_synergy_radar(

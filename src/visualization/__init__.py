@@ -49,6 +49,13 @@ from src.visualization.participation_charts import (
     plot_participation_pie,
     plot_participation_sunburst,
 )
+from src.visualization.participation_radar import (
+    RADAR_AXIS_LINES,
+    RADAR_THRESHOLDS,
+    compute_global_radar_thresholds,
+    compute_participation_profile,
+    get_radar_thresholds,
+)
 from src.visualization.performance import (
     create_cumulative_metrics_indicator,
     get_performance_colors,
@@ -128,4 +135,10 @@ __all__ = [
     "get_participation_colors",
     "aggregate_participation_for_radar",
     "compute_participation_percentages",
+    # Radar participation unifié (6 axes)
+    "RADAR_AXIS_LINES",
+    "RADAR_THRESHOLDS",
+    "compute_participation_profile",
+    "compute_global_radar_thresholds",
+    "get_radar_thresholds",
 ]
