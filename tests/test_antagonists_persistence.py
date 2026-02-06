@@ -9,7 +9,6 @@ Ces tests vérifient:
 from __future__ import annotations
 
 import gc
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -457,14 +456,17 @@ class TestDuckDBRepositoryEmptyTable:
     """Tests pour le comportement avec une table vide ou inexistante."""
 
     @pytest.fixture
-    def temp_db(self):
-        """Crée une DB DuckDB temporaire."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "stats.duckdb"
-            conn = duckdb.connect(str(db_path))
+    def temp_db(self, tmp_path: Path):
+        """Crée une DB DuckDB temporaire (tmp_path pour éviter segfault Windows)."""
+        db_path = tmp_path.resolve() / "stats.duckdb"
+        conn = duckdb.connect(str(db_path))
+        try:
             conn.execute("CREATE TABLE match_stats (match_id VARCHAR)")
+        finally:
             conn.close()
-            yield db_path
+            del conn
+            gc.collect()
+        return db_path
 
     def test_load_from_nonexistent_table(self, temp_db: Path) -> None:
         """load_antagonists retourne une liste vide si la table n'existe pas."""
