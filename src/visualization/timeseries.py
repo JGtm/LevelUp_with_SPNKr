@@ -563,24 +563,29 @@ def plot_spree_headshots_accuracy(
         secondary_y=False,
     )
 
-    # Perfect kills (médaille Perfect = tuer sans prendre de dégâts)
-    if perfect_counts and "match_id" in d.columns:
-        perfect_series = d["match_id"].astype(str).map(lambda mid: perfect_counts.get(mid, 0))
-        if perfect_series.sum() > 0:
-            fig.add_trace(
-                go.Bar(
-                    x=x_idx,
-                    y=perfect_series,
-                    name="Frags parfaits",
-                    marker_color=colors["green"],
-                    opacity=0.65,
-                    alignmentgroup="spree_hs",
-                    offsetgroup="perfect",
-                    width=0.28,
-                    hovertemplate="frags parfaits=%{y}<extra></extra>",
-                ),
-                secondary_y=False,
-            )
+    # Frags parfaits (médaille Perfect = tuer sans prendre de dégâts) — toujours afficher la série
+    if "match_id" in d.columns:
+        perfect_series = (
+            d["match_id"].astype(str).map(lambda mid: (perfect_counts or {}).get(mid, 0))
+            if perfect_counts is not None
+            else pd.Series([0] * len(d))
+        )
+    else:
+        perfect_series = pd.Series([0] * len(d))
+    fig.add_trace(
+        go.Bar(
+            x=x_idx,
+            y=perfect_series,
+            name="Frags parfaits",
+            marker_color=colors["green"],
+            opacity=0.65,
+            alignmentgroup="spree_hs",
+            offsetgroup="perfect",
+            width=0.28,
+            hovertemplate="frags parfaits=%{y}<extra></extra>",
+        ),
+        secondary_y=False,
+    )
 
     fig.add_trace(
         go.Scatter(

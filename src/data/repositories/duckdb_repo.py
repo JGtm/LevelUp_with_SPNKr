@@ -789,7 +789,7 @@ class DuckDBRepository:
                 """,
                 [*match_ids, medal_name_id],
             )
-            return {row[0]: row[1] for row in result.fetchall()}
+            return {str(row[0]): row[1] for row in result.fetchall()}
         except Exception:
             return {}
 

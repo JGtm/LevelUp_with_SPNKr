@@ -264,18 +264,18 @@ def render_timeseries_page(
 
         st.subheader("Folie meurtrière / Tirs à la tête / Précision / Frags parfaits")
 
-        # Charger les Perfect kills depuis le repository si disponible
+        # Charger les Perfect kills depuis le repository (priorité aux paramètres passés par le routeur)
         perfect_counts: dict[str, int] | None = None
-        db_path = st.session_state.get("db_path")
-        xuid = st.session_state.get("player_xuid")
+        _db_path = db_path or st.session_state.get("db_path")
+        _xuid = xuid or st.session_state.get("player_xuid") or st.session_state.get("xuid")
 
-        if db_path and xuid and "match_id" in dff.columns:
+        if _db_path and _xuid and "match_id" in dff.columns:
             try:
                 # Importer le repository ici pour éviter les imports circulaires
                 from src.data.repositories.duckdb_repo import DuckDBRepository
 
-                if db_path.endswith(".duckdb"):
-                    repo = DuckDBRepository(db_path, str(xuid).strip())
+                if _db_path.endswith(".duckdb"):
+                    repo = DuckDBRepository(_db_path, str(_xuid).strip())
                     match_ids = dff["match_id"].astype(str).tolist()
                     perfect_counts = repo.count_perfect_kills_by_match(match_ids)
             except Exception:
