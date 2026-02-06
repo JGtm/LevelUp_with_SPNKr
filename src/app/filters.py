@@ -195,7 +195,11 @@ def apply_date_filter(df: pd.DataFrame | pl.DataFrame, start_d: date, end_d: dat
     # Normaliser en Pandas pour compatibilité
     df = _normalize_df(df)
 
-    mask = (df["date"] >= start_d) & (df["date"] <= end_d)
+    # Convertir start_d et end_d en datetime pour comparaison avec la colonne date
+    # (qui peut être datetime64 après conversion Polars -> Pandas)
+    start_dt = pd.Timestamp(start_d) if isinstance(start_d, date) else pd.to_datetime(start_d)
+    end_dt = pd.Timestamp(end_d) if isinstance(end_d, date) else pd.to_datetime(end_d)
+    mask = (df["date"] >= start_dt) & (df["date"] <= end_dt)
     return df.loc[mask].copy()
 
 

@@ -26,7 +26,11 @@ from src.ui.components import (
     render_checkbox_filter,
     render_hierarchical_checkbox_filter,
 )
-from src.ui.filter_state import apply_filter_preferences
+from src.ui.filter_state import (
+    _get_player_key,
+    apply_filter_preferences,
+    save_filter_preferences,
+)
 
 
 @dataclass
@@ -73,14 +77,18 @@ def render_filters_sidebar(
     base_for_filters = df.copy()
     dmin, dmax = date_range_fn(base_for_filters)
 
-    # Charger les filtres sauvegardés au premier rendu (si pas déjà chargés)
-    if "_filters_loaded" not in st.session_state:
+    # Charger les filtres sauvegardés au premier rendu pour ce joueur/DB spécifique
+    # Le flag est scopé par joueur/DB pour permettre le rechargement lors du changement de joueur
+    player_key = _get_player_key(xuid, db_path)
+    filters_loaded_key = f"_filters_loaded_{player_key}"
+
+    if filters_loaded_key not in st.session_state:
         try:
             apply_filter_preferences(xuid, db_path)
-            st.session_state["_filters_loaded"] = True
+            st.session_state[filters_loaded_key] = True
         except Exception:
             # Ne pas bloquer si le chargement échoue
-            st.session_state["_filters_loaded"] = True
+            st.session_state[filters_loaded_key] = True
 
     # Consommation des états pending
     pending_mode = st.session_state.pop("_pending_filter_mode", None)
@@ -142,6 +150,18 @@ def render_filters_sidebar(
         normalize_mode_label_fn=normalize_mode_label_fn,
         normalize_map_label_fn=normalize_map_label_fn,
     )
+
+    # Sauvegarder automatiquement les filtres si le joueur n'a pas changé depuis le dernier rendu
+    # Cela permet de persister les modifications de filtres sans intervention manuelle
+    last_saved_key = f"_last_saved_player_{player_key}"
+    if last_saved_key not in st.session_state or st.session_state[last_saved_key] == player_key:
+        # Sauvegarder les filtres actuels (sans bloquer si la sauvegarde échoue)
+        try:
+            save_filter_preferences(xuid, db_path)
+            st.session_state[last_saved_key] = player_key
+        except Exception:
+            # Ne pas bloquer l'application si la sauvegarde échoue
+            pass
 
     return FilterState(
         filter_mode=filter_mode,
@@ -420,8 +440,12 @@ def _render_cascade_filters(
     dropdown_base = base_for_filters.copy()
 
     if filter_mode == "Période":
+        # Convertir start_d et end_d en datetime pour comparaison avec la colonne date
+        # (qui peut être datetime64 après conversion Polars -> Pandas)
+        start_dt = pd.Timestamp(start_d) if isinstance(start_d, date) else pd.to_datetime(start_d)
+        end_dt = pd.Timestamp(end_d) if isinstance(end_d, date) else pd.to_datetime(end_d)
         dropdown_base = dropdown_base.loc[
-            (dropdown_base["date"] >= start_d) & (dropdown_base["date"] <= end_d)
+            (dropdown_base["date"] >= start_dt) & (dropdown_base["date"] <= end_dt)
         ].copy()
     else:
         if picked_session_labels and base_s_ui is not None:
@@ -611,7 +635,19 @@ def apply_filters(
 
     if filter_state.filter_mode == "Période":
         before = len(dff)
-        mask = (dff["date"] >= filter_state.start_d) & (dff["date"] <= filter_state.end_d)
+        # Convertir start_d et end_d en datetime pour comparaison avec la colonne date
+        # (qui peut être datetime64 après conversion Polars -> Pandas)
+        start_dt = (
+            pd.Timestamp(filter_state.start_d)
+            if isinstance(filter_state.start_d, date)
+            else pd.to_datetime(filter_state.start_d)
+        )
+        end_dt = (
+            pd.Timestamp(filter_state.end_d)
+            if isinstance(filter_state.end_d, date)
+            else pd.to_datetime(filter_state.end_d)
+        )
+        mask = (dff["date"] >= start_dt) & (dff["date"] <= end_dt)
         dff = dff.loc[mask].copy()
         if show_debug:
             st.write(

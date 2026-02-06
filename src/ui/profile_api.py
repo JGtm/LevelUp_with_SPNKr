@@ -69,8 +69,15 @@ def fetch_appearance_via_spnkr(
                 return fut.result(timeout=float(timeout_seconds) + 20.0)
 
     async def _run() -> ProfileAppearance:
-        import aiohttp
-        from spnkr.client import HaloInfiniteClient
+        try:
+            import aiohttp
+            from spnkr.client import HaloInfiniteClient
+        except ImportError as e:
+            missing_module = str(e).split("'")[1] if "'" in str(e) else "module"
+            raise ImportError(
+                f"Module {missing_module} manquant. "
+                "Installer les dépendances SPNKr: pip install spnkr aiohttp"
+            ) from e
 
         timeout = aiohttp.ClientTimeout(total=float(timeout_seconds))
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -353,8 +360,15 @@ def fetch_xuid_via_spnkr(
                 return fut.result(timeout=float(timeout_seconds) + 20.0)
 
     async def _run() -> tuple[str, str]:
-        import aiohttp
-        from spnkr.client import HaloInfiniteClient
+        try:
+            import aiohttp
+            from spnkr.client import HaloInfiniteClient
+        except ImportError as e:
+            missing_module = str(e).split("'")[1] if "'" in str(e) else "module"
+            raise ImportError(
+                f"Module {missing_module} manquant. "
+                "Installer les dépendances SPNKr: pip install spnkr aiohttp"
+            ) from e
 
         gt = str(gamertag or "").strip()
         if not gt:
@@ -439,12 +453,23 @@ def get_xuid_for_gamertag(
             requests_per_second=requests_per_second,
             timeout_seconds=timeout_seconds,
         )
+    except ImportError as e:
+        # Erreur de dépendances manquantes
+        return (
+            None,
+            f"Échec résolution XUID via SPNKr: {e}",
+        )
     except Exception as e:
+        # Autres erreurs (tokens manquants, erreur API, etc.)
+        error_msg = str(e)
+        if "Module" in error_msg and "manquant" in error_msg:
+            # C'est déjà un message d'erreur de dépendances
+            return None, f"Échec résolution XUID via SPNKr: {error_msg}"
         return (
             None,
             (
                 "Échec résolution XUID via SPNKr: "
-                f"{e} (attendu: SPNKR_AZURE_CLIENT_ID + SPNKR_AZURE_CLIENT_SECRET + SPNKR_OAUTH_REFRESH_TOKEN, "
+                f"{error_msg} (attendu: SPNKR_AZURE_CLIENT_ID + SPNKR_AZURE_CLIENT_SECRET + SPNKR_OAUTH_REFRESH_TOKEN, "
                 "ou SPNKR_SPARTAN_TOKEN + SPNKR_CLEARANCE_TOKEN)"
             ),
         )
@@ -497,12 +522,23 @@ def get_profile_appearance(
             requests_per_second=requests_per_second,
             timeout_seconds=timeout_seconds,
         )
+    except ImportError as e:
+        # Erreur de dépendances manquantes
+        return (
+            None,
+            f"Échec récupération profil via SPNKr: {e}",
+        )
     except Exception as e:
+        # Autres erreurs (tokens manquants, erreur API, etc.)
+        error_msg = str(e)
+        if "Module" in error_msg and "manquant" in error_msg:
+            # C'est déjà un message d'erreur de dépendances
+            return None, f"Échec récupération profil via SPNKr: {error_msg}"
         return (
             None,
             (
                 "Échec récupération profil via SPNKr: "
-                f"{e} (attendu: SPNKR_AZURE_CLIENT_ID + SPNKR_AZURE_CLIENT_SECRET + SPNKR_OAUTH_REFRESH_TOKEN, "
+                f"{error_msg} (attendu: SPNKR_AZURE_CLIENT_ID + SPNKR_AZURE_CLIENT_SECRET + SPNKR_OAUTH_REFRESH_TOKEN, "
                 "ou SPNKR_SPARTAN_TOKEN + SPNKR_CLEARANCE_TOKEN)"
             ),
         )

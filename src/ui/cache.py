@@ -772,13 +772,37 @@ def load_df_optimized(
 
     # Conversions standard avec Polars
     # Convertir start_time en datetime UTC puis en timezone Paris
-    df = df.with_columns(
-        pl.col("start_time")
-        .str.to_datetime(time_zone="UTC")
-        .dt.convert_time_zone(PARIS_TZ_NAME)
-        .dt.replace_time_zone(None)
-        .alias("start_time")
-    )
+    # Gérer les deux cas : start_time peut être déjà datetime (DuckDB) ou string (legacy)
+    start_time_dtype = df.schema.get("start_time")
+    if start_time_dtype in (pl.Datetime, pl.Datetime("us"), pl.Datetime("ns"), pl.Datetime("ms")):
+        # Déjà un datetime : gérer timezone-aware et naïf
+        # Polars convert_time_zone peut échouer sur datetime naïf selon la version
+        try:
+            # Essayer de convertir directement (fonctionne si timezone-aware)
+            df = df.with_columns(
+                pl.col("start_time")
+                .dt.convert_time_zone(PARIS_TZ_NAME)
+                .dt.replace_time_zone(None)
+                .alias("start_time")
+            )
+        except Exception:
+            # Si échec, c'est probablement un datetime naïf : ajouter UTC puis convertir
+            df = df.with_columns(
+                pl.col("start_time")
+                .dt.replace_time_zone("UTC")
+                .dt.convert_time_zone(PARIS_TZ_NAME)
+                .dt.replace_time_zone(None)
+                .alias("start_time")
+            )
+    else:
+        # String : parser puis convertir la timezone
+        df = df.with_columns(
+            pl.col("start_time")
+            .str.to_datetime(time_zone="UTC")
+            .dt.convert_time_zone(PARIS_TZ_NAME)
+            .dt.replace_time_zone(None)
+            .alias("start_time")
+        )
 
     # Extraire la date
     df = df.with_columns(pl.col("start_time").dt.date().alias("date"))

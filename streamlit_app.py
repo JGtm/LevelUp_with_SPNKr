@@ -89,13 +89,13 @@ from src.ui.cache import (
     db_cache_key,
     top_medals_smart,
 )
+from src.ui.filter_state import _get_player_key, apply_filter_preferences, save_filter_preferences
 from src.ui.formatting import (
     PARIS_TZ,
     format_datetime_fr_hm,
     format_score_label,
     score_css_color,
 )
-from src.ui.filter_state import apply_filter_preferences
 from src.ui.multiplayer import (
     get_gamertag_from_duckdb_v4_path,
     render_player_selector_unified,
@@ -401,7 +401,39 @@ def main() -> None:
                 db_path, xuid, key="sidebar_player_selector"
             )
             if new_db_path or new_xuid:
-                # Changement de joueur
+                # Changement de joueur : sauvegarder les filtres de l'ancien joueur
+                old_xuid = xuid
+                old_db_path = db_path
+                with contextlib.suppress(Exception):
+                    # Ne pas bloquer le changement de joueur si la sauvegarde échoue
+                    save_filter_preferences(old_xuid, old_db_path)
+
+                # Nettoyer les filtres de session_state pour forcer le rechargement
+                filter_keys_to_clear = [
+                    "filter_mode",
+                    "start_date_cal",
+                    "end_date_cal",
+                    "gap_minutes",
+                    "picked_session_label",
+                    "picked_sessions",
+                    "filter_playlists",
+                    "filter_modes",
+                    "filter_maps",
+                ]
+                for key in filter_keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+                # Réinitialiser les flags de chargement et sauvegarde pour l'ancien joueur
+                old_player_key = _get_player_key(old_xuid, old_db_path)
+                old_filters_loaded_key = f"_filters_loaded_{old_player_key}"
+                old_last_saved_key = f"_last_saved_player_{old_player_key}"
+                if old_filters_loaded_key in st.session_state:
+                    del st.session_state[old_filters_loaded_key]
+                if old_last_saved_key in st.session_state:
+                    del st.session_state[old_last_saved_key]
+
+                # Mettre à jour db_path et xuid pour le nouveau joueur
                 if new_db_path:
                     st.session_state["db_path"] = new_db_path
                     db_path = new_db_path
@@ -414,8 +446,10 @@ def main() -> None:
                 if new_xuid:
                     st.session_state["xuid_input"] = new_xuid
                     xuid = new_xuid
+
                 # Charger les filtres sauvegardés pour le nouveau joueur
-                # (remplace les valeurs de l'ancien joueur)
+                # Le flag _filters_loaded sera vérifié dans render_filters_sidebar()
+                # et comme on l'a supprimé pour l'ancien joueur, les filtres seront rechargés
                 apply_filter_preferences(xuid, db_path)
                 st.rerun()
 
