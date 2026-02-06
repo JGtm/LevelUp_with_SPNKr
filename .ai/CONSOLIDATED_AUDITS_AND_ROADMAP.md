@@ -207,7 +207,7 @@ pytest tests/ -v --cov=src --cov-report=term-missing
 
 ---
 
-### Sprint 2 : Logique Sessions (teammates_signature) 🟠 HAUTE
+### Sprint 2 : Logique Sessions (teammates_signature) 🟠 HAUTE ✅ TERMINÉ
 
 **Objectif** : Corriger/améliorer la détection des sessions avec prise en compte des changements de coéquipiers.
 
@@ -225,14 +225,14 @@ pytest tests/ -v --cov=src --cov-report=term-missing
 
 | # | Tâche | Fichier(s) | Description | Critère de succès |
 |---|-------|------------|-------------|-------------------|
-| **2.1** | Analyser logique actuelle | `src/analysis/sessions.py` (lignes 75-123) | Examiner `compute_sessions_with_context()` et `teammates_signature` | Documentation de la logique actuelle |
-| **2.2** | Vérifier calcul teammates_signature | `src/data/sync/transformers.py` | Vérifier que `teammates_signature` est calculé correctement | Colonne remplie dans `match_stats` |
-| **2.3** | Améliorer détection changement coéquipiers | `src/analysis/sessions.py` | Logique plus robuste pour détecter changements significatifs | Tests unitaires passent |
-| **2.4** | Script backfill teammates_signature | `scripts/backfill_teammates_signature.py` | Recalculer `teammates_signature` pour matchs existants | Tous les matchs ont la colonne remplie |
-| **2.5** | Tests sessions avec coéquipiers | `tests/test_sessions_teammates.py` | Tests avec différents scénarios de changement | 10+ tests passent |
-| **2.6** | Tests unitaires fonctions modifiées | `tests/test_sessions.py`, `tests/test_transformers_teammates.py` | Tests pour chaque fonction modifiée (compute_sessions_with_context, calcul teammates_signature) | Couverture >80% |
-| **2.7** | Documentation | `.ai/DATA_SESSIONS.md` | Guide logique sessions + teammates_signature | Documentation complète |
-| **2.8** | ⚠️ Validation fin sprint | `pytest tests/ -v` | Exécuter tous les tests et vérifier qu'aucun n'a régressé | Tous les tests passent |
+| **2.1** | ✅ Analyser logique actuelle | `src/analysis/sessions.py` (lignes 75-123) | Examiner `compute_sessions_with_context()` et `teammates_signature` | Documentation de la logique actuelle |
+| **2.2** | ✅ Vérifier calcul teammates_signature | `src/data/sync/transformers.py` | Vérifier que `teammates_signature` est calculé correctement | Colonne remplie dans `match_stats` |
+| **2.3** | ✅ Améliorer détection changement coéquipiers | `src/analysis/sessions.py` | NULL traité comme valeur distincte, premier match forcé à session 0 | Tests unitaires passent |
+| **2.4** | ✅ Script backfill teammates_signature | `scripts/backfill_teammates_signature.py` | Script existant, DuckDB uniquement | Tous les matchs ont la colonne remplie |
+| **2.5** | ✅ Tests sessions avec coéquipiers | `tests/test_sessions_teammates.py` | Tests avec différents scénarios de changement | 10+ tests |
+| **2.6** | ✅ Tests unitaires fonctions modifiées | `tests/test_sessions_advanced.py`, `tests/test_transformers_teammates.py` | Tests compute_sessions et compute_teammates_signature | Couverture sessions+teammates |
+| **2.7** | ✅ Documentation | `.ai/DATA_SESSIONS.md` | Guide logique sessions + teammates_signature | Documentation complète |
+| **2.8** | ⚠️ Validation fin sprint | `pytest tests/ -v` | Exécuter tous les tests (nécessite `pip install -e ".[dev]"`) | Tous les tests passent |
 
 **Dépendances** :
 - 2.1 → 2.2, 2.3
@@ -392,7 +392,7 @@ pytest tests/ -v --cov=src --cov-report=term-missing
 | Priorité | Sprint | Statut |
 |----------|--------|--------|
 | **Critique** | Sprint 1 | ✅ **TERMINÉ** (2026-02-06) |
-| **Haute** | Sprint 2 | 🟠 À démarrer |
+| **Haute** | Sprint 2 | ✅ **TERMINÉ** (2026-02-06) |
 | **Haute** | Sprint 3 | 🟠 À démarrer |
 | **Moyenne** | Sprint 4 | 🟡 À planifier |
 | **Basse** | Sprint 5 | 🟢 À planifier |

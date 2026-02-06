@@ -7,6 +7,35 @@
 
 ## Journal
 
+### [2026-02-06] - ✅ Sprint 2 TERMINÉ : Logique Sessions (teammates_signature)
+
+**Statut** : ✅ **TERMINÉ** - Toutes les tâches complétées
+
+**Contexte** :
+Sprint 2 pour améliorer la détection des sessions avec prise en compte des changements de coéquipiers (teammates_signature).
+
+**RÉALISATIONS** :
+
+#### Modifications
+- ✅ `src/analysis/sessions.py` :
+  - NULL traité comme valeur distincte (évite fusionner A, NULL, B en une session)
+  - Premier match forcé à session_id=0 (correctif bug Polars)
+  - Version Pandas : même logique NULL avec fillna sentinelle
+- ✅ `scripts/backfill_teammates_signature.py` : Existant, utilise DuckDB uniquement
+- ✅ `src/data/sync/transformers.py` : compute_teammates_signature vérifié (déjà correct)
+
+#### Tests créés/étendus
+- ✅ `tests/test_sessions_advanced.py` : +3 tests (NULL, premier match, cohérence)
+- ✅ `tests/test_sessions_teammates.py` : Nouveau (7 scénarios coéquipiers)
+- ✅ `tests/test_transformers_teammates.py` : Nouveau (9 tests compute_teammates_signature)
+
+#### Documentation
+- ✅ `.ai/DATA_SESSIONS.md` : Guide logique sessions + teammates_signature
+
+**Validation** : Exécuter `pytest tests/ -v` dans un environnement avec `pip install -e ".[dev]"`.
+
+---
+
 ### [2026-02-06] - ✅ Sprint 1 TERMINÉ : Données Manquantes (Discovery UGC + metadata.duckdb)
 
 **Statut** : ✅ **TERMINÉ** - Toutes les tâches complétées

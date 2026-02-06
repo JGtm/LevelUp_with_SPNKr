@@ -209,6 +209,80 @@ def test_compute_teammates_signature_no_team():
     assert signature is None
 
 
+def test_compute_sessions_null_teammates_signature_creates_break():
+    """Test que NULL entre deux valeurs differentes cree une rupture de session."""
+    base_time = datetime(2026, 2, 5, 10, 0, 0, tzinfo=timezone.utc)
+
+    df = pl.DataFrame(
+        {
+            "match_id": ["m1", "m2", "m3"],
+            "start_time": [
+                base_time,
+                base_time + timedelta(minutes=10),
+                base_time + timedelta(minutes=20),
+            ],
+            "teammates_signature": ["xuid1,xuid2", None, "xuid3,xuid4"],
+        }
+    )
+
+    result = compute_sessions_with_context_polars(
+        df,
+        gap_minutes=120,
+        teammates_column="teammates_signature",
+    )
+
+    # NULL est une valeur distincte : m1 (xuid1,xuid2) != m2 (NULL) != m3 (xuid3,xuid4)
+    # Donc 3 sessions
+    sessions = result.select(["match_id", "session_id"]).sort("match_id")
+    assert sessions["session_id"][0] != sessions["session_id"][1]
+    assert sessions["session_id"][1] != sessions["session_id"][2]
+
+
+def test_compute_sessions_all_null_same_session():
+    """Test que plusieurs NULL consecutifs sans gap restent dans la meme session."""
+    base_time = datetime(2026, 2, 5, 10, 0, 0, tzinfo=timezone.utc)
+
+    df = pl.DataFrame(
+        {
+            "match_id": ["m1", "m2", "m3"],
+            "start_time": [
+                base_time,
+                base_time + timedelta(minutes=10),
+                base_time + timedelta(minutes=20),
+            ],
+            "teammates_signature": [None, None, None],
+        }
+    )
+
+    result = compute_sessions_with_context_polars(
+        df,
+        gap_minutes=120,
+        teammates_column="teammates_signature",
+    )
+
+    # Tous NULL = pas de rupture entre eux
+    sessions = result.select(["match_id", "session_id"]).sort("match_id")
+    assert sessions["session_id"][0] == sessions["session_id"][1] == sessions["session_id"][2]
+
+
+def test_compute_sessions_first_match_always_session_0():
+    """Test que le premier match a toujours session_id 0."""
+    base_time = datetime(2026, 2, 5, 10, 0, 0, tzinfo=timezone.utc)
+
+    df = pl.DataFrame(
+        {
+            "match_id": ["m1", "m2"],
+            "start_time": [base_time, base_time + timedelta(minutes=10)],
+            "teammates_signature": ["xuid1", "xuid1"],
+        }
+    )
+
+    result = compute_sessions_with_context_polars(df, gap_minutes=120)
+
+    assert result["session_id"][0] == 0
+    assert result["session_id"][1] == 0
+
+
 def test_compute_sessions_consistency():
     """Test que les sessions sont cohérentes entre plusieurs appels."""
     base_time = datetime(2026, 2, 5, 10, 0, 0, tzinfo=timezone.utc)

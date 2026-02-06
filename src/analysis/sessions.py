@@ -107,9 +107,14 @@ def compute_sessions_with_context(
     gap_break = (gaps > (gap_minutes * 60)).astype(int)
 
     # Changement de coéquipiers ?
+    # NaN/NULL traite comme valeur distincte (evite fusionner A, NULL, B en une session)
     if teammates_column and teammates_column in d.columns:
-        teammates_break = (d[teammates_column] != d[teammates_column].shift(1)).astype(int)
-        teammates_break.iloc[0] = 0  # Premier match : pas de rupture
+        col = d[teammates_column].fillna("__NULL__")
+        prev = col.shift(1).fillna("__SENTINEL_FIRST__")
+        teammates_break = (col != prev).astype(int)
+        teammates_break.iloc[0] = (
+            0  # Premier match : pas de rupture (sera new_session via iloc[0]=1)
+        )
     else:
         teammates_break = pd.Series(0, index=d.index)
 
@@ -207,19 +212,30 @@ def compute_sessions_with_context_polars(
     gap_break = (gaps > (gap_minutes * 60)).cast(pl.Int8)
 
     # Changement de coéquipiers ?
+    # NULL est traité comme valeur distincte (evite de fusionner A, NULL, B en une session)
     if teammates_column and teammates_column in df_sorted.columns:
-        teammates_break = (
-            df_sorted[teammates_column] != df_sorted[teammates_column].shift(1)
-        ).cast(pl.Int8)
-        teammates_break = teammates_break.fill_null(0)
+        col = df_sorted[teammates_column]
+        prev = col.shift(1)
+        col_fill = col.fill_null("__NULL__")
+        # Seul le premier row (prev=null car pas de precedent) utilise la sentinelle
+        row_idx = pl.int_range(0, pl.len())
+        prev_fill = (
+            pl.when(row_idx == 0)
+            .then(pl.lit("__SENTINEL_FIRST__"))
+            .otherwise(prev.fill_null("__NULL__"))
+        )
+        teammates_break = (col_fill != prev_fill).cast(pl.Int8)
     else:
         teammates_break = pl.lit(0).cast(pl.Int8)
 
     # Nouvelle session si gap OU changement de coéquipiers
-    new_session = ((gap_break == 1) | (teammates_break == 1)).cast(pl.Int8)
-    new_session = new_session.fill_null(1)  # Premier match = première session
+    new_session_raw = ((gap_break == 1) | (teammates_break == 1)).cast(pl.Int8)
+    new_session_raw = new_session_raw.fill_null(1)
+    # Forcer le premier match = premiere session (comportement Pandas)
+    row_idx = pl.int_range(0, pl.len())
+    new_session = pl.when(row_idx == 0).then(1).otherwise(new_session_raw)
 
-    # Calculer session_id (cum_sum en Polars, pas cumsum Pandas)
+    # Calculer session_id (cum_sum en Polars)
     session_id = new_session.cum_sum() - 1
 
     # Générer les labels
@@ -231,7 +247,7 @@ def compute_sessions_with_context_polars(
             [
                 pl.col("start_time").min().alias("start"),
                 pl.col("start_time").max().alias("end"),
-                pl.count().alias("count"),
+                pl.len().alias("count"),
             ]
         )
         .with_columns(
