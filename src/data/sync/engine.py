@@ -142,7 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_psa_category ON personal_score_awards(award_categ
 -- Table match_participants (Sprint Gamertag Roster Fix)
 -- Stocke TOUS les joueurs de chaque match avec team_id/outcome/gamertag/score/rank/kda
 -- Source : MatchStats.Players[] (API propre, pas les films corrompus)
--- rank = classement (1 = meilleur), API prioritaire sinon calculé ; score et k/d/a = API
+-- rank = classement (1 = meilleur), API prioritaire sinon calculé. Score et k/d/a = API
 CREATE TABLE IF NOT EXISTS match_participants (
     match_id VARCHAR NOT NULL,
     xuid VARCHAR NOT NULL,

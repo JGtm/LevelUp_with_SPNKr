@@ -85,7 +85,7 @@ def render_participation_section(
             title="Profil de participation",
             height=380,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with col_legend:
         st.markdown("**Axes**")
         for line in RADAR_AXIS_LINES:
@@ -162,7 +162,7 @@ def render_participation_comparison(
         col_radar, col_legend = st.columns([2, 1])
         with col_radar:
             fig = create_participation_profile_radar(profiles, title="", height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         with col_legend:
             st.markdown("**Axes**")
             for line in RADAR_AXIS_LINES:

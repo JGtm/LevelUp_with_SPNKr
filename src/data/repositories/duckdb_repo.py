@@ -118,8 +118,19 @@ class DuckDBRepository:
                     self._attached_dbs.add("meta")
                     logger.debug(f"Metadata DB attachée: {self._metadata_db_path}")
                 except Exception as e:
-                    # Ignorer si déjà attachée (peut arriver avec connexions réutilisées)
-                    if "already exists" not in str(e):
+                    err_str = str(e)
+                    # DuckDB 1.4+ : le même fichier ne peut être attaché qu'à une seule connexion.
+                    # Si déjà ouvert ailleurs (autre DuckDBRepository, MetadataResolver), ignorer silencieusement.
+                    if (
+                        "already exists" in err_str.lower()
+                        or "unique file handle conflict" in err_str.lower()
+                        or "already attached" in err_str.lower()
+                    ):
+                        logger.debug(
+                            "metadata.duckdb déjà ouvert par une autre connexion, "
+                            "résolution métadonnées désactivée pour cette instance"
+                        )
+                    else:
                         logger.warning(f"Impossible d'attacher metadata.duckdb: {e}")
 
         return self._connection

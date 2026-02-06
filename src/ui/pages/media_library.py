@@ -69,7 +69,7 @@ def _open_match_button(match_id: str, *, unique_suffix: str | None = None) -> No
     # Utiliser _pending_page au lieu de modifier directement "page"
     # car le widget segmented_control avec key="page" est déjà instancié
     # consume_pending_page() s'occupera de mettre à jour "page" au prochain rendu
-    if st.button("Ouvrir le match", key=button_key, use_container_width=True):
+    if st.button("Ouvrir le match", key=button_key, width="stretch"):
         st.session_state["_pending_page"] = "Match"
         st.session_state["_pending_match_id"] = mid
         st.rerun()

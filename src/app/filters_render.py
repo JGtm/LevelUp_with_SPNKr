@@ -29,6 +29,7 @@ from src.ui.components import (
 from src.ui.filter_state import (
     _get_player_key,
     apply_filter_preferences,
+    load_filter_preferences,
     save_filter_preferences,
 )
 
@@ -84,7 +85,12 @@ def render_filters_sidebar(
 
     if filters_loaded_key not in st.session_state:
         try:
-            apply_filter_preferences(xuid, db_path)
+            prefs = load_filter_preferences(xuid, db_path)
+            if prefs is not None:
+                apply_filter_preferences(xuid, db_path, preferences=prefs)
+            else:
+                # Aucun filtre en mémoire → charger par défaut la dernière session du joueur
+                _apply_default_last_session(db_path, xuid, db_key)
             st.session_state[filters_loaded_key] = True
         except Exception:
             # Ne pas bloquer si le chargement échoue
@@ -174,6 +180,36 @@ def render_filters_sidebar(
         maps_selected=maps_selected,
         base_s_ui=base_s_ui,
     )
+
+
+def _apply_default_last_session(
+    db_path: str,
+    xuid: str,
+    db_key: tuple[int, int] | None,
+) -> None:
+    """Applique par défaut la dernière session du joueur quand aucun filtre n'est en mémoire.
+
+    Utilisé au premier chargement ou changement de joueur/db.
+    """
+    gap_default = 120
+    base_s = cached_compute_sessions_db(db_path, xuid.strip(), db_key, True, gap_default)
+    session_labels_df = (
+        base_s[["session_id", "session_label"]]
+        .drop_duplicates()
+        .sort_values("session_id", ascending=False)
+    )
+    options = session_labels_df["session_label"].tolist()
+    last_label = options[0] if options else "(toutes)"
+    st.session_state["filter_mode"] = "Sessions"
+    st.session_state["gap_minutes"] = gap_default
+    st.session_state["picked_session_label"] = last_label
+    st.session_state["picked_sessions"] = [last_label] if last_label != "(toutes)" else []
+    st.session_state["_latest_session_label"] = last_label if last_label != "(toutes)" else None
+    # min_matches pour cohérence avec le bouton "Dernière session"
+    st.session_state["min_matches_maps"] = 1
+    st.session_state["_min_matches_maps_auto"] = True
+    st.session_state["min_matches_maps_friends"] = 1
+    st.session_state["_min_matches_maps_friends_auto"] = True
 
 
 def _render_period_filter(dmin: date, dmax: date) -> tuple[date, date]:

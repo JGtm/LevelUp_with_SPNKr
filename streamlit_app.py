@@ -5,11 +5,15 @@ depuis la base de données SPNKr.
 """
 
 import contextlib
+import logging
 import os
 import threading
 import urllib.parse
 
 import streamlit as st
+
+# Suppression des warnings connus et non bloquants
+logging.getLogger("streamlit.runtime.caching.cache_data_api").setLevel(logging.ERROR)
 
 from src.app.data_loader import (
     default_identity_from_secrets,
@@ -383,7 +387,7 @@ def main() -> None:
         # Logo en haut de la sidebar
         logo_path = os.path.join(os.path.dirname(__file__), "static", "logo.png")
         if os.path.exists(logo_path):
-            st.image(logo_path, use_container_width=True)
+            st.image(logo_path, width="stretch")
 
         st.markdown(
             "<div class='os-sidebar-brand' style='font-size: 2.5em;'>LevelUp</div>",

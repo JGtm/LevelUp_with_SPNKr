@@ -346,7 +346,7 @@ def _render_antagonist_chart(
                 title="Interactions Killer-Victim (match)",
                 height=400,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         except Exception:
             pass
 
