@@ -4,6 +4,7 @@
 # Les venv sont VOLUMINEUX (100s MB) + OS-spécifique
 # À JAMAIS commit: chaque dev le régénère via `pip install -e .`
 .venv/
+.venv_windows/
 venv/
 env/
 ENV/
