@@ -78,24 +78,23 @@ def plot_killer_victim_stacked_bars(
     match_id: str | None = None,
     *,
     me_xuid: str | None = None,
+    rank_by_xuid: dict[str, int] | None = None,
     title: str = "Interactions Killer-Victim",
     height: int = 400,
 ) -> go.Figure:
-    """Graphique barres empilées killer-victim avec Polars.
-
-    Affiche pour chaque joueur le nombre de fois qu'il a tué et été tué
-    par les autres joueurs du match.
+    """Graphique barres empilées : une ligne par tueur, segments = victimes (plus tuée en premier), lignes triées par rang.
 
     Args:
         pairs_df: DataFrame Polars avec colonnes killer_xuid, killer_gamertag,
                   victim_xuid, victim_gamertag, kill_count.
         match_id: Si fourni, filtre pour ce match uniquement.
-        me_xuid: XUID du joueur principal (pour highlight).
+        me_xuid: XUID du joueur principal (conservé pour compatibilité).
+        rank_by_xuid: Mapping xuid → rang (1 = meilleur). Si None, tri par total kills décroissant.
         title: Titre du graphique.
-        height: Hauteur en pixels.
+        height: Hauteur de base en pixels (ajustée selon le nombre de tueurs).
 
     Returns:
-        Figure Plotly avec les barres empilées.
+        Figure Plotly avec barres empilées (une par tueur, segments = victimes).
     """
     if not POLARS_AVAILABLE:
         raise ImportError("Polars requis pour cette fonction")
@@ -114,7 +113,6 @@ def plot_killer_victim_stacked_bars(
         )
         return apply_halo_plot_style(fig, title=title, height=height)
 
-    # Filtrer par match si spécifié
     filtered_df = pairs_df
     if match_id:
         filtered_df = filtered_df.filter(pl.col("match_id") == match_id)
@@ -131,98 +129,83 @@ def plot_killer_victim_stacked_bars(
         )
         return apply_halo_plot_style(fig, title=title, height=height)
 
-    # Calculer les kills par joueur (comme tueur)
-    kills_by_player = (
-        filtered_df.group_by("killer_gamertag")
-        .agg(pl.col("kill_count").sum().alias("kills"))
-        .sort("kills", descending=True)
+    # Agrégation par (killer_xuid, killer_gamertag, victim_xuid, victim_gamertag)
+    agg_df = filtered_df.group_by(
+        "killer_xuid", "killer_gamertag", "victim_xuid", "victim_gamertag"
+    ).agg(pl.col("kill_count").sum().alias("count"))
+
+    # Total kills par tueur (pour tri et pour ordre des barres)
+    killer_totals = agg_df.group_by("killer_xuid", "killer_gamertag").agg(
+        pl.col("count").sum().alias("total")
     )
-
-    # Calculer les morts par joueur (comme victime)
-    deaths_by_player = filtered_df.group_by("victim_gamertag").agg(
-        pl.col("kill_count").sum().alias("deaths")
-    )
-
-    # Joindre les données
-    # Récupérer tous les gamertags uniques
-    all_killers = set(kills_by_player["killer_gamertag"].to_list())
-    all_victims = set(deaths_by_player["victim_gamertag"].to_list())
-    all_players = sorted(all_killers | all_victims)
-
-    # Préparer les données pour le graphique
-    player_data = []
-    for player in all_players:
-        kills = 0
-        deaths = 0
-
-        kills_row = kills_by_player.filter(pl.col("killer_gamertag") == player)
-        if len(kills_row) > 0:
-            kills = kills_row["kills"].item()
-
-        deaths_row = deaths_by_player.filter(pl.col("victim_gamertag") == player)
-        if len(deaths_row) > 0:
-            deaths = deaths_row["deaths"].item()
-
-        player_data.append(
-            {
-                "gamertag": player,
-                "kills": kills,
-                "deaths": deaths,
-                "net": kills - deaths,
-            }
-        )
-
-    # Trier par net kills
-    player_data.sort(key=lambda x: x["net"], reverse=True)
-
-    gamertags = [p["gamertag"] for p in player_data]
-    kills_values = [p["kills"] for p in player_data]
-    deaths_values = [-p["deaths"] for p in player_data]  # Négatif pour affichage
-
-    # Ajouter les barres de kills
-    fig.add_trace(
-        go.Bar(
-            name="Kills",
-            y=gamertags,
-            x=kills_values,
-            orientation="h",
-            marker={"color": COLORS["kills"]},
-            hovertemplate="<b>%{y}</b><br>Kills: %{x}<extra></extra>",
+    killers_sorted: list[tuple[str, str, int]] = [
+        (row["killer_xuid"], row["killer_gamertag"], row["total"])
+        for row in killer_totals.iter_rows(named=True)
+    ]
+    rank_map = rank_by_xuid or {}
+    killers_sorted.sort(
+        key=lambda k: (
+            rank_map.get(k[0], 999),
+            -k[2],
+            k[1],
         )
     )
+    killer_xuids = [k[0] for k in killers_sorted]
+    killer_labels = [k[1] for k in killers_sorted]
+    n_killers = len(killer_labels)
 
-    # Ajouter les barres de morts (négatives)
-    fig.add_trace(
-        go.Bar(
-            name="Morts",
-            y=gamertags,
-            x=deaths_values,
-            orientation="h",
-            marker={"color": COLORS["deaths"]},
-            hovertemplate="<b>%{y}</b><br>Morts: %{customdata}<extra></extra>",
-            customdata=[abs(d) for d in deaths_values],
-        )
+    # Ordre des victimes : par total kills global décroissant (premier segment = victime la plus tuée au global)
+    victim_totals = (
+        agg_df.group_by("victim_xuid", "victim_gamertag")
+        .agg(pl.col("count").sum().alias("total"))
+        .sort("total", descending=True)
     )
+    victim_order: list[tuple[str, str]] = [
+        (row["victim_xuid"], row["victim_gamertag"]) for row in victim_totals.iter_rows(named=True)
+    ]
 
-    # Mise en forme
+    # Matrice (killer_idx, victim_idx) -> count
+    kv_lookup: dict[tuple[str, str], int] = {}
+    for row in agg_df.iter_rows(named=True):
+        kv_lookup[(row["killer_xuid"], row["victim_xuid"])] = int(row["count"])
+
+    # Une trace par victime (ordre = premier segment en bas du stack = plus tuée)
+    for idx, (v_xuid, v_label) in enumerate(victim_order):
+        color = PLAYER_COLORS[idx % len(PLAYER_COLORS)]
+        x_vals = [kv_lookup.get((k_xuid, v_xuid), 0) for k_xuid in killer_xuids]
+        if sum(x_vals) == 0:
+            continue
+        safe_v = str(v_label).replace("&", "&amp;").replace("<", "&lt;")
+        fig.add_trace(
+            go.Bar(
+                name=v_label,
+                y=killer_labels,
+                x=x_vals,
+                orientation="h",
+                marker={"color": color},
+                hovertemplate=f"<b>%{{y}}</b> → <b>{safe_v}</b><br>Kills: %{{x}}<extra></extra>",
+            )
+        )
+
     fig.update_layout(
-        barmode="relative",
-        xaxis_title="Kills / Morts",
-        yaxis_title="Joueur",
+        barmode="stack",
+        xaxis_title="Nombre de kills",
+        yaxis_title="Tueur (rang)",
+        yaxis={"categoryorder": "array", "categoryarray": killer_labels},
+        margin={"l": 140},
         showlegend=True,
         legend={
-            "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.02,
-            "xanchor": "center",
-            "x": 0.5,
+            "orientation": "v",
+            "yanchor": "top",
+            "y": 1,
+            "xanchor": "left",
+            "x": 1.02,
         },
     )
 
-    # Ajouter une ligne verticale à 0
-    fig.add_vline(x=0, line_width=1, line_color=COLORS["neutral"])
-
-    return apply_halo_plot_style(fig, title=title, height=height)
+    # Hauteur adaptée au nombre de tueurs
+    plot_height = max(height, 80 + 24 * n_killers)
+    return apply_halo_plot_style(fig, title=title, height=plot_height)
 
 
 def plot_kd_timeseries(

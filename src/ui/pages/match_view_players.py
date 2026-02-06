@@ -331,6 +331,10 @@ def _render_antagonist_chart(
                 pl.Series("victim_gamertag", victim_displays),
             )
 
+            # Rangs pour tri des lignes (match_participants après backfill)
+            official_stats = load_match_players_stats(db_path, match_id.strip())
+            rank_by_xuid = {s.xuid: s.rank for s in official_stats} if official_stats else None
+
             me_xuid = str(
                 parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()
             ).strip()
@@ -338,6 +342,7 @@ def _render_antagonist_chart(
                 pairs_df,
                 match_id=match_id,
                 me_xuid=me_xuid,
+                rank_by_xuid=rank_by_xuid,
                 title="Interactions Killer-Victim (match)",
                 height=400,
             )
