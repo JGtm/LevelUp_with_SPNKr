@@ -251,7 +251,7 @@ def render_match_view(
                     float(assists_val) if assists_val == assists_val else None
                 )
 
-        render_expected_vs_actual(row, pm, colors, df_full=df_full)
+        render_expected_vs_actual(row, pm, colors, df_full=df_full, db_path=db_path, xuid=xuid)
 
     # Section Participation (PersonalScores) - Sprint 8.2
     render_participation_section(

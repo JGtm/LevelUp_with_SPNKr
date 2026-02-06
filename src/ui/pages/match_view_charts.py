@@ -22,6 +22,9 @@ def render_expected_vs_actual(
     pm: dict,
     colors: dict,
     df_full: pd.DataFrame | None = None,
+    *,
+    db_path: str | None = None,
+    xuid: str | None = None,
 ) -> None:
     """Rend la section Réel vs Attendu avec moyenne historique par catégorie de mode."""
     team_mmr = pm.get("team_mmr")
@@ -133,10 +136,10 @@ def render_expected_vs_actual(
             x=labels,
             y=exp_vals,
             name="Attendu (MMR)",
-            marker=dict(
-                color=bar_colors,
-                pattern=dict(shape="/", fgcolor="rgba(255,255,255,0.75)", solidity=0.22),
-            ),
+            marker={
+                "color": bar_colors,
+                "pattern": {"shape": "/", "fgcolor": "rgba(255,255,255,0.75)", "solidity": 0.22},
+            },
             opacity=0.50,
             hovertemplate="%{x} (attendu): %{y:.1f}<extra></extra>",
         ),
@@ -161,10 +164,14 @@ def render_expected_vs_actual(
                 x=labels,
                 y=hist_vals,
                 name=f"Moyenne hist. {mode_category} ({hist_avgs['match_count']} matchs)",
-                marker=dict(
-                    color=bar_colors,
-                    pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
-                ),
+                marker={
+                    "color": bar_colors,
+                    "pattern": {
+                        "shape": ".",
+                        "fgcolor": "rgba(255,255,255,0.75)",
+                        "solidity": 0.10,
+                    },
+                },
                 opacity=0.35,
                 hovertemplate=f"%{{x}} (moy. hist. {mode_category}): %{{y:.1f}}<extra></extra>",
             ),
@@ -180,7 +187,7 @@ def render_expected_vs_actual(
                 y=[hist_ratio] * len(labels),
                 mode="lines",
                 name=f"Ratio moy. {mode_category}",
-                line=dict(color=HALO_COLORS.violet, width=2, dash="dash"),
+                line={"color": HALO_COLORS.violet, "width": 2, "dash": "dash"},
                 hovertemplate=f"ratio moy. {mode_category}: %{{y:.2f}}<extra></extra>",
             ),
             secondary_y=True,
@@ -189,22 +196,22 @@ def render_expected_vs_actual(
     exp_fig.update_layout(
         barmode="group",
         height=360,
-        margin=dict(l=40, r=20, t=50, b=90),  # Augmenter le top margin pour l'annotation
+        margin={"l": 40, "r": 20, "t": 50, "b": 90},  # Augmenter le top margin pour l'annotation
         legend=get_legend_horizontal_bottom(),
         annotations=[
-            dict(
-                x=1.0,  # Position à droite
-                y=1.05,  # Au-dessus du graphique
-                xref="paper",
-                yref="paper",
-                text=f"Ratio K/D/A: <b>{real_ratio_f:.2f}</b>",
-                showarrow=False,
-                font=dict(size=14, color=HALO_COLORS.amber),
-                bgcolor="rgba(0,0,0,0.5)",
-                bordercolor=HALO_COLORS.amber,
-                borderwidth=1,
-                borderpad=4,
-            )
+            {
+                "x": 1.0,  # Position à droite
+                "y": 1.05,  # Au-dessus du graphique
+                "xref": "paper",
+                "yref": "paper",
+                "text": f"Ratio K/D/A: <b>{real_ratio_f:.2f}</b>",
+                "showarrow": False,
+                "font": {"size": 14, "color": HALO_COLORS.amber},
+                "bgcolor": "rgba(0,0,0,0.5)",
+                "bordercolor": HALO_COLORS.amber,
+                "borderwidth": 1,
+                "borderpad": 4,
+            }
         ],
     )
     exp_fig.update_yaxes(title_text="F / D / A", rangemode="tozero", secondary_y=False)
@@ -215,15 +222,27 @@ def render_expected_vs_actual(
         exp_fig.update_yaxes(title_text="Ratio", secondary_y=True)
     st.plotly_chart(exp_fig, width="stretch")
 
-    # Folie meurtrière / Tirs à la tête
-    _render_spree_headshots(row, df_full=df_full)
+    # Folie meurtrière / Tirs à la tête / Frags parfaits
+    _render_spree_headshots(
+        row,
+        df_full=df_full,
+        db_path=db_path,
+        xuid=xuid,
+    )
 
 
-def _render_spree_headshots(row: pd.Series, df_full: pd.DataFrame | None = None) -> None:
-    """Rend le graphique folie meurtrière / tirs à la tête.
+def _render_spree_headshots(
+    row: pd.Series,
+    df_full: pd.DataFrame | None = None,
+    *,
+    db_path: str | None = None,
+    xuid: str | None = None,
+) -> None:
+    """Rend le graphique folie meurtrière / tirs à la tête / frags parfaits.
 
     Ajoute, si possible, une série de barres correspondant à la moyenne
     historique sur la même catégorie custom (alignée sidebar).
+    Les frags parfaits sont comptés via les médailles Perfect (medals_earned).
     """
     spree_v = pd.to_numeric(row.get("max_killing_spree"), errors="coerce")
     headshots_v = pd.to_numeric(row.get("headshot_kills"), errors="coerce")
@@ -231,6 +250,7 @@ def _render_spree_headshots(row: pd.Series, df_full: pd.DataFrame | None = None)
     hist_avgs: dict[str, float | None] = {
         "avg_max_killing_spree": None,
         "avg_headshot_kills": None,
+        "avg_perfect_kills": None,
         "match_count": 0,
     }
     if df_full is not None and len(df_full) >= 10:
@@ -239,38 +259,72 @@ def _render_spree_headshots(row: pd.Series, df_full: pd.DataFrame | None = None)
         hist_avgs["avg_headshot_kills"] = hist_avgs_full.get("avg_headshot_kills")
         hist_avgs["match_count"] = hist_avgs_full.get("match_count", 0)
 
-    if (spree_v == spree_v) or (headshots_v == headshots_v):
-        st.subheader("Folie meurtrière / Tirs à la tête")
+    # Frags parfaits du match courant et moyenne historique (médailles Perfect)
+    perfect_current = 0
+    if db_path and xuid and str(db_path).endswith(".duckdb"):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
+
+            repo = DuckDBRepository(db_path, str(xuid).strip())
+            match_id = str(row.get("match_id", "")).strip()
+            if match_id:
+                counts = repo.count_perfect_kills_by_match([match_id])
+                perfect_current = counts.get(match_id, 0)
+            # Moyenne historique par catégorie (même filtre que spree/headshots)
+            if df_full is not None and hist_avgs.get("match_count", 0) >= 10:
+                mask = df_full["pair_name"].apply(extract_mode_category) == mode_category
+                filtered = df_full.loc[mask]
+                if len(filtered) >= 10:
+                    match_ids = filtered["match_id"].astype(str).tolist()
+                    perfect_counts = repo.count_perfect_kills_by_match(match_ids)
+                    total = sum(perfect_counts.get(mid, 0) for mid in match_ids)
+                    hist_avgs["avg_perfect_kills"] = total / len(match_ids)
+        except Exception:
+            pass
+
+    has_spree_or_hs = (spree_v == spree_v) or (headshots_v == headshots_v)
+    if has_spree_or_hs or (db_path and xuid):
+        st.subheader("Folie meurtrière / Tirs à la tête / Frags parfaits")
         fig_sh = go.Figure()
 
-        x_labels = ["Folie meurtrière (max)", "Tirs à la tête"]
+        x_labels = ["Folie meurtrière (max)", "Tirs à la tête", "Frags parfaits"]
+        bar_colors = [HALO_COLORS.violet, HALO_COLORS.cyan, HALO_COLORS.green]
+        real_vals = [
+            float(spree_v) if (spree_v == spree_v) else 0.0,
+            float(headshots_v) if (headshots_v == headshots_v) else 0.0,
+            float(perfect_current),
+        ]
         fig_sh.add_trace(
             go.Bar(
                 x=x_labels,
-                y=[
-                    float(spree_v) if (spree_v == spree_v) else 0.0,
-                    float(headshots_v) if (headshots_v == headshots_v) else 0.0,
-                ],
+                y=real_vals,
                 name="Réel",
-                marker_color=[HALO_COLORS.violet, HALO_COLORS.cyan],
+                marker_color=bar_colors,
                 opacity=0.85,
                 hovertemplate="%{x} (réel): %{y:.0f}<extra></extra>",
             )
         )
 
         if hist_avgs.get("match_count", 0) >= 10:
+            avg_perfect = hist_avgs.get("avg_perfect_kills")
+            hist_vals = [
+                float(hist_avgs.get("avg_max_killing_spree") or 0.0),
+                float(hist_avgs.get("avg_headshot_kills") or 0.0),
+                float(avg_perfect) if avg_perfect is not None else 0.0,
+            ]
             fig_sh.add_trace(
                 go.Bar(
                     x=x_labels,
-                    y=[
-                        float(hist_avgs.get("avg_max_killing_spree") or 0.0),
-                        float(hist_avgs.get("avg_headshot_kills") or 0.0),
-                    ],
+                    y=hist_vals,
                     name=f"Moyenne hist. {mode_category} ({hist_avgs['match_count']} matchs)",
-                    marker=dict(
-                        color=[HALO_COLORS.violet, HALO_COLORS.cyan],
-                        pattern=dict(shape=".", fgcolor="rgba(255,255,255,0.75)", solidity=0.10),
-                    ),
+                    marker={
+                        "color": bar_colors,
+                        "pattern": {
+                            "shape": ".",
+                            "fgcolor": "rgba(255,255,255,0.75)",
+                            "solidity": 0.10,
+                        },
+                    },
                     opacity=0.35,
                     hovertemplate=f"%{{x}} (moy. hist. {mode_category}): %{{y:.1f}}<extra></extra>",
                 )
@@ -279,7 +333,7 @@ def _render_spree_headshots(row: pd.Series, df_full: pd.DataFrame | None = None)
         fig_sh.update_layout(
             barmode="group",
             height=260,
-            margin=dict(l=40, r=20, t=30, b=60),
+            margin={"l": 40, "r": 20, "t": 30, "b": 60},
             legend=get_legend_horizontal_bottom(),
         )
         fig_sh.update_yaxes(rangemode="tozero")
