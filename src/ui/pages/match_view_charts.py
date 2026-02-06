@@ -220,15 +220,18 @@ def render_expected_vs_actual(
         exp_fig.update_yaxes(visible=False, secondary_y=True)
     else:
         exp_fig.update_yaxes(title_text="Ratio", secondary_y=True)
-    st.plotly_chart(exp_fig, width="stretch")
 
-    # Folie meurtrière / Tirs à la tête / Frags parfaits
-    _render_spree_headshots(
-        row,
-        df_full=df_full,
-        db_path=db_path,
-        xuid=xuid,
-    )
+    # K/D/A et Folie meurtrière sur la même rangée
+    chart_cols = st.columns(2)
+    with chart_cols[0]:
+        st.plotly_chart(exp_fig, width="stretch")
+    with chart_cols[1]:
+        _render_spree_headshots(
+            row,
+            df_full=df_full,
+            db_path=db_path,
+            xuid=xuid,
+        )
 
 
 def _render_spree_headshots(
