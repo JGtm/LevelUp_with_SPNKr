@@ -156,6 +156,7 @@ data/
 | Document | Contenu |
 |----------|---------|
 | `.ai/DATA_KILLER_VICTIM.md` | Guide killer/victim et antagonistes |
+| `.ai/DATA_MATCH_RANK.md` | Rang d'un joueur lors d'un match (API vs recalcul, tie-breaker) |
 | `.ai/sprints/SPRINT_GAMERTAG_ROSTER_FIX.md` | Sprint correction gamertags et roster |
 | `.ai/API_LIMITATIONS.md` | Limitations connues de l'API |
 

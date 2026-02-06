@@ -134,6 +134,14 @@ Destination: data/players/{gamertag}/stats.duckdb
 | `win_rate` | mv_global_stats | `wins / total_matches * 100` |
 | `headshot_rate` | weapon_stats | `headshot_kills / total_kills * 100` |
 
+### Rang dans le match
+
+Le **rang d'un joueur lors d'un match** (position 1, 2, 3…) a deux origines :
+- **Sync** : `match_stats.rank` ← API (`Players[].Rank`) via `transformers._extract_player_rank()`.
+- **Vue match** : `MatchPlayerStats.rank` ← recalcul par `loaders.load_match_players_stats()` (tri par score, puis attribution 1, 2, 3…). Utilisé notamment pour le tie-breaker dans l’analyse killer/victim.
+
+Détail : `.ai/DATA_MATCH_RANK.md`.
+
 ## Validations
 
 ### Pydantic v2
@@ -200,3 +208,4 @@ def _load_teammate_stats_from_own_db(gamertag, match_ids, reference_db_path):
 - `docs/SQL_SCHEMA.md` : Schémas complets
 - `docs/SYNC_GUIDE.md` : Guide de synchronisation
 - `.ai/ARCHITECTURE_ROADMAP.md` : Roadmap des phases
+- `.ai/DATA_MATCH_RANK.md` : Rang d'un joueur lors d'un match (API vs recalcul)
