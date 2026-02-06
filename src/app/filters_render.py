@@ -26,6 +26,7 @@ from src.ui.components import (
     render_checkbox_filter,
     render_hierarchical_checkbox_filter,
 )
+from src.ui.filter_state import apply_filter_preferences
 
 
 @dataclass
@@ -71,6 +72,15 @@ def render_filters_sidebar(
 
     base_for_filters = df.copy()
     dmin, dmax = date_range_fn(base_for_filters)
+
+    # Charger les filtres sauvegardés au premier rendu (si pas déjà chargés)
+    if "_filters_loaded" not in st.session_state:
+        try:
+            apply_filter_preferences(xuid, db_path)
+            st.session_state["_filters_loaded"] = True
+        except Exception:
+            # Ne pas bloquer si le chargement échoue
+            st.session_state["_filters_loaded"] = True
 
     # Consommation des états pending
     pending_mode = st.session_state.pop("_pending_filter_mode", None)
