@@ -95,6 +95,7 @@ from src.ui.formatting import (
     format_score_label,
     score_css_color,
 )
+from src.ui.filter_state import apply_filter_preferences
 from src.ui.multiplayer import (
     get_gamertag_from_duckdb_v4_path,
     render_player_selector_unified,
@@ -413,11 +414,9 @@ def main() -> None:
                 if new_xuid:
                     st.session_state["xuid_input"] = new_xuid
                     xuid = new_xuid
-                # Reset des filtres au changement de joueur
-                # (les valeurs de l'ancien joueur peuvent ne pas exister pour le nouveau)
-                for filter_key in ["filter_playlists", "filter_modes", "filter_maps"]:
-                    if filter_key in st.session_state:
-                        del st.session_state[filter_key]
+                # Charger les filtres sauvegardés pour le nouveau joueur
+                # (remplace les valeurs de l'ancien joueur)
+                apply_filter_preferences(xuid, db_path)
                 st.rerun()
 
         # Bouton Sync pour toutes les DB SPNKr (multi-joueurs si DB fusionnée)
@@ -475,6 +474,13 @@ def main() -> None:
     # Debug: Informations sur le DataFrame complet (avant filtres)
     # Désactivé par défaut - peut être activé via session_state["_show_debug_info"] = True
     show_debug = st.session_state.get("_show_debug_info", False)
+
+    # Convertir Polars en Pandas pour compatibilité avec le reste du code UI
+    # TODO: Migrer progressivement les pages UI vers Polars dans les tâches suivantes
+    import polars as pl
+
+    if isinstance(df, pl.DataFrame):
+        df = df.to_pandas()
 
     if show_debug and not df.empty:
         st.info("🔍 **Mode Debug activé** - Informations sur les données chargées")

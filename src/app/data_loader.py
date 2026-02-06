@@ -15,7 +15,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.config import (
@@ -341,7 +341,7 @@ def get_aliases_cache_key() -> int | None:
 # =============================================================================
 
 
-def load_match_data(db_path: str, xuid: str, db_key: tuple[int, int] | None) -> pd.DataFrame:
+def load_match_data(db_path: str, xuid: str, db_key: tuple[int, int] | None) -> pl.DataFrame:
     """Charge les données de matchs depuis la DB.
 
     Args:
@@ -350,10 +350,10 @@ def load_match_data(db_path: str, xuid: str, db_key: tuple[int, int] | None) -> 
         db_key: Clé de cache.
 
     Returns:
-        DataFrame des matchs ou DataFrame vide.
+        DataFrame Polars des matchs ou DataFrame vide.
     """
     if not db_path or not os.path.exists(db_path) or not str(xuid or "").strip():
-        return pd.DataFrame()
+        return pl.DataFrame()
 
     return load_df_optimized(db_path, xuid.strip(), db_key=db_key)
 

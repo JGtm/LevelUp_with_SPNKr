@@ -639,7 +639,11 @@ def compute_personal_antagonists(
 
 
 def killer_victim_counts_long(pairs: Iterable[KVPair]) -> pd.DataFrame:
-    """Retourne un DF long: killer, victim, count (agrégé)."""
+    """Retourne un DF long: killer, victim, count (agrégé).
+
+    ⚠️ DÉPRÉCIÉ : Utiliser killer_victim_counts_long_polars() avec un DataFrame Polars.
+    Cette fonction sera supprimée dans une future version.
+    """
 
     counter = Counter(
         (p.killer_xuid, p.killer_gamertag, p.victim_xuid, p.victim_gamertag) for p in pairs
@@ -664,7 +668,11 @@ def killer_victim_counts_long(pairs: Iterable[KVPair]) -> pd.DataFrame:
 
 
 def killer_victim_matrix(pairs: Iterable[KVPair]) -> pd.DataFrame:
-    """Retourne un DF matrice: index=killer, colonnes=victim, valeurs=count."""
+    """Retourne un DF matrice: index=killer, colonnes=victim, valeurs=count.
+
+    ⚠️ DÉPRÉCIÉ : Utiliser killer_victim_matrix_polars() avec un DataFrame Polars.
+    Cette fonction sera supprimée dans une future version.
+    """
 
     df = killer_victim_counts_long(pairs)
     if df.empty:

@@ -6,11 +6,19 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+import polars as pl
 
 from src.analysis.performance_config import (
     MIN_MATCHES_FOR_RELATIVE,
     RELATIVE_WEIGHTS,
 )
+
+
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
 
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -129,7 +137,7 @@ def _prepare_history_metrics(df_history: pd.DataFrame) -> pd.DataFrame:
 
 def compute_relative_performance_score(
     row: pd.Series,
-    df_history: pd.DataFrame,
+    df_history: pd.DataFrame | pl.DataFrame,
 ) -> float | None:
     """Calcule le score de performance RELATIF d'un match.
 
@@ -137,12 +145,15 @@ def compute_relative_performance_score(
 
     Args:
         row: Ligne du match avec kills, deaths, assists, kda, accuracy, time_played_seconds.
-        df_history: DataFrame de l'historique complet du joueur.
+        df_history: DataFrame (Pandas ou Polars) de l'historique complet du joueur.
 
     Returns:
         Score 0-100 où 50 = performance moyenne, 100 = meilleure perf, 0 = pire perf.
         None si pas assez de données.
     """
+    # Normaliser en Pandas pour compatibilité
+    df_history = _normalize_df(df_history)
+
     if df_history is None or df_history.empty:
         return None
 
@@ -268,19 +279,24 @@ def compute_match_performance_from_row(
 
 
 def compute_performance_series(
-    df: pd.DataFrame,
-    df_history: pd.DataFrame | None = None,
+    df: pd.DataFrame | pl.DataFrame,
+    df_history: pd.DataFrame | pl.DataFrame | None = None,
 ) -> pd.Series:
     """Calcule le score de performance pour chaque match d'un DataFrame.
 
     Args:
-        df: DataFrame des matchs à évaluer.
-        df_history: Historique complet pour le calcul relatif.
+        df: DataFrame (Pandas ou Polars) des matchs à évaluer.
+        df_history: Historique complet (Pandas ou Polars) pour le calcul relatif.
                     Si None, utilise df comme historique.
 
     Returns:
         Series avec les scores de performance.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+    if df_history is not None:
+        df_history = _normalize_df(df_history)
+
     if df.empty:
         return pd.Series(dtype=float)
 
@@ -560,11 +576,20 @@ def _mmr_difficulty_multiplier(delta_mmr_avg: float | None) -> float:
     return 1.0 + adj
 
 
-def compute_session_performance_score_v1(df_session: pd.DataFrame) -> dict[str, Any]:
+def compute_session_performance_score_v1(df_session: pd.DataFrame | pl.DataFrame) -> dict[str, Any]:
     """Version historique du score (0-100).
 
     Cette fonction est gardée pour rétrocompatibilité.
+
+    Args:
+        df_session: DataFrame (Pandas ou Polars) des matchs de la session.
+
+    Returns:
+        Dict avec le score et les détails.
     """
+    # Normaliser en Pandas pour compatibilité
+    df_session = _normalize_df(df_session)
+
     if df_session is None or df_session.empty:
         return {
             "score": None,
@@ -638,7 +663,7 @@ def compute_session_performance_score_v1(df_session: pd.DataFrame) -> dict[str, 
 
 
 def compute_session_performance_score_v2(
-    df_session: pd.DataFrame,
+    df_session: pd.DataFrame | pl.DataFrame,
     *,
     include_mmr_adjustment: bool = True,
 ) -> dict[str, Any]:
@@ -649,12 +674,19 @@ def compute_session_performance_score_v2(
     - On renormalise les poids si une composante manque.
     - On peut ajouter une composante "objectif" quand des colonnes existent.
 
+    Args:
+        df_session: DataFrame (Pandas ou Polars) des matchs de la session.
+        include_mmr_adjustment: Inclure l'ajustement MMR.
+
     Returns:
         Dict compatible avec la v1, + champs v2:
         - components: scores par composante (0-100)
         - weights_used: pondérations réellement utilisées
         - confidence: (0-1) indicateur simple basé sur le nombre de matchs
     """
+    # Normaliser en Pandas pour compatibilité
+    df_session = _normalize_df(df_session)
+
     if df_session is None or df_session.empty:
         base = compute_session_performance_score_v1(df_session)
         base.update(

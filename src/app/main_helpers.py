@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.analysis import mark_firefight
@@ -364,7 +364,7 @@ def render_profile_hero(
 
 def load_match_dataframe(
     db_path: str, xuid: str, cache_buster: int = 0
-) -> tuple[pd.DataFrame, tuple[int, int] | None]:
+) -> tuple[pl.DataFrame, tuple[int, int] | None]:
     """Charge le DataFrame des matchs.
 
     Args:
@@ -373,25 +373,25 @@ def load_match_dataframe(
         cache_buster: Token pour forcer l'invalidation du cache après sync.
 
     Returns:
-        (df, db_key)
+        (df Polars, db_key)
     """
+    import polars as pl
+
     from src.ui.perf import perf_section
 
-    df = pd.DataFrame()
+    df = pl.DataFrame()
     db_key = db_cache_key(db_path) if db_path else None
 
     if db_path and os.path.exists(db_path) and str(xuid or "").strip():
         with perf_section("db/load_df_optimized"):
             df = load_df_optimized(db_path, xuid.strip(), db_key=db_key, cache_buster=cache_buster)
-        if df.empty:
+        if df.is_empty():
             st.warning("Aucun match trouvé.")
     else:
         st.info("Configure une DB et un joueur dans Paramètres.")
 
-    if not df.empty:
+    if not df.is_empty():
         with perf_section("analysis/mark_firefight"):
-            import polars as pl
-
-            df = mark_firefight(pl.from_pandas(df)).to_pandas()
+            df = mark_firefight(df)
 
     return df, db_key

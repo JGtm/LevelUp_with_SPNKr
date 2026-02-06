@@ -3,52 +3,92 @@
 import pandas as pd
 import pytest
 
-from src.analysis.stats import (
-    compute_aggregated_stats,
-    compute_outcome_rates,
-    compute_global_ratio,
-    format_selected_matches_summary,
-    format_mmss,
-)
-from src.analysis.filters import (
-    is_allowed_playlist_name,
-    build_option_map,
-)
-from src.models import OutcomeRates
+try:
+    import polars as pl
+except ImportError:
+    pl = None
 
+from src.analysis.filters import (
+    build_option_map,
+    is_allowed_playlist_name,
+)
 from src.analysis.killer_victim import (
     compute_killer_victim_pairs,
     killer_victim_counts_long,
 )
+from src.analysis.stats import (
+    compute_global_ratio,
+    compute_outcome_rates,
+    format_mmss,
+    format_selected_matches_summary,
+)
+from src.models import OutcomeRates
 
 
 class TestComputeGlobalRatio:
     """Tests pour compute_global_ratio."""
 
     def test_normal_values(self):
-        """Test avec des valeurs normales."""
-        df = pd.DataFrame({
-            "kills": [10, 15, 20],
-            "deaths": [5, 10, 10],
-            "assists": [4, 6, 8],
-        })
+        """Test avec des valeurs normales (Pandas)."""
+        df = pd.DataFrame(
+            {
+                "kills": [10, 15, 20],
+                "deaths": [5, 10, 10],
+                "assists": [4, 6, 8],
+            }
+        )
+        # Total: kills=45, deaths=25, assists=18
+        # Ratio = (45 + 18/2) / 25 = 54 / 25 = 2.16
+        result = compute_global_ratio(df)
+        assert result == pytest.approx(2.16)
+
+    @pytest.mark.skipif(pl is None, reason="Polars not available")
+    def test_normal_values_polars(self):
+        """Test avec des valeurs normales (Polars)."""
+        df = pl.DataFrame(
+            {
+                "kills": [10, 15, 20],
+                "deaths": [5, 10, 10],
+                "assists": [4, 6, 8],
+            }
+        )
         # Total: kills=45, deaths=25, assists=18
         # Ratio = (45 + 18/2) / 25 = 54 / 25 = 2.16
         result = compute_global_ratio(df)
         assert result == pytest.approx(2.16)
 
     def test_empty_dataframe(self):
-        """Test avec DataFrame vide."""
+        """Test avec DataFrame vide (Pandas)."""
         df = pd.DataFrame({"kills": [], "deaths": [], "assists": []})
         assert compute_global_ratio(df) is None
 
+    @pytest.mark.skipif(pl is None, reason="Polars not available")
+    def test_empty_dataframe_polars(self):
+        """Test avec DataFrame vide (Polars)."""
+        df = pl.DataFrame(schema={"kills": pl.Int64, "deaths": pl.Int64, "assists": pl.Int64})
+        assert compute_global_ratio(df) is None
+
     def test_zero_deaths(self):
-        """Test avec zéro deaths."""
-        df = pd.DataFrame({
-            "kills": [10],
-            "deaths": [0],
-            "assists": [4],
-        })
+        """Test avec zéro deaths (Pandas)."""
+        df = pd.DataFrame(
+            {
+                "kills": [10],
+                "deaths": [0],
+                "assists": [4],
+            }
+        )
+        assert compute_global_ratio(df) is None
+
+    @pytest.mark.skipif(pl is None, reason="Polars not available")
+    def test_zero_deaths_polars(self):
+        """Test avec zéro deaths (Polars)."""
+        df = pl.DataFrame(
+            {
+                "kills": [10],
+                "deaths": [0],
+                "assists": [4],
+            }
+        )
         assert compute_global_ratio(df) is None
 
 
@@ -56,10 +96,27 @@ class TestComputeOutcomeRates:
     """Tests pour compute_outcome_rates."""
 
     def test_normal_values(self):
-        """Test avec des valeurs normales."""
-        df = pd.DataFrame({
-            "outcome": [2, 2, 3, 1, 2, 3, 4],
-        })
+        """Test avec des valeurs normales (Pandas)."""
+        df = pd.DataFrame(
+            {
+                "outcome": [2, 2, 3, 1, 2, 3, 4],
+            }
+        )
+        rates = compute_outcome_rates(df)
+        assert rates.wins == 3
+        assert rates.losses == 2
+        assert rates.ties == 1
+        assert rates.no_finish == 1
+        assert rates.total == 7
+
+    @pytest.mark.skipif(pl is None, reason="Polars not available")
+    def test_normal_values_polars(self):
+        """Test avec des valeurs normales (Polars)."""
+        df = pl.DataFrame(
+            {
+                "outcome": [2, 2, 3, 1, 2, 3, 4],
+            }
+        )
         rates = compute_outcome_rates(df)
         assert rates.wins == 3
         assert rates.losses == 2
@@ -68,8 +125,15 @@ class TestComputeOutcomeRates:
         assert rates.total == 7
 
     def test_empty_dataframe(self):
-        """Test avec DataFrame vide."""
+        """Test avec DataFrame vide (Pandas)."""
         df = pd.DataFrame({"outcome": []})
+        rates = compute_outcome_rates(df)
+        assert rates.total == 0
+
+    @pytest.mark.skipif(pl is None, reason="Polars not available")
+    def test_empty_dataframe_polars(self):
+        """Test avec DataFrame vide (Polars)."""
+        df = pl.DataFrame(schema={"outcome": pl.Int64})
         rates = compute_outcome_rates(df)
         assert rates.total == 0
 
@@ -113,7 +177,7 @@ class TestBuildOptionMap:
         names = pd.Series(["Map A", "Map B", "Map C"])
         ids = pd.Series(["id-a", "id-b", "id-c"])
         result = build_option_map(names, ids)
-        
+
         assert result["Map A"] == "id-a"
         assert result["Map B"] == "id-b"
         assert result["Map C"] == "id-c"
@@ -123,7 +187,7 @@ class TestBuildOptionMap:
         names = pd.Series(["Streets - abc12345"])
         ids = pd.Series(["id-streets"])
         result = build_option_map(names, ids)
-        
+
         assert "Streets" in result
         assert result["Streets"] == "id-streets"
 
@@ -132,7 +196,7 @@ class TestBuildOptionMap:
         names = pd.Series(["", "Map A", None])
         ids = pd.Series(["id-empty", "id-a", "id-none"])
         result = build_option_map(names, ids)
-        
+
         assert len(result) == 1
         assert "Map A" in result
 
@@ -163,7 +227,7 @@ class TestFormatSelectedMatchesSummary:
         """Test avec valeurs normales."""
         rates = OutcomeRates(wins=5, losses=3, ties=1, no_finish=1, total=10)
         result = format_selected_matches_summary(10, rates)
-        
+
         assert "10" in result
         assert "Victoires: 5" in result
         assert "Défaites: 3" in result
@@ -178,7 +242,7 @@ class TestFormatSelectedMatchesSummary:
         """Test du singulier."""
         rates = OutcomeRates(wins=1, losses=1, ties=1, no_finish=1, total=4)
         result = format_selected_matches_summary(1, rates)
-        
+
         assert "Partie sélectionnée: 1" in result
         assert "Victoire: 1" in result
 

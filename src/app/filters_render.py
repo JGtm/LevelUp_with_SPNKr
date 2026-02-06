@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import date
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.ui import translate_pair_name, translate_playlist_name
@@ -59,6 +60,13 @@ def render_filters_sidebar(
     Returns:
         FilterState avec tous les paramètres de filtrage sélectionnés.
     """
+    import polars as pl
+
+    # Convertir Polars en Pandas pour compatibilité avec le reste du code de filtres
+    # TODO: Migrer complètement vers Polars dans les tâches suivantes
+    if isinstance(df, pl.DataFrame):
+        df = df.to_pandas()
+
     st.header("Filtres")
 
     base_for_filters = df.copy()
@@ -473,7 +481,7 @@ def _render_cascade_filters(
 
 
 def apply_filters(
-    dff: pd.DataFrame,
+    dff: pd.DataFrame | pl.DataFrame,
     filter_state: FilterState,
     db_path: str,
     xuid: str,
@@ -485,13 +493,21 @@ def apply_filters(
     """Applique tous les filtres au DataFrame.
 
     Args:
-        dff: DataFrame de base.
+        dff: DataFrame de base (Pandas ou Polars).
         filter_state: État des filtres depuis render_filters_sidebar.
 
     Returns:
-        DataFrame filtré.
+        DataFrame filtré (Pandas pour compatibilité UI).
     """
+    import polars as pl
+
     from src.ui.perf import perf_section
+
+    # Convertir en Pandas pour compatibilité avec le reste du code de filtres
+    # TODO: Migrer complètement vers Polars dans les tâches suivantes
+    is_polars = isinstance(dff, pl.DataFrame)
+    if is_polars:
+        dff = dff.to_pandas()
 
     with perf_section("filters/apply"):
         if filter_state.filter_mode == "Sessions":

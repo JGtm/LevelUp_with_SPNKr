@@ -11,31 +11,40 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
-from src.db.parsers import parse_xuid_input
-from src.ui import display_name_from_xuid, translate_playlist_name
+try:
+    import polars as pl
+except ImportError:
+    pl = None
+
 from src.analysis import build_xuid_option_map
-from src.ui.components import (
-    render_checkbox_filter,
-    render_hierarchical_checkbox_filter,
-    get_firefight_playlists,
+from src.app.helpers import (
+    clean_asset_label,
+    normalize_map_label,
+    normalize_mode_label,
 )
+from src.ui import display_name_from_xuid, translate_playlist_name
 from src.ui.cache import (
     cached_compute_sessions_db,
     cached_list_other_xuids,
     cached_list_top_teammates,
     cached_same_team_match_ids_with_friend,
 )
-from src.app.helpers import (
-    clean_asset_label,
-    normalize_mode_label,
-    normalize_map_label,
-    date_range,
+from src.ui.components import (
+    get_firefight_playlists,
+    render_checkbox_filter,
+    render_hierarchical_checkbox_filter,
 )
+
+
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    if pl is not None and isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
 
 
 # =============================================================================
@@ -53,7 +62,7 @@ def _load_local_friends_defaults() -> dict[str, list[str]]:
         p = Path(__file__).resolve().parents[2] / ".streamlit" / "friends_defaults.json"
         if not p.exists():
             return {}
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             obj = json.load(f) or {}
     except Exception:
         return {}
@@ -84,13 +93,13 @@ def build_friends_opts_map(
     aliases_key: int | None,
 ) -> tuple[dict[str, str], list[str]]:
     """Construit le mapping d'options pour la sélection d'amis.
-    
+
     Args:
         db_path: Chemin vers la base de données.
         self_xuid: XUID du joueur principal.
         db_key: Clé de cache DB.
         aliases_key: Clé de cache des alias.
-        
+
     Returns:
         Tuple (opts_map {label: xuid}, default_labels [labels par défaut]).
     """
@@ -117,7 +126,8 @@ def build_friends_opts_map(
         overrides = _load_local_friends_defaults().get(str(self_xuid).strip())
         if overrides:
             name_to_xuid = {
-                str(display_name_from_xuid(xu) or "").strip().casefold(): str(xu).strip() for xu in ordered
+                str(display_name_from_xuid(xu) or "").strip().casefold(): str(xu).strip()
+                for xu in ordered
             }
             ordered_xuids = [str(xu).strip() for xu in ordered]
 
@@ -150,15 +160,20 @@ def build_friends_opts_map(
 
 def add_ui_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Ajoute les colonnes UI au DataFrame (playlist_ui, mode_ui, map_ui).
-    
+
     Args:
-        df: DataFrame source.
-        
+        df: DataFrame (Pandas ou Polars) source.
+
     Returns:
         DataFrame avec colonnes UI ajoutées.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     if "playlist_ui" not in df.columns:
-        df["playlist_ui"] = df["playlist_name"].apply(clean_asset_label).apply(translate_playlist_name)
+        df["playlist_ui"] = (
+            df["playlist_name"].apply(clean_asset_label).apply(translate_playlist_name)
+        )
     if "mode_ui" not in df.columns:
         df["mode_ui"] = df["pair_name"].apply(normalize_mode_label)
     if "map_ui" not in df.columns:
@@ -166,38 +181,44 @@ def add_ui_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def apply_date_filter(df: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
+def apply_date_filter(df: pd.DataFrame | pl.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
     """Applique un filtre de dates au DataFrame.
-    
+
     Args:
-        df: DataFrame source.
+        df: DataFrame (Pandas ou Polars) source.
         start_d: Date de début.
         end_d: Date de fin.
-        
+
     Returns:
-        DataFrame filtré.
+        DataFrame filtré (Pandas).
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     mask = (df["date"] >= start_d) & (df["date"] <= end_d)
     return df.loc[mask].copy()
 
 
 def apply_checkbox_filters(
-    df: pd.DataFrame,
+    df: pd.DataFrame | pl.DataFrame,
     playlists_selected: list[str] | None,
     modes_selected: list[str] | None,
     maps_selected: list[str] | None,
 ) -> pd.DataFrame:
     """Applique les filtres checkbox (playlists, modes, cartes).
-    
+
     Args:
-        df: DataFrame source avec colonnes UI.
+        df: DataFrame (Pandas ou Polars) source avec colonnes UI.
         playlists_selected: Playlists sélectionnées ou None pour tout.
         modes_selected: Modes sélectionnés ou None pour tout.
         maps_selected: Cartes sélectionnées ou None pour tout.
-        
+
     Returns:
-        DataFrame filtré.
+        DataFrame filtré (Pandas).
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     if playlists_selected:
         df = df.loc[df["playlist_ui"].fillna("").isin(playlists_selected)]
     if modes_selected:
@@ -217,11 +238,11 @@ def render_date_filters(
     dmax: date,
 ) -> tuple[date, date]:
     """Rend les filtres de date et retourne la sélection.
-    
+
     Args:
         dmin: Date minimum disponible.
         dmax: Date maximum disponible.
-        
+
     Returns:
         Tuple (start_date, end_date) sélectionnées.
     """
@@ -236,7 +257,11 @@ def render_date_filters(
             end_limit = start_default
         end_limit_date = end_limit.date()
         start_value = st.session_state.get("start_date_cal", start_default_date)
-        if not isinstance(start_value, date) or start_value < start_default_date or start_value > end_limit_date:
+        if (
+            not isinstance(start_value, date)
+            or start_value < start_default_date
+            or start_value > end_limit_date
+        ):
             start_value = start_default_date
         start_date = st.date_input(
             "Début",
@@ -256,7 +281,11 @@ def render_date_filters(
             start_limit = end_default
         start_limit_date = start_limit.date()
         end_value = st.session_state.get("end_date_cal", end_default_date)
-        if not isinstance(end_value, date) or end_value < start_limit_date or end_value > end_default_date:
+        if (
+            not isinstance(end_value, date)
+            or end_value < start_limit_date
+            or end_value > end_default_date
+        ):
             end_value = end_default_date
         end_date = st.date_input(
             "Fin",
@@ -277,14 +306,14 @@ def render_session_filters(
     base_for_filters: pd.DataFrame,
 ) -> tuple[int, list[str] | None]:
     """Rend les filtres de session et retourne la sélection.
-    
+
     Args:
         db_path: Chemin vers la base de données.
         xuid: XUID du joueur.
         db_key: Clé de cache DB.
         aliases_key: Clé de cache des alias.
         base_for_filters: DataFrame de base pour construire les sessions.
-        
+
     Returns:
         Tuple (gap_minutes, picked_session_labels ou None pour toutes).
     """
@@ -362,7 +391,9 @@ def render_session_filters(
     else:
         st.caption(f"Trio : {trio_label}")
 
-    picked_one = st.selectbox("Session", options=["(toutes)"] + options_ui, key="picked_session_label")
+    picked_one = st.selectbox(
+        "Session", options=["(toutes)"] + options_ui, key="picked_session_label"
+    )
     picked_session_labels = None if picked_one == "(toutes)" else [picked_one]
 
     return gap_minutes, picked_session_labels
@@ -384,14 +415,20 @@ def _compute_trio_label(
         picked_friend_labels = st.session_state.get("friends_picked_labels")
         if not isinstance(picked_friend_labels, list) or not picked_friend_labels:
             picked_friend_labels = friends_default_labels
-        picked_xuids = [friends_opts_map[lbl] for lbl in picked_friend_labels if lbl in friends_opts_map]
+        picked_xuids = [
+            friends_opts_map[lbl] for lbl in picked_friend_labels if lbl in friends_opts_map
+        ]
         if len(picked_xuids) >= 2:
             f1_xuid, f2_xuid = picked_xuids[0], picked_xuids[1]
             ids_m = set(
-                cached_same_team_match_ids_with_friend(db_path, xuid.strip(), f1_xuid, db_key=db_key)
+                cached_same_team_match_ids_with_friend(
+                    db_path, xuid.strip(), f1_xuid, db_key=db_key
+                )
             )
             ids_c = set(
-                cached_same_team_match_ids_with_friend(db_path, xuid.strip(), f2_xuid, db_key=db_key)
+                cached_same_team_match_ids_with_friend(
+                    db_path, xuid.strip(), f2_xuid, db_key=db_key
+                )
             )
             trio_ids = ids_m & ids_c
             trio_ids = trio_ids & set(base_for_filters["match_id"].astype(str))
@@ -415,10 +452,10 @@ def render_cascade_filters(
     dropdown_base: pd.DataFrame,
 ) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
     """Rend les filtres en cascade (Playlist → Mode → Carte).
-    
+
     Args:
         dropdown_base: DataFrame de base pour les options.
-        
+
     Returns:
         Tuple (playlists_selected, modes_selected, maps_selected).
     """
@@ -426,9 +463,9 @@ def render_cascade_filters(
     dropdown_base = add_ui_columns(dropdown_base.copy())
 
     # --- Playlists (avec Firefight décoché par défaut) ---
-    playlist_values = sorted({
-        str(x).strip() for x in dropdown_base["playlist_ui"].dropna().tolist() if str(x).strip()
-    })
+    playlist_values = sorted(
+        {str(x).strip() for x in dropdown_base["playlist_ui"].dropna().tolist() if str(x).strip()}
+    )
     preferred_order = ["Partie rapide", "Arène classée", "Assassin classé"]
     playlist_values = [p for p in preferred_order if p in playlist_values] + [
         p for p in playlist_values if p not in preferred_order
@@ -449,7 +486,9 @@ def render_cascade_filters(
         scope1 = scope1.loc[scope1["playlist_ui"].fillna("").isin(playlists_selected)].copy()
 
     # --- Modes (hiérarchique par catégorie) ---
-    mode_values = sorted({str(x).strip() for x in scope1["mode_ui"].dropna().tolist() if str(x).strip()})
+    mode_values = sorted(
+        {str(x).strip() for x in scope1["mode_ui"].dropna().tolist() if str(x).strip()}
+    )
     modes_selected = render_hierarchical_checkbox_filter(
         label="Modes",
         options=mode_values,
@@ -463,7 +502,9 @@ def render_cascade_filters(
         scope2 = scope2.loc[scope2["mode_ui"].fillna("").isin(modes_selected)].copy()
 
     # --- Cartes ---
-    map_values = sorted({str(x).strip() for x in scope2["map_ui"].dropna().tolist() if str(x).strip()})
+    map_values = sorted(
+        {str(x).strip() for x in scope2["map_ui"].dropna().tolist() if str(x).strip()}
+    )
     maps_selected = render_checkbox_filter(
         label="Cartes",
         options=map_values,
@@ -481,7 +522,7 @@ def render_cascade_filters(
 
 def consume_pending_filter_state() -> None:
     """Consomme l'état en attente pour les filtres (changements demandés).
-    
+
     Applique les changements de mode/session stockés en session_state
     par d'autres composants (ex: boutons trio).
     """
@@ -499,7 +540,7 @@ def consume_pending_filter_state() -> None:
 
 def reset_auto_min_matches(filter_mode: str) -> None:
     """Réinitialise les valeurs auto de min_matches si on revient en mode Période.
-    
+
     Args:
         filter_mode: Mode de filtre actuel ("Période" ou "Sessions").
     """

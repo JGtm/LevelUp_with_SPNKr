@@ -6,13 +6,24 @@ Ce module contient des helpers génériques utilisés dans l'application princip
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
+try:
+    import polars as pl
+except ImportError:
+    pl = None
+
 from src.config import HALO_COLORS
-from src.ui import translate_playlist_name, translate_pair_name
+from src.ui import translate_pair_name
+
+
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    if pl is not None and isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
 
 
 # =============================================================================
@@ -29,10 +40,10 @@ _LABEL_SUFFIX_RE = re.compile(r"^(.*?)(?:\s*[\-–—]\s*[0-9A-Za-z]{8,})$", re.
 
 def clean_asset_label(s: str | None) -> str | None:
     """Nettoie un label d'asset en retirant les suffixes techniques (IDs).
-    
+
     Args:
         s: Label brut.
-        
+
     Returns:
         Label nettoyé ou None.
     """
@@ -49,19 +60,19 @@ def clean_asset_label(s: str | None) -> str | None:
 
 def is_uuid_like(s: str) -> bool:
     """Vérifie si une chaîne ressemble à un UUID (ex: a446725e-b281-414c-a21e)."""
-    return bool(re.match(r'^[a-f0-9]{8}(-[a-f0-9]{4}){0,3}(-[a-f0-9]{1,12})?$', s.lower()))
+    return bool(re.match(r"^[a-f0-9]{8}(-[a-f0-9]{4}){0,3}(-[a-f0-9]{1,12})?$", s.lower()))
 
 
 def normalize_mode_label(pair_name: str | None) -> str | None:
     """Normalise le label d'un mode de jeu.
-    
+
     - Traduit le mode
     - Retire le nom de carte si présent ("X on MapName")
     - Retire les suffixes Forge/Ranked
-    
+
     Args:
         pair_name: Nom du pair (mode + carte).
-        
+
     Returns:
         Label normalisé ou None.
     """
@@ -81,13 +92,13 @@ def normalize_mode_label(pair_name: str | None) -> str | None:
 
 def normalize_map_label(map_name: str | None) -> str | None:
     """Normalise le nom d'une carte pour le filtre.
-    
+
     - Supprime les suffixes après '-' (ex: 'Aquarius - Live Fire' → 'Aquarius')
     - Masque les UUIDs non résolus en 'Carte inconnue'
-    
+
     Args:
         map_name: Nom brut de la carte.
-        
+
     Returns:
         Nom normalisé ou None.
     """
@@ -102,19 +113,34 @@ def normalize_map_label(map_name: str | None) -> str | None:
 
 
 # =============================================================================
+# Helpers
+# =============================================================================
+
+
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
+
+
+# =============================================================================
 # Calculs temporels
 # =============================================================================
 
 
-def compute_session_span_seconds(df_: pd.DataFrame) -> float | None:
+def compute_session_span_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
     """Calcule la durée totale d'une session (premier match → fin dernier match).
-    
+
     Args:
-        df_: DataFrame des matchs de la session.
-        
+        df_: DataFrame (Pandas ou Polars) des matchs de la session.
+
     Returns:
         Durée en secondes ou None.
     """
+    # Normaliser en Pandas pour compatibilité
+    df_ = _normalize_df(df_)
+
     if df_ is None or df_.empty or "start_time" not in df_.columns:
         return None
     starts = pd.to_datetime(df_["start_time"], errors="coerce")
@@ -132,15 +158,18 @@ def compute_session_span_seconds(df_: pd.DataFrame) -> float | None:
     return float((t1 - t0).total_seconds())
 
 
-def compute_total_play_seconds(df_: pd.DataFrame) -> float | None:
+def compute_total_play_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
     """Calcule le temps de jeu total (somme des durées de matchs).
-    
+
     Args:
-        df_: DataFrame des matchs.
-        
+        df_: DataFrame (Pandas ou Polars) des matchs.
+
     Returns:
         Durée totale en secondes ou None.
     """
+    # Normaliser en Pandas pour compatibilité
+    df_ = _normalize_df(df_)
+
     if df_ is None or df_.empty or "time_played_seconds" not in df_.columns:
         return None
     s = pd.to_numeric(df_["time_played_seconds"], errors="coerce").dropna()
@@ -149,15 +178,18 @@ def compute_total_play_seconds(df_: pd.DataFrame) -> float | None:
     return float(s.sum())
 
 
-def avg_match_duration_seconds(df_: pd.DataFrame) -> float | None:
+def avg_match_duration_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
     """Calcule la durée moyenne d'un match.
-    
+
     Args:
-        df_: DataFrame des matchs.
-        
+        df_: DataFrame (Pandas ou Polars) des matchs.
+
     Returns:
         Durée moyenne en secondes ou None.
     """
+    # Normaliser en Pandas pour compatibilité
+    df_ = _normalize_df(df_)
+
     if df_ is None or df_.empty or "time_played_seconds" not in df_.columns:
         return None
     s = pd.to_numeric(df_["time_played_seconds"], errors="coerce").dropna()
@@ -171,12 +203,12 @@ def avg_match_duration_seconds(df_: pd.DataFrame) -> float | None:
 # =============================================================================
 
 
-def date_range(df: pd.DataFrame) -> tuple:
+def date_range(df: pd.DataFrame | pl.DataFrame) -> tuple:
     """Retourne la plage de dates du DataFrame.
-    
+
     Args:
-        df: DataFrame avec colonne 'date'.
-        
+        df: DataFrame (Pandas ou Polars) avec colonne 'date'.
+
     Returns:
         Tuple (date_min, date_max).
     """
@@ -192,13 +224,13 @@ def date_range(df: pd.DataFrame) -> tuple:
 
 def assign_player_colors(names: list[str]) -> dict[str, str]:
     """Assigne des couleurs persistantes aux joueurs.
-    
+
     Les couleurs sont stockées en session_state pour rester cohérentes
     tout au long de la session.
-    
+
     Args:
         names: Liste des noms de joueurs.
-        
+
     Returns:
         Mapping {nom: couleur_hex}.
     """
@@ -245,15 +277,15 @@ def assign_player_colors(names: list[str]) -> dict[str, str]:
 
 def styler_map(styler, func, subset):
     """Applique une fonction de style (compat pandas anciennes versions).
-    
+
     - pandas récents: .map(func, subset=...)
     - pandas anciens: .applymap(func, subset=...)
-    
+
     Args:
         styler: Pandas Styler.
         func: Fonction de style.
         subset: Colonnes à cibler.
-        
+
     Returns:
         Styler modifié.
     """

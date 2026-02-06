@@ -4,6 +4,7 @@ Ce module teste TOUTES les fonctions de visualisation pour garantir:
 1. Qu'elles retournent des go.Figure valides
 2. Qu'elles gèrent correctement les cas limites (données vides, NaN, etc.)
 3. Qu'elles produisent des traces avec des données
+4. Qu'elles acceptent à la fois Pandas et Polars DataFrames
 
 Exécution:
     pytest tests/test_visualizations.py -v
@@ -17,6 +18,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import pytest
 
+try:
+    import polars as pl
+except ImportError:
+    pl = None
+
 # =============================================================================
 # FIXTURES COMMUNES
 # =============================================================================
@@ -24,7 +30,7 @@ import pytest
 
 @pytest.fixture
 def sample_match_df() -> pd.DataFrame:
-    """DataFrame type avec colonnes de match standard."""
+    """DataFrame Pandas type avec colonnes de match standard (pour compatibilité)."""
     np.random.seed(42)  # Reproductibilité
     n = 20
     return pd.DataFrame(
@@ -227,10 +233,21 @@ class TestDistributions:
     # --- plot_kda_distribution ---
 
     def test_plot_kda_distribution_valid_data(self, sample_match_df: pd.DataFrame) -> None:
-        """plot_kda_distribution retourne une figure valide avec données normales."""
+        """plot_kda_distribution retourne une figure valide avec données normales (Pandas)."""
         from src.visualization.distributions import plot_kda_distribution
 
         fig = plot_kda_distribution(sample_match_df)
+        assert_valid_figure(fig, min_traces=1)
+        assert_figure_has_data(fig)
+
+    @pytest.mark.skipif(pl is None, reason="Polars not available")
+    def test_plot_kda_distribution_valid_data_polars(
+        self, sample_match_df_polars: pl.DataFrame
+    ) -> None:
+        """plot_kda_distribution retourne une figure valide avec données normales (Polars)."""
+        from src.visualization.distributions import plot_kda_distribution
+
+        fig = plot_kda_distribution(sample_match_df_polars)
         assert_valid_figure(fig, min_traces=1)
         assert_figure_has_data(fig)
 

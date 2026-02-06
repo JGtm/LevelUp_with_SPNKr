@@ -92,6 +92,7 @@ from src.ui.sync import get_player_duckdb_path, is_duckdb_player
 # Import pour le calcul des scores de performance
 try:
     import pandas as pd
+    import polars as pl
 
     from src.analysis.performance_config import MIN_MATCHES_FOR_RELATIVE
     from src.analysis.performance_score import compute_relative_performance_score
@@ -100,6 +101,7 @@ try:
 except ImportError:
     PERFORMANCE_SCORE_AVAILABLE = False
     pd = None
+    pl = None
     compute_relative_performance_score = None
     MIN_MATCHES_FOR_RELATIVE = 10
 
@@ -592,24 +594,49 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
             return False
 
         # Charger l'historique (tous les matchs AVANT celui-ci)
-        history_df = conn.execute(
-            """
-            SELECT
-                match_id, start_time, kills, deaths, assists, kda, accuracy,
-                time_played_seconds, avg_life_seconds
-            FROM match_stats
-            WHERE match_id != ?
-              AND start_time IS NOT NULL
-              AND start_time < ?
-            ORDER BY start_time ASC
-            """,
-            (match_id, match_start_time),
-        ).df()
+        # Utiliser .pl() pour obtenir directement un DataFrame Polars
+        try:
+            history_df_pl = conn.execute(
+                """
+                SELECT
+                    match_id, start_time, kills, deaths, assists, kda, accuracy,
+                    time_played_seconds, avg_life_seconds
+                FROM match_stats
+                WHERE match_id != ?
+                  AND start_time IS NOT NULL
+                  AND start_time < ?
+                ORDER BY start_time ASC
+                """,
+                (match_id, match_start_time),
+            ).pl()
 
-        if history_df.empty or len(history_df) < MIN_MATCHES_FOR_RELATIVE:
-            return False
+            # Vérifier si assez de données
+            if history_df_pl.is_empty() or len(history_df_pl) < MIN_MATCHES_FOR_RELATIVE:
+                return False
 
-        # Convertir match_data en Series
+            # Convertir en Pandas pour compatibilité avec compute_relative_performance_score
+            # (qui normalise déjà en interne, mais match_series doit être pd.Series)
+            history_df = history_df_pl.to_pandas()
+        except Exception:
+            # Fallback sur .df() si .pl() n'est pas disponible
+            history_df = conn.execute(
+                """
+                SELECT
+                    match_id, start_time, kills, deaths, assists, kda, accuracy,
+                    time_played_seconds, avg_life_seconds
+                FROM match_stats
+                WHERE match_id != ?
+                  AND start_time IS NOT NULL
+                  AND start_time < ?
+                ORDER BY start_time ASC
+                """,
+                (match_id, match_start_time),
+            ).df()
+
+            if history_df.empty or len(history_df) < MIN_MATCHES_FOR_RELATIVE:
+                return False
+
+        # Convertir match_data en Series (Pandas pour compatibilité avec compute_relative_performance_score)
         match_series = pd.Series(
             {
                 "kills": match_data[2] or 0,
@@ -621,7 +648,7 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
             }
         )
 
-        # Calculer le score
+        # Calculer le score (accepte maintenant Polars pour history_df, mais match_series doit être pd.Series)
         score = compute_relative_performance_score(match_series, history_df)
 
         if score is not None:

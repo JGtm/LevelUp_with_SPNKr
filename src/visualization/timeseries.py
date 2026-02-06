@@ -2,6 +2,7 @@
 
 import pandas as pd
 import plotly.graph_objects as go
+import polars as pl
 from plotly.subplots import make_subplots
 
 from src.analysis.performance_config import SCORE_THRESHOLDS
@@ -10,21 +11,48 @@ from src.ui.components.chart_annotations import add_extreme_annotations
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
 
-def _rolling_mean(series: pd.Series, window: int = 10) -> pd.Series:
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire.
+
+    Les fonctions de visualisation utilisent encore certaines opérations Pandas
+    spécifiques. Cette fonction normalise l'entrée pour compatibilité.
+    """
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
+
+
+def _rolling_mean(series: pd.Series | pl.Series, window: int = 10) -> pd.Series:
+    """Calcule la moyenne mobile.
+
+    Args:
+        series: Série Pandas ou Polars.
+        window: Taille de la fenêtre.
+
+    Returns:
+        Série Pandas avec moyenne mobile.
+    """
     w = int(window) if window and window > 0 else 1
+    if isinstance(series, pl.Series):
+        series = series.to_pandas()
     return series.rolling(window=w, min_periods=1).mean()
 
 
-def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> go.Figure:
+def plot_timeseries(
+    df: pd.DataFrame | pl.DataFrame, title: str = "Frags / Morts / Ratio"
+) -> go.Figure:
     """Graphique principal: Kills/Deaths/Ratio dans le temps.
 
     Args:
-        df: DataFrame avec colonnes kills, deaths, assists, accuracy, ratio, start_time.
+        df: DataFrame (Pandas ou Polars) avec colonnes kills, deaths, assists, accuracy, ratio, start_time.
         title: Titre du graphique.
 
     Returns:
         Figure Plotly.
     """
+    # Normaliser en Pandas pour compatibilité avec le reste du code
+    df = _normalize_df(df)
+
     if df is None or (hasattr(df, "empty") and df.empty) or len(df) == 0:
         fig = go.Figure()
         fig.add_annotation(
@@ -146,16 +174,21 @@ def plot_timeseries(df: pd.DataFrame, title: str = "Frags / Morts / Ratio") -> g
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
 
 
-def plot_assists_timeseries(df: pd.DataFrame, title: str = "Assistances") -> go.Figure:
+def plot_assists_timeseries(
+    df: pd.DataFrame | pl.DataFrame, title: str = "Assistances"
+) -> go.Figure:
     """Graphique des assistances dans le temps.
 
     Args:
-        df: DataFrame avec colonnes assists, start_time, etc.
+        df: DataFrame (Pandas ou Polars) avec colonnes assists, start_time, etc.
         title: Titre du graphique.
 
     Returns:
         Figure Plotly.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.sort_values("start_time").reset_index(drop=True)
     x_idx = list(range(len(d)))
@@ -225,17 +258,20 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str = "Assistances") -> go.
 
 
 def plot_per_minute_timeseries(
-    df: pd.DataFrame, title: str = "Frags / Morts / Assistances par minute"
+    df: pd.DataFrame | pl.DataFrame, title: str = "Frags / Morts / Assistances par minute"
 ) -> go.Figure:
     """Graphique des stats par minute.
 
     Args:
-        df: DataFrame avec colonnes kills_per_min, deaths_per_min, assists_per_min.
+        df: DataFrame (Pandas ou Polars) avec colonnes kills_per_min, deaths_per_min, assists_per_min.
         title: Titre du graphique.
 
     Returns:
         Figure Plotly.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.sort_values("start_time").reset_index(drop=True)
     x_idx = list(range(len(d)))
@@ -353,16 +389,19 @@ def plot_per_minute_timeseries(
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
-def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
+def plot_accuracy_last_n(df: pd.DataFrame | pl.DataFrame, n: int) -> go.Figure:
     """Graphique de précision sur les N derniers matchs.
 
     Args:
-        df: DataFrame avec colonne accuracy.
+        df: DataFrame (Pandas ou Polars) avec colonne accuracy.
         n: Nombre de matchs à afficher.
 
     Returns:
         Figure Plotly.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.dropna(subset=["accuracy"]).tail(n)
 
@@ -384,16 +423,21 @@ def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
     return apply_halo_plot_style(fig, height=PLOT_CONFIG.short_height)
 
 
-def plot_average_life(df: pd.DataFrame, title: str = "Durée de vie moyenne") -> go.Figure:
+def plot_average_life(
+    df: pd.DataFrame | pl.DataFrame, title: str = "Durée de vie moyenne"
+) -> go.Figure:
     """Graphique de la durée de vie moyenne.
 
     Args:
-        df: DataFrame avec colonne average_life_seconds.
+        df: DataFrame (Pandas ou Polars) avec colonne average_life_seconds.
         title: Titre du graphique.
 
     Returns:
         Figure Plotly.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = (
         df.dropna(subset=["average_life_seconds"])
@@ -462,18 +506,21 @@ def plot_average_life(df: pd.DataFrame, title: str = "Durée de vie moyenne") ->
 
 
 def plot_spree_headshots_accuracy(
-    df: pd.DataFrame,
+    df: pd.DataFrame | pl.DataFrame,
     perfect_counts: dict[str, int] | None = None,
 ) -> go.Figure:
     """Graphique combiné: Spree, Tirs à la tête, Précision et Perfect kills.
 
     Args:
-        df: DataFrame avec colonnes max_killing_spree, headshot_kills, accuracy.
+        df: DataFrame (Pandas ou Polars) avec colonnes max_killing_spree, headshot_kills, accuracy.
         perfect_counts: Dict optionnel {match_id: count} pour les médailles Perfect.
 
     Returns:
         Figure Plotly avec axe Y secondaire pour la précision.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.sort_values("start_time").reset_index(drop=True).copy()
     x_idx = list(range(len(d)))
@@ -575,16 +622,16 @@ def plot_spree_headshots_accuracy(
 
 
 def plot_performance_timeseries(
-    df: pd.DataFrame,
-    df_history: pd.DataFrame | None = None,
+    df: pd.DataFrame | pl.DataFrame,
+    df_history: pd.DataFrame | pl.DataFrame | None = None,
     title: str = "Score de performance",
     show_smooth: bool = True,
 ) -> go.Figure:
     """Graphique du score de performance dans le temps.
 
     Args:
-        df: DataFrame avec colonnes performance ou kills/deaths/assists/accuracy/outcome.
-        df_history: DataFrame complet pour le calcul du score relatif.
+        df: DataFrame (Pandas ou Polars) avec colonnes performance ou kills/deaths/assists/accuracy/outcome.
+        df_history: DataFrame complet (Pandas ou Polars) pour le calcul du score relatif.
         title: Titre du graphique.
         show_smooth: Afficher la courbe de moyenne lissée.
 
@@ -592,6 +639,11 @@ def plot_performance_timeseries(
         Figure Plotly.
     """
     from src.analysis.performance_score import compute_performance_series
+
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+    if df_history is not None:
+        df_history = _normalize_df(df_history)
 
     colors = HALO_COLORS.as_dict()
     d = df.sort_values("start_time").reset_index(drop=True)

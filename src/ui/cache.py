@@ -26,6 +26,7 @@ import os
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
 logger = logging.getLogger(__name__)
@@ -134,40 +135,42 @@ def cached_compute_sessions_db(
             # Fallback sur l'ancienne méthode
             pass
 
-    # Legacy SQLite ou fallback : utiliser Pandas
-    df0 = load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
-    if df0.empty:
-        df0["session_id"] = pd.Series(dtype=int)
-        df0["session_label"] = pd.Series(dtype=str)
-        return df0
-    import polars as pl
+    # Legacy SQLite ou fallback : utiliser Polars (load_df_optimized retourne maintenant Polars)
+    df0_pl = load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)
+    if df0_pl.is_empty():
+        return pd.DataFrame(columns=["match_id", "start_time", "session_id", "session_label"])
 
-    df0_pl = mark_firefight(pl.from_pandas(df0))
-    df0 = df0_pl.to_pandas()
-    if (not include_firefight) and ("is_firefight" in df0.columns):
-        df0 = df0.loc[~df0["is_firefight"]].copy()
+    df0_pl = mark_firefight(df0_pl)
+    if (not include_firefight) and ("is_firefight" in df0_pl.columns):
+        df0_pl = df0_pl.filter(~pl.col("is_firefight"))
 
     # Essayer d'utiliser la logique avancée si teammates_signature est disponible
-    if "teammates_signature" in df0.columns:
+    if "teammates_signature" in df0_pl.columns:
         try:
-            import polars as pl
-
-            df_pl = pl.from_pandas(df0[["match_id", "start_time", "teammates_signature"]])
-            df_pl = compute_sessions_with_context_polars(
-                df_pl,
+            df_sessions_pl = df0_pl.select(["match_id", "start_time", "teammates_signature"])
+            df_sessions_pl = compute_sessions_with_context_polars(
+                df_sessions_pl,
                 gap_minutes=gap_minutes,
                 teammates_column="teammates_signature",
             )
             # Fusionner les résultats avec le DataFrame original
-            df_result = df0.copy()
-            df_sessions = df_pl.select(["match_id", "session_id", "session_label"]).to_pandas()
-            df_result = df_result.merge(df_sessions, on="match_id", how="left")
-            return df_result
+            df_result_pl = df0_pl.join(
+                df_sessions_pl.select(["match_id", "session_id", "session_label"]),
+                on="match_id",
+                how="left",
+            )
+            # Convertir en Pandas pour compatibilité UI (sera migré dans les tâches suivantes)
+            return df_result_pl.to_pandas()
         except Exception:
-            # Fallback sur logique simple
-            pass
+            # Fallback sur logique simple (utilise directement Polars)
+            df_result_pl = compute_sessions(df0_pl, gap_minutes=int(gap_minutes))
+            # Convertir en Pandas pour compatibilité UI (sera migré dans les tâches suivantes)
+            return df_result_pl.to_pandas()
 
-    return compute_sessions(df0, gap_minutes=int(gap_minutes))
+    # Fallback sur logique simple (utilise directement Polars)
+    df_result_pl = compute_sessions(df0_pl, gap_minutes=int(gap_minutes))
+    # Convertir en Pandas pour compatibilité UI (sera migré dans les tâches suivantes)
+    return df_result_pl.to_pandas()
 
 
 @st.cache_data(show_spinner=False)
@@ -699,7 +702,7 @@ def load_df_optimized(
     db_key: tuple[int, int] | None = None,
     include_firefight: bool = True,
     cache_buster: int = 0,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Charge les matchs avec fallback intelligent.
 
     Supporte:
@@ -714,7 +717,7 @@ def load_df_optimized(
         cache_buster: Token pour forcer l'invalidation du cache.
 
     Returns:
-        DataFrame enrichi avec toutes les colonnes calculées.
+        DataFrame Polars enrichi avec toutes les colonnes calculées.
     """
     _ = db_key  # Utilisé pour invalidation du cache Streamlit
     _ = cache_buster  # Utilisé pour forcer le rechargement après sync
@@ -734,9 +737,10 @@ def load_df_optimized(
             matches = load_matches(db_path, xuid)
 
     if not matches:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
-    df = pd.DataFrame(
+    # Construire le DataFrame Polars directement
+    df = pl.DataFrame(
         {
             "match_id": [m.match_id for m in matches],
             "start_time": [m.start_time for m in matches],
@@ -766,18 +770,36 @@ def load_df_optimized(
         }
     )
 
-    # Conversions standard
-    df["start_time"] = (
-        pd.to_datetime(df["start_time"], utc=True).dt.tz_convert(PARIS_TZ_NAME).dt.tz_localize(None)
+    # Conversions standard avec Polars
+    # Convertir start_time en datetime UTC puis en timezone Paris
+    df = df.with_columns(
+        pl.col("start_time")
+        .str.to_datetime(time_zone="UTC")
+        .dt.convert_time_zone(PARIS_TZ_NAME)
+        .dt.replace_time_zone(None)
+        .alias("start_time")
     )
-    df["date"] = df["start_time"].dt.date
+
+    # Extraire la date
+    df = df.with_columns(pl.col("start_time").dt.date().alias("date"))
 
     # Stats par minute
-    minutes = (pd.to_numeric(df["time_played_seconds"], errors="coerce") / 60.0).astype(float)
-    minutes = minutes.where(minutes > 0)
-    df["kills_per_min"] = pd.to_numeric(df["kills"], errors="coerce") / minutes
-    df["deaths_per_min"] = pd.to_numeric(df["deaths"], errors="coerce") / minutes
-    df["assists_per_min"] = pd.to_numeric(df["assists"], errors="coerce") / minutes
+    df = df.with_columns(
+        (pl.col("time_played_seconds").cast(pl.Float64) / 60.0)
+        .clip(lower_bound=0.0)
+        .alias("minutes")
+    )
+
+    df = df.with_columns(
+        [
+            (pl.col("kills").cast(pl.Float64) / pl.col("minutes")).alias("kills_per_min"),
+            (pl.col("deaths").cast(pl.Float64) / pl.col("minutes")).alias("deaths_per_min"),
+            (pl.col("assists").cast(pl.Float64) / pl.col("minutes")).alias("assists_per_min"),
+        ]
+    )
+
+    # Supprimer la colonne temporaire minutes
+    df = df.drop("minutes")
 
     return df
 
@@ -877,7 +899,7 @@ def load_df_hybrid(
     xuid: str,
     db_key: tuple[int, int] | None = None,
     include_firefight: bool = True,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Charge les matchs via le système hybride (Parquet + DuckDB).
 
     Utilise le DataRepository configuré selon le mode dans les settings.
@@ -890,7 +912,7 @@ def load_df_hybrid(
         include_firefight: Inclure les matchs PvE.
 
     Returns:
-        DataFrame enrichi avec toutes les colonnes calculées.
+        DataFrame Polars enrichi avec toutes les colonnes calculées.
     """
     _ = db_key  # Utilisé pour invalidation du cache Streamlit
 
@@ -899,16 +921,17 @@ def load_df_hybrid(
 
         mode = get_repository_mode_from_settings()
 
-        # Utiliser le nouveau système
-        df = load_matches_df(
+        # Utiliser le nouveau système (retourne encore Pandas pour l'instant)
+        df_pd = load_matches_df(
             db_path,
             xuid,
             include_firefight=include_firefight,
             mode=mode,
         )
 
-        if not df.empty:
-            return df
+        if not df_pd.empty:
+            # Convertir en Polars pour cohérence
+            return pl.from_pandas(df_pd)
 
         # Fallback sur legacy si vide (pas de données Parquet)
         return load_df_optimized(db_path, xuid, db_key=db_key, include_firefight=include_firefight)

@@ -6,45 +6,63 @@ des scores de performance pour les sessions de jeu.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
+from src.analysis.performance_config import SCORE_LABELS, SCORE_THRESHOLDS
 from src.analysis.performance_score import (
     compute_session_performance_score_v1,
     compute_session_performance_score_v2,
 )
-from src.analysis.performance_config import SCORE_THRESHOLDS, SCORE_LABELS
 
 
-def compute_session_performance_score(df_session: pd.DataFrame) -> dict:
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
+
+
+def compute_session_performance_score(df_session: pd.DataFrame | pl.DataFrame) -> dict:
     """Calcule un score de performance (0-100) pour une session.
-    
+
     Le score est une moyenne pondérée de :
     - K/D ratio normalisé (30%)
     - Win rate (25%)
     - Précision moyenne (25%)
     - Score moyen par partie normalisé (20%)
-    
+
     Args:
-        df_session: DataFrame contenant les matchs de la session.
-        
+        df_session: DataFrame (Pandas ou Polars) contenant les matchs de la session.
+
     Returns:
         Dict avec score global et composantes détaillées.
     """
+    # Normaliser en Pandas pour compatibilité
+    df_session = _normalize_df(df_session)
+
     return compute_session_performance_score_v1(df_session)
 
 
 def compute_session_performance_score_v2_ui(
-    df_session: pd.DataFrame,
+    df_session: pd.DataFrame | pl.DataFrame,
     *,
     include_mmr_adjustment: bool = True,
 ) -> dict:
     """Calcule un score de performance v2 (0–100) pour une session.
 
     Version pensée pour être réutilisée ailleurs que dans la page de comparaison.
+
+    Args:
+        df_session: DataFrame (Pandas ou Polars) contenant les matchs de la session.
+        include_mmr_adjustment: Inclure l'ajustement MMR.
     """
+    # Normaliser en Pandas pour compatibilité
+    df_session = _normalize_df(df_session)
+
     return compute_session_performance_score_v2(
         df_session,
         include_mmr_adjustment=include_mmr_adjustment,
@@ -102,7 +120,7 @@ def render_performance_score_card(
     is_better: bool | None = None,
 ) -> None:
     """Affiche une grande carte avec le score de performance.
-    
+
     Args:
         label: Titre de la carte (ex: "Session A").
         perf: Dict retourné par compute_session_performance_score.
@@ -112,14 +130,14 @@ def render_performance_score_card(
     score_class = get_score_class(score)
     score_label = get_score_label(score)
     score_display = f"{score:.0f}" if score is not None else "—"
-    
+
     # Indicateur de comparaison
     badge = ""
     if is_better is True:
         badge = "<span class='text-positive text-lg' style='margin-left: 8px;'>▲</span>"
     elif is_better is False:
         badge = "<span class='text-negative text-lg' style='margin-left: 8px;'>▼</span>"
-    
+
     st.markdown(
         f"""
         <div class="os-perf-card">
@@ -141,7 +159,7 @@ def render_metric_comparison_row(
     higher_is_better: bool = True,
 ) -> None:
     """Affiche une ligne de métrique avec comparaison colorée.
-    
+
     Args:
         label: Nom de la métrique.
         val_a: Valeur pour la session A.
@@ -150,7 +168,7 @@ def render_metric_comparison_row(
         higher_is_better: Si True, la valeur la plus haute est verte.
     """
     col1, col2, col3 = st.columns([2, 1, 1])
-    
+
     # Déterminer les classes CSS
     class_a, class_b = "os-metric-value--neutral", "os-metric-value--neutral"
     if val_a is not None and val_b is not None:
@@ -164,7 +182,7 @@ def render_metric_comparison_row(
                 class_a = "os-metric-value--better"
             elif val_b < val_a:
                 class_b = "os-metric-value--better"
-    
+
     # Fonction de formatage
     def _format_value(val):
         if val is None:
@@ -172,7 +190,7 @@ def render_metric_comparison_row(
         if callable(fmt):
             return fmt(val)
         return fmt.format(val)
-    
+
     with col1:
         st.markdown(f"**{label}**")
     with col2:

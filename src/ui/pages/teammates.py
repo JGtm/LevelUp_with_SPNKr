@@ -78,11 +78,18 @@ def _load_teammate_stats_from_own_db(
         return pd.DataFrame()
 
     try:
-        # Charger depuis la DB du coéquipier
-        df = load_df_optimized(str(teammate_db_path), "", db_key=None)
-        if df.empty:
-            return df
-        return df.loc[df["match_id"].astype(str).isin(match_ids)].copy()
+        import polars as pl
+
+        # Charger depuis la DB du coéquipier (retourne Polars maintenant)
+        df_pl = load_df_optimized(str(teammate_db_path), "", db_key=None)
+        if df_pl.is_empty():
+            return pd.DataFrame()
+
+        # Filtrer avec Polars puis convertir en Pandas pour compatibilité
+        df_filtered = df_pl.filter(
+            pl.col("match_id").cast(pl.Utf8).is_in([str(mid) for mid in match_ids])
+        )
+        return df_filtered.to_pandas()
     except Exception:
         return pd.DataFrame()
 

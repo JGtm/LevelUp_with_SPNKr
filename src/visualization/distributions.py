@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import polars as pl
 
 from src.config import HALO_COLORS, OUTCOME_CODES, PLOT_CONFIG, SESSION_CONFIG
 from src.visualization.theme import (
@@ -13,15 +14,29 @@ from src.visualization.theme import (
 )
 
 
-def plot_kda_distribution(df: pd.DataFrame) -> go.Figure:
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire.
+
+    Les fonctions de visualisation utilisent encore certaines opérations Pandas
+    spécifiques. Cette fonction normalise l'entrée pour compatibilité.
+    """
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
+
+
+def plot_kda_distribution(df: pd.DataFrame | pl.DataFrame) -> go.Figure:
     """Graphique de distribution du KDA (FDA) avec KDE.
 
     Args:
-        df: DataFrame avec colonne kda.
+        df: DataFrame (Pandas ou Polars) avec colonne kda.
 
     Returns:
         Figure Plotly avec densité KDE et rug plot.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.dropna(subset=["kda"]).copy()
     x = pd.to_numeric(d["kda"], errors="coerce").dropna().astype(float).to_numpy()
@@ -85,14 +100,12 @@ def plot_kda_distribution(df: pd.DataFrame) -> go.Figure:
 
 
 def plot_outcomes_over_time(
-    df: pd.DataFrame, *, session_style: bool = False
+    df: pd.DataFrame | pl.DataFrame, *, session_style: bool = False
 ) -> tuple[go.Figure, str]:
     """Graphique d'évolution des victoires/défaites dans le temps.
 
     Args:
-        df: DataFrame avec colonnes outcome et start_time.
-
-    Args:
+        df: DataFrame (Pandas ou Polars) avec colonnes outcome et start_time.
         session_style: Si True, force une logique de bucket orientée "session" :
             - <= 20 matchs : bucket par partie (1..n)
             - > 20 matchs : bucket par heure
@@ -100,6 +113,9 @@ def plot_outcomes_over_time(
     Returns:
         Tuple (figure, bucket_label) où bucket_label décrit la granularité.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.dropna(subset=["outcome"]).copy()
 
@@ -216,7 +232,7 @@ def plot_outcomes_over_time(
 
 
 def plot_stacked_outcomes_by_category(
-    df: pd.DataFrame,
+    df: pd.DataFrame | pl.DataFrame,
     category_col: str,
     *,
     title: str | None = None,
@@ -227,7 +243,7 @@ def plot_stacked_outcomes_by_category(
     """Graphique de colonnes empilées Win/Loss/Tie/Left par catégorie.
 
     Args:
-        df: DataFrame avec colonnes `category_col` et `outcome`.
+        df: DataFrame (Pandas ou Polars) avec colonnes `category_col` et `outcome`.
         category_col: Nom de la colonne de catégorie (ex: "map_name", "mode_category").
         title: Titre optionnel du graphique.
         min_matches: Nombre minimum de matchs pour afficher une catégorie.
@@ -237,6 +253,9 @@ def plot_stacked_outcomes_by_category(
     Returns:
         Figure Plotly avec barres empilées verticales.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.dropna(subset=[category_col, "outcome"]).copy()
 
@@ -484,9 +503,7 @@ def plot_top_weapons(
         return apply_halo_plot_style(fig, title=title)
 
     # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
-        :top_n
-    ]
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
 
     names = [w.get("weapon_name", "?") for w in data][::-1]
     kills = [w.get("total_kills", 0) for w in data][::-1]
@@ -505,7 +522,7 @@ def plot_top_weapons(
             opacity=0.85,
             text=[f"{k} kills" for k in kills],
             textposition="outside",
-            customdata=list(zip(hs_rates, accuracies)),
+            customdata=list(zip(hs_rates, accuracies, strict=False)),
             hovertemplate=(
                 "%{y}<br>"
                 "Kills: %{x}<br>"
@@ -528,7 +545,7 @@ def plot_top_weapons(
 
 
 def plot_histogram(
-    values: pd.Series | np.ndarray,
+    values: pd.Series | pl.Series | np.ndarray,
     *,
     title: str | None = None,
     x_label: str = "Valeur",
@@ -540,7 +557,7 @@ def plot_histogram(
     """Histogramme générique avec option KDE.
 
     Args:
-        values: Série ou array de valeurs numériques.
+        values: Série (Pandas ou Polars) ou array de valeurs numériques.
         title: Titre optionnel.
         x_label: Label de l'axe X.
         y_label: Label de l'axe Y.
@@ -554,7 +571,9 @@ def plot_histogram(
     colors = HALO_COLORS.as_dict()
     bar_color = color or colors["cyan"]
 
-    if isinstance(values, pd.Series):
+    if isinstance(values, pl.Series):
+        x = values.drop_nulls().to_numpy()
+    elif isinstance(values, pd.Series):
         x = values.dropna().to_numpy()
     else:
         x = np.array(values)
@@ -649,9 +668,7 @@ def plot_top_weapons(
         return apply_halo_plot_style(fig, title=title)
 
     # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
-        :top_n
-    ]
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
 
     names = [w.get("weapon_name", "?") for w in data][::-1]
     kills = [w.get("total_kills", 0) for w in data][::-1]
@@ -670,7 +687,7 @@ def plot_top_weapons(
             opacity=0.85,
             text=[f"{k} kills" for k in kills],
             textposition="outside",
-            customdata=list(zip(hs_rates, accuracies)),
+            customdata=list(zip(hs_rates, accuracies, strict=False)),
             hovertemplate=(
                 "%{y}<br>"
                 "Kills: %{x}<br>"
@@ -754,7 +771,7 @@ def plot_medals_distribution(
 
 
 def plot_correlation_scatter(
-    df: pd.DataFrame,
+    df: pd.DataFrame | pl.DataFrame,
     x_col: str,
     y_col: str,
     *,
@@ -767,7 +784,7 @@ def plot_correlation_scatter(
     """Scatter plot pour visualiser les corrélations.
 
     Args:
-        df: DataFrame avec les données.
+        df: DataFrame (Pandas ou Polars) avec les données.
         x_col: Colonne pour l'axe X.
         y_col: Colonne pour l'axe Y.
         color_col: Colonne pour colorer les points (optionnel).
@@ -779,6 +796,9 @@ def plot_correlation_scatter(
     Returns:
         Figure Plotly avec scatter plot.
     """
+    # Normaliser en Pandas pour compatibilité
+    df = _normalize_df(df)
+
     colors = HALO_COLORS.as_dict()
     d = df.dropna(subset=[x_col, y_col]).copy()
 
@@ -892,9 +912,7 @@ def plot_top_weapons(
         return apply_halo_plot_style(fig, title=title)
 
     # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
-        :top_n
-    ]
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
 
     names = [w.get("weapon_name", "?") for w in data][::-1]
     kills = [w.get("total_kills", 0) for w in data][::-1]
@@ -913,7 +931,7 @@ def plot_top_weapons(
             opacity=0.85,
             text=[f"{k} kills" for k in kills],
             textposition="outside",
-            customdata=list(zip(hs_rates, accuracies)),
+            customdata=list(zip(hs_rates, accuracies, strict=False)),
             hovertemplate=(
                 "%{y}<br>"
                 "Kills: %{x}<br>"
@@ -1073,9 +1091,7 @@ def plot_top_weapons(
         return apply_halo_plot_style(fig, title=title)
 
     # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
-        :top_n
-    ]
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
 
     names = [w.get("weapon_name", "?") for w in data][::-1]
     kills = [w.get("total_kills", 0) for w in data][::-1]
@@ -1094,7 +1110,7 @@ def plot_top_weapons(
             opacity=0.85,
             text=[f"{k} kills" for k in kills],
             textposition="outside",
-            customdata=list(zip(hs_rates, accuracies)),
+            customdata=list(zip(hs_rates, accuracies, strict=False)),
             hovertemplate=(
                 "%{y}<br>"
                 "Kills: %{x}<br>"
@@ -1226,9 +1242,7 @@ def plot_top_weapons(
         return apply_halo_plot_style(fig, title=title)
 
     # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[
-        :top_n
-    ]
+    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
 
     names = [w.get("weapon_name", "?") for w in data][::-1]
     kills = [w.get("total_kills", 0) for w in data][::-1]
@@ -1247,7 +1261,7 @@ def plot_top_weapons(
             opacity=0.85,
             text=[f"{k} kills" for k in kills],
             textposition="outside",
-            customdata=list(zip(hs_rates, accuracies)),
+            customdata=list(zip(hs_rates, accuracies, strict=False)),
             hovertemplate=(
                 "%{y}<br>"
                 "Kills: %{x}<br>"

@@ -11,40 +11,51 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.analysis import (
     compute_aggregated_stats,
-    compute_outcome_rates,
     compute_global_ratio,
+    compute_outcome_rates,
 )
+from src.analysis.performance_config import PERFORMANCE_SCORE_FULL_DESC
 from src.analysis.stats import format_mmss
-from src.ui.formatting import (
-    format_duration_hms,
-    format_duration_dhm,
+from src.app.helpers import (
+    avg_match_duration_seconds,
+    compute_total_play_seconds,
 )
 from src.ui.components import (
     render_kpi_cards,
     render_top_summary,
 )
-from src.app.helpers import (
-    avg_match_duration_seconds,
-    compute_total_play_seconds,
+from src.ui.formatting import (
+    format_duration_dhm,
+    format_duration_hms,
 )
-from src.analysis.performance_config import PERFORMANCE_SCORE_FULL_DESC
 
 if TYPE_CHECKING:
     pass
 
 
-def render_kpis_section(dff: pd.DataFrame) -> None:
+def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
+
+
+def render_kpis_section(dff: pd.DataFrame | pl.DataFrame) -> None:
     """Rend la section complète des KPIs.
-    
+
     Args:
-        dff: DataFrame filtré des matchs.
+        dff: DataFrame (Pandas ou Polars) filtré des matchs.
     """
     from src.ui.perf import perf_section
-    
+
+    # Normaliser en Pandas pour compatibilité
+    dff = _normalize_df(dff)
+
     with perf_section("kpis"):
         rates = compute_outcome_rates(dff)
         total_outcomes = max(1, rates.total)
@@ -85,7 +96,10 @@ def render_kpis_section(dff: pd.DataFrame) -> None:
             ("Durée moyenne / match", avg_match_txt),
             ("Frags par partie", f"{kpg:.2f}" if (kpg is not None and pd.notna(kpg)) else "-"),
             ("Morts par partie", f"{dpg:.2f}" if (dpg is not None and pd.notna(dpg)) else "-"),
-            ("Assistances par partie", f"{apg:.2f}" if (apg is not None and pd.notna(apg)) else "-"),
+            (
+                "Assistances par partie",
+                f"{apg:.2f}" if (apg is not None and pd.notna(apg)) else "-",
+            ),
         ],
         dense=False,
     )
@@ -93,7 +107,10 @@ def render_kpis_section(dff: pd.DataFrame) -> None:
         [
             ("Frags / min", f"{stats.kills_per_minute:.2f}" if stats.kills_per_minute else "-"),
             ("Morts / min", f"{stats.deaths_per_minute:.2f}" if stats.deaths_per_minute else "-"),
-            ("Assistances / min", f"{stats.assists_per_minute:.2f}" if stats.assists_per_minute else "-"),
+            (
+                "Assistances / min",
+                f"{stats.assists_per_minute:.2f}" if stats.assists_per_minute else "-",
+            ),
             ("Précision moyenne", f"{avg_acc:.2f}%" if avg_acc is not None else "-"),
             ("Durée de vie moyenne", format_mmss(avg_life)),
             ("Taux de victoire", f"{win_rate*100:.1f}%" if rates.total else "-"),

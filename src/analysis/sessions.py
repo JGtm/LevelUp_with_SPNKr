@@ -28,7 +28,9 @@ DEFAULT_SESSION_GAP_MINUTES = 120
 SESSION_CUTOFF_HOUR = 8
 
 
-def compute_sessions(df: pd.DataFrame, gap_minutes: int | None = None) -> pd.DataFrame:
+def compute_sessions(
+    df: pd.DataFrame | pl.DataFrame, gap_minutes: int | None = None
+) -> pd.DataFrame | pl.DataFrame:
     """Regroupe les parties consécutives en sessions (mode legacy).
 
     ATTENTION: Cette fonction ne prend PAS en compte les coéquipiers.
@@ -39,15 +41,75 @@ def compute_sessions(df: pd.DataFrame, gap_minutes: int | None = None) -> pd.Dat
     dépasse le seuil défini.
 
     Args:
-        df: DataFrame avec colonne start_time.
+        df: DataFrame (Pandas ou Polars) avec colonne start_time.
         gap_minutes: Écart maximum entre parties (default: SESSION_CONFIG.default_gap_minutes).
 
     Returns:
-        DataFrame avec colonnes session_id et session_label ajoutées.
+        DataFrame avec colonnes session_id et session_label ajoutées (même type que l'entrée).
     """
     if gap_minutes is None:
         gap_minutes = SESSION_CONFIG.default_gap_minutes
 
+    # Détecter le type de DataFrame
+    is_polars = isinstance(df, pl.DataFrame)
+
+    if is_polars:
+        return _compute_sessions_polars(df, gap_minutes)
+    else:
+        return _compute_sessions_pandas(df, gap_minutes)
+
+
+def _compute_sessions_polars(df: pl.DataFrame, gap_minutes: int) -> pl.DataFrame:
+    """Version Polars de compute_sessions()."""
+    if df.is_empty():
+        return df.with_columns(
+            [
+                pl.lit(None).cast(pl.Int64).alias("session_id"),
+                pl.lit(None).cast(pl.Utf8).alias("session_label"),
+            ]
+        )
+
+    df_sorted = df.sort("start_time")
+
+    # Calculer les gaps entre matchs
+    gaps = df_sorted["start_time"].diff().dt.total_seconds().fill_null(0)
+
+    # Nouvelle session si gap > gap_minutes
+    new_session = (gaps > (gap_minutes * 60)).cast(pl.Int64)
+    session_id = new_session.cum_sum().cast(pl.Int64)
+
+    df_with_sessions = df_sorted.with_columns([session_id.alias("session_id")])
+
+    # Générer les labels de session
+    session_stats = df_with_sessions.group_by("session_id").agg(
+        [
+            pl.col("start_time").min().alias("min_time"),
+            pl.col("start_time").max().alias("max_time"),
+            pl.count().alias("count"),
+        ]
+    )
+
+    # Créer les labels
+    labels = session_stats.with_columns(
+        [
+            pl.format(
+                "{} {}–{} ({})",
+                pl.col("min_time").dt.strftime("%d/%m/%Y"),
+                pl.col("min_time").dt.strftime("%H:%M"),
+                pl.col("max_time").dt.strftime("%H:%M"),
+                pl.col("count").cast(pl.Utf8),
+            ).alias("session_label")
+        ]
+    ).select(["session_id", "session_label"])
+
+    # Joindre les labels
+    result = df_with_sessions.join(labels, on="session_id", how="left")
+
+    return result
+
+
+def _compute_sessions_pandas(df: pd.DataFrame, gap_minutes: int) -> pd.DataFrame:
+    """Version Pandas de compute_sessions() (legacy, à supprimer progressivement)."""
     if df.empty:
         d = df.copy()
         d["session_id"] = pd.Series(dtype=int)
@@ -79,6 +141,9 @@ def compute_sessions_with_context(
     teammates_column: str | None = "teammates_signature",
 ) -> pd.DataFrame:
     """Regroupe les parties en sessions avec logique avancée.
+
+    ⚠️ DÉPRÉCIÉ : Utiliser compute_sessions_with_context_polars() avec un DataFrame Polars.
+    Cette fonction sera supprimée dans une future version.
 
     Règles :
     1. Un gap > gap_minutes entre deux matchs = nouvelle session
