@@ -7,6 +7,38 @@
 
 ## Journal
 
+### [2026-02-06] - ✅ Sprint 3 TERMINÉ : Migration SQLite → DuckDB Complète
+
+**Statut** : ✅ **TERMINÉ** - Toutes les tâches du sprint complétées
+
+**Contexte** :
+Éliminer toutes les références SQLite du code applicatif (hors scripts de migration).
+
+**RÉALISATIONS** :
+
+#### Modifications principales
+- ✅ `src/db/connection.py` : Réécrit - DuckDB uniquement, `SQLiteForbiddenError` si `.db` fourni
+- ✅ `scripts/sync.py` : Supprimé sqlite3, _refuse_sqlite_path(), branches SQLite (rebuild_cache, etc.)
+- ✅ `src/db/loaders.py` : has_table() utilise uniquement DuckDB (information_schema), refuse .db
+- ✅ `src/ui/multiplayer.py` : Supprimé _get_sqlite_connection(), branches SQLite
+- ✅ `src/ui/sync.py` : Métadonnées vides pour .db (au lieu d'appeler get_sync_metadata)
+
+#### Scripts utilitaires
+- ✅ `validate_refdata_integrity.py` : sqlite_master → information_schema
+- ✅ `migrate_game_variant_category.py` : sqlite_master → information_schema
+- ✅ `migrate_add_columns.py` : sqlite_master → information_schema, PRAGMA → information_schema.columns
+
+#### Tests
+- ✅ `test_cache_integrity.py` : Skip (tests legacy SQLite MatchCache)
+- ✅ `test_connection_duckdb.py` : Nouveau - SQLiteForbiddenError, get_connection DuckDB
+
+#### Documentation
+- ✅ `recover_from_sqlite.py`, `migrate_player_to_duckdb.py` : En-tête "migration only"
+
+**Validation** : `pytest tests/ -v` (nécessite `pip install -e ".[dev]"`)
+
+---
+
 ### [2026-02-06] - ✅ Sprint 2 TERMINÉ : Logique Sessions (teammates_signature)
 
 **Statut** : ✅ **TERMINÉ** - Toutes les tâches complétées

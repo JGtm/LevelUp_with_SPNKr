@@ -38,13 +38,6 @@ def _is_duckdb_file(db_path: str) -> bool:
     return db_path.endswith(".duckdb")
 
 
-def _get_sqlite_connection(db_path: str):
-    """Retourne une connexion SQLite."""
-    import sqlite3
-
-    return sqlite3.connect(db_path)
-
-
 def _get_duckdb_connection(db_path: str):
     """Retourne une connexion DuckDB."""
     import duckdb
@@ -84,63 +77,30 @@ class PlayerInfo:
 def is_multi_player_db(db_path: str) -> bool:
     """Vérifie si la DB contient une table Players (DB fusionnée).
 
-    Dans l'architecture v4 (DuckDB), chaque joueur a sa propre DB,
-    donc cette fonction retourne False pour les fichiers .duckdb.
+    DuckDB v4 uniquement : chaque joueur a sa propre DB, toujours single-player.
+    Retourne False (SQLite .db refusé).
     """
     if not db_path or not os.path.exists(db_path):
         return False
-
-    # Les DBs DuckDB v4 sont toujours single-player
+    # SQLite (.db) interdit - toujours False
+    if db_path.strip().lower().endswith(".db"):
+        return False
+    # DuckDB v4 : toujours single-player
     if _is_duckdb_file(db_path):
         return False
-
-    try:
-        con = _get_sqlite_connection(db_path)
-        cur = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Players'")
-        result = cur.fetchone() is not None
-        con.close()
-        return result
-    except Exception:
-        return False
+    return False
 
 
 def list_players_in_db(db_path: str) -> list[PlayerInfo]:
     """Liste les joueurs disponibles dans une DB multi-joueurs.
 
-    Returns:
-        Liste triée par nombre de matchs (décroissant).
+    DuckDB v4 uniquement : toujours single-player, retourne [].
+    SQLite (.db) interdit.
     """
     if not db_path or not os.path.exists(db_path):
         return []
-
-    # Les DBs DuckDB v4 sont single-player, pas de table Players
-    if _is_duckdb_file(db_path):
-        return []
-
-    players: list[PlayerInfo] = []
-    try:
-        con = _get_sqlite_connection(db_path)
-        cur = con.execute("""
-            SELECT xuid, gamertag, label, total_matches,
-                   first_match_date, last_match_date
-            FROM Players
-            ORDER BY total_matches DESC
-        """)
-        for row in cur.fetchall():
-            players.append(
-                PlayerInfo(
-                    xuid=row[0],
-                    gamertag=row[1],
-                    label=row[2],
-                    total_matches=row[3] or 0,
-                    first_match_date=row[4],
-                    last_match_date=row[5],
-                )
-            )
-        con.close()
-    except Exception:
-        pass
-    return players
+    # SQLite interdit, DuckDB v4 = single-player
+    return []
 
 
 def get_unique_xuids_from_matchstats(db_path: str) -> list[tuple[str, int]]:
@@ -155,45 +115,11 @@ def get_unique_xuids_from_matchstats(db_path: str) -> list[tuple[str, int]]:
     if not db_path or not os.path.exists(db_path):
         return []
 
-    xuids: list[tuple[str, int]] = []
-
-    # Pour DuckDB, lire depuis match_stats
+    # DuckDB v4 : chaque DB = 1 joueur, pas de multi-xuid
     if _is_duckdb_file(db_path):
-        try:
-            con = _get_duckdb_connection(db_path)
-            result = con.execute("""
-                SELECT xuid, COUNT(*) as cnt
-                FROM match_stats
-                GROUP BY xuid
-                ORDER BY cnt DESC
-            """).fetchall()
-            xuids = [(str(row[0]), row[1]) for row in result if row[0]]
-            con.close()
-        except Exception:
-            pass
-        return xuids
-
-    # Pour SQLite, essayer MatchCache puis MatchStats
-    try:
-        con = _get_sqlite_connection(db_path)
-        try:
-            cur = con.execute("""
-                SELECT xuid, COUNT(*) as cnt
-                FROM MatchCache
-                GROUP BY xuid
-                ORDER BY cnt DESC
-            """)
-            xuids = [(row[0], row[1]) for row in cur.fetchall()]
-        except Exception:
-            cur = con.execute("""
-                SELECT DISTINCT XUID
-                FROM MatchStats
-            """)
-            xuids = [(row[0], 0) for row in cur.fetchall() if row[0]]
-        con.close()
-    except Exception:
-        pass
-    return xuids
+        return []
+    # SQLite (.db) interdit
+    return []
 
 
 def render_player_selector(
@@ -253,27 +179,16 @@ def render_player_selector(
 
 
 def get_player_display_name(db_path: str, xuid: str) -> str | None:
-    """Récupère le nom d'affichage d'un joueur depuis la table Players.
+    """Récupère le nom d'affichage d'un joueur.
 
-    Pour les DBs DuckDB v4, retourne None car il n'y a pas de table Players
-    (chaque joueur a sa propre DB identifiée par le nom du dossier).
+    DuckDB v4 : pas de table Players (chaque joueur = une DB). Retourne None.
+    SQLite (.db) interdit.
     """
     if not db_path or not xuid or not os.path.exists(db_path):
         return None
-
-    # Les DBs DuckDB v4 n'ont pas de table Players
     if _is_duckdb_file(db_path):
         return None
-
-    try:
-        con = _get_sqlite_connection(db_path)
-        cur = con.execute("SELECT label, gamertag FROM Players WHERE xuid = ?", (xuid,))
-        row = cur.fetchone()
-        con.close()
-        if row:
-            return row[0] or row[1] or None
-    except Exception:
-        pass
+    # SQLite (.db) interdit
     return None
 
 

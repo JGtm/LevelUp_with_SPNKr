@@ -19,8 +19,6 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from src.db import get_sync_metadata
-
 if TYPE_CHECKING:
     pass
 
@@ -138,8 +136,8 @@ def _get_sync_metadata_smart(db_path: str, xuid: str | None = None) -> dict:
         except Exception:
             return {"last_sync_at": None, "total_matches": 0}
 
-    # Legacy SQLite
-    return get_sync_metadata(db_path)
+    # SQLite (.db) interdit - retourner métadonnées vides
+    return {"last_sync_at": None, "total_matches": 0, "last_match_time": None, "player_xuid": None}
 
 
 def render_sync_indicator(db_path: str) -> None:

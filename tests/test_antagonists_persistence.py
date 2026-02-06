@@ -8,6 +8,7 @@ Ces tests vérifient:
 
 from __future__ import annotations
 
+import gc
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -260,20 +261,26 @@ class TestDuckDBRepositorySaveAntagonists:
     """Tests pour save_antagonists et load_antagonists du DuckDBRepository."""
 
     @pytest.fixture
-    def temp_db(self):
-        """Crée une DB DuckDB temporaire pour les tests."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "stats.duckdb"
-            # Créer une DB vide avec les tables nécessaires
-            conn = duckdb.connect(str(db_path))
+    def temp_db(self, tmp_path: Path):
+        """Crée une DB DuckDB temporaire pour les tests.
+
+        Utilise tmp_path (pytest) au lieu de tempfile.TemporaryDirectory pour éviter
+        les segfaults DuckDB sur Windows (WAL lockfiles, cleanup trop rapide).
+        """
+        db_path = tmp_path.resolve() / "stats.duckdb"
+        conn = duckdb.connect(str(db_path))
+        try:
             conn.execute("""
                 CREATE TABLE match_stats (
                     match_id VARCHAR PRIMARY KEY,
                     start_time TIMESTAMP
                 )
             """)
+        finally:
             conn.close()
-            yield db_path
+            del conn
+            gc.collect()  # Aide à libérer les lockfiles WAL sur Windows
+        return db_path
 
     def test_save_and_load_antagonists(self, temp_db: Path) -> None:
         """Sauvegarde et charge des antagonistes."""

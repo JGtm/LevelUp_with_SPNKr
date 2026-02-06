@@ -64,10 +64,12 @@ COLUMNS_TO_DROP = [
 
 
 def get_existing_columns(conn: duckdb.DuckDBPyConnection, table: str) -> set[str]:
-    """Récupère les colonnes existantes d'une table."""
+    """Récupère les colonnes existantes d'une table (DuckDB information_schema)."""
     try:
-        result = conn.execute(f"PRAGMA table_info('{table}')").fetchall()
-        return {row[1] for row in result}
+        result = conn.execute(
+            f"SELECT column_name FROM information_schema.columns WHERE table_schema = 'main' AND table_name = '{table}'"
+        ).fetchall()
+        return {row[0].lower() for row in result}
     except Exception:
         return set()
 
@@ -76,7 +78,7 @@ def table_exists(conn: duckdb.DuckDBPyConnection, table: str) -> bool:
     """Vérifie si une table existe."""
     try:
         result = conn.execute(
-            f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'"
+            f"SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = '{table}'"
         ).fetchone()
         return result is not None
     except Exception:

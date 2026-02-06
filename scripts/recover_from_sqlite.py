@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Récupère les données depuis les anciennes bases SQLite vers DuckDB v4.
 
+⚠️ SCRIPT DE MIGRATION UNIQUEMENT - SQLite en lecture seule.
+Ce script est la SEULE exception autorisée à utiliser sqlite3.
+Ne pas utiliser pour le flux applicatif normal (DuckDB uniquement).
+
 Ce script extrait :
 1. match_participants : XUID, team_id, outcome pour TOUS les matchs
 2. xuid_aliases : gamertags depuis HighlightEvents et TeammatesAggregate

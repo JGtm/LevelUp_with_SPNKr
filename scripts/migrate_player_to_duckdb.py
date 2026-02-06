@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""
-Script de migration des donnees joueur SQLite vers DuckDB.
+"""Script de migration des donnees joueur SQLite vers DuckDB.
+
+⚠️ SCRIPT DE MIGRATION UNIQUEMENT - SQLite en lecture pour migration.
+Ne pas utiliser pour le flux applicatif normal (DuckDB uniquement).
 
 Ce script migre spnkr_gt_{gamertag}.db (SQLite legacy) vers
 data/players/{gamertag}/stats.duckdb (DuckDB).

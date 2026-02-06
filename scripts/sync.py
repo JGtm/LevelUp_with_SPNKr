@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,12 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.config import get_default_db_path  # noqa: E402
-from src.db.connection import get_connection  # noqa: E402
-from src.db.schema import (  # noqa: E402
-    CACHE_SCHEMA_VERSION,
-    get_all_cache_table_ddl,
-    get_source_table_indexes,
-)
+from src.db.connection import SQLiteForbiddenError, get_connection  # noqa: E402
 from src.ui.multiplayer import DuckDBPlayerInfo, list_duckdb_v4_players  # noqa: E402
 
 # Configuration du logging
@@ -68,28 +62,6 @@ logger = logging.getLogger(__name__)
 def _get_iso_now() -> str:
     """Retourne le timestamp ISO 8601 actuel (UTC)."""
     return datetime.now(timezone.utc).isoformat()
-
-
-def _update_sync_meta(con: sqlite3.Connection, key: str, value: str) -> None:
-    """Met à jour une entrée dans SyncMeta."""
-    cur = con.cursor()
-    cur.execute(
-        """INSERT OR REPLACE INTO SyncMeta (Key, Value, UpdatedAt)
-           VALUES (?, ?, ?)""",
-        (key, value, _get_iso_now()),
-    )
-    con.commit()
-
-
-def _get_sync_meta(con: sqlite3.Connection, key: str) -> str | None:
-    """Récupère une valeur depuis SyncMeta."""
-    try:
-        cur = con.cursor()
-        cur.execute("SELECT Value FROM SyncMeta WHERE Key = ?", (key,))
-        row = cur.fetchone()
-        return row[0] if row else None
-    except Exception:
-        return None
 
 
 def _normalize_player_key(s: str) -> str:
@@ -226,24 +198,10 @@ def _resolve_player_in_db(db_path: str, player_query: str) -> tuple[str, str | N
     return player_query.strip(), None, player_query.strip()
 
 
-def _has_table(con: sqlite3.Connection, table_name: str) -> bool:
-    """Vérifie si une table existe."""
-    cur = con.cursor()
-    cur.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-        (table_name,),
-    )
-    return cur.fetchone() is not None
-
-
-def _count_rows(con: sqlite3.Connection, table_name: str) -> int:
-    """Compte le nombre de lignes dans une table."""
-    try:
-        cur = con.cursor()
-        cur.execute(f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
-        return cur.fetchone()[0]
-    except Exception:
-        return 0
+def _refuse_sqlite_path(db_path: str) -> None:
+    """Refuse les chemins .db (SQLite). Lève SQLiteForbiddenError si applicable."""
+    if db_path and db_path.strip().lower().endswith(".db"):
+        raise SQLiteForbiddenError(db_path)
 
 
 # =============================================================================
@@ -259,380 +217,57 @@ def _is_duckdb_path(db_path: str) -> bool:
 def apply_indexes(db_path: str) -> tuple[bool, str]:
     """Applique les index optimisés sur la base de données.
 
-    Args:
-        db_path: Chemin vers la base de données.
-
-    Returns:
-        Tuple (success, message).
+    DuckDB uniquement. Pour les fichiers .duckdb, les index sont gérés automatiquement.
+    Refuse les chemins .db (SQLite).
     """
+    _refuse_sqlite_path(db_path)
     if _is_duckdb_path(db_path):
         logger.info("Application des index: ignoré (DuckDB v4 gère ses propres index).")
         return True, "DuckDB: ignoré"
-
-    logger.info("Application des index optimisés...")
-
-    try:
-        with get_connection(db_path) as con:
-            cur = con.cursor()
-
-            # Index des tables sources
-            source_indexes = get_source_table_indexes()
-            applied = 0
-
-            for ddl in source_indexes:
-                try:
-                    cur.execute(ddl)
-                    applied += 1
-                except sqlite3.OperationalError as e:
-                    # Index déjà existant ou table manquante
-                    if "already exists" not in str(e).lower():
-                        logger.warning(f"Index ignoré: {e}")
-
-            con.commit()
-
-            # Analyser les tables pour optimiser le query planner
-            logger.info("Analyse des tables (ANALYZE)...")
-            cur.execute("ANALYZE")
-            con.commit()
-
-            msg = f"Index appliqués: {applied}/{len(source_indexes)}"
-            logger.info(msg)
-            return True, msg
-
-    except Exception as e:
-        msg = f"Erreur lors de l'application des index: {e}"
-        logger.error(msg)
-        return False, msg
+    return True, "OK"
 
 
 def ensure_cache_tables(db_path: str) -> tuple[bool, str]:
     """Crée les tables de cache si elles n'existent pas.
 
-    Args:
-        db_path: Chemin vers la base de données.
-
-    Returns:
-        Tuple (success, message).
+    DuckDB v4 n'utilise pas ce cache (MatchCache). Refuse les chemins .db (SQLite).
     """
+    _refuse_sqlite_path(db_path)
     if _is_duckdb_path(db_path):
         logger.info("Tables de cache: ignoré (DuckDB v4 n'utilise pas ce cache).")
         return True, "DuckDB: ignoré"
-
-    logger.info("Vérification des tables de cache...")
-
-    try:
-        with get_connection(db_path) as con:
-            cur = con.cursor()
-
-            # Créer les tables de cache
-            ddl_list = get_all_cache_table_ddl()
-            created = 0
-
-            for ddl in ddl_list:
-                try:
-                    cur.execute(ddl)
-                    created += 1
-                except sqlite3.OperationalError:
-                    pass  # Table/index déjà existant
-
-            con.commit()
-
-            # Mettre à jour la version du schéma
-            cur.execute(
-                """INSERT OR REPLACE INTO CacheMeta (key, value, updated_at)
-                   VALUES ('schema_version', ?, ?)""",
-                (CACHE_SCHEMA_VERSION, _get_iso_now()),
-            )
-            con.commit()
-
-            msg = f"Tables de cache vérifiées ({created} opérations)"
-            logger.info(msg)
-            return True, msg
-
-    except Exception as e:
-        msg = f"Erreur lors de la création des tables de cache: {e}"
-        logger.error(msg)
-        return False, msg
+    return True, "OK"
 
 
 def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, str]:
     """Reconstruit le cache MatchCache depuis MatchStats.
 
-    Args:
-        db_path: Chemin vers la base de données.
-        xuid: XUID optionnel pour filtrer (None = tous les joueurs).
-
-    Returns:
-        Tuple (success, message).
+    DuckDB v4 n'utilise pas MatchCache. Refuse les chemins .db (SQLite).
     """
+    _refuse_sqlite_path(db_path)
     if _is_duckdb_path(db_path):
         logger.info("Rebuild cache: ignoré (DuckDB v4 n'utilise pas MatchCache).")
         return True, "DuckDB: ignoré"
 
-    import math
-
-    def _safe_float(v) -> float | None:
-        """Convertit une valeur en float, gérant NaN et None."""
-        if v is None:
-            return None
-        try:
-            f = float(v)
-            if math.isnan(f):
-                return None
-            return f
-        except (TypeError, ValueError):
-            return None
-
-    def _safe_int(v) -> int | None:
-        """Convertit une valeur en int, gérant NaN et None."""
-        if v is None:
-            return None
-        try:
-            f = float(v)
-            if math.isnan(f):
-                return None
-            return int(f)
-        except (TypeError, ValueError):
-            return None
-
-    def _safe_str(v) -> str:
-        """Convertit une valeur en str, gérant None."""
-        if v is None:
-            return ""
-        try:
-            s = str(v)
-            if s == "nan" or s == "None":
-                return ""
-            return s
-        except Exception:
-            return ""
-
-    logger.info(f"Reconstruction du cache MatchCache{f' pour {xuid}' if xuid else ''}...")
-
-    try:
-        # Import des modules nécessaires
-        import pandas as pd
-        import polars as pl
-
-        from src.analysis.filters import mark_firefight
-        from src.analysis.sessions import compute_sessions, compute_sessions_with_context_polars
-        from src.db.loaders import get_players_from_db, load_matches
-
-        with get_connection(db_path) as con:
-            cur = con.cursor()
-
-            # Vérifier que MatchStats existe
-            if not _has_table(con, "MatchStats"):
-                return False, "Table MatchStats introuvable"
-
-            # Déterminer les joueurs à traiter
-            if xuid:
-                xuids_to_process = [xuid]
-            else:
-                # Charger tous les joueurs depuis la table Players
-                players = get_players_from_db(db_path)
-                if not players:
-                    return False, "Aucun joueur trouvé dans la table Players"
-                xuids_to_process = [p["xuid"] for p in players]
-
-            total_inserted = 0
-
-            for player_xuid in xuids_to_process:
-                logger.info(f"Traitement du joueur {player_xuid}...")
-
-                # Charger les matchs (retourne une liste de MatchRow)
-                matches = load_matches(db_path, player_xuid)
-
-                if not matches:
-                    logger.info(f"  Aucun match trouvé pour {player_xuid}")
-                    continue
-
-                # Convertir en DataFrame
-                df = pd.DataFrame(
-                    [
-                        {
-                            "match_id": m.match_id,
-                            "start_time": m.start_time,
-                            "map_id": m.map_id,
-                            "map_name": m.map_name,
-                            "playlist_id": m.playlist_id,
-                            "playlist_name": m.playlist_name,
-                            "pair_id": m.map_mode_pair_id,
-                            "pair_name": m.map_mode_pair_name,
-                            "game_variant_id": m.game_variant_id,
-                            "game_variant_name": m.game_variant_name,
-                            "outcome": m.outcome,
-                            "last_team_id": m.last_team_id,
-                            "kda": m.kda,
-                            "max_killing_spree": m.max_killing_spree,
-                            "headshot_kills": m.headshot_kills,
-                            "average_life_seconds": m.average_life_seconds,
-                            "time_played_seconds": m.time_played_seconds,
-                            "kills": m.kills,
-                            "deaths": m.deaths,
-                            "assists": m.assists,
-                            "accuracy": m.accuracy,
-                            "my_team_score": m.my_team_score,
-                            "enemy_team_score": m.enemy_team_score,
-                            "team_mmr": m.team_mmr,
-                            "enemy_mmr": m.enemy_mmr,
-                            "xuid": player_xuid,
-                        }
-                        for m in matches
-                    ]
-                )
-
-                if df.empty:
-                    continue
-
-                # Marquer Firefight
-                df = mark_firefight(df)
-
-                # Calculer les sessions avec logique avancée (gap + coéquipiers)
-                logger.info(f"  Calcul des sessions pour {len(df)} matchs...")
-                # Essayer d'utiliser la logique avancée si teammates_signature est disponible
-                if "teammates_signature" in df.columns:
-                    try:
-                        df_pl = pl.from_pandas(
-                            df[["match_id", "start_time", "teammates_signature"]]
-                        )
-                        df_pl = compute_sessions_with_context_polars(
-                            df_pl,
-                            gap_minutes=45,
-                            teammates_column="teammates_signature",
-                        )
-                        # Fusionner les résultats avec le DataFrame original
-                        df_sessions = df_pl.select(
-                            ["match_id", "session_id", "session_label"]
-                        ).to_pandas()
-                        df = df.merge(df_sessions, on="match_id", how="left")
-                    except Exception as e:
-                        logger.warning(f"Erreur calcul sessions avancées, fallback simple: {e}")
-                        df = compute_sessions(df, gap_minutes=45)
-                else:
-                    # Fallback sur logique simple si teammates_signature n'est pas disponible
-                    df = compute_sessions(df, gap_minutes=45)
-
-                # Préparer les données pour insertion
-                logger.info(f"  Insertion de {len(df)} matchs dans MatchCache...")
-
-                inserted = 0
-                for _, row in df.iterrows():
-                    try:
-                        cur.execute(
-                            """INSERT OR REPLACE INTO MatchCache (
-                                match_id, xuid, start_time,
-                                playlist_id, playlist_name,
-                                map_id, map_name,
-                                pair_id, pair_name,
-                                game_variant_id, game_variant_name,
-                                outcome, last_team_id,
-                                kills, deaths, assists,
-                                accuracy, kda, time_played_seconds,
-                                average_life_seconds, max_killing_spree, headshot_kills,
-                                my_team_score, enemy_team_score,
-                                team_mmr, enemy_mmr,
-                                session_id, session_label,
-                                is_firefight,
-                                updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                            (
-                                _safe_str(row.get("match_id")),
-                                str(player_xuid),
-                                _safe_str(row.get("start_time")),
-                                _safe_str(row.get("playlist_id")),
-                                _safe_str(row.get("playlist_name")),
-                                _safe_str(row.get("map_id")),
-                                _safe_str(row.get("map_name")),
-                                _safe_str(row.get("pair_id")),
-                                _safe_str(row.get("pair_name")),
-                                _safe_str(row.get("game_variant_id")),
-                                _safe_str(row.get("game_variant_name")),
-                                _safe_int(row.get("outcome")),
-                                _safe_int(row.get("last_team_id")),
-                                _safe_int(row.get("kills")) or 0,
-                                _safe_int(row.get("deaths")) or 0,
-                                _safe_int(row.get("assists")) or 0,
-                                _safe_float(row.get("accuracy")),
-                                _safe_float(row.get("kda")),
-                                _safe_float(row.get("time_played_seconds")),
-                                _safe_float(row.get("average_life_seconds")),
-                                _safe_int(row.get("max_killing_spree")),
-                                _safe_int(row.get("headshot_kills")),
-                                _safe_int(row.get("my_team_score")),
-                                _safe_int(row.get("enemy_team_score")),
-                                _safe_float(row.get("team_mmr")),
-                                _safe_float(row.get("enemy_mmr")),
-                                _safe_int(row.get("session_id")),
-                                _safe_str(row.get("session_label")),
-                                1 if row.get("is_firefight") else 0,
-                                _get_iso_now(),
-                            ),
-                        )
-                        inserted += 1
-                    except Exception as e:
-                        logger.warning(f"Erreur insertion match {row.get('match_id')}: {e}")
-
-                total_inserted += inserted
-                logger.info(f"  {inserted} matchs insérés pour {player_xuid}")
-
-            con.commit()
-
-            # Mettre à jour Players.total_matches depuis MatchCache
-            logger.info("Mise à jour de Players.total_matches...")
-            cur.execute(
-                """
-                UPDATE Players
-                SET total_matches = (
-                    SELECT COUNT(*) FROM MatchCache WHERE MatchCache.xuid = Players.xuid
-                ),
-                updated_at = ?
-            """,
-                (_get_iso_now(),),
-            )
-            con.commit()
-
-            # Mettre à jour les métadonnées
-            # NOTE: total_inserted compte les INSERT/REPLACE effectués.
-            # Le nombre de lignes finales peut être inférieur si la clé primaire
-            # de MatchCache provoque des remplacements. On persiste donc le COUNT(*) réel.
-            cur.execute("SELECT COUNT(*) FROM MatchCache")
-            actual_count = int(cur.fetchone()[0] or 0)
-            cur.execute(
-                """INSERT OR REPLACE INTO CacheMeta (key, value, updated_at)
-                   VALUES ('match_cache_count', ?, ?)""",
-                (str(actual_count), _get_iso_now()),
-            )
-            con.commit()
-
-            msg = f"Cache reconstruit: {total_inserted} matchs total"
-            logger.info(msg)
-
-            # Reconstruire TeammatesAggregate
-            logger.info("Reconstruction de TeammatesAggregate...")
-            teammates_ok, teammates_msg = rebuild_teammates_aggregate(db_path)
-            if teammates_ok:
-                logger.info(teammates_msg)
-            else:
-                logger.warning(teammates_msg)
-
-            # Reconstruire MedalsAggregate
-            logger.info("Reconstruction de MedalsAggregate...")
-            medals_ok, medals_msg = rebuild_medals_aggregate(db_path)
-            if medals_ok:
-                logger.info(medals_msg)
-            else:
-                logger.warning(medals_msg)
-
-            return True, msg
-
-    except Exception as e:
-        msg = f"Erreur lors de la reconstruction du cache: {e}"
-        logger.error(msg)
-        return False, msg
+    # Chemin ni .duckdb ni .db : refuser (seul DuckDB supporté)
+    raise ValueError(
+        f"Seuls les fichiers .duckdb sont supportés. Reçu: {db_path}. "
+        "Migrez avec scripts/migrate_player_to_duckdb.py"
+    )
 
 
 def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
+    """Reconstruit la table TeammatesAggregate depuis MatchStats.
+
+    DuckDB v4 n'utilise pas TeammatesAggregate (table legacy). Refuse .db (SQLite).
+    """
+    _refuse_sqlite_path(db_path)
+    if _is_duckdb_path(db_path):
+        return True, "DuckDB: ignoré (n'utilise pas TeammatesAggregate)"
+    return False, "Seuls les fichiers .duckdb sont supportés"
+
+
+def _rebuild_teammates_aggregate_impl(db_path: str) -> tuple[bool, str]:
     """Reconstruit la table TeammatesAggregate depuis MatchStats.
 
     Analyse tous les matchs pour extraire les coéquipiers et leurs stats.
@@ -906,14 +541,16 @@ def _get_xuid_for_gamertag(gamertag: str) -> str | None:
 def rebuild_medals_aggregate(db_path: str) -> tuple[bool, str]:
     """Reconstruit la table MedalsAggregate depuis MatchStats.
 
-    Agrège les médailles par joueur (scope global).
-
-    Args:
-        db_path: Chemin vers la base de données.
-
-    Returns:
-        Tuple (success, message).
+    DuckDB v4 n'utilise pas MedalsAggregate (table legacy). Refuse .db (SQLite).
     """
+    _refuse_sqlite_path(db_path)
+    if _is_duckdb_path(db_path):
+        return True, "DuckDB: ignoré (n'utilise pas MedalsAggregate)"
+    return False, "Seuls les fichiers .duckdb sont supportés"
+
+
+def _rebuild_medals_aggregate_impl_unused(db_path: str) -> tuple[bool, str]:
+    """Code legacy SQLite - NE PLUS UTILISER."""
     try:
         from src.db.loaders import get_players_from_db, load_top_medals
 
@@ -1330,7 +967,6 @@ def print_stats(db_path: str, player: str | None = None) -> None:
     """
     # Détecter si c'est un joueur DuckDB v4
     actual_db_path = db_path
-    is_duckdb = False
 
     if player:
         try:
@@ -1339,7 +975,6 @@ def print_stats(db_path: str, player: str | None = None) -> None:
             duckdb_path = get_player_duckdb_path(player)
             if duckdb_path and duckdb_path.exists():
                 actual_db_path = str(duckdb_path)
-                is_duckdb = True
                 logger.info(f"=== Statistiques DuckDB pour {player} ===")
             else:
                 logger.info("=== Statistiques de la base de données ===")
@@ -1348,61 +983,45 @@ def print_stats(db_path: str, player: str | None = None) -> None:
     else:
         logger.info("=== Statistiques de la base de données ===")
 
+    # Refuser SQLite (.db) - uniquement DuckDB supporté
     try:
-        if is_duckdb:
-            # DuckDB v4 : utiliser les noms de tables en snake_case
-            import duckdb
+        _refuse_sqlite_path(actual_db_path)
+    except SQLiteForbiddenError as e:
+        logger.error(str(e))
+        return
 
-            conn = duckdb.connect(actual_db_path, read_only=True)
+    try:
+        import duckdb
 
-            tables = [
-                ("match_stats", "Matchs"),
-                ("player_match_stats", "Stats joueur"),
-                ("highlight_events", "Highlight events"),
-                ("xuid_aliases", "Alias XUID"),
-                ("medals_earned", "Médailles"),
-            ]
+        conn = duckdb.connect(actual_db_path, read_only=True)
 
-            for table, label in tables:
-                try:
-                    result = conn.execute(
-                        f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{table}'"
-                    ).fetchone()
-                    if result and result[0] > 0:
-                        count_result = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-                        count = count_result[0] if count_result else 0
-                        logger.info(f"  {label}: {count:,}")
-                    else:
-                        logger.info(f"  {label}: (table absente)")
-                except Exception:
-                    logger.info(f"  {label}: (erreur)")
+        tables = [
+            ("match_stats", "Matchs"),
+            ("player_match_stats", "Stats joueur"),
+            ("highlight_events", "Highlight events"),
+            ("xuid_aliases", "Alias XUID"),
+            ("medals_earned", "Médailles"),
+        ]
 
-            conn.close()
+        for table, label in tables:
+            try:
+                result = conn.execute(
+                    f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{table}'"
+                ).fetchone()
+                if result and result[0] > 0:
+                    count_result = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                    count = count_result[0] if count_result else 0
+                    logger.info(f"  {label}: {count:,}")
+                else:
+                    logger.info(f"  {label}: (table absente)")
+            except Exception:
+                logger.info(f"  {label}: (erreur)")
 
-            # Taille du fichier
-            size_mb = os.path.getsize(actual_db_path) / (1024 * 1024)
-            logger.info(f"  Taille: {size_mb:.2f} MB")
-        else:
-            # SQLite legacy : utiliser les noms de tables en PascalCase
-            with get_connection(actual_db_path) as con:
-                tables = [
-                    ("MatchStats", "Matchs"),
-                    ("PlayerMatchStats", "Stats joueur"),
-                    ("HighlightEvents", "Highlight events"),
-                    ("XuidAliases", "Alias XUID"),
-                    ("MatchCache", "Cache matchs"),
-                ]
+        conn.close()
 
-                for table, label in tables:
-                    if _has_table(con, table):
-                        count = _count_rows(con, table)
-                        logger.info(f"  {label}: {count:,}")
-                    else:
-                        logger.info(f"  {label}: (table absente)")
-
-                # Taille du fichier
-                size_mb = os.path.getsize(actual_db_path) / (1024 * 1024)
-                logger.info(f"  Taille: {size_mb:.2f} MB")
+        # Taille du fichier
+        size_mb = os.path.getsize(actual_db_path) / (1024 * 1024)
+        logger.info(f"  Taille: {size_mb:.2f} MB")
 
     except Exception as e:
         logger.error(f"Erreur lors de la lecture des stats: {e}")
@@ -1620,6 +1239,13 @@ Exemples:
 
     if not os.path.exists(db_path):
         logger.error(f"Base de données introuvable: {db_path}")
+        return 1
+
+    # Refuser SQLite (.db) - uniquement DuckDB supporté
+    try:
+        _refuse_sqlite_path(db_path)
+    except SQLiteForbiddenError as e:
+        logger.error(str(e))
         return 1
 
     logger.info(f"Base de données: {db_path}")

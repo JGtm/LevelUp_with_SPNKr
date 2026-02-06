@@ -136,7 +136,9 @@ def _check_shutdown() -> bool:
 def _preferred_python_executable() -> Path | None:
     """Trouve le python du venv local."""
     candidates = [
+        REPO_ROOT / ".venv_windows" / "Scripts" / "python.exe",  # Windows (prioritaire)
         REPO_ROOT / ".venv" / "Scripts" / "python.exe",  # Windows
+        REPO_ROOT / ".venv_windows" / "bin" / "python",  # Linux/macOS (prioritaire)
         REPO_ROOT / ".venv" / "bin" / "python",  # Linux/macOS
     ]
     for p in candidates:

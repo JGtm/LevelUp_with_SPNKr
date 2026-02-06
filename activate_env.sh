@@ -3,9 +3,12 @@
 # Usage: source activate_env.sh
 
 if [ -d ".venv_windows" ]; then
-    source .venv_windows/Scripts/activate
+    # Forcer l'utilisation du Python Windows
+    export PATH="$(pwd)/.venv_windows/Scripts:$PATH"
+    source .venv_windows/Scripts/activate 2>/dev/null || true
     echo "Environnement virtuel Windows active: .venv_windows"
-    echo "Python: $(python --version)"
+    echo "Python: $(.venv_windows/Scripts/python.exe --version 2>&1)"
+    echo "Pour utiliser Python directement: .venv_windows/Scripts/python.exe"
 elif [ -d ".venv" ]; then
     source .venv/Scripts/activate
     echo "Environnement virtuel MSYS2 active: .venv"

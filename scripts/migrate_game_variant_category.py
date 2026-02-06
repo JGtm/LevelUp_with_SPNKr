@@ -83,7 +83,7 @@ def migrate_player_db(
     try:
         # Vérifier si la table match_stats existe
         tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='match_stats'"
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'match_stats'"
         ).fetchall()
 
         if not tables:

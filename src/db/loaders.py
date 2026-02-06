@@ -178,44 +178,31 @@ def get_players_from_db(db_path: str) -> list[dict[str, Any]]:
 def has_table(db_path: str, table_name: str) -> bool:
     """Vérifie si une table existe dans la base de données.
 
-    Supporte SQLite (sqlite_master) et DuckDB v4 (information_schema.tables).
-    Pour DuckDB, convertit automatiquement le nom de table en snake_case.
+    DuckDB v4 uniquement (information_schema.tables).
+    Pour les chemins .db (SQLite), retourne False (SQLite interdit).
     """
     if not db_path or not table_name:
         return False
+    # SQLite (.db) interdit - ne jamais ouvrir une base .db
+    if db_path.strip().lower().endswith(".db"):
+        return False
     try:
-        # Détecter DuckDB v4
-        is_duckdb = db_path.endswith(".duckdb") or db_path.endswith("stats.duckdb")
+        import duckdb
 
-        if is_duckdb:
-            # DuckDB utilise information_schema.tables et snake_case
-            import duckdb
+        conn = duckdb.connect(db_path, read_only=True)
+        try:
+            # Convertir PascalCase en snake_case pour DuckDB
+            table_name_normalized = table_name.lower()
+            if table_name != table_name.lower():
+                table_name_normalized = re.sub(r"(?<!^)(?=[A-Z])", "_", table_name).lower()
 
-            conn = duckdb.connect(db_path, read_only=True)
-            try:
-                # Convertir le nom de table en snake_case pour DuckDB
-                # Ex: "HighlightEvents" -> "highlight_events"
-                table_name_normalized = table_name.lower()
-                # Si c'est PascalCase, convertir en snake_case
-                if table_name != table_name.lower():
-                    import re
-
-                    # Convertir PascalCase en snake_case
-                    table_name_normalized = re.sub(r"(?<!^)(?=[A-Z])", "_", table_name).lower()
-
-                result = conn.execute(
-                    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
-                    [table_name_normalized],
-                ).fetchone()
-                return result is not None
-            finally:
-                conn.close()
-        else:
-            # SQLite legacy
-            with get_connection(db_path) as con:
-                cur = con.cursor()
-                cur.execute(queries.HAS_TABLE, (table_name,))
-                return cur.fetchone() is not None
+            result = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+                [table_name_normalized],
+            ).fetchone()
+            return result is not None
+        finally:
+            conn.close()
     except Exception:
         return False
 
@@ -1375,17 +1362,10 @@ def list_top_teammates(db_path: str, self_xuid: str, limit: int = 20) -> list[tu
 
 
 def get_sync_metadata(db_path: str) -> dict[str, Any]:
-    """Récupère les métadonnées de synchronisation depuis la table SyncMeta.
+    """Récupère les métadonnées de synchronisation.
 
-    Args:
-        db_path: Chemin vers le fichier .db.
-
-    Returns:
-        Dictionnaire contenant:
-        - last_sync_at: datetime du dernier sync (ou None)
-        - last_match_time: datetime du dernier match importé (ou None)
-        - total_matches: nombre total de matchs (ou 0)
-        - player_xuid: XUID du joueur principal (ou None)
+    SQLite (.db) interdit. Pour DuckDB, utiliser DuckDBRepository.get_sync_metadata().
+    Retourne un dict vide (module déprécié).
     """
     result: dict[str, Any] = {
         "last_sync_at": None,
@@ -1393,13 +1373,22 @@ def get_sync_metadata(db_path: str) -> dict[str, Any]:
         "total_matches": 0,
         "player_xuid": None,
     }
+    # SQLite interdit ; DuckDB : utiliser DuckDBRepository.get_sync_metadata()
+    if not db_path:
+        return result
+    if db_path.strip().lower().endswith(".db"):
+        return result
+    if db_path.strip().lower().endswith(".duckdb"):
+        return result
 
     try:
         with get_connection(db_path) as con:
             cur = con.cursor()
 
-            # Vérifier si la table existe
-            cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='SyncMeta'")
+            # Vérifier si la table existe (DuckDB information_schema)
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'sync_meta'"
+            )
             if not cur.fetchone():
                 # Fallback: compter les matchs depuis MatchStats
                 cur.execute("SELECT COUNT(*) FROM MatchStats")
@@ -1458,6 +1447,9 @@ def load_match_players_stats(db_path: str, match_id: str) -> list[MatchPlayerSta
 
     # Les DBs DuckDB v4 n'ont pas le payload JSON brut avec tous les joueurs
     if db_path.endswith(".duckdb"):
+        return []
+    # SQLite (.db) interdit
+    if db_path.strip().lower().endswith(".db"):
         return []
 
     with get_connection(db_path) as con:

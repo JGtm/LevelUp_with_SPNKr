@@ -108,9 +108,11 @@ OPTIONAL_TABLES = [
 
 
 def get_table_list(conn: duckdb.DuckDBPyConnection) -> set[str]:
-    """Retourne la liste des tables existantes."""
+    """Retourne la liste des tables existantes (DuckDB information_schema)."""
     try:
-        result = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        result = conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+        ).fetchall()
         return {row[0].lower() for row in result}
     except Exception:
         return set()

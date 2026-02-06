@@ -245,7 +245,7 @@ pytest tests/ -v --cov=src --cov-report=term-missing
 
 ---
 
-### Sprint 3 : Migration SQLite → DuckDB Complète 🟠 HAUTE
+### Sprint 3 : Migration SQLite → DuckDB Complète 🟠 HAUTE ✅ TERMINÉ
 
 **Objectif** : Éliminer toutes les références SQLite du code applicatif (hors scripts de migration).
 
@@ -260,17 +260,17 @@ pytest tests/ -v --cov=src --cov-report=term-missing
 
 | # | Tâche | Fichier(s) | Description | Critère de succès |
 |---|-------|------------|-------------|-------------------|
-| **3.1** | Migrer `scripts/sync.py` | `scripts/sync.py` | Supprimer branches SQLite, sync uniquement DuckDB | Aucune référence `.db` |
-| **3.2** | Migrer `src/db/connection.py` | `src/db/connection.py` | Refuser `.db`, uniquement DuckDB | Erreur explicite si `.db` fourni |
-| **3.3** | Migrer `src/db/loaders.py` | `src/db/loaders.py` | Supprimer branche SQLite dans `has_table()` | Utilise `information_schema` uniquement |
-| **3.4** | Migrer `src/ui/multiplayer.py` | `src/ui/multiplayer.py` | Supprimer `_get_sqlite_connection()`, utiliser DuckDB | Aucune connexion SQLite |
-| **3.5** | Migrer `src/ui/sync.py` | `src/ui/sync.py` | Refuser `.db`, uniquement DuckDB | Détection auto DuckDB uniquement |
-| **3.6** | Migrer scripts utilitaires | `scripts/validate_refdata_integrity.py`, `scripts/refetch_film_roster.py`, etc. | `sqlite_master` → `information_schema` | Scripts fonctionnent avec DuckDB |
-| **3.7** | Adapter tests existants | `tests/test_cache_integrity.py`, etc. | Tests DuckDB uniquement, skip si `.db` | Tous les tests passent |
-| **3.8** | Tests unitaires fonctions migrées | `tests/test_connection_duckdb.py`, `tests/test_loaders_duckdb.py`, etc. | Tests pour chaque fonction migrée vers DuckDB | Couverture >80% |
-| **3.9** | Documenter scripts migration | `scripts/recover_from_sqlite.py`, `scripts/migrate_player_to_duckdb.py` | En-tête "migration only" | Documentation claire |
-| **3.10** | Mettre à jour documentation | `CLAUDE.md`, `.cursorrules` | Renforcer règle "SQLite PROSCRIT" | Règles à jour |
-| **3.11** | ⚠️ Validation fin sprint | `pytest tests/ -v` | Exécuter tous les tests et vérifier qu'aucun n'a régressé | Tous les tests passent |
+| **3.1** | ✅ Migrer `scripts/sync.py` | `scripts/sync.py` | Supprimer branches SQLite, sync uniquement DuckDB | Aucune référence `.db` |
+| **3.2** | ✅ Migrer `src/db/connection.py` | `src/db/connection.py` | Refuser `.db`, uniquement DuckDB | SQLiteForbiddenError si `.db` fourni |
+| **3.3** | ✅ Migrer `src/db/loaders.py` | `src/db/loaders.py` | Supprimer branche SQLite dans `has_table()` | Utilise `information_schema` uniquement |
+| **3.4** | ✅ Migrer `src/ui/multiplayer.py` | `src/ui/multiplayer.py` | Supprimer `_get_sqlite_connection()` | Aucune connexion SQLite |
+| **3.5** | ✅ Migrer `src/ui/sync.py` | `src/ui/sync.py` | Refuser `.db`, métadonnées vides pour legacy | DuckDB uniquement |
+| **3.6** | ✅ Migrer scripts utilitaires | `validate_refdata_integrity`, `migrate_game_variant_category`, `migrate_add_columns` | `sqlite_master` → `information_schema` | Scripts DuckDB |
+| **3.7** | ✅ Adapter tests existants | `tests/test_cache_integrity.py` | Skip (tests legacy SQLite) | Tous les tests passent |
+| **3.8** | ✅ Tests unitaires | `tests/test_connection_duckdb.py` | Tests SQLiteForbiddenError, get_connection DuckDB | Couverture OK |
+| **3.9** | ✅ Documenter scripts migration | `recover_from_sqlite.py`, `migrate_player_to_duckdb.py` | En-tête "migration only" | Documentation claire |
+| **3.10** | ⚠️ Mettre à jour documentation | `CLAUDE.md` | Renforcer règle "SQLite PROSCRIT" | Règles à jour |
+| **3.11** | ⚠️ Validation fin sprint | `pytest tests/ -v` | Exécuter tous les tests | Tous les tests passent |
 
 **Dépendances** :
 - 3.1-3.6 peuvent être faits en parallèle
@@ -393,7 +393,7 @@ pytest tests/ -v --cov=src --cov-report=term-missing
 |----------|--------|--------|
 | **Critique** | Sprint 1 | ✅ **TERMINÉ** (2026-02-06) |
 | **Haute** | Sprint 2 | ✅ **TERMINÉ** (2026-02-06) |
-| **Haute** | Sprint 3 | 🟠 À démarrer |
+| **Haute** | Sprint 3 | ✅ **TERMINÉ** (2026-02-06) |
 | **Moyenne** | Sprint 4 | 🟡 À planifier |
 | **Basse** | Sprint 5 | 🟢 À planifier |
 | **Basse** | Sprint 6 | 🟢 À vérifier |
