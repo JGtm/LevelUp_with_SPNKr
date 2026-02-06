@@ -32,116 +32,119 @@ import duckdb
 def temp_duckdb(tmp_path):
     """Crée une base DuckDB temporaire avec des données de test."""
     db_path = tmp_path / "test_stats.duckdb"
-    conn = duckdb.connect(str(db_path))
 
-    # Créer les tables nécessaires
-    conn.execute("""
-        CREATE TABLE match_stats (
-            match_id VARCHAR PRIMARY KEY,
-            start_time TIMESTAMP,
-            playlist_id VARCHAR,
-            playlist_name VARCHAR,
-            map_id VARCHAR,
-            map_name VARCHAR,
-            pair_id VARCHAR,
-            pair_name VARCHAR,
-            game_variant_id VARCHAR,
-            game_variant_name VARCHAR,
-            outcome INTEGER,
-            team_id INTEGER,
-            kills INTEGER,
-            deaths INTEGER,
-            assists INTEGER,
-            kda FLOAT,
-            accuracy FLOAT,
-            headshot_kills INTEGER,
-            max_killing_spree INTEGER,
-            time_played_seconds INTEGER,
-            avg_life_seconds FLOAT,
-            my_team_score INTEGER,
-            enemy_team_score INTEGER,
-            team_mmr FLOAT,
-            enemy_mmr FLOAT,
-            is_firefight BOOLEAN DEFAULT FALSE
-        )
-    """)
+    try:
+        conn = duckdb.connect(str(db_path))
 
-    conn.execute("""
-        CREATE TABLE highlight_events (
-            id INTEGER PRIMARY KEY,
-            match_id VARCHAR NOT NULL,
-            event_type VARCHAR NOT NULL,
-            time_ms INTEGER,
-            xuid VARCHAR,
-            gamertag VARCHAR,
-            type_hint INTEGER,
-            raw_json VARCHAR
-        )
-    """)
+        # Créer les tables nécessaires
+        conn.execute("""
+            CREATE TABLE match_stats (
+                match_id VARCHAR PRIMARY KEY,
+                start_time TIMESTAMP,
+                playlist_id VARCHAR,
+                playlist_name VARCHAR,
+                map_id VARCHAR,
+                map_name VARCHAR,
+                pair_id VARCHAR,
+                pair_name VARCHAR,
+                game_variant_id VARCHAR,
+                game_variant_name VARCHAR,
+                outcome INTEGER,
+                team_id INTEGER,
+                kills INTEGER,
+                deaths INTEGER,
+                assists INTEGER,
+                kda FLOAT,
+                accuracy FLOAT,
+                headshot_kills INTEGER,
+                max_killing_spree INTEGER,
+                time_played_seconds INTEGER,
+                avg_life_seconds FLOAT,
+                my_team_score INTEGER,
+                enemy_team_score INTEGER,
+                team_mmr FLOAT,
+                enemy_mmr FLOAT,
+                is_firefight BOOLEAN DEFAULT FALSE
+            )
+        """)
 
-    conn.execute("""
-        CREATE TABLE killer_victim_pairs (
-            id INTEGER PRIMARY KEY,
-            match_id VARCHAR NOT NULL,
-            killer_xuid VARCHAR NOT NULL,
-            killer_gamertag VARCHAR,
-            victim_xuid VARCHAR NOT NULL,
-            victim_gamertag VARCHAR,
-            kill_count INTEGER DEFAULT 1,
-            time_ms INTEGER,
-            is_validated BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE highlight_events (
+                id INTEGER PRIMARY KEY,
+                match_id VARCHAR NOT NULL,
+                event_type VARCHAR NOT NULL,
+                time_ms INTEGER,
+                xuid VARCHAR,
+                gamertag VARCHAR,
+                type_hint INTEGER,
+                raw_json VARCHAR
+            )
+        """)
 
-    # Insérer des données de test
-    now = datetime.now(timezone.utc)
+        conn.execute("""
+            CREATE TABLE killer_victim_pairs (
+                id INTEGER PRIMARY KEY,
+                match_id VARCHAR NOT NULL,
+                killer_xuid VARCHAR NOT NULL,
+                killer_gamertag VARCHAR,
+                victim_xuid VARCHAR NOT NULL,
+                victim_gamertag VARCHAR,
+                kill_count INTEGER DEFAULT 1,
+                time_ms INTEGER,
+                is_validated BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
-    # Match 1
-    conn.execute(
-        "INSERT INTO match_stats (match_id, start_time, kills, deaths, assists, kda, outcome) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("match-001", now, 15, 10, 5, 1.5, 2),
-    )
+        # Insérer des données de test
+        now = datetime.now(timezone.utc)
 
-    # Highlight events pour match-001
-    events = [
-        # Mes kills (je suis xuid_me)
-        (1, "match-001", "Kill", 10000, "xuid_me", "Me", 50),
-        (2, "match-001", "Death", 10002, "xuid_enemy1", "Enemy1", 20),
-        (3, "match-001", "Kill", 20000, "xuid_me", "Me", 50),
-        (4, "match-001", "Death", 20003, "xuid_enemy1", "Enemy1", 20),
-        (5, "match-001", "Kill", 30000, "xuid_me", "Me", 50),
-        (6, "match-001", "Death", 30001, "xuid_enemy2", "Enemy2", 20),
-        # Mes deaths
-        (7, "match-001", "Death", 40000, "xuid_me", "Me", 20),
-        (8, "match-001", "Kill", 40002, "xuid_enemy1", "Enemy1", 50),
-        (9, "match-001", "Death", 50000, "xuid_me", "Me", 20),
-        (10, "match-001", "Kill", 50001, "xuid_enemy1", "Enemy1", 50),
-    ]
-    for event in events:
+        # Match 1
         conn.execute(
-            "INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag, type_hint) "
+            "INSERT INTO match_stats (match_id, start_time, kills, deaths, assists, kda, outcome) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            event,
+            ("match-001", now, 15, 10, 5, 1.5, 2),
         )
 
-    # Paires killer_victim calculées
-    kv_pairs = [
-        (1, "match-001", "xuid_me", "Me", "xuid_enemy1", "Enemy1", 2, 15000),
-        (2, "match-001", "xuid_me", "Me", "xuid_enemy2", "Enemy2", 1, 30000),
-        (3, "match-001", "xuid_enemy1", "Enemy1", "xuid_me", "Me", 2, 45000),
-    ]
-    for pair in kv_pairs:
-        conn.execute(
-            "INSERT INTO killer_victim_pairs "
-            "(id, match_id, killer_xuid, killer_gamertag, victim_xuid, victim_gamertag, kill_count, time_ms) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            pair,
-        )
+        # Highlight events pour match-001
+        events = [
+            # Mes kills (je suis xuid_me)
+            (1, "match-001", "Kill", 10000, "xuid_me", "Me", 50),
+            (2, "match-001", "Death", 10002, "xuid_enemy1", "Enemy1", 20),
+            (3, "match-001", "Kill", 20000, "xuid_me", "Me", 50),
+            (4, "match-001", "Death", 20003, "xuid_enemy1", "Enemy1", 20),
+            (5, "match-001", "Kill", 30000, "xuid_me", "Me", 50),
+            (6, "match-001", "Death", 30001, "xuid_enemy2", "Enemy2", 20),
+            # Mes deaths
+            (7, "match-001", "Death", 40000, "xuid_me", "Me", 20),
+            (8, "match-001", "Kill", 40002, "xuid_enemy1", "Enemy1", 50),
+            (9, "match-001", "Death", 50000, "xuid_me", "Me", 20),
+            (10, "match-001", "Kill", 50001, "xuid_enemy1", "Enemy1", 50),
+        ]
+        for event in events:
+            conn.execute(
+                "INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag, type_hint) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                event,
+            )
 
-    conn.commit()
-    conn.close()
+        # Paires killer_victim calculées
+        kv_pairs = [
+            (1, "match-001", "xuid_me", "Me", "xuid_enemy1", "Enemy1", 2, 15000),
+            (2, "match-001", "xuid_me", "Me", "xuid_enemy2", "Enemy2", 1, 30000),
+            (3, "match-001", "xuid_enemy1", "Enemy1", "xuid_me", "Me", 2, 45000),
+        ]
+        for pair in kv_pairs:
+            conn.execute(
+                "INSERT INTO killer_victim_pairs "
+                "(id, match_id, killer_xuid, killer_gamertag, victim_xuid, victim_gamertag, kill_count, time_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                pair,
+            )
+
+    finally:
+        if "conn" in locals():
+            conn.close()
 
     return str(db_path)
 
@@ -150,9 +153,13 @@ def temp_duckdb(tmp_path):
 def mock_metadata_db(tmp_path):
     """Crée une base metadata.duckdb temporaire."""
     db_path = tmp_path / "metadata.duckdb"
-    conn = duckdb.connect(str(db_path))
-    conn.execute("CREATE TABLE playlists (asset_id VARCHAR PRIMARY KEY)")
-    conn.close()
+    conn = None
+    try:
+        conn = duckdb.connect(str(db_path))
+        conn.execute("CREATE TABLE playlists (asset_id VARCHAR PRIMARY KEY)")
+    finally:
+        if conn is not None:
+            conn.close()
     return db_path
 
 

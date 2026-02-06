@@ -9,7 +9,6 @@ Ce module teste le flux complet :
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -22,54 +21,58 @@ from src.data.sync.transformers import transform_match_stats
 
 
 @pytest.fixture
-def temp_player_db() -> Path:
+def temp_player_db(tmp_path) -> Path:
     """Crée une base stats.duckdb temporaire pour les tests."""
-    temp_dir = Path(tempfile.mkdtemp())
-    db_path = temp_dir / "stats.duckdb"
+    db_path = tmp_path / "stats.duckdb"
     return db_path
 
 
-@pytest.fixture
-def temp_metadata_db() -> Path:
+@pytest.fixture(scope="function")
+def temp_metadata_db(tmp_path) -> Path:
     """Crée une base metadata.duckdb temporaire pour les tests."""
-    temp_dir = Path(tempfile.mkdtemp())
-    db_path = temp_dir / "metadata.duckdb"
+    import uuid
+
+    db_path = tmp_path / f"metadata_{uuid.uuid4().hex[:8]}.duckdb"
+
+    # Créer la connexion et les tables
     conn = duckdb.connect(str(db_path))
 
-    # Créer les tables
-    conn.execute(
-        """
-        CREATE TABLE playlists (
-            asset_id VARCHAR NOT NULL,
-            version_id VARCHAR NOT NULL,
-            public_name VARCHAR,
-            PRIMARY KEY (asset_id, version_id)
+    try:
+        # Créer les tables
+        conn.execute(
+            """
+            CREATE TABLE playlists (
+                asset_id VARCHAR NOT NULL,
+                version_id VARCHAR NOT NULL,
+                public_name VARCHAR,
+                PRIMARY KEY (asset_id, version_id)
+            )
+            """
         )
-        """
-    )
 
-    conn.execute(
-        """
-        CREATE TABLE maps (
-            asset_id VARCHAR NOT NULL,
-            version_id VARCHAR NOT NULL,
-            public_name VARCHAR,
-            PRIMARY KEY (asset_id, version_id)
+        conn.execute(
+            """
+            CREATE TABLE maps (
+                asset_id VARCHAR NOT NULL,
+                version_id VARCHAR NOT NULL,
+                public_name VARCHAR,
+                PRIMARY KEY (asset_id, version_id)
+            )
+            """
         )
-        """
-    )
 
-    # Insérer des données de test
-    conn.execute(
-        "INSERT INTO playlists (asset_id, version_id, public_name) VALUES (?, ?, ?)",
-        ["playlist-123", "v1", "Ranked Slayer (from DB)"],
-    )
-    conn.execute(
-        "INSERT INTO maps (asset_id, version_id, public_name) VALUES (?, ?, ?)",
-        ["map-456", "v1", "Recharge (from DB)"],
-    )
+        # Insérer des données de test
+        conn.execute(
+            "INSERT INTO playlists (asset_id, version_id, public_name) VALUES (?, ?, ?)",
+            ["playlist-123", "v1", "Ranked Slayer (from DB)"],
+        )
+        conn.execute(
+            "INSERT INTO maps (asset_id, version_id, public_name) VALUES (?, ?, ?)",
+            ["map-456", "v1", "Recharge (from DB)"],
+        )
+    finally:
+        conn.close()
 
-    conn.close()
     return db_path
 
 

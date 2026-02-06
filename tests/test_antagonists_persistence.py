@@ -266,7 +266,9 @@ class TestDuckDBRepositorySaveAntagonists:
         Utilise tmp_path (pytest) au lieu de tempfile.TemporaryDirectory pour éviter
         les segfaults DuckDB sur Windows (WAL lockfiles, cleanup trop rapide).
         """
-        db_path = tmp_path.resolve() / "stats.duckdb"
+        import uuid
+
+        db_path = tmp_path.resolve() / f"stats_{uuid.uuid4().hex[:8]}.duckdb"
         conn = duckdb.connect(str(db_path))
         try:
             conn.execute("""
@@ -458,7 +460,9 @@ class TestDuckDBRepositoryEmptyTable:
     @pytest.fixture
     def temp_db(self, tmp_path: Path):
         """Crée une DB DuckDB temporaire (tmp_path pour éviter segfault Windows)."""
-        db_path = tmp_path.resolve() / "stats.duckdb"
+        import uuid
+
+        db_path = tmp_path.resolve() / f"stats_{uuid.uuid4().hex[:8]}.duckdb"
         conn = duckdb.connect(str(db_path))
         try:
             conn.execute("CREATE TABLE match_stats (match_id VARCHAR)")
