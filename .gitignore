@@ -1,19 +1,53 @@
+# ============================================
+# 🐍 ENVIRONNEMENTS PYTHON (CRITIQUES!)
+# ============================================
+# Les venv sont VOLUMINEUX (100s MB) + OS-spécifique
+# À JAMAIS commit: chaque dev le régénère via `pip install -e .`
 .venv/
+venv/
+env/
+ENV/
+.python-venv/
+
+# 🔧 BUILD & DISTRIBUTION
 __pycache__/
 *.pyc
-out/
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Secrets & Configuration
+.env
+.env.local
 .streamlit/*
 !.streamlit/secrets.toml.example
 !.streamlit/friends_defaults.json
-.env
-.env.local
-.DS_Store
-Thumbs.db
-.vscode/
-build/
-dist/
-*.egg-info/
-*.egg
+out/
 
 # Fichier accidentel Windows (nul = device réservé)
 nul

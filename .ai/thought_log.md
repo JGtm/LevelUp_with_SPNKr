@@ -7,6 +7,51 @@
 
 ## Journal
 
+### [2026-02-06] - ✅ Sprint 1 TERMINÉ : Données Manquantes (Discovery UGC + metadata.duckdb)
+
+**Statut** : ✅ **TERMINÉ** - Toutes les tâches complétées
+
+**Contexte** :
+Sprint 1 pour restaurer l'enregistrement des noms de cartes, modes, playlists et autres métadonnées manquantes. Les colonnes `playlist_name`, `map_name`, `pair_name`, `game_variant_name` étaient NULL car Discovery UGC n'était jamais appelé et metadata.duckdb était absent.
+
+**RÉALISATIONS** :
+
+#### Composants créés
+- ✅ `src/data/sync/metadata_resolver.py` : Classe MetadataResolver pour résoudre les noms depuis metadata.duckdb
+- ✅ `scripts/populate_metadata_from_discovery.py` : Script pour créer/peupler metadata.duckdb depuis Discovery UGC
+- ✅ `scripts/backfill_metadata.py` : Script pour backfill les métadonnées dans match_stats existants
+- ✅ `scripts/validate_sprint1_metadata.py` : Script de validation manuelle
+
+#### Tests créés
+- ✅ `tests/test_metadata_resolver.py` : 15 tests unitaires pour MetadataResolver
+- ✅ `tests/test_transformers_metadata.py` : 7 tests pour transformers avec métadonnées
+- ✅ `tests/integration/test_metadata_resolution.py` : 6 tests d'intégration end-to-end
+
+#### Documentation
+- ✅ `docs/METADATA_RESOLUTION.md` : Guide complet de résolution métadonnées + troubleshooting
+
+#### Modifications
+- ✅ `src/data/sync/transformers.py` : Mis à jour pour utiliser le nouveau MetadataResolver
+- ✅ `.ai/CONSOLIDATED_AUDITS_AND_ROADMAP.md` : Sprint 1 marqué comme terminé
+
+**Architecture de résolution** :
+1. **Priorité 1** : PublicName depuis Discovery UGC API (enrichissement en temps réel via `enrich_match_info_with_assets()`)
+2. **Priorité 2** : PublicName depuis metadata.duckdb (cache local via `MetadataResolver`)
+3. **Priorité 3** : Fallback sur asset_id (UUID si aucun nom trouvé)
+
+**Utilisation** :
+```bash
+# Créer/populer metadata.duckdb
+python scripts/populate_metadata_from_discovery.py --all-players
+
+# Backfill les métadonnées existantes
+python scripts/backfill_metadata.py --player JGtm
+```
+
+**Note** : Les tests nécessitent DuckDB installé. Validation manuelle disponible via `scripts/validate_sprint1_metadata.py`.
+
+---
+
 ### [2026-02-05] - ✅ Sprint Gamertag/Roster : IMPLÉMENTATION COMPLÈTE
 
 **Statut** : ✅ Toutes les phases implémentées

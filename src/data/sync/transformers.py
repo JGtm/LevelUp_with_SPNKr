@@ -21,10 +21,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import duckdb
-
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.data.domain.refdata import PERSONAL_SCORE_POINTS
+from src.data.sync.metadata_resolver import create_metadata_resolver_function
 from src.data.sync.models import (
     HighlightEventRow,
     KillerVictimPairRow,
@@ -383,142 +382,16 @@ def create_metadata_resolver(
 ) -> Callable[[str, str], str | None] | None:
     """Crée une fonction de résolution des noms depuis metadata.duckdb.
 
+    Cette fonction est un wrapper autour de MetadataResolver pour maintenir
+    la compatibilité avec le code existant.
+
     Args:
         metadata_db_path: Chemin vers metadata.duckdb (auto-détecté si None).
 
     Returns:
         Fonction resolver(asset_type, asset_id) -> name | None, ou None si metadata.duckdb n'existe pas.
     """
-    if metadata_db_path is None:
-        # Auto-détection : cherche dans data/warehouse/metadata.duckdb
-        # On suppose qu'on est dans src/data/sync/, donc on remonte
-        base_path = Path(__file__).parent.parent.parent.parent
-        metadata_db_path = base_path / "data" / "warehouse" / "metadata.duckdb"
-    else:
-        metadata_db_path = Path(metadata_db_path)
-
-    if not metadata_db_path.exists():
-        logger.debug(f"metadata.duckdb non trouvé: {metadata_db_path}")
-        return None
-
-    # Créer une connexion DuckDB en lecture seule pour les référentiels
-    try:
-        conn = duckdb.connect(str(metadata_db_path), read_only=True)
-    except Exception as e:
-        logger.warning(f"Impossible de se connecter à metadata.duckdb: {e}")
-        return None
-
-    # Cache pour éviter les requêtes répétées
-    cache: dict[tuple[str, str], str | None] = {}
-
-    def resolve(asset_type: str, asset_id: str | None) -> str | None:
-        """Résout un nom depuis les référentiels.
-
-        Args:
-            asset_type: Type d'asset ('playlist', 'map', 'pair', 'game_variant').
-            asset_id: ID de l'asset.
-
-        Returns:
-            Nom résolu ou None si non trouvé.
-        """
-        if not asset_id:
-            return None
-
-        # Vérifier le cache
-        cache_key = (asset_type, asset_id)
-        if cache_key in cache:
-            return cache[cache_key]
-
-        # Déterminer la table selon le type
-        table_map = {
-            "playlist": ["playlists"],
-            "map": ["maps"],
-            "pair": [
-                "map_mode_pairs",
-                "playlist_map_mode_pairs",
-            ],  # Essayer les deux noms possibles
-            "game_variant": ["game_variants"],
-        }
-
-        table_candidates = table_map.get(asset_type.lower())
-        if not table_candidates:
-            cache[cache_key] = None
-            return None
-
-        try:
-            # Vérifier si une des tables candidates existe
-            tables_result = conn.execute(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
-            ).fetchall()
-            tables = {row[0] for row in tables_result}
-
-            # Trouver la première table candidate qui existe
-            table_name = None
-            for candidate in table_candidates:
-                if candidate in tables:
-                    table_name = candidate
-                    break
-
-            if not table_name:
-                logger.debug(f"Aucune table trouvée pour {asset_type} parmi {table_candidates}")
-                cache[cache_key] = None
-                return None
-
-            # Détecter dynamiquement la colonne ID (asset_id ou uuid)
-            id_column = None
-            for col_candidate in ["asset_id", "uuid"]:
-                try:
-                    # Tester si la colonne existe
-                    conn.execute(f"SELECT {col_candidate} FROM {table_name} LIMIT 1").fetchone()
-                    id_column = col_candidate
-                    break
-                except Exception:
-                    continue
-
-            if not id_column:
-                logger.debug(f"Aucune colonne ID trouvée dans {table_name} (essayé asset_id, uuid)")
-                cache[cache_key] = None
-                return None
-
-            # Détecter dynamiquement la colonne de nom (public_name, name_fr, name_en, name)
-            name_column = None
-            for col_candidate in ["public_name", "name_fr", "name_en", "name"]:
-                try:
-                    # Tester si la colonne existe
-                    conn.execute(f"SELECT {col_candidate} FROM {table_name} LIMIT 1").fetchone()
-                    name_column = col_candidate
-                    break
-                except Exception:
-                    continue
-
-            if not name_column:
-                logger.debug(f"Aucune colonne de nom trouvée dans {table_name}")
-                cache[cache_key] = None
-                return None
-
-            # Requête pour récupérer le nom avec les colonnes détectées
-            result = conn.execute(
-                f"SELECT {name_column} FROM {table_name} WHERE {id_column} = ?",
-                [asset_id],
-            ).fetchone()
-
-            if result and result[0]:
-                name = str(result[0])
-                cache[cache_key] = name
-                logger.debug(
-                    f"Résolu {asset_type} {asset_id} → {name} depuis {table_name}.{name_column}"
-                )
-                return name
-
-            cache[cache_key] = None
-            return None
-
-        except Exception as e:
-            logger.debug(f"Erreur résolution {asset_type} {asset_id}: {e}")
-            cache[cache_key] = None
-            return None
-
-    return resolve
+    return create_metadata_resolver_function(metadata_db_path)
 
 
 # =============================================================================
