@@ -221,8 +221,39 @@ def render_nemesis_section(
         match_id=match_id,
         db_path=db_path,
         xuid=xuid,
+        db_key=db_key,
+        load_match_gamertags_fn=load_match_gamertags_fn,
         highlight_events=he,
     )
+
+
+def _display_name_for_chart(
+    xuid: str,
+    gamertag: str | None,
+    gt_map: dict[str, str] | None,
+) -> str:
+    """Nom d'affichage pour le graphe killer-victime (même logique que le roster)."""
+    xu_s = str(parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()).strip()
+
+    if xu_s:
+        bot_key = xu_s.strip()
+        if bot_key.lower().startswith("bid("):
+            bot_name = BOT_MAP.get(bot_key)
+            if isinstance(bot_name, str) and bot_name.strip():
+                return bot_name.strip()
+
+    if xu_s and isinstance(gt_map, dict):
+        mapped = gt_map.get(xu_s)
+        if isinstance(mapped, str) and mapped.strip():
+            return mapped.strip()
+
+    g = str(gamertag or "").strip()
+    if g and g != "?" and (not g.isdigit()) and (not g.lower().startswith("xuid(")):
+        return g
+
+    if xu_s:
+        return display_name_from_xuid(xu_s)
+    return "-"
 
 
 def _render_antagonist_chart(
@@ -230,11 +261,20 @@ def _render_antagonist_chart(
     match_id: str,
     db_path: str,
     xuid: str,
-    highlight_events: list,
+    db_key: tuple[int, int] | None = None,
+    load_match_gamertags_fn: Callable | None = None,
+    highlight_events: list | None = None,
 ) -> None:
     """Affiche le graphique des interactions Killer-Victim du match."""
     if not match_id or not match_id.strip():
         return
+
+    gt_map = None
+    if load_match_gamertags_fn is not None:
+        try:
+            gt_map = load_match_gamertags_fn(db_path, match_id.strip(), db_key=db_key)
+        except Exception:
+            gt_map = None
 
     pairs_df = None
     if db_path and str(db_path).endswith(".duckdb"):
@@ -273,7 +313,23 @@ def _render_antagonist_chart(
 
     if pairs_df is not None and not (hasattr(pairs_df, "is_empty") and pairs_df.is_empty()):
         try:
+            import polars as pl
+
             from src.visualization.antagonist_charts import plot_killer_victim_stacked_bars
+
+            # Enrichir les libellés avec la même résolution que le roster (gt_map, BOT_MAP, alias)
+            killer_displays = [
+                _display_name_for_chart(row[0], row[1], gt_map)
+                for row in pairs_df.select("killer_xuid", "killer_gamertag").iter_rows()
+            ]
+            victim_displays = [
+                _display_name_for_chart(row[0], row[1], gt_map)
+                for row in pairs_df.select("victim_xuid", "victim_gamertag").iter_rows()
+            ]
+            pairs_df = pairs_df.with_columns(
+                pl.Series("killer_gamertag", killer_displays),
+                pl.Series("victim_gamertag", victim_displays),
+            )
 
             me_xuid = str(
                 parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()
