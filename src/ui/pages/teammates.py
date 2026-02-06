@@ -6,6 +6,7 @@ Analyse des statistiques avec les coéquipiers fréquents.
 from __future__ import annotations
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.analysis import (
@@ -39,6 +40,7 @@ from src.ui.pages.teammates_helpers import (
 )
 from src.ui.perf import perf_section
 from src.visualization import plot_map_ratio_with_winloss
+from src.visualization.performance import plot_session_trend
 
 # =============================================================================
 # Helper - Chargement des stats coéquipiers depuis leurs propres DBs
@@ -227,7 +229,7 @@ def _render_synergy_radar(
             title="Profil de participation",
             height=380,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with col_legend:
         st.markdown("**Axes**")
         for line in RADAR_AXIS_LINES:
@@ -320,6 +322,17 @@ def render_teammates_page(
     # Afficher les Spartan ID cards des coéquipiers sélectionnés en grille 2 colonnes
     with perf_section("teammates/render_cards"):
         render_teammate_cards(picked_xuids, settings)
+
+    # Tendance de session (matchs affichés) - Sprint 6
+    _req_trend = ["start_time", "kills", "deaths"]
+    if len(dff) >= 4 and all(c in dff.columns for c in _req_trend):
+        try:
+            pl_dff = pl.from_pandas(dff.sort_values("start_time")[_req_trend].copy())
+            st.subheader("Tendance de session (matchs affichés)")
+            st.caption("Compare ta performance en première vs seconde moitié des matchs affichés.")
+            st.plotly_chart(plot_session_trend(pl_dff), use_container_width=True)
+        except Exception:
+            pass
 
     if len(picked_xuids) < 1:
         st.info("Sélectionne au moins un coéquipier.")

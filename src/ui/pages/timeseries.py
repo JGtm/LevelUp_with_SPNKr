@@ -6,6 +6,7 @@ Graphes d'évolution des statistiques dans le temps.
 from __future__ import annotations
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.analysis.performance_score import compute_performance_series
@@ -15,6 +16,12 @@ from src.visualization.distributions import (
     plot_first_event_distribution,
     plot_histogram,
     plot_kda_distribution,
+)
+from src.visualization.performance import (
+    plot_cumulative_kd,
+    plot_cumulative_net_score,
+    plot_rolling_kd,
+    plot_session_trend,
 )
 from src.visualization.timeseries import (
     plot_assists_timeseries,
@@ -255,6 +262,50 @@ def render_timeseries_page(
             plot_per_minute_timeseries(dff),
             width="stretch",
         )
+
+        # ═══ Performance cumulée & tendance (Sprint 6) ═══
+        st.divider()
+        st.subheader("Performance cumulée & tendance")
+        st.caption(
+            "Net score et K/D cumulés au fil des matchs, K/D glissant, et tendance (début vs fin de période)."
+        )
+        _required_cumul = ["start_time", "kills", "deaths"]
+        if all(c in dff.columns for c in _required_cumul):
+            try:
+                pl_df = pl.from_pandas(dff.sort_values("start_time")[_required_cumul].copy())
+                from src.analysis.cumulative import (
+                    compute_cumulative_kd_series_polars,
+                    compute_cumulative_net_score_series_polars,
+                    compute_rolling_kd_polars,
+                )
+
+                if not pl_df.is_empty():
+                    cumul_net = compute_cumulative_net_score_series_polars(pl_df)
+                    st.plotly_chart(
+                        plot_cumulative_net_score(cumul_net),
+                        width="stretch",
+                    )
+                    cumul_kd = compute_cumulative_kd_series_polars(pl_df)
+                    st.plotly_chart(
+                        plot_cumulative_kd(cumul_kd),
+                        width="stretch",
+                    )
+                    rolling_df = compute_rolling_kd_polars(pl_df, window_size=5)
+                    st.plotly_chart(
+                        plot_rolling_kd(rolling_df, window_size=5),
+                        width="stretch",
+                    )
+                    if len(pl_df) >= 4:
+                        st.plotly_chart(
+                            plot_session_trend(pl_df),
+                            width="stretch",
+                        )
+                    else:
+                        st.info("Tendance de session : au moins 4 matchs requis.")
+            except Exception as e:
+                st.warning(f"Graphiques de performance cumulée indisponibles : {e}")
+        else:
+            st.info("Colonnes start_time, kills ou deaths manquantes pour la performance cumulée.")
 
         st.subheader("Durée de vie moyenne")
         if dff.dropna(subset=["average_life_seconds"]).empty:

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import plotly.graph_objects as go
+import polars as pl
 import streamlit as st
 
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
@@ -21,6 +22,7 @@ from src.ui.components.performance import (
     render_metric_comparison_row,
     render_performance_score_card,
 )
+from src.visualization.performance import plot_cumulative_comparison
 
 if TYPE_CHECKING:
     pass
@@ -835,7 +837,7 @@ def render_participation_trend_section(
         col_radar, col_legend = st.columns([2, 1])
         with col_radar:
             fig = create_participation_profile_radar(profiles, title="", height=380)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         with col_legend:
             st.markdown("**Axes**")
             for line in RADAR_AXIS_LINES:
@@ -1129,6 +1131,34 @@ def render_session_comparison_page(
     with col_bars:
         st.markdown("#### Comparaison par métrique")
         render_comparison_bar_chart(perf_a, perf_b, hist_avg=hist_avg)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Net score cumulé par session (Sprint 6)
+    # ══════════════════════════════════════════════════════════════════════════
+    _req = ["start_time", "kills", "deaths"]
+    if all(c in df_session_a.columns for c in _req) and all(
+        c in df_session_b.columns for c in _req
+    ):
+        try:
+            pl_a = pl.from_pandas(df_session_a.sort_values("start_time")[_req].copy())
+            pl_b = pl.from_pandas(df_session_b.sort_values("start_time")[_req].copy())
+            if not pl_a.is_empty() and not pl_b.is_empty():
+                st.markdown("#### Net score cumulé par session")
+                st.caption(
+                    "Évolution du net score (Kills − Deaths) au fil des matchs de chaque session."
+                )
+                st.plotly_chart(
+                    plot_cumulative_comparison(
+                        pl_a,
+                        pl_b,
+                        label_a=session_a_label,
+                        label_b=session_b_label,
+                        title="",
+                    ),
+                    use_container_width=True,
+                )
+        except Exception:
+            pass
 
     # ══════════════════════════════════════════════════════════════════════════
     # Tendance de participation (PersonalScores) - Sprint 8.2
