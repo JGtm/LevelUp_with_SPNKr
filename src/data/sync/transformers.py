@@ -1081,22 +1081,25 @@ def extract_xuids_from_match(match_json: dict[str, Any]) -> list[int]:
     return xuids
 
 
+def _extract_player_score(player_obj: dict[str, Any]) -> int | None:
+    """Extrait le score personnel d'un joueur (PersonalScore ou Score)."""
+    stats_dict = _find_core_stats_dict(player_obj)
+    if stats_dict is None:
+        return None
+    score = _safe_int(stats_dict.get("PersonalScore"))
+    if score is None:
+        score = _safe_int(stats_dict.get("Score"))
+    return score
+
+
 def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow]:
-    """Extrait tous les participants d'un match (xuid, team_id, outcome, gamertag).
+    """Extrait tous les participants d'un match (xuid, team_id, outcome, gamertag, score, rank, k/d/a).
 
     Source : MatchStats.Players[] (JSON API propre, pas les films corrompus).
 
-    Cette fonction permet de reconstruire le roster complet d'un match,
-    incluant les équipes et les outcomes, ce qui est nécessaire pour :
-    - Identifier les coéquipiers vs adversaires
-    - Corriger les requêtes de "Mes coéquipiers"
-    - Avoir des gamertags propres pour le roster
-
-    Args:
-        match_json: JSON brut de l'API SPNKr (MatchStats).
-
-    Returns:
-        Liste de MatchParticipantRow avec tous les joueurs du match.
+    - Score : priorité API (PersonalScore ou Score depuis CoreStats).
+    - Rang : priorité API (Players[].Rank) si présent, sinon calculé par tri score décroissant.
+    - Kills, deaths, assists : depuis CoreStats (API).
     """
     match_id = match_json.get("MatchId")
     if not isinstance(match_id, str):
@@ -1106,8 +1109,8 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
     if not isinstance(players, list):
         return []
 
-    rows = []
-    seen_xuids = set()
+    rows: list[MatchParticipantRow] = []
+    seen_xuids: set[str] = set()
 
     for player in players:
         if not isinstance(player, dict):
@@ -1146,6 +1149,15 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
         gamertag_raw = player.get("PlayerGamertag") or player.get("Gamertag")
         gamertag = _normalize_gamertag(gamertag_raw)
 
+        # Score (API prioritaire)
+        score = _extract_player_score(player)
+
+        # Rang API si présent (sinon sera assigné après tri)
+        rank_from_api = _extract_player_rank(player)
+
+        # K/D/A depuis CoreStats (API) — 0 est une valeur valide
+        kills_val, deaths_val, assists_val, _ = _extract_player_stats(player)
+
         rows.append(
             MatchParticipantRow(
                 match_id=match_id,
@@ -1153,8 +1165,23 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
                 team_id=team_id,
                 outcome=outcome,
                 gamertag=gamertag,
+                rank=rank_from_api,
+                score=score,
+                kills=kills_val,
+                deaths=deaths_val,
+                assists=assists_val,
             )
         )
+
+    # Trier par score décroissant (None en dernier) et assigner le rang si pas fourni par l'API
+    def sort_key(r: MatchParticipantRow) -> tuple[int, int]:
+        s = r.score if r.score is not None else -1
+        return (-s, 0)
+
+    rows.sort(key=sort_key)
+    for rank_idx, r in enumerate(rows, start=1):
+        if r.rank is None:
+            r.rank = rank_idx
 
     return rows
 

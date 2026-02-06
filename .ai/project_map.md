@@ -101,7 +101,7 @@ data/
 | `highlight_events` | Événements film |
 | `xuid_aliases` | Mapping XUID→Gamertag |
 | `killer_victim_pairs` | Paires killer→victim avec timestamps |
-| `match_participants` | Participants par match (xuid, team) ⚠️ À CRÉER |
+| `match_participants` | Tous les joueurs par match : xuid, team_id, outcome, rank, score, kills, deaths, assists. Identifiant = xuid ; gamertag via xuid_aliases. Voir .ai/MATCH_PARTICIPANTS.md. |
 | `career_progression` | Historique rangs |
 | `sync_meta` | Métadonnées sync |
 | `mv_*` | Vues matérialisées |

@@ -1423,34 +1423,131 @@ def get_sync_metadata(db_path: str) -> dict[str, Any]:
     return result
 
 
+def _load_match_players_stats_from_duckdb(db_path: str, match_id: str) -> list[MatchPlayerStats]:
+    """Charge le roster d'un match depuis match_participants (DuckDB).
+
+    Retourne une liste de MatchPlayerStats avec rank, score et k/d/a (API quand présents).
+    """
+    try:
+        with get_connection(db_path) as con:
+            cur = con.cursor()
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+            )
+            if not cur.fetchone():
+                return []
+
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+            )
+            cols = {r[0] for r in cur.fetchall()}
+            has_rank = "rank" in cols
+            has_score = "score" in cols
+            has_kda = "kills" in cols and "deaths" in cols and "assists" in cols
+
+            if has_rank and has_score and has_kda:
+                cur.execute(
+                    """SELECT xuid, gamertag, team_id, rank, score, kills, deaths, assists
+                       FROM match_participants WHERE match_id = ?
+                       ORDER BY rank ASC NULLS LAST, score DESC NULLS LAST""",
+                    (match_id,),
+                )
+            elif has_rank and has_score:
+                cur.execute(
+                    """SELECT xuid, gamertag, team_id, rank, score
+                       FROM match_participants WHERE match_id = ?
+                       ORDER BY rank ASC NULLS LAST, score DESC NULLS LAST""",
+                    (match_id,),
+                )
+            else:
+                cur.execute(
+                    """SELECT xuid, gamertag, team_id
+                       FROM match_participants WHERE match_id = ?""",
+                    (match_id,),
+                )
+
+            rows = cur.fetchall()
+    except Exception:
+        return []
+
+    if not rows:
+        return []
+
+    out: list[MatchPlayerStats] = []
+    if has_rank and has_score and has_kda:
+        for r in rows:
+            xuid, gamertag, team_id, rank_val, score_val, k, d, a = r
+            rank_int = int(rank_val) if rank_val is not None else 999
+            out.append(
+                MatchPlayerStats(
+                    xuid=str(xuid or "").strip(),
+                    gamertag=str(gamertag or xuid or "").strip(),
+                    kills=int(k) if k is not None else 0,
+                    deaths=int(d) if d is not None else 0,
+                    assists=int(a) if a is not None else 0,
+                    team_id=int(team_id) if team_id is not None else None,
+                    rank=rank_int,
+                    score=int(score_val) if score_val is not None else None,
+                )
+            )
+    elif has_rank and has_score:
+        for r in rows:
+            xuid, gamertag, team_id, rank_val, score_val = r
+            rank_int = int(rank_val) if rank_val is not None else 999
+            out.append(
+                MatchPlayerStats(
+                    xuid=str(xuid or "").strip(),
+                    gamertag=str(gamertag or xuid or "").strip(),
+                    kills=0,
+                    deaths=0,
+                    assists=0,
+                    team_id=int(team_id) if team_id is not None else None,
+                    rank=rank_int,
+                    score=int(score_val) if score_val is not None else None,
+                )
+            )
+    else:
+        for rank_idx, r in enumerate(rows, start=1):
+            xuid, gamertag, team_id = r[0], r[1], r[2]
+            out.append(
+                MatchPlayerStats(
+                    xuid=str(xuid or "").strip(),
+                    gamertag=str(gamertag or xuid or "").strip(),
+                    kills=0,
+                    deaths=0,
+                    assists=0,
+                    team_id=int(team_id) if team_id is not None else None,
+                    rank=rank_idx,
+                    score=None,
+                )
+            )
+    return out
+
+
 def load_match_players_stats(db_path: str, match_id: str) -> list[MatchPlayerStats]:
     """Charge les statistiques officielles de tous les joueurs d'un match.
 
     Utilisé pour valider la cohérence des frags reconstitués via les
-    highlight events. Les kills/deaths officiels proviennent de
-    MatchStats.Players[].PlayerTeamStats[].Stats.CoreStats.
+    highlight events, et pour le tie-breaker némésis/souffre-douleur (rang).
 
-    Args:
-        db_path: Chemin vers le fichier .db ou .duckdb.
-        match_id: ID du match.
+    - DuckDB : charge depuis match_participants (rank, score, kills, deaths, assists quand présents).
+    - Legacy : payload JSON brut (kills, deaths, assists, score puis tri → rang).
 
     Returns:
         Liste de MatchPlayerStats triée par rang (meilleur score en premier).
-
-    Note:
-        Pour les DBs DuckDB v4, cette fonction retourne une liste vide car
-        les stats de tous les joueurs d'un match ne sont pas disponibles
-        dans la même structure (seul le joueur principal est stocké).
     """
     if not match_id:
         return []
 
-    # Les DBs DuckDB v4 n'ont pas le payload JSON brut avec tous les joueurs
-    if db_path.endswith(".duckdb"):
-        return []
     # SQLite (.db) interdit
     if db_path.strip().lower().endswith(".db"):
         return []
+
+    # DuckDB v4 : charger depuis match_participants (rank et score pour tous les joueurs)
+    if db_path.endswith(".duckdb"):
+        return _load_match_players_stats_from_duckdb(db_path, match_id)
 
     with get_connection(db_path) as con:
         cur = con.cursor()

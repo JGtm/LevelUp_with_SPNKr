@@ -20,6 +20,10 @@ duckdb>=0.10.0
 # Timezone support (requis par DuckDB pour les timestamps)
 pytz>=2024.1
 
+# API Halo Infinite (sync, backfill)
+spnkr>=0.1.0
+aiohttp>=3.9.0
+
 # Note: pyarrow est une dépendance de Polars et DuckDB, pas besoin de l'installer séparément
 
 # Tests

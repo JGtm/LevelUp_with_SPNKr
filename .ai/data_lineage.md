@@ -106,6 +106,7 @@ Destination: data/players/{gamertag}/stats.duckdb
 | Table | Cardinalité | Description |
 |-------|-------------|-------------|
 | `match_stats` | 1:N par joueur | Faits des matchs |
+| `match_participants` | 1:N par match | Tous les joueurs du match (xuid, team_id, rank, score, kills, deaths, assists). Identifiant = xuid ; nom = JOIN xuid_aliases. |
 | `medals_earned` | M:N | Médailles par match |
 | `player_match_stats` | 1:1 | Données MMR par match |
 | `highlight_events` | 1:N | Événements par match |

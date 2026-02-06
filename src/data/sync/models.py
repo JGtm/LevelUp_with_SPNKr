@@ -317,6 +317,11 @@ class MatchParticipantRow:
     team_id: int | None = None
     outcome: int | None = None
     gamertag: str | None = None
+    rank: int | None = None  # Rang dans le match (1 = meilleur), API prioritaire sinon calculé
+    score: int | None = None  # Score personnel (API)
+    kills: int | None = None  # Kills depuis CoreStats (API)
+    deaths: int | None = None  # Deaths depuis CoreStats (API)
+    assists: int | None = None  # Assists depuis CoreStats (API)
 
 
 # =============================================================================

@@ -20,7 +20,7 @@ LevelUp utilise une architecture DuckDB unifiée (v4) qui remplace l'ancienne ar
          │               │  ┌─────────────────────────────────────┐   │
          ▼               │  │  players/{gt}/stats.duckdb          │   │
 ┌─────────────────┐      │  │  - match_stats                      │   │
-│  Transformation │──────│  │  - medals_earned                    │   │
+│  Transformation │──────│  │  - match_participants, medals_earned │   │
 │  Polars         │      │  │  - teammates_aggregate              │   │
 └─────────────────┘      │  │  - antagonists, player_match_stats  │   │
                          │  │  - highlight_events, xuid_aliases   │   │
@@ -101,6 +101,10 @@ Statistiques principales de chaque match.
 | `enemy_mmr` | DOUBLE | MMR adverse |
 | `session_id` | INTEGER | ID de la session de jeu |
 | `avg_life_seconds` | DOUBLE | Durée de vie moyenne |
+
+#### match_participants
+
+Tous les joueurs de chaque match (une ligne par joueur). Contient **xuid** (identifiant), **team_id**, **outcome**, **rank** (rang dans le match), **score**, **kills**, **deaths**, **assists**. La colonne **gamertag** est souvent NULL : pour afficher le nom, faire un `LEFT JOIN xuid_aliases` sur `xuid`. Voir `docs/SQL_SCHEMA.md` et l’exemple de requête dans `docs/QUERY_EXAMPLES.md` (§ 4).
 
 #### player_match_stats
 

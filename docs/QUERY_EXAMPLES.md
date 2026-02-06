@@ -122,7 +122,37 @@ ORDER BY start DESC
 
 ---
 
-## 4. Top médailles avec noms (jointure SQLite)
+## 4. Scores et K/D/A des joueurs d’un match (match_participants)
+
+**Cas d’usage** : Afficher le rang, le score et les kills/deaths/assists de chaque joueur pour un match. L’identifiant des joueurs est **xuid** ; le nom s’obtient via **xuid_aliases** (la colonne `gamertag` de `match_participants` est souvent NULL).
+
+**Dernier match d’un joueur (ex. Madina97294)** :
+
+```sql
+-- Connexion : data/players/Madina97294/stats.duckdb
+SELECT
+  p.match_id,
+  p.xuid,
+  COALESCE(p.gamertag, a.gamertag) AS gamertag,
+  p.team_id,
+  p.rank,
+  p.score,
+  p.kills,
+  p.deaths,
+  p.assists
+FROM match_participants p
+LEFT JOIN xuid_aliases a ON a.xuid = p.xuid
+WHERE p.match_id = (
+  SELECT match_id FROM match_stats ORDER BY start_time DESC LIMIT 1
+)
+ORDER BY p.rank NULLS LAST, p.score DESC NULLS LAST;
+```
+
+Voir aussi `docs/SQL_SCHEMA.md` (table `match_participants`) et `.ai/MATCH_PARTICIPANTS.md`.
+
+---
+
+## 5. Top médailles avec noms (jointure)
 
 **Cas d'usage** : Afficher les médailles les plus fréquentes avec traduction.
 
@@ -152,7 +182,7 @@ LIMIT 10
 
 ---
 
-## 5. Analyse des comebacks
+## 6. Analyse des comebacks
 
 **Cas d'usage** : Identifier les victoires après plusieurs défaites.
 
@@ -174,7 +204,7 @@ ORDER BY start_time DESC
 
 ---
 
-## 6. Meilleures heures pour jouer
+## 7. Meilleures heures pour jouer
 
 **Cas d'usage** : Identifier les créneaux horaires les plus performants.
 
@@ -198,7 +228,7 @@ ORDER BY win_rate DESC
 
 ---
 
-## 7. Comparaison de périodes
+## 8. Comparaison de périodes
 
 **Cas d'usage** : Comparer les performances cette semaine vs la semaine dernière.
 
@@ -212,7 +242,7 @@ print(f"Tendance: {comparison.trend}")  # up, down, stable
 
 ---
 
-## 8. Score de difficulté des playlists
+## 9. Score de difficulté des playlists
 
 **Cas d'usage** : Classer les playlists par difficulté perçue.
 

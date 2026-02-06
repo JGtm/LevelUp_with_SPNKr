@@ -140,14 +140,20 @@ CREATE INDEX IF NOT EXISTS idx_psa_xuid ON personal_score_awards(xuid);
 CREATE INDEX IF NOT EXISTS idx_psa_category ON personal_score_awards(award_category);
 
 -- Table match_participants (Sprint Gamertag Roster Fix)
--- Stocke TOUS les joueurs de chaque match avec leurs team_id/outcome/gamertag propres
+-- Stocke TOUS les joueurs de chaque match avec team_id/outcome/gamertag/score/rank/kda
 -- Source : MatchStats.Players[] (API propre, pas les films corrompus)
+-- rank = classement (1 = meilleur), API prioritaire sinon calculé ; score et k/d/a = API
 CREATE TABLE IF NOT EXISTS match_participants (
     match_id VARCHAR NOT NULL,
     xuid VARCHAR NOT NULL,
     team_id INTEGER,
     outcome INTEGER,
     gamertag VARCHAR,
+    rank SMALLINT,
+    score INTEGER,
+    kills SMALLINT,
+    deaths SMALLINT,
+    assists SMALLINT,
     PRIMARY KEY (match_id, xuid)
 );
 CREATE INDEX IF NOT EXISTS idx_participants_xuid ON match_participants(xuid);
@@ -319,6 +325,9 @@ class DuckDBSyncEngine:
                     if "already exists" not in str(e).lower():
                         logger.warning(f"Schema DDL warning: {e}")
 
+        # Colonnes rank/score sur match_participants (migration)
+        self._ensure_match_participants_rank_score()
+
     def _ensure_match_stats_table(self) -> None:
         """S'assure que la table match_stats existe avec toutes les colonnes nécessaires."""
         conn = self._connection
@@ -416,6 +425,30 @@ class DuckDBSyncEngine:
                     conn.execute("ALTER TABLE match_stats ADD COLUMN end_time TIMESTAMP")
                 except Exception as e:
                     logger.warning(f"Impossible d'ajouter la colonne end_time: {e}")
+
+    def _ensure_match_participants_rank_score(self) -> None:
+        """Ajoute les colonnes rank, score et k/d/a à match_participants si absentes (migration)."""
+        conn = self._connection
+        if conn is None:
+            return
+        try:
+            cols = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+            ).fetchall()
+            col_names = {r[0] for r in cols} if cols else set()
+            if "rank" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN rank SMALLINT")
+            if "score" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN score INTEGER")
+            if "kills" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN kills SMALLINT")
+            if "deaths" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN deaths SMALLINT")
+            if "assists" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN assists SMALLINT")
+        except Exception as e:
+            logger.debug(f"match_participants columns migration: {e}")
 
     def _load_existing_match_ids(self) -> set[str]:
         """Charge les IDs des matchs existants depuis la DB."""
@@ -1065,8 +1098,8 @@ class DuckDBSyncEngine:
     def _insert_participant_rows(self, rows: list) -> None:
         """Insère les lignes match_participants (roster complet du match).
 
-        Sprint Gamertag Roster Fix : permet de stocker tous les joueurs
-        d'un match avec leurs team_id, outcome et gamertag propres.
+        Sprint Gamertag Roster Fix : stocke tous les joueurs avec team_id, outcome,
+        gamertag, score et rang dans le match (1 = meilleur).
         """
         if not rows:
             return
@@ -1077,14 +1110,20 @@ class DuckDBSyncEngine:
             with contextlib.suppress(Exception):
                 conn.execute(
                     """INSERT OR REPLACE INTO match_participants (
-                        match_id, xuid, team_id, outcome, gamertag
-                    ) VALUES (?, ?, ?, ?, ?)""",
+                        match_id, xuid, team_id, outcome, gamertag, rank, score,
+                        kills, deaths, assists
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         row.match_id,
                         row.xuid,
                         row.team_id,
                         row.outcome,
                         row.gamertag,
+                        row.rank,
+                        row.score,
+                        row.kills,
+                        row.deaths,
+                        row.assists,
                     ),
                 )
 

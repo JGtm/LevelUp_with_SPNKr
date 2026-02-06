@@ -151,6 +151,38 @@ CREATE INDEX idx_match_stats_playlist ON match_stats(playlist_id);
 CREATE INDEX idx_match_stats_outcome ON match_stats(outcome);
 ```
 
+### Table `match_participants`
+
+Tous les joueurs de chaque match : équipe, rang dans le match, score, K/D/A. Une ligne par (match_id, xuid).
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `match_id` | VARCHAR | FK → match_stats (PK) |
+| `xuid` | VARCHAR | Xbox User ID du joueur (PK) |
+| `team_id` | INTEGER | ID d'équipe (0, 1, …) |
+| `outcome` | INTEGER | 1=Tie, 2=Win, 3=Loss, 4=Left |
+| `gamertag` | VARCHAR | Nom affiché (souvent NULL, voir usage ci‑dessous) |
+| `rank` | SMALLINT | Rang dans le match (1 = premier au score) |
+| `score` | INTEGER | Score du joueur dans le match |
+| `kills` | SMALLINT | Kills (CoreStats API) |
+| `deaths` | SMALLINT | Deaths |
+| `assists` | SMALLINT | Assists |
+
+**Identifiant des joueurs** : l’identifiant fiable est **`xuid`**. La colonne `gamertag` peut être NULL (non remplie au sync/backfill). Pour afficher le nom d’un joueur, faire un **JOIN avec `xuid_aliases`** sur `xuid` :
+
+```sql
+SELECT
+  p.match_id,
+  p.xuid,
+  COALESCE(p.gamertag, a.gamertag) AS gamertag,
+  p.rank, p.score, p.kills, p.deaths, p.assists
+FROM match_participants p
+LEFT JOIN xuid_aliases a ON a.xuid = p.xuid
+WHERE p.match_id = ?;
+```
+
+**Remplissage** : sync (engine), backfill `--participants` (lignes), `--participants-scores` (rank/score), `--participants-kda` (kills/deaths/assists). Voir `docs/SYNC_GUIDE.md` et en-tête de `scripts/backfill_data.py`.
+
 ### Table `medals_earned`
 
 Médailles obtenues par match.

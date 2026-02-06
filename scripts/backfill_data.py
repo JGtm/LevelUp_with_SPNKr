@@ -33,6 +33,12 @@ Usage:
     # Forcer la ré-extraction des aliases (gamertags)
     python scripts/backfill_data.py --player JGtm --force-aliases
 
+    # Backfill score et rang des participants (matchs où rank/score sont manquants)
+    python scripts/backfill_data.py --player JGtm --participants-scores
+
+    # Backfill kills, deaths, assists des participants (matchs où k/d/a sont manquants)
+    python scripts/backfill_data.py --player JGtm --participants-kda
+
     # Backfill paires killer/victim pour antagonistes
     python scripts/backfill_data.py --player JGtm --killer-victim
 
@@ -59,6 +65,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -267,17 +274,33 @@ def _insert_alias_rows(conn, rows: list) -> int:
     return inserted
 
 
-def _insert_participant_rows(conn, rows: list) -> int:
-    """Insère les participants dans la table match_participants.
+def _ensure_match_participants_columns(conn) -> None:
+    """Ajoute rank, score, kills, deaths, assists à match_participants si absents (migration)."""
+    try:
+        cols = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+        ).fetchall()
+        col_names = {r[0] for r in cols} if cols else set()
+        if "rank" not in col_names:
+            conn.execute("ALTER TABLE match_participants ADD COLUMN rank SMALLINT")
+        if "score" not in col_names:
+            conn.execute("ALTER TABLE match_participants ADD COLUMN score INTEGER")
+        if "kills" not in col_names:
+            conn.execute("ALTER TABLE match_participants ADD COLUMN kills SMALLINT")
+        if "deaths" not in col_names:
+            conn.execute("ALTER TABLE match_participants ADD COLUMN deaths SMALLINT")
+        if "assists" not in col_names:
+            conn.execute("ALTER TABLE match_participants ADD COLUMN assists SMALLINT")
+    except Exception as e:
+        logger.debug(f"match_participants columns: {e}")
 
-    Sprint Gamertag Roster Fix : Cette fonction permet de backfill
-    les participants de chaque match pour obtenir des gamertags propres
-    et des informations d'équipe fiables.
-    """
+
+def _insert_participant_rows(conn, rows: list) -> int:
+    """Insère les participants dans match_participants (roster + rank, score, k/d/a depuis API)."""
     if not rows:
         return 0
 
-    # S'assurer que la table existe
     conn.execute("""
         CREATE TABLE IF NOT EXISTS match_participants (
             match_id VARCHAR NOT NULL,
@@ -285,9 +308,15 @@ def _insert_participant_rows(conn, rows: list) -> int:
             team_id INTEGER,
             outcome INTEGER,
             gamertag VARCHAR,
+            rank SMALLINT,
+            score INTEGER,
+            kills SMALLINT,
+            deaths SMALLINT,
+            assists SMALLINT,
             PRIMARY KEY (match_id, xuid)
         )
     """)
+    _ensure_match_participants_columns(conn)
     try:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_participants_xuid ON match_participants(xuid)")
         conn.execute(
@@ -301,14 +330,19 @@ def _insert_participant_rows(conn, rows: list) -> int:
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO match_participants
-                   (match_id, xuid, team_id, outcome, gamertag)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (match_id, xuid, team_id, outcome, gamertag, rank, score, kills, deaths, assists)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     row.match_id,
                     row.xuid,
                     row.team_id,
                     row.outcome,
                     row.gamertag,
+                    row.rank,
+                    row.score,
+                    row.kills,
+                    row.deaths,
+                    row.assists,
                 ),
             )
             inserted += 1
@@ -679,6 +713,8 @@ def _find_matches_missing_data(
     enemy_mmr: bool = False,
     assets: bool = False,
     participants: bool = False,
+    participants_scores: bool = False,
+    participants_kda: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     force_enemy_mmr: bool = False,
@@ -823,6 +859,48 @@ def _find_matches_missing_data(
                 # En cas d'erreur, considérer que tous les matchs sont concernés
                 conditions.append("1=1")
 
+    if participants_scores:
+        # Matchs où des participants existent mais rank ou score manquant
+        try:
+            table_ok = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+            ).fetchone()
+            rank_ok = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                "WHERE table_schema = 'main' AND table_name = 'match_participants' AND column_name = 'rank'"
+            ).fetchone()
+            if table_ok and table_ok[0] and rank_ok and rank_ok[0]:
+                conditions.append("""
+                    ms.match_id IN (
+                        SELECT match_id FROM match_participants
+                        WHERE rank IS NULL OR score IS NULL
+                    )
+                """)
+        except Exception:
+            pass
+
+    if participants_kda:
+        # Matchs où des participants existent mais kills/deaths/assists manquants
+        try:
+            table_ok = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+            ).fetchone()
+            k_ok = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                "WHERE table_schema = 'main' AND table_name = 'match_participants' AND column_name = 'kills'"
+            ).fetchone()
+            if table_ok and table_ok[0] and k_ok and k_ok[0]:
+                conditions.append("""
+                    ms.match_id IN (
+                        SELECT match_id FROM match_participants
+                        WHERE kills IS NULL OR deaths IS NULL OR assists IS NULL
+                    )
+                """)
+        except Exception:
+            pass
+
     if not conditions:
         return []
 
@@ -858,6 +936,8 @@ async def backfill_player_data(
     enemy_mmr: bool = False,
     assets: bool = False,
     participants: bool = False,
+    participants_scores: bool = False,
+    participants_kda: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     all_data: bool = False,
@@ -934,6 +1014,8 @@ async def backfill_player_data(
             enemy_mmr,
             assets,
             participants,
+            participants_scores,
+            participants_kda,
             killer_victim,
             end_time,
             force_aliases,
@@ -955,6 +1037,8 @@ async def backfill_player_data(
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
             "participants_inserted": 0,
+            "participants_scores_updated": 0,
+            "participants_kda_updated": 0,
             "killer_victim_pairs_inserted": 0,
             "end_time_updated": 0,
         }
@@ -977,6 +1061,8 @@ async def backfill_player_data(
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
             "participants_inserted": 0,
+            "participants_scores_updated": 0,
+            "participants_kda_updated": 0,
             "killer_victim_pairs_inserted": 0,
             "end_time_updated": 0,
         }
@@ -998,6 +1084,8 @@ async def backfill_player_data(
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
             "participants_inserted": 0,
+            "participants_scores_updated": 0,
+            "participants_kda_updated": 0,
             "killer_victim_pairs_inserted": 0,
         }
 
@@ -1054,6 +1142,8 @@ async def backfill_player_data(
                     "enemy_mmr_updated": 0,
                     "assets_updated": 0,
                     "participants_inserted": 0,
+                    "participants_scores_updated": 0,
+                    "participants_kda_updated": 0,
                     "killer_victim_pairs_inserted": 0,
                     "end_time_updated": 0,
                 }
@@ -1144,6 +1234,12 @@ async def backfill_player_data(
             except Exception as e:
                 logger.warning(f"Note lors de la vérification de accuracy: {e}")
 
+        # Pour participants_scores / participants_kda, s'assurer que les colonnes existent
+        # avant de chercher les matchs (sinon la requête ne trouve rien)
+        if participants_scores or participants_kda:
+            with contextlib.suppress(Exception):
+                _ensure_match_participants_columns(conn)
+
         # Trouver les matchs avec données manquantes
         match_ids = _find_matches_missing_data(
             conn,
@@ -1157,6 +1253,8 @@ async def backfill_player_data(
             enemy_mmr=enemy_mmr,
             assets=assets,
             participants=participants,
+            participants_scores=participants_scores,
+            participants_kda=participants_kda,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
             force_enemy_mmr=force_enemy_mmr,
@@ -1182,11 +1280,19 @@ async def backfill_player_data(
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
+                "participants_scores_updated": 0,
+                "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
             }
 
-        if not match_ids and not killer_victim and not end_time:
+        if (
+            not match_ids
+            and not killer_victim
+            and not end_time
+            and not participants_scores
+            and not participants_kda
+        ):
             # Pas de matchs à traiter ET pas de killer_victim ni end_time à backfill
             logger.info("Tous les matchs ont déjà toutes les données demandées")
             return {
@@ -1202,6 +1308,8 @@ async def backfill_player_data(
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
+                "participants_scores_updated": 0,
+                "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
             }
@@ -1239,6 +1347,8 @@ async def backfill_player_data(
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
+                "participants_scores_updated": 0,
+                "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": total_killer_victim_pairs,
                 "end_time_updated": total_end_time_updated,
             }
@@ -1260,6 +1370,8 @@ async def backfill_player_data(
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
+                "participants_scores_updated": 0,
+                "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
             }
@@ -1275,6 +1387,8 @@ async def backfill_player_data(
         total_enemy_mmr_updated = 0
         total_assets_updated = 0
         total_participants_inserted = 0
+        total_participants_scores_updated = 0
+        total_participants_kda_updated = 0
         total_end_time_updated = 0
 
         async with SPNKrAPIClient(
@@ -1290,6 +1404,46 @@ async def backfill_player_data(
                     if not stats_json:
                         logger.warning(f"Impossible de récupérer {match_id}")
                         continue
+
+                    # Compteurs pour le log "données insérées" ce match (score/rang et k/d/a)
+                    participants_scores_this_match = 0
+                    participants_kda_this_match = 0
+
+                    # Mise à jour score/rang ou k/d/a des participants (options distinctes)
+                    if participants_scores or participants_kda:
+                        _ensure_match_participants_columns(conn)
+                        participant_rows = extract_participants(stats_json)
+                        for row in participant_rows:
+                            try:
+                                if participants_scores:
+                                    conn.execute(
+                                        """UPDATE match_participants
+                                           SET rank = ?, score = ?
+                                           WHERE match_id = ? AND xuid = ?""",
+                                        (row.rank, row.score, row.match_id, row.xuid),
+                                    )
+                                if participants_kda:
+                                    conn.execute(
+                                        """UPDATE match_participants
+                                           SET kills = ?, deaths = ?, assists = ?
+                                           WHERE match_id = ? AND xuid = ?""",
+                                        (
+                                            row.kills,
+                                            row.deaths,
+                                            row.assists,
+                                            row.match_id,
+                                            row.xuid,
+                                        ),
+                                    )
+                            except Exception as e:
+                                logger.debug(f"Update participant {row.xuid}: {e}")
+                        if participant_rows:
+                            if participants_scores:
+                                participants_scores_this_match = len(participant_rows)
+                                total_participants_scores_updated += participants_scores_this_match
+                            if participants_kda:
+                                participants_kda_this_match = len(participant_rows)
+                                total_participants_kda_updated += participants_kda_this_match
 
                     # Enrichir avec les noms depuis Discovery UGC (playlist, map, pair, game_variant)
                     if assets:
@@ -1320,6 +1474,8 @@ async def backfill_player_data(
                         "enemy_mmr": 0,
                         "assets": 0,
                         "participants": 0,
+                        "participants_scores": participants_scores_this_match,
+                        "participants_kda": participants_kda_this_match,
                     }
 
                     # Assets (noms playlist/map/pair) — mise à jour match_stats
@@ -1490,6 +1646,10 @@ async def backfill_player_data(
                         parts.append("noms assets")
                     if inserted_this_match.get("participants", 0) > 0:
                         parts.append(f"{inserted_this_match['participants']} participant(s)")
+                    if inserted_this_match.get("participants_scores", 0) > 0:
+                        parts.append(f"{inserted_this_match['participants_scores']} score(s)/rang")
+                    if inserted_this_match.get("participants_kda", 0) > 0:
+                        parts.append(f"{inserted_this_match['participants_kda']} k/d/a")
 
                     if parts:
                         logger.info(f"  ✅ {', '.join(parts)} inséré(s)")
@@ -1538,6 +1698,8 @@ async def backfill_player_data(
             "enemy_mmr_updated": total_enemy_mmr_updated,
             "assets_updated": total_assets_updated,
             "participants_inserted": total_participants_inserted,
+            "participants_scores_updated": total_participants_scores_updated,
+            "participants_kda_updated": total_participants_kda_updated,
             "killer_victim_pairs_inserted": total_killer_victim_pairs,
             "end_time_updated": total_end_time_updated,
         }
@@ -1561,6 +1723,8 @@ async def backfill_all_players(
     enemy_mmr: bool = False,
     assets: bool = False,
     participants: bool = False,
+    participants_scores: bool = False,
+    participants_kda: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     all_data: bool = False,
@@ -1594,6 +1758,8 @@ async def backfill_all_players(
         "enemy_mmr_updated": 0,
         "assets_updated": 0,
         "participants_inserted": 0,
+        "participants_scores_updated": 0,
+        "participants_kda_updated": 0,
         "killer_victim_pairs_inserted": 0,
         "end_time_updated": 0,
     }
@@ -1618,6 +1784,8 @@ async def backfill_all_players(
             enemy_mmr=enemy_mmr,
             assets=assets,
             participants=participants,
+            participants_scores=participants_scores,
+            participants_kda=participants_kda,
             killer_victim=killer_victim,
             end_time=end_time,
             all_data=all_data,
@@ -1784,6 +1952,18 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--participants-scores",
+        action="store_true",
+        help="Backfill score et rang des participants (matchs où rank/score sont manquants)",
+    )
+
+    parser.add_argument(
+        "--participants-kda",
+        action="store_true",
+        help="Backfill kills, deaths, assists des participants (matchs où k/d/a sont manquants)",
+    )
+
+    parser.add_argument(
         "--killer-victim",
         action="store_true",
         help="Backfill les paires killer/victim depuis highlight_events pour antagonistes",
@@ -1825,6 +2005,8 @@ def main() -> int:
                     enemy_mmr=args.enemy_mmr,
                     assets=args.assets,
                     participants=args.participants,
+                    participants_scores=args.participants_scores,
+                    participants_kda=args.participants_kda,
                     killer_victim=args.killer_victim,
                     end_time=args.end_time,
                     all_data=args.all_data,
@@ -1859,6 +2041,12 @@ def main() -> int:
                 logger.info(f"Noms assets mis à jour: {totals['assets_updated']}")
             if args.participants:
                 logger.info(f"Participants insérés: {totals['participants_inserted']}")
+            if args.participants_scores:
+                logger.info(
+                    f"Scores/rang participants mis à jour: {totals['participants_scores_updated']}"
+                )
+            if args.participants_kda:
+                logger.info(f"K/D/A participants mis à jour: {totals['participants_kda_updated']}")
             if args.killer_victim:
                 logger.info(
                     f"Paires killer/victim insérées: {totals['killer_victim_pairs_inserted']}"
@@ -1882,6 +2070,8 @@ def main() -> int:
                     enemy_mmr=args.enemy_mmr,
                     assets=args.assets,
                     participants=args.participants,
+                    participants_scores=args.participants_scores,
+                    participants_kda=args.participants_kda,
                     killer_victim=args.killer_victim,
                     end_time=args.end_time,
                     all_data=args.all_data,
@@ -1912,6 +2102,12 @@ def main() -> int:
                 logger.info(f"Noms assets mis à jour: {result['assets_updated']}")
             if args.participants:
                 logger.info(f"Participants insérés: {result['participants_inserted']}")
+            if args.participants_scores:
+                logger.info(
+                    f"Scores/rang participants mis à jour: {result['participants_scores_updated']}"
+                )
+            if args.participants_kda:
+                logger.info(f"K/D/A participants mis à jour: {result['participants_kda_updated']}")
             if args.killer_victim:
                 logger.info(
                     f"Paires killer/victim insérées: {result['killer_victim_pairs_inserted']}"
