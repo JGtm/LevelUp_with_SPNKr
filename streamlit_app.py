@@ -379,6 +379,11 @@ def main() -> None:
     waypoint_player = str(st.session_state.get("waypoint_player", "") or "").strip()
 
     with st.sidebar:
+        # Logo en haut de la sidebar
+        logo_path = os.path.join(os.path.dirname(__file__), "static", "logo.png")
+        if os.path.exists(logo_path):
+            st.image(logo_path, use_container_width=True)
+
         st.markdown(
             "<div class='os-sidebar-brand' style='font-size: 2.5em;'>LevelUp</div>",
             unsafe_allow_html=True,
