@@ -47,99 +47,106 @@ class TestMaterializedViews:
     @pytest.fixture
     def temp_db(self, tmp_path: Path) -> Path:
         """Crée une base de données DuckDB temporaire avec des données de test."""
-        db_path = tmp_path / "test_stats.duckdb"
+        import gc
+        import uuid
+
+        db_path = tmp_path / f"test_stats_{uuid.uuid4().hex[:8]}.duckdb"
 
         conn = duckdb.connect(str(db_path))
 
-        # Créer la table match_stats
-        conn.execute("""
-            CREATE TABLE match_stats (
-                match_id VARCHAR PRIMARY KEY,
-                start_time TIMESTAMP,
-                map_id VARCHAR,
-                map_name VARCHAR,
-                playlist_id VARCHAR,
-                playlist_name VARCHAR,
-                pair_id VARCHAR,
-                pair_name VARCHAR,
-                game_variant_id VARCHAR,
-                game_variant_name VARCHAR,
-                outcome INTEGER,
-                team_id INTEGER,
-                kda DOUBLE,
-                max_killing_spree INTEGER,
-                headshot_kills INTEGER,
-                avg_life_seconds DOUBLE,
-                time_played_seconds INTEGER,
-                kills INTEGER,
-                deaths INTEGER,
-                assists INTEGER,
-                accuracy DOUBLE,
-                my_team_score INTEGER,
-                enemy_team_score INTEGER,
-                team_mmr DOUBLE,
-                enemy_mmr DOUBLE
-            )
-        """)
-
-        # Insérer des données de test variées
-        base_time = datetime.now() - timedelta(days=30)
-        test_matches = []
-
-        maps_data = [
-            ("map1", "Streets"),
-            ("map2", "Recharge"),
-            ("map3", "Live Fire"),
-        ]
-        modes_data = [
-            ("Slayer", "Team Slayer"),
-            ("CTF", "Capture The Flag"),
-            ("Oddball", "Oddball"),
-        ]
-
-        for i in range(50):
-            map_id, map_name = maps_data[i % 3]
-            mode_name, pair_name = modes_data[i % 3]
-            outcome = 2 if i % 3 == 0 else (3 if i % 3 == 1 else 1)  # Win, Loss, Tie
-
-            test_matches.append(
-                (
-                    f"match_{i:04d}",
-                    base_time + timedelta(hours=i),
-                    map_id,
-                    map_name,
-                    f"playlist_{i % 2}",
-                    f"Playlist {i % 2}",
-                    f"pair_{i % 3}",
-                    pair_name,
-                    f"variant_{i % 3}",
-                    mode_name,
-                    outcome,
-                    1,  # team_id
-                    1.5 + (i % 10) * 0.1,  # kda
-                    3 + i % 5,  # max_killing_spree
-                    2 + i % 4,  # headshot_kills
-                    45.0 + i % 30,  # avg_life_seconds
-                    600 + i * 10,  # time_played_seconds
-                    10 + i % 15,  # kills
-                    5 + i % 10,  # deaths
-                    3 + i % 5,  # assists
-                    0.40 + (i % 20) * 0.01,  # accuracy
-                    50,  # my_team_score
-                    45 + i % 10,  # enemy_team_score
-                    1200.0 + i * 5,  # team_mmr
-                    1190.0 + i * 5,  # enemy_mmr
+        try:
+            # Créer la table match_stats
+            conn.execute("""
+                CREATE TABLE match_stats (
+                    match_id VARCHAR PRIMARY KEY,
+                    start_time TIMESTAMP,
+                    map_id VARCHAR,
+                    map_name VARCHAR,
+                    playlist_id VARCHAR,
+                    playlist_name VARCHAR,
+                    pair_id VARCHAR,
+                    pair_name VARCHAR,
+                    game_variant_id VARCHAR,
+                    game_variant_name VARCHAR,
+                    outcome INTEGER,
+                    team_id INTEGER,
+                    kda DOUBLE,
+                    max_killing_spree INTEGER,
+                    headshot_kills INTEGER,
+                    avg_life_seconds DOUBLE,
+                    time_played_seconds INTEGER,
+                    kills INTEGER,
+                    deaths INTEGER,
+                    assists INTEGER,
+                    accuracy DOUBLE,
+                    my_team_score INTEGER,
+                    enemy_team_score INTEGER,
+                    team_mmr DOUBLE,
+                    enemy_mmr DOUBLE
                 )
+            """)
+
+            # Insérer des données de test variées
+            base_time = datetime.now() - timedelta(days=30)
+            test_matches = []
+
+            maps_data = [
+                ("map1", "Streets"),
+                ("map2", "Recharge"),
+                ("map3", "Live Fire"),
+            ]
+            modes_data = [
+                ("Slayer", "Team Slayer"),
+                ("CTF", "Capture The Flag"),
+                ("Oddball", "Oddball"),
+            ]
+
+            for i in range(50):
+                map_id, map_name = maps_data[i % 3]
+                mode_name, pair_name = modes_data[i % 3]
+                outcome = 2 if i % 3 == 0 else (3 if i % 3 == 1 else 1)  # Win, Loss, Tie
+
+                test_matches.append(
+                    (
+                        f"match_{i:04d}",
+                        base_time + timedelta(hours=i),
+                        map_id,
+                        map_name,
+                        f"playlist_{i % 2}",
+                        f"Playlist {i % 2}",
+                        f"pair_{i % 3}",
+                        pair_name,
+                        f"variant_{i % 3}",
+                        mode_name,
+                        outcome,
+                        1,  # team_id
+                        1.5 + (i % 10) * 0.1,  # kda
+                        3 + i % 5,  # max_killing_spree
+                        2 + i % 4,  # headshot_kills
+                        45.0 + i % 30,  # avg_life_seconds
+                        600 + i * 10,  # time_played_seconds
+                        10 + i % 15,  # kills
+                        5 + i % 10,  # deaths
+                        3 + i % 5,  # assists
+                        0.40 + (i % 20) * 0.01,  # accuracy
+                        50,  # my_team_score
+                        45 + i % 10,  # enemy_team_score
+                        1200.0 + i * 5,  # team_mmr
+                        1190.0 + i * 5,  # enemy_mmr
+                    )
+                )
+
+            conn.executemany(
+                """
+                INSERT INTO match_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                test_matches,
             )
+        finally:
+            conn.close()
+            del conn
+            gc.collect()
 
-        conn.executemany(
-            """
-            INSERT INTO match_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            test_matches,
-        )
-
-        conn.close()
         return db_path
 
     @pytest.fixture
@@ -251,59 +258,66 @@ class TestBatchMmrLoading:
     @pytest.fixture
     def temp_db_with_mmr(self, tmp_path: Path) -> Path:
         """Crée une DB avec des matchs ayant des MMR variés."""
-        db_path = tmp_path / "test_mmr.duckdb"
+        import gc
+        import uuid
+
+        db_path = tmp_path / f"test_mmr_{uuid.uuid4().hex[:8]}.duckdb"
 
         conn = duckdb.connect(str(db_path))
 
-        conn.execute("""
-            CREATE TABLE match_stats (
-                match_id VARCHAR PRIMARY KEY,
-                start_time TIMESTAMP,
-                map_id VARCHAR,
-                map_name VARCHAR,
-                playlist_id VARCHAR,
-                playlist_name VARCHAR,
-                pair_id VARCHAR,
-                pair_name VARCHAR,
-                game_variant_id VARCHAR,
-                game_variant_name VARCHAR,
-                outcome INTEGER,
-                team_id INTEGER,
-                kda DOUBLE,
-                max_killing_spree INTEGER,
-                headshot_kills INTEGER,
-                avg_life_seconds DOUBLE,
-                time_played_seconds INTEGER,
-                kills INTEGER,
-                deaths INTEGER,
-                assists INTEGER,
-                accuracy DOUBLE,
-                my_team_score INTEGER,
-                enemy_team_score INTEGER,
-                team_mmr DOUBLE,
-                enemy_mmr DOUBLE
-            )
-        """)
+        try:
+            conn.execute("""
+                CREATE TABLE match_stats (
+                    match_id VARCHAR PRIMARY KEY,
+                    start_time TIMESTAMP,
+                    map_id VARCHAR,
+                    map_name VARCHAR,
+                    playlist_id VARCHAR,
+                    playlist_name VARCHAR,
+                    pair_id VARCHAR,
+                    pair_name VARCHAR,
+                    game_variant_id VARCHAR,
+                    game_variant_name VARCHAR,
+                    outcome INTEGER,
+                    team_id INTEGER,
+                    kda DOUBLE,
+                    max_killing_spree INTEGER,
+                    headshot_kills INTEGER,
+                    avg_life_seconds DOUBLE,
+                    time_played_seconds INTEGER,
+                    kills INTEGER,
+                    deaths INTEGER,
+                    assists INTEGER,
+                    accuracy DOUBLE,
+                    my_team_score INTEGER,
+                    enemy_team_score INTEGER,
+                    team_mmr DOUBLE,
+                    enemy_mmr DOUBLE
+                )
+            """)
 
-        # Insérer des matchs avec MMR
-        test_data = [
-            ("match_001", 1200.5, 1180.3),
-            ("match_002", 1250.0, 1230.0),
-            ("match_003", None, None),  # Match sans MMR
-            ("match_004", 1300.0, 1350.0),
-            ("match_005", 1100.0, 1100.0),
-        ]
+            # Insérer des matchs avec MMR
+            test_data = [
+                ("match_001", 1200.5, 1180.3),
+                ("match_002", 1250.0, 1230.0),
+                ("match_003", None, None),  # Match sans MMR
+                ("match_004", 1300.0, 1350.0),
+                ("match_005", 1100.0, 1100.0),
+            ]
 
-        for match_id, team_mmr, enemy_mmr in test_data:
-            conn.execute(
-                """
-                INSERT INTO match_stats (match_id, start_time, team_mmr, enemy_mmr, kills, deaths, assists)
-                VALUES (?, CURRENT_TIMESTAMP, ?, ?, 10, 5, 3)
-            """,
-                [match_id, team_mmr, enemy_mmr],
-            )
+            for match_id, team_mmr, enemy_mmr in test_data:
+                conn.execute(
+                    """
+                    INSERT INTO match_stats (match_id, start_time, team_mmr, enemy_mmr, kills, deaths, assists)
+                    VALUES (?, CURRENT_TIMESTAMP, ?, ?, 10, 5, 3)
+                """,
+                    [match_id, team_mmr, enemy_mmr],
+                )
+        finally:
+            conn.close()
+            del conn
+            gc.collect()
 
-        conn.close()
         return db_path
 
     @pytest.fixture
@@ -364,101 +378,107 @@ class TestPerformanceComparison:
     @pytest.fixture
     def large_db(self, tmp_path: Path) -> Path:
         """Crée une DB avec beaucoup de matchs pour les tests de perf."""
-        db_path = tmp_path / "test_perf.duckdb"
+        import gc
+        import random
+        import uuid
+
+        db_path = tmp_path / f"test_perf_{uuid.uuid4().hex[:8]}.duckdb"
 
         conn = duckdb.connect(str(db_path))
 
-        conn.execute("""
-            CREATE TABLE match_stats (
-                match_id VARCHAR PRIMARY KEY,
-                start_time TIMESTAMP,
-                map_id VARCHAR,
-                map_name VARCHAR,
-                playlist_id VARCHAR,
-                playlist_name VARCHAR,
-                pair_id VARCHAR,
-                pair_name VARCHAR,
-                game_variant_id VARCHAR,
-                game_variant_name VARCHAR,
-                outcome INTEGER,
-                team_id INTEGER,
-                kda DOUBLE,
-                max_killing_spree INTEGER,
-                headshot_kills INTEGER,
-                avg_life_seconds DOUBLE,
-                time_played_seconds INTEGER,
-                kills INTEGER,
-                deaths INTEGER,
-                assists INTEGER,
-                accuracy DOUBLE,
-                my_team_score INTEGER,
-                enemy_team_score INTEGER,
-                team_mmr DOUBLE,
-                enemy_mmr DOUBLE
-            )
-        """)
+        try:
+            conn.execute("""
+                CREATE TABLE match_stats (
+                    match_id VARCHAR PRIMARY KEY,
+                    start_time TIMESTAMP,
+                    map_id VARCHAR,
+                    map_name VARCHAR,
+                    playlist_id VARCHAR,
+                    playlist_name VARCHAR,
+                    pair_id VARCHAR,
+                    pair_name VARCHAR,
+                    game_variant_id VARCHAR,
+                    game_variant_name VARCHAR,
+                    outcome INTEGER,
+                    team_id INTEGER,
+                    kda DOUBLE,
+                    max_killing_spree INTEGER,
+                    headshot_kills INTEGER,
+                    avg_life_seconds DOUBLE,
+                    time_played_seconds INTEGER,
+                    kills INTEGER,
+                    deaths INTEGER,
+                    assists INTEGER,
+                    accuracy DOUBLE,
+                    my_team_score INTEGER,
+                    enemy_team_score INTEGER,
+                    team_mmr DOUBLE,
+                    enemy_mmr DOUBLE
+                )
+            """)
 
-        # Générer 1000 matchs
-        import random
+            # Générer 1000 matchs
+            random.seed(42)
 
-        random.seed(42)
+            maps = [
+                ("map1", "Streets"),
+                ("map2", "Recharge"),
+                ("map3", "Live Fire"),
+                ("map4", "Aquarius"),
+                ("map5", "Bazaar"),
+            ]
+            modes = [
+                ("Slayer", "Team Slayer"),
+                ("CTF", "CTF"),
+                ("Oddball", "Oddball"),
+                ("Strongholds", "Forteresse"),
+                ("Total Control", "Contrôle Total"),
+            ]
 
-        maps = [
-            ("map1", "Streets"),
-            ("map2", "Recharge"),
-            ("map3", "Live Fire"),
-            ("map4", "Aquarius"),
-            ("map5", "Bazaar"),
-        ]
-        modes = [
-            ("Slayer", "Team Slayer"),
-            ("CTF", "CTF"),
-            ("Oddball", "Oddball"),
-            ("Strongholds", "Forteresse"),
-            ("Total Control", "Contrôle Total"),
-        ]
+            base_time = datetime.now() - timedelta(days=365)
 
-        base_time = datetime.now() - timedelta(days=365)
+            for i in range(1000):
+                map_id, map_name = random.choice(maps)
+                mode_name, pair_name = random.choice(modes)
+                outcome = random.choice([1, 2, 3])
 
-        for i in range(1000):
-            map_id, map_name = random.choice(maps)
-            mode_name, pair_name = random.choice(modes)
-            outcome = random.choice([1, 2, 3])
+                conn.execute(
+                    """
+                    INSERT INTO match_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    [
+                        f"match_{i:06d}",
+                        base_time + timedelta(hours=i),
+                        map_id,
+                        map_name,
+                        f"playlist_{i % 3}",
+                        f"Playlist {i % 3}",
+                        f"pair_{i % 5}",
+                        pair_name,
+                        f"variant_{i % 5}",
+                        mode_name,
+                        outcome,
+                        1,
+                        random.uniform(0.5, 3.0),
+                        random.randint(0, 10),
+                        random.randint(0, 8),
+                        random.uniform(30, 90),
+                        random.randint(300, 900),
+                        random.randint(5, 25),
+                        random.randint(3, 20),
+                        random.randint(1, 10),
+                        random.uniform(0.25, 0.60),
+                        random.randint(40, 60),
+                        random.randint(35, 65),
+                        random.uniform(1000, 1500),
+                        random.uniform(1000, 1500),
+                    ],
+                )
+        finally:
+            conn.close()
+            del conn
+            gc.collect()
 
-            conn.execute(
-                """
-                INSERT INTO match_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                [
-                    f"match_{i:06d}",
-                    base_time + timedelta(hours=i),
-                    map_id,
-                    map_name,
-                    f"playlist_{i % 3}",
-                    f"Playlist {i % 3}",
-                    f"pair_{i % 5}",
-                    pair_name,
-                    f"variant_{i % 5}",
-                    mode_name,
-                    outcome,
-                    1,
-                    random.uniform(0.5, 3.0),
-                    random.randint(0, 10),
-                    random.randint(0, 8),
-                    random.uniform(30, 90),
-                    random.randint(300, 900),
-                    random.randint(5, 25),
-                    random.randint(3, 20),
-                    random.randint(1, 10),
-                    random.uniform(0.25, 0.60),
-                    random.randint(40, 60),
-                    random.randint(35, 65),
-                    random.uniform(1000, 1500),
-                    random.uniform(1000, 1500),
-                ],
-            )
-
-        conn.close()
         return db_path
 
     def test_mv_faster_than_direct_query(self, large_db: Path):

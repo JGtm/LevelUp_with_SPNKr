@@ -24,74 +24,81 @@ from scripts.backfill_data import (
 @pytest.fixture
 def temp_duckdb_with_matches(tmp_path: Path) -> tuple[Path, str]:
     """Crée une base DuckDB temporaire avec des matchs de test."""
-    db_path = tmp_path / "test_player" / "stats.duckdb"
+    import gc
+    import uuid
+
+    import duckdb
+
+    db_path = tmp_path / f"test_player_{uuid.uuid4().hex[:8]}" / "stats.duckdb"
     db_path.parent.mkdir(parents=True)
 
     conn = duckdb.connect(str(db_path))
-    conn.execute(
-        """
-        CREATE TABLE match_stats (
-            match_id VARCHAR PRIMARY KEY,
-            start_time TIMESTAMP,
-            kills INTEGER,
-            deaths INTEGER,
-            assists INTEGER,
-            kda FLOAT,
-            accuracy FLOAT,
-            time_played_seconds INTEGER,
-            avg_life_seconds FLOAT,
-            performance_score FLOAT
-        )
-        """
-    )
-
-    # Insérer 20 matchs historiques
-    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    for i in range(20):
+    try:
         conn.execute(
             """
-            INSERT INTO match_stats
-            (match_id, start_time, kills, deaths, assists, kda, accuracy, time_played_seconds, avg_life_seconds, performance_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                f"match-{i:03d}",
-                base_time + timedelta(hours=i),
-                10 + i,
-                8,
-                3,
-                1.5 + (i * 0.1),
-                0.50,
-                600,
-                45.0,
-                None,  # Pas de score pour certains
-            ),
-        )
-
-    # Insérer quelques matchs avec score
-    for i in range(20, 25):
-        conn.execute(
+            CREATE TABLE match_stats (
+                match_id VARCHAR PRIMARY KEY,
+                start_time TIMESTAMP,
+                kills INTEGER,
+                deaths INTEGER,
+                assists INTEGER,
+                kda FLOAT,
+                accuracy FLOAT,
+                time_played_seconds INTEGER,
+                avg_life_seconds FLOAT,
+                performance_score FLOAT
+            )
             """
-            INSERT INTO match_stats
-            (match_id, start_time, kills, deaths, assists, kda, accuracy, time_played_seconds, avg_life_seconds, performance_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                f"match-{i:03d}",
-                base_time + timedelta(hours=i),
-                15,
-                6,
-                4,
-                3.0,
-                0.55,
-                600,
-                50.0,
-                75.5,  # Score déjà présent
-            ),
         )
 
-    conn.commit()
-    conn.close()
+        # Insérer 20 matchs historiques
+        base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        for i in range(20):
+            conn.execute(
+                """
+                INSERT INTO match_stats
+                (match_id, start_time, kills, deaths, assists, kda, accuracy, time_played_seconds, avg_life_seconds, performance_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"match-{i:03d}",
+                    base_time + timedelta(hours=i),
+                    10 + i,
+                    8,
+                    3,
+                    1.5 + (i * 0.1),
+                    0.50,
+                    600,
+                    45.0,
+                    None,  # Pas de score pour certains
+                ),
+            )
+
+        # Insérer quelques matchs avec score
+        for i in range(20, 25):
+            conn.execute(
+                """
+                INSERT INTO match_stats
+                (match_id, start_time, kills, deaths, assists, kda, accuracy, time_played_seconds, avg_life_seconds, performance_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"match-{i:03d}",
+                    base_time + timedelta(hours=i),
+                    15,
+                    6,
+                    4,
+                    3.0,
+                    0.55,
+                    600,
+                    50.0,
+                    75.5,  # Score déjà présent
+                ),
+            )
+    finally:
+        conn.close()
+        del conn
+        gc.collect()
 
     xuid = "2535423456789"
     return db_path, xuid

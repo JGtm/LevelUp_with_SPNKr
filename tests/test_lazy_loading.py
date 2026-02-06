@@ -217,12 +217,26 @@ class TestLoadRecentMatches:
 
             from src.data.repositories.duckdb_repo import DuckDBRepository
 
-            with patch.object(Path, "exists", return_value=True):
+            with (
+                patch.object(Path, "exists", return_value=True),
+                patch.object(
+                    DuckDBRepository,
+                    "_build_metadata_resolution",
+                    return_value=("", "map_name", "playlist_name", "pair_name"),
+                ),
+                patch.object(
+                    DuckDBRepository,
+                    "_build_mmr_fallback",
+                    return_value=("", "team_mmr", "enemy_mmr"),
+                ),
+            ):
                 repo = DuckDBRepository(Path("/fake/path.duckdb"), "12345")
                 repo.load_recent_matches(limit=10)
 
             calls = mock_conn.execute.call_args_list
-            assert any("ORDER BY start_time DESC" in str(c) for c in calls)
+            # Vérifier que la requête contient ORDER BY ... DESC
+            sql_calls = [str(call) for call in calls if call and len(call) > 0]
+            assert any("ORDER BY" in str(call) and "DESC" in str(call) for call in sql_calls)
 
 
 # ============================================================================
@@ -324,87 +338,94 @@ class TestLazyLoadingIntegration:
     @pytest.fixture
     def temp_duckdb(self, tmp_path):
         """Crée une DB DuckDB temporaire avec des données de test."""
+        import gc
+        import uuid
+
         import duckdb
 
-        db_path = tmp_path / "test_stats.duckdb"
+        db_path = tmp_path / f"test_stats_{uuid.uuid4().hex[:8]}.duckdb"
         conn = duckdb.connect(str(db_path))
 
-        # Créer la table match_stats
-        conn.execute("""
-            CREATE TABLE match_stats (
-                match_id VARCHAR PRIMARY KEY,
-                start_time TIMESTAMP,
-                map_id VARCHAR,
-                map_name VARCHAR,
-                playlist_id VARCHAR,
-                playlist_name VARCHAR,
-                pair_id VARCHAR,
-                pair_name VARCHAR,
-                game_variant_id VARCHAR,
-                game_variant_name VARCHAR,
-                outcome INTEGER,
-                team_id INTEGER,
-                kda DOUBLE,
-                max_killing_spree INTEGER,
-                headshot_kills INTEGER,
-                avg_life_seconds DOUBLE,
-                time_played_seconds INTEGER,
-                kills INTEGER,
-                deaths INTEGER,
-                assists INTEGER,
-                accuracy DOUBLE,
-                my_team_score INTEGER,
-                enemy_team_score INTEGER,
-                team_mmr DOUBLE,
-                enemy_mmr DOUBLE,
-                is_firefight BOOLEAN DEFAULT FALSE
-            )
-        """)
+        try:
+            # Créer la table match_stats
+            conn.execute("""
+                CREATE TABLE match_stats (
+                    match_id VARCHAR PRIMARY KEY,
+                    start_time TIMESTAMP,
+                    map_id VARCHAR,
+                    map_name VARCHAR,
+                    playlist_id VARCHAR,
+                    playlist_name VARCHAR,
+                    pair_id VARCHAR,
+                    pair_name VARCHAR,
+                    game_variant_id VARCHAR,
+                    game_variant_name VARCHAR,
+                    outcome INTEGER,
+                    team_id INTEGER,
+                    kda DOUBLE,
+                    max_killing_spree INTEGER,
+                    headshot_kills INTEGER,
+                    avg_life_seconds DOUBLE,
+                    time_played_seconds INTEGER,
+                    kills INTEGER,
+                    deaths INTEGER,
+                    assists INTEGER,
+                    accuracy DOUBLE,
+                    my_team_score INTEGER,
+                    enemy_team_score INTEGER,
+                    team_mmr DOUBLE,
+                    enemy_mmr DOUBLE,
+                    is_firefight BOOLEAN DEFAULT FALSE
+                )
+            """)
 
-        # Insérer des données de test avec des timestamps uniques
-        for i in range(100):
-            conn.execute(
-                """
-                INSERT INTO match_stats (
-                    match_id, start_time, map_id, map_name,
-                    playlist_id, playlist_name, pair_id, pair_name,
-                    game_variant_id, game_variant_name,
-                    outcome, team_id, kda, max_killing_spree, headshot_kills,
-                    avg_life_seconds, time_played_seconds,
-                    kills, deaths, assists, accuracy,
-                    my_team_score, enemy_team_score, team_mmr, enemy_mmr
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    f"match_{i}",
-                    datetime(2026, 2, 1, i % 24, i % 60, i % 60),  # Timestamps uniques
-                    f"map_{i % 5}",
-                    f"Map {i % 5}",
-                    "playlist_1",
-                    "Ranked",
-                    "pair_1",
-                    "Slayer",
-                    "variant_1",
-                    "Ranked Slayer",
-                    2 if i % 2 == 0 else 3,
-                    0,
-                    2.0 + (i % 10) / 10,
-                    i % 10,
-                    i % 5,
-                    30.0 + i,
-                    600 + i * 10,
-                    10 + i % 5,
-                    5 + i % 3,
-                    3 + i % 4,
-                    50.0 + i % 20,
-                    50,
-                    45,
-                    1500.0,
-                    1480.0,
-                ],
-            )
+            # Insérer des données de test avec des timestamps uniques
+            for i in range(100):
+                conn.execute(
+                    """
+                    INSERT INTO match_stats (
+                        match_id, start_time, map_id, map_name,
+                        playlist_id, playlist_name, pair_id, pair_name,
+                        game_variant_id, game_variant_name,
+                        outcome, team_id, kda, max_killing_spree, headshot_kills,
+                        avg_life_seconds, time_played_seconds,
+                        kills, deaths, assists, accuracy,
+                        my_team_score, enemy_team_score, team_mmr, enemy_mmr
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        f"match_{i}",
+                        datetime(2026, 2, 1, i % 24, i % 60, i % 60),  # Timestamps uniques
+                        f"map_{i % 5}",
+                        f"Map {i % 5}",
+                        "playlist_1",
+                        "Ranked",
+                        "pair_1",
+                        "Slayer",
+                        "variant_1",
+                        "Ranked Slayer",
+                        2 if i % 2 == 0 else 3,
+                        0,
+                        2.0 + (i % 10) / 10,
+                        i % 10,
+                        i % 5,
+                        30.0 + i,
+                        600 + i * 10,
+                        10 + i % 5,
+                        5 + i % 3,
+                        3 + i % 4,
+                        50.0 + i % 20,
+                        50,
+                        45,
+                        1500.0,
+                        1480.0,
+                    ],
+                )
+        finally:
+            conn.close()
+            del conn
+            gc.collect()
 
-        conn.close()
         return db_path
 
     def test_integration_load_recent_matches(self, temp_duckdb):

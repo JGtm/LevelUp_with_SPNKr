@@ -27,80 +27,86 @@ from src.data.repositories.duckdb_repo import DuckDBRepository
 @pytest.fixture
 def temp_player_db(tmp_path: Path):
     """Crée une DB joueur temporaire avec des matchs de test."""
-    player_dir = tmp_path / "players" / "TestPlayer"
+    import gc
+    import uuid
+
+    player_dir = tmp_path / "players" / f"TestPlayer_{uuid.uuid4().hex[:8]}"
     player_dir.mkdir(parents=True)
 
     db_path = player_dir / "stats.duckdb"
 
     conn = duckdb.connect(str(db_path))
 
-    # Créer la table match_stats
-    conn.execute("""
-        CREATE TABLE match_stats (
-            match_id VARCHAR PRIMARY KEY,
-            start_time TIMESTAMP,
-            map_id VARCHAR,
-            map_name VARCHAR,
-            playlist_id VARCHAR,
-            playlist_name VARCHAR,
-            pair_id VARCHAR,
-            pair_name VARCHAR,
-            game_variant_id VARCHAR,
-            game_variant_name VARCHAR,
-            outcome INTEGER,
-            team_id INTEGER,
-            kda DOUBLE,
-            max_killing_spree INTEGER,
-            headshot_kills INTEGER,
-            avg_life_seconds DOUBLE,
-            time_played_seconds DOUBLE,
-            kills INTEGER,
-            deaths INTEGER,
-            assists INTEGER,
-            accuracy DOUBLE,
-            my_team_score INTEGER,
-            enemy_team_score INTEGER,
-            team_mmr DOUBLE,
-            enemy_mmr DOUBLE
-        )
-    """)
+    try:
+        # Créer la table match_stats
+        conn.execute("""
+            CREATE TABLE match_stats (
+                match_id VARCHAR PRIMARY KEY,
+                start_time TIMESTAMP,
+                map_id VARCHAR,
+                map_name VARCHAR,
+                playlist_id VARCHAR,
+                playlist_name VARCHAR,
+                pair_id VARCHAR,
+                pair_name VARCHAR,
+                game_variant_id VARCHAR,
+                game_variant_name VARCHAR,
+                outcome INTEGER,
+                team_id INTEGER,
+                kda DOUBLE,
+                max_killing_spree INTEGER,
+                headshot_kills INTEGER,
+                avg_life_seconds DOUBLE,
+                time_played_seconds DOUBLE,
+                kills INTEGER,
+                deaths INTEGER,
+                assists INTEGER,
+                accuracy DOUBLE,
+                my_team_score INTEGER,
+                enemy_team_score INTEGER,
+                team_mmr DOUBLE,
+                enemy_mmr DOUBLE
+            )
+        """)
 
-    # Insérer des matchs sur plusieurs années
-    matches = [
-        # Matchs 2023
-        ("match_2023_01", datetime(2023, 1, 15, 10, 0), "map1", "Streets", 10, 5, 3),
-        ("match_2023_02", datetime(2023, 3, 20, 14, 0), "map2", "Recharge", 8, 6, 2),
-        ("match_2023_03", datetime(2023, 6, 10, 18, 0), "map1", "Streets", 12, 4, 5),
-        ("match_2023_04", datetime(2023, 9, 5, 20, 0), "map3", "Live Fire", 7, 8, 4),
-        ("match_2023_05", datetime(2023, 11, 25, 16, 0), "map2", "Recharge", 15, 3, 6),
-        # Matchs 2024
-        ("match_2024_01", datetime(2024, 2, 10, 12, 0), "map1", "Streets", 9, 7, 3),
-        ("match_2024_02", datetime(2024, 4, 15, 15, 0), "map3", "Live Fire", 11, 5, 4),
-        ("match_2024_03", datetime(2024, 7, 20, 19, 0), "map2", "Recharge", 6, 9, 2),
-        # Matchs 2025
-        ("match_2025_01", datetime(2025, 1, 5, 10, 0), "map1", "Streets", 14, 4, 7),
-        ("match_2025_02", datetime(2025, 1, 20, 14, 0), "map3", "Live Fire", 8, 6, 3),
-    ]
+        # Insérer des matchs sur plusieurs années
+        matches = [
+            # Matchs 2023
+            ("match_2023_01", datetime(2023, 1, 15, 10, 0), "map1", "Streets", 10, 5, 3),
+            ("match_2023_02", datetime(2023, 3, 20, 14, 0), "map2", "Recharge", 8, 6, 2),
+            ("match_2023_03", datetime(2023, 6, 10, 18, 0), "map1", "Streets", 12, 4, 5),
+            ("match_2023_04", datetime(2023, 9, 5, 20, 0), "map3", "Live Fire", 7, 8, 4),
+            ("match_2023_05", datetime(2023, 11, 25, 16, 0), "map2", "Recharge", 15, 3, 6),
+            # Matchs 2024
+            ("match_2024_01", datetime(2024, 2, 10, 12, 0), "map1", "Streets", 9, 7, 3),
+            ("match_2024_02", datetime(2024, 4, 15, 15, 0), "map3", "Live Fire", 11, 5, 4),
+            ("match_2024_03", datetime(2024, 7, 20, 19, 0), "map2", "Recharge", 6, 9, 2),
+            # Matchs 2025
+            ("match_2025_01", datetime(2025, 1, 5, 10, 0), "map1", "Streets", 14, 4, 7),
+            ("match_2025_02", datetime(2025, 1, 20, 14, 0), "map3", "Live Fire", 8, 6, 3),
+        ]
 
-    for match_id, start_time, map_id, map_name, kills, deaths, assists in matches:
-        conn.execute(
-            """
-            INSERT INTO match_stats (
-                match_id, start_time, map_id, map_name,
-                playlist_id, playlist_name, pair_id, pair_name,
-                game_variant_id, game_variant_name,
-                outcome, team_id, kda, max_killing_spree, headshot_kills,
-                avg_life_seconds, time_played_seconds,
-                kills, deaths, assists, accuracy,
-                my_team_score, enemy_team_score, team_mmr, enemy_mmr
-            ) VALUES (?, ?, ?, ?, 'pl1', 'Quick Play', 'pair1', 'Slayer',
-                'gv1', 'Team Slayer', 2, 0, 1.5, 5, 3,
-                45.0, 600.0, ?, ?, ?, 55.0, 50, 45, 1500.0, 1480.0)
-            """,
-            [match_id, start_time, map_id, map_name, kills, deaths, assists],
-        )
-
-    conn.close()
+        for match_id, start_time, map_id, map_name, kills, deaths, assists in matches:
+            conn.execute(
+                """
+                INSERT INTO match_stats (
+                    match_id, start_time, map_id, map_name,
+                    playlist_id, playlist_name, pair_id, pair_name,
+                    game_variant_id, game_variant_name,
+                    outcome, team_id, kda, max_killing_spree, headshot_kills,
+                    avg_life_seconds, time_played_seconds,
+                    kills, deaths, assists, accuracy,
+                    my_team_score, enemy_team_score, team_mmr, enemy_mmr
+                ) VALUES (?, ?, ?, ?, 'pl1', 'Quick Play', 'pair1', 'Slayer',
+                    'gv1', 'Team Slayer', 2, 0, 1.5, 5, 3,
+                    45.0, 600.0, ?, ?, ?, 55.0, 50, 45, 1500.0, 1480.0)
+                """,
+                [match_id, start_time, map_id, map_name, kills, deaths, assists],
+            )
+    finally:
+        conn.close()
+        del conn
+        gc.collect()
 
     return db_path
 

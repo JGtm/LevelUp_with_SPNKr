@@ -8,9 +8,6 @@ Ce module teste :
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-
 import duckdb
 import pytest
 
@@ -138,12 +135,15 @@ def sample_highlight_events():
 
 
 @pytest.fixture
-def temp_duckdb():
+def temp_duckdb(tmp_path):
     """Crée une DB DuckDB temporaire avec les tables Sprint 1."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test_stats.duckdb"
-        conn = duckdb.connect(str(db_path))
+    import gc
+    import uuid
 
+    db_path = tmp_path / f"test_stats_{uuid.uuid4().hex[:8]}.duckdb"
+    conn = duckdb.connect(str(db_path))
+
+    try:
         # Créer les tables Sprint 1
         conn.execute("""
             CREATE TABLE killer_victim_pairs (
@@ -179,10 +179,12 @@ def temp_duckdb():
                 deaths INTEGER
             )
         """)
-
+    finally:
         conn.close()
+        del conn
+        gc.collect()
 
-        yield db_path
+    yield db_path
 
 
 # =============================================================================

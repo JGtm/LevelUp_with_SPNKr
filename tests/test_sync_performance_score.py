@@ -21,8 +21,24 @@ from src.data.sync.models import MatchStatsRow
 @pytest.fixture
 def temp_duckdb(tmp_path: Path) -> Path:
     """Crée une base DuckDB temporaire pour les tests."""
-    db_path = tmp_path / "test_player" / "stats.duckdb"
+    import gc
+    import uuid
+
+    import duckdb
+
+    db_path = tmp_path / f"test_player_{uuid.uuid4().hex[:8]}" / "stats.duckdb"
     db_path.parent.mkdir(parents=True)
+
+    # Créer la DB avec tables de base si nécessaire
+    conn = duckdb.connect(str(db_path))
+    try:
+        # Créer tables si nécessaire pour les tests
+        pass  # Les tables seront créées par les tests si nécessaire
+    finally:
+        conn.close()
+        del conn
+        gc.collect()
+
     return db_path
 
 

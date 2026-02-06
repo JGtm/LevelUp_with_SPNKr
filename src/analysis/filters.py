@@ -3,6 +3,7 @@
 import re
 from collections.abc import Callable
 
+import pandas as pd
 import polars as pl
 
 
@@ -77,14 +78,16 @@ def is_allowed_playlist_name(name: str) -> bool:
     return False
 
 
-def build_option_map(series_name: pl.Series, series_id: pl.Series) -> dict[str, str]:
+def build_option_map(
+    series_name: pl.Series | pd.Series, series_id: pl.Series | pd.Series
+) -> dict[str, str]:
     """Construit un dictionnaire label -> id pour les selectbox.
 
     Nettoie les libellés (supprime les suffixes UUID) et gère les collisions.
 
     Args:
-        series_name: Série des noms (Polars).
-        series_id: Série des IDs correspondants (Polars).
+        series_name: Série des noms (Polars ou Pandas).
+        series_id: Série des IDs correspondants (Polars ou Pandas).
 
     Returns:
         Dictionnaire {label_propre: id} trié alphabétiquement.
@@ -101,8 +104,13 @@ def build_option_map(series_name: pl.Series, series_id: pl.Series) -> dict[str, 
     out: dict[str, str] = {}
     collisions: dict[str, int] = {}
 
-    names = series_name.fill_null("").to_list()
-    ids = series_id.fill_null("").to_list()
+    # Convertir en listes selon le type
+    if isinstance(series_name, pl.Series):
+        names = series_name.fill_null("").to_list()
+        ids = series_id.fill_null("").to_list()
+    else:  # Pandas Series
+        names = series_name.fillna("").tolist()
+        ids = series_id.fillna("").tolist()
     for name, _id in zip(names, ids, strict=False):
         if not _id:
             continue

@@ -145,11 +145,13 @@ class TestRepositoryFactory:
 
     def test_get_repository_duckdb(self, tmp_path):
         """Teste la création d'un DuckDBRepository."""
+        import uuid
+
         from src.data import RepositoryMode, get_repository
         from src.data.repositories.duckdb_repo import DuckDBRepository
 
-        # Créer une DB DuckDB
-        db_path = tmp_path / "stats.duckdb"
+        # Créer une DB DuckDB avec nom unique
+        db_path = tmp_path / f"stats_{uuid.uuid4().hex[:8]}.duckdb"
 
         repo = get_repository(str(db_path), "1234567890", mode=RepositoryMode.DUCKDB)
 
@@ -159,10 +161,12 @@ class TestRepositoryFactory:
 
     def test_get_repository_default_mode_is_duckdb(self, tmp_path):
         """Teste que le mode par défaut est DUCKDB."""
+        import uuid
+
         from src.data import get_repository
         from src.data.repositories.duckdb_repo import DuckDBRepository
 
-        db_path = tmp_path / "stats.duckdb"
+        db_path = tmp_path / f"stats_{uuid.uuid4().hex[:8]}.duckdb"
 
         # Sans spécifier le mode, devrait être DUCKDB
         repo = get_repository(str(db_path), "1234567890")

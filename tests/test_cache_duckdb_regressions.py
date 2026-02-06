@@ -20,86 +20,91 @@ from src.ui.cache import (
 @pytest.fixture
 def temp_duckdb(tmp_path):
     """Crée une base DuckDB temporaire avec des données de test."""
-    db_path = tmp_path / "test_stats.duckdb"
+    import gc
+    import uuid
+
+    db_path = tmp_path / f"test_stats_{uuid.uuid4().hex[:8]}.duckdb"
     conn = duckdb.connect(str(db_path))
 
-    # Créer les tables nécessaires
-    conn.execute("""
-        CREATE TABLE match_stats (
-            match_id VARCHAR PRIMARY KEY,
-            start_time TIMESTAMP,
-            team_id INTEGER,
-            accuracy DOUBLE,
-            kills INTEGER,
-            deaths INTEGER,
-            assists INTEGER
+    try:
+        # Créer les tables nécessaires
+        conn.execute("""
+            CREATE TABLE match_stats (
+                match_id VARCHAR PRIMARY KEY,
+                start_time TIMESTAMP,
+                team_id INTEGER,
+                accuracy DOUBLE,
+                kills INTEGER,
+                deaths INTEGER,
+                assists INTEGER
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE highlight_events (
+                id INTEGER PRIMARY KEY,
+                match_id VARCHAR,
+                event_type VARCHAR,
+                time_ms INTEGER,
+                xuid VARCHAR,
+                gamertag VARCHAR,
+                type_hint INTEGER,
+                raw_json VARCHAR
+            )
+        """)
+
+        # Insérer des données de test
+        xuid_self = "2533274823110022"
+        xuid_friend = "2533274823110023"
+        match_id_1 = "test_match_1"
+        match_id_2 = "test_match_2"
+
+        # Matchs
+        conn.execute(
+            """
+            INSERT INTO match_stats (match_id, start_time, team_id, accuracy, kills, deaths, assists)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+            [match_id_1, datetime.now(timezone.utc), 0, 45.5, 10, 5, 3],
         )
-    """)
 
-    conn.execute("""
-        CREATE TABLE highlight_events (
-            id INTEGER PRIMARY KEY,
-            match_id VARCHAR,
-            event_type VARCHAR,
-            time_ms INTEGER,
-            xuid VARCHAR,
-            gamertag VARCHAR,
-            type_hint INTEGER,
-            raw_json VARCHAR
+        conn.execute(
+            """
+            INSERT INTO match_stats (match_id, start_time, team_id, accuracy, kills, deaths, assists)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+            [match_id_2, datetime.now(timezone.utc), 0, 50.0, 15, 4, 5],
         )
-    """)
 
-    # Insérer des données de test
-    xuid_self = "2533274823110022"
-    xuid_friend = "2533274823110023"
-    match_id_1 = "test_match_1"
-    match_id_2 = "test_match_2"
+        # Highlight events pour match_id_1 (les deux joueurs présents)
+        conn.execute(
+            """
+            INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            [1, match_id_1, "Kill", 1000, xuid_self, "PlayerSelf"],
+        )
 
-    # Matchs
-    conn.execute(
-        """
-        INSERT INTO match_stats (match_id, start_time, team_id, accuracy, kills, deaths, assists)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """,
-        [match_id_1, datetime.now(timezone.utc), 0, 45.5, 10, 5, 3],
-    )
+        conn.execute(
+            """
+            INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            [2, match_id_1, "Kill", 2000, xuid_friend, "PlayerFriend"],
+        )
 
-    conn.execute(
-        """
-        INSERT INTO match_stats (match_id, start_time, team_id, accuracy, kills, deaths, assists)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """,
-        [match_id_2, datetime.now(timezone.utc), 0, 50.0, 15, 4, 5],
-    )
-
-    # Highlight events pour match_id_1 (les deux joueurs présents)
-    conn.execute(
-        """
-        INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """,
-        [1, match_id_1, "Kill", 1000, xuid_self, "PlayerSelf"],
-    )
-
-    conn.execute(
-        """
-        INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """,
-        [2, match_id_1, "Kill", 2000, xuid_friend, "PlayerFriend"],
-    )
-
-    # Highlight events pour match_id_2 (seulement self)
-    conn.execute(
-        """
-        INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """,
-        [3, match_id_2, "Kill", 1000, xuid_self, "PlayerSelf"],
-    )
-
-    conn.commit()
-    conn.close()
+        # Highlight events pour match_id_2 (seulement self)
+        conn.execute(
+            """
+            INSERT INTO highlight_events (id, match_id, event_type, time_ms, xuid, gamertag)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            [3, match_id_2, "Kill", 1000, xuid_self, "PlayerSelf"],
+        )
+    finally:
+        conn.close()
+        del conn
+        gc.collect()
 
     yield str(db_path), xuid_self, xuid_friend, match_id_1, match_id_2
 

@@ -108,32 +108,35 @@ class TestSyncDuckDBPlayer:
     @pytest.fixture
     def mock_duckdb_env(self, tmp_path):
         """Crée un environnement mock pour les tests DuckDB."""
-        # Créer une vraie base DuckDB
+        import uuid
+
         import duckdb
 
-        players_dir = tmp_path / "data" / "players" / "TestPlayer"
+        players_dir = tmp_path / "data" / "players" / f"TestPlayer_{uuid.uuid4().hex[:8]}"
         players_dir.mkdir(parents=True)
         db_path = players_dir / "stats.duckdb"
 
         conn = duckdb.connect(str(db_path))
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS match_stats (
-                match_id VARCHAR PRIMARY KEY,
-                start_time TIMESTAMP,
-                kills INTEGER
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS xuid_aliases (
-                xuid VARCHAR PRIMARY KEY,
-                gamertag VARCHAR,
-                last_seen TIMESTAMP
-            )
-        """)
-        conn.execute("""
-            INSERT INTO xuid_aliases VALUES ('2535423456789', 'TestPlayer', CURRENT_TIMESTAMP)
-        """)
-        conn.close()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS match_stats (
+                    match_id VARCHAR PRIMARY KEY,
+                    start_time TIMESTAMP,
+                    kills INTEGER
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS xuid_aliases (
+                    xuid VARCHAR PRIMARY KEY,
+                    gamertag VARCHAR,
+                    last_seen TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                INSERT INTO xuid_aliases VALUES ('2535423456789', 'TestPlayer', CURRENT_TIMESTAMP)
+            """)
+        finally:
+            conn.close()
 
         return str(db_path)
 
@@ -197,29 +200,33 @@ class TestSyncAllPlayers:
     @pytest.fixture
     def mock_duckdb_db(self, tmp_path):
         """Crée une base DuckDB mock."""
+        import uuid
+
         import duckdb
 
-        players_dir = tmp_path / "data" / "players" / "MockPlayer"
+        players_dir = tmp_path / "data" / "players" / f"MockPlayer_{uuid.uuid4().hex[:8]}"
         players_dir.mkdir(parents=True)
         db_path = players_dir / "stats.duckdb"
 
         conn = duckdb.connect(str(db_path))
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS match_stats (
-                match_id VARCHAR PRIMARY KEY
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS xuid_aliases (
-                xuid VARCHAR PRIMARY KEY,
-                gamertag VARCHAR,
-                last_seen TIMESTAMP
-            )
-        """)
-        conn.execute("""
-            INSERT INTO xuid_aliases VALUES ('999888777666', 'MockPlayer', CURRENT_TIMESTAMP)
-        """)
-        conn.close()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS match_stats (
+                    match_id VARCHAR PRIMARY KEY
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS xuid_aliases (
+                    xuid VARCHAR PRIMARY KEY,
+                    gamertag VARCHAR,
+                    last_seen TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                INSERT INTO xuid_aliases VALUES ('999888777666', 'MockPlayer', CURRENT_TIMESTAMP)
+            """)
+        finally:
+            conn.close()
 
         return str(db_path)
 
@@ -237,7 +244,8 @@ class TestSyncAllPlayers:
         p = Path(mock_duckdb_db)
         gamertag = p.parent.name
 
-        assert gamertag == "MockPlayer"
+        # Le nom peut contenir un UUID pour éviter les conflits
+        assert gamertag.startswith("MockPlayer")
 
     def test_extracts_xuid_from_xuid_aliases(self, mock_duckdb_db):
         """Test que le XUID est correctement extrait de xuid_aliases."""
@@ -269,7 +277,8 @@ class TestSyncAllPlayers:
             # Vérifier que _sync_duckdb_player a été appelé
             mock_sync.assert_called_once()
             call_args = mock_sync.call_args
-            assert call_args.kwargs["gamertag"] == "MockPlayer"
+            # Le gamertag peut contenir un UUID pour éviter les conflits
+            assert call_args.kwargs["gamertag"].startswith("MockPlayer")
             assert call_args.kwargs["db_path"] == mock_duckdb_db
 
 
