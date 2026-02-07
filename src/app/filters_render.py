@@ -484,12 +484,19 @@ def _render_cascade_filters(
             (dropdown_base["date"] >= start_dt) & (dropdown_base["date"] <= end_dt)
         ].copy()
     else:
-        if picked_session_labels and base_s_ui is not None:
-            dropdown_base = base_s_ui.loc[
-                base_s_ui["session_label"].isin(picked_session_labels)
-            ].copy()
-        elif base_s_ui is not None:
-            dropdown_base = base_s_ui.copy()
+        # En mode Sessions, base_s_ui n'a que session_id/session_label (pas playlist_name, etc.)
+        # On restreint base_for_filters aux match_id des sessions sélectionnées.
+        if base_s_ui is not None:
+            if picked_session_labels:
+                session_match_ids = base_s_ui.loc[
+                    base_s_ui["session_label"].isin(picked_session_labels), "match_id"
+                ]
+            else:
+                session_match_ids = base_s_ui["match_id"]
+            # Aligner les types (str) pour l'isin
+            id_col = dropdown_base["match_id"].astype(str)
+            allowed_ids = set(session_match_ids.astype(str).tolist())
+            dropdown_base = dropdown_base.loc[id_col.isin(allowed_ids)].copy()
 
     dropdown_base["playlist_ui"] = (
         dropdown_base["playlist_name"].apply(clean_asset_label_fn).apply(translate_playlist_name)
@@ -584,27 +591,43 @@ def apply_filters(
             base_s = cached_compute_sessions_db(
                 db_path, xuid.strip(), db_key, True, filter_state.gap_minutes
             )
-            dff = (
-                base_s.loc[base_s["session_label"].isin(filter_state.picked_session_labels)].copy()
-                if filter_state.picked_session_labels
-                else base_s.copy()
-            )
+            # base_s n'a que match_id, session_id, session_label (pas playlist_name, etc.)
+            # On filtre dff par les match_id des sessions sélectionnées au lieu de remplacer dff.
+            if filter_state.picked_session_labels:
+                session_subset = base_s.loc[
+                    base_s["session_label"].isin(filter_state.picked_session_labels)
+                ]
+            else:
+                session_subset = base_s
+            session_match_ids = set(session_subset["match_id"].astype(str).tolist())
+            id_col = dff["match_id"].astype(str)
+            dff = dff.loc[id_col.isin(session_match_ids)].copy()
         else:
             dff = dff.copy()
 
-        if "playlist_fr" not in dff.columns:
-            dff["playlist_fr"] = dff["playlist_name"].apply(translate_playlist_name)
-        if "pair_fr" not in dff.columns:
-            dff["pair_fr"] = dff["pair_name"].apply(translate_pair_name)
-
-    if "playlist_ui" not in dff.columns:
-        dff["playlist_ui"] = (
-            dff["playlist_name"].apply(clean_asset_label_fn).apply(translate_playlist_name)
-        )
-    if "mode_ui" not in dff.columns:
-        dff["mode_ui"] = dff["pair_name"].apply(normalize_mode_label_fn)
-    if "map_ui" not in dff.columns:
-        dff["map_ui"] = dff["map_name"].apply(normalize_map_label_fn)
+        # Colonnes dérivées (nécessitent playlist_name, pair_name, map_name)
+        if "playlist_name" in dff.columns:
+            if "playlist_fr" not in dff.columns:
+                dff["playlist_fr"] = dff["playlist_name"].apply(translate_playlist_name)
+            if "playlist_ui" not in dff.columns:
+                dff["playlist_ui"] = (
+                    dff["playlist_name"].apply(clean_asset_label_fn).apply(translate_playlist_name)
+                )
+        else:
+            dff["playlist_fr"] = ""
+            dff["playlist_ui"] = ""
+        if "pair_name" in dff.columns:
+            if "pair_fr" not in dff.columns:
+                dff["pair_fr"] = dff["pair_name"].apply(translate_pair_name)
+            if "mode_ui" not in dff.columns:
+                dff["mode_ui"] = dff["pair_name"].apply(normalize_mode_label_fn)
+        else:
+            dff["pair_fr"] = ""
+            dff["mode_ui"] = ""
+        if "map_name" in dff.columns and "map_ui" not in dff.columns:
+            dff["map_ui"] = dff["map_name"].apply(normalize_map_label_fn)
+        elif "map_ui" not in dff.columns:
+            dff["map_ui"] = ""
 
     # Debug: Afficher l'état des filtres avant application
     # Désactivé par défaut - peut être activé via session_state["_show_debug_info"] = True
