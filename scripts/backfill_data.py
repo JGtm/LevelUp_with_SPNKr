@@ -48,6 +48,12 @@ Usage:
     # Forcer le recalcul de end_time pour tous les matchs
     python scripts/backfill_data.py --player JGtm --end-time --force-end-time
 
+    # Backfill session_id et session_label (matchs stables ≥ 4h)
+    python scripts/backfill_data.py --player JGtm --sessions
+
+    # Forcer le recalcul des sessions même si déjà remplies
+    python scripts/backfill_data.py --player JGtm --sessions --force-sessions
+
     # Backfill pour tous les joueurs
     python scripts/backfill_data.py --all --all-data
 
@@ -940,6 +946,7 @@ async def backfill_player_data(
     participants_kda: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
+    sessions: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
@@ -948,6 +955,7 @@ async def backfill_player_data(
     force_assets: bool = False,
     force_participants: bool = False,
     force_end_time: bool = False,
+    force_sessions: bool = False,
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
 
@@ -980,6 +988,7 @@ async def backfill_player_data(
         participants = True
         killer_victim = True
         end_time = True
+        sessions = True
 
     # Si force_accuracy est activé sans accuracy, l'activer automatiquement
     if force_accuracy and not accuracy:
@@ -1001,6 +1010,9 @@ async def backfill_player_data(
     if force_end_time and not end_time:
         end_time = True
 
+    if force_sessions and not sessions:
+        sessions = True
+
     # Vérifier qu'au moins une option est activée
     if not any(
         [
@@ -1018,6 +1030,7 @@ async def backfill_player_data(
             participants_kda,
             killer_victim,
             end_time,
+            sessions,
             force_aliases,
         ]
     ):
@@ -1041,6 +1054,7 @@ async def backfill_player_data(
             "participants_kda_updated": 0,
             "killer_victim_pairs_inserted": 0,
             "end_time_updated": 0,
+            "sessions_updated": 0,
         }
 
     # Vérifier que c'est un joueur DuckDB v4
@@ -1065,6 +1079,7 @@ async def backfill_player_data(
             "participants_kda_updated": 0,
             "killer_victim_pairs_inserted": 0,
             "end_time_updated": 0,
+            "sessions_updated": 0,
         }
 
     # Obtenir le chemin de la DB
@@ -1146,6 +1161,7 @@ async def backfill_player_data(
                     "participants_kda_updated": 0,
                     "killer_victim_pairs_inserted": 0,
                     "end_time_updated": 0,
+                    "sessions_updated": 0,
                 }
         finally:
             conn.close()
@@ -1275,6 +1291,7 @@ async def backfill_player_data(
                 "events_inserted": 0,
                 "skill_inserted": 0,
                 "personal_scores_inserted": 0,
+                "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
                 "enemy_mmr_updated": 0,
@@ -1284,12 +1301,14 @@ async def backfill_player_data(
                 "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
+                "sessions_updated": 0,
             }
 
         if (
             not match_ids
             and not killer_victim
             and not end_time
+            and not sessions
             and not participants_scores
             and not participants_kda
         ):
@@ -1312,8 +1331,9 @@ async def backfill_player_data(
                 "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
+                "sessions_updated": 0,
             }
-        elif not match_ids and (killer_victim or end_time):
+        elif not match_ids and (killer_victim or end_time or sessions):
             # Pas de matchs à traiter via API mais killer_victim et/ou end_time à backfill
             logger.info("Pas de données de match à backfill via API...")
             total_killer_victim_pairs = 0
@@ -1333,6 +1353,30 @@ async def backfill_player_data(
                 else:
                     logger.info("Aucun match à mettre à jour pour end_time")
 
+            total_sessions_updated = 0
+            if sessions:
+                from src.config import SESSION_CONFIG
+                from src.data.sessions_backfill import backfill_sessions_for_player
+
+                logger.info("Backfill des sessions (session_id, session_label)...")
+                r = backfill_sessions_for_player(
+                    db_path,
+                    xuid,
+                    conn=conn,
+                    gap_minutes=SESSION_CONFIG.advanced_gap_minutes,
+                    include_recent=True,
+                    force=force_sessions,
+                    dry_run=dry_run,
+                )
+                total_sessions_updated = r.get("updated", 0)
+                if r.get("errors"):
+                    for e in r["errors"]:
+                        logger.warning(f"  Erreur session: {e}")
+                if total_sessions_updated > 0:
+                    logger.info(f"✅ {total_sessions_updated} match(s) avec sessions mis à jour")
+                else:
+                    logger.info("Aucun match à mettre à jour pour sessions")
+
             logger.info(f"Backfill terminé pour {gamertag}")
             return {
                 "matches_checked": 0,
@@ -1351,6 +1395,7 @@ async def backfill_player_data(
                 "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": total_killer_victim_pairs,
                 "end_time_updated": total_end_time_updated,
+                "sessions_updated": total_sessions_updated,
             }
 
         # Récupérer les tokens
@@ -1374,6 +1419,7 @@ async def backfill_player_data(
                 "participants_kda_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
+                "sessions_updated": 0,
             }
 
         # Traiter les matchs
@@ -1683,6 +1729,31 @@ async def backfill_player_data(
             else:
                 logger.info("Aucun match à mettre à jour pour end_time")
 
+        # Backfill sessions (session_id, session_label) — matchs stables ≥ 4h
+        total_sessions_updated = 0
+        if sessions:
+            from src.config import SESSION_CONFIG
+            from src.data.sessions_backfill import backfill_sessions_for_player
+
+            logger.info("Backfill des sessions (session_id, session_label)...")
+            r = backfill_sessions_for_player(
+                db_path,
+                xuid,
+                conn=conn,
+                gap_minutes=SESSION_CONFIG.advanced_gap_minutes,
+                include_recent=True,
+                force=force_sessions,
+                dry_run=dry_run,
+            )
+            total_sessions_updated = r.get("updated", 0)
+            if r.get("errors"):
+                for e in r["errors"]:
+                    logger.warning(f"  Erreur session: {e}")
+            if total_sessions_updated > 0:
+                logger.info(f"✅ {total_sessions_updated} match(s) avec sessions mis à jour")
+            else:
+                logger.info("Aucun match à mettre à jour pour sessions")
+
         logger.info(f"Backfill terminé pour {gamertag}")
 
         return {
@@ -1702,6 +1773,7 @@ async def backfill_player_data(
             "participants_kda_updated": total_participants_kda_updated,
             "killer_victim_pairs_inserted": total_killer_victim_pairs,
             "end_time_updated": total_end_time_updated,
+            "sessions_updated": total_sessions_updated,
         }
 
     finally:
@@ -1735,6 +1807,8 @@ async def backfill_all_players(
     force_assets: bool = False,
     force_participants: bool = False,
     force_end_time: bool = False,
+    sessions: bool = False,
+    force_sessions: bool = False,
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
     players = list_duckdb_v4_players()
@@ -1762,6 +1836,7 @@ async def backfill_all_players(
         "participants_kda_updated": 0,
         "killer_victim_pairs_inserted": 0,
         "end_time_updated": 0,
+        "sessions_updated": 0,
     }
 
     for i, player_info in enumerate(players, 1):
@@ -1788,6 +1863,7 @@ async def backfill_all_players(
             participants_kda=participants_kda,
             killer_victim=killer_victim,
             end_time=end_time,
+            sessions=sessions,
             all_data=all_data,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
@@ -1796,6 +1872,7 @@ async def backfill_all_players(
             force_assets=force_assets,
             force_participants=force_participants,
             force_end_time=force_end_time,
+            force_sessions=force_sessions,
         )
 
         # Agréger les résultats
@@ -1888,7 +1965,7 @@ def main() -> int:
     parser.add_argument(
         "--all-data",
         action="store_true",
-        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --participants --killer-victim --end-time)",
+        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --participants --killer-victim --end-time --sessions)",
     )
 
     parser.add_argument(
@@ -1981,6 +2058,18 @@ def main() -> int:
         help="Recalculer end_time pour tous les matchs, même déjà remplis",
     )
 
+    parser.add_argument(
+        "--sessions",
+        action="store_true",
+        help="Backfill session_id et session_label (matchs stables ≥ 4h)",
+    )
+
+    parser.add_argument(
+        "--force-sessions",
+        action="store_true",
+        help="Recalculer les sessions même si session_id déjà rempli",
+    )
+
     args = parser.parse_args()
 
     # Validation
@@ -2017,6 +2106,8 @@ def main() -> int:
                     force_assets=args.force_assets,
                     force_participants=args.force_participants,
                     force_end_time=args.force_end_time,
+                    sessions=args.sessions,
+                    force_sessions=args.force_sessions,
                 )
             )
 
@@ -2053,6 +2144,8 @@ def main() -> int:
                 )
             if args.end_time:
                 logger.info(f"End time mis à jour: {totals['end_time_updated']}")
+            if args.sessions:
+                logger.info(f"Sessions mises à jour: {totals['sessions_updated']}")
         else:
             result = asyncio.run(
                 backfill_player_data(
@@ -2082,6 +2175,8 @@ def main() -> int:
                     force_assets=args.force_assets,
                     force_participants=args.force_participants,
                     force_end_time=args.force_end_time,
+                    sessions=args.sessions,
+                    force_sessions=args.force_sessions,
                 )
             )
 
@@ -2114,6 +2209,8 @@ def main() -> int:
                 )
             if args.end_time:
                 logger.info(f"End time mis à jour: {result['end_time_updated']}")
+            if args.sessions:
+                logger.info(f"Sessions mises à jour: {result['sessions_updated']}")
 
         return 0
 

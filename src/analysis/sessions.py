@@ -239,17 +239,49 @@ def is_session_potentially_active(
     return False
 
 
+def _parse_teammates_signature(sig: str | None) -> set[str]:
+    """Parse teammates_signature en set de XUIDs."""
+    if not sig or not str(sig).strip():
+        return set()
+    return set(str(sig).strip().split(","))
+
+
+def _should_start_new_session_on_teammate_change(
+    prev_friends: set[str],
+    curr_friends: set[str],
+) -> bool:
+    """Logique legacy V3 : nouvelle session si ami rejoint ou passage à solo.
+
+    Règles (comportement jeu avec amis) :
+    - Nouvelle session si passage à solo (curr_friends vide, prev_friends non vide)
+    - Nouvelle session si un ami rejoint (curr_friends - prev_friends non vide)
+    - Même session si un ami part (sauf passage à solo)
+    """
+    # Cas 1: Passage à "sans amis" (passage à solo)
+    if not curr_friends and prev_friends:
+        return True
+    # Cas 2: Un ami rejoint
+    if curr_friends - prev_friends:
+        return True
+    # Cas 3: Des amis partent mais aucun nouveau → même session
+    return False
+
+
 def compute_sessions_with_context_polars(
     df: pl.DataFrame,
     gap_minutes: int = DEFAULT_SESSION_GAP_MINUTES,
     cutoff_hour: int = SESSION_CUTOFF_HOUR,
     teammates_column: str | None = "teammates_signature",
+    friends_xuids: frozenset[str] | set[str] | None = None,
 ) -> pl.DataFrame:
     """Version Polars de compute_sessions_with_context.
 
     Règles :
     1. Gap > gap_minutes = nouvelle session
-    2. Changement de teammates_signature = nouvelle session
+    2. Changement de coéquipiers = nouvelle session :
+       - Si friends_xuids fourni (mode jeu avec amis) : seuls les amis comptent,
+         les randoms matchmaking sont ignorés (comportement legacy V3)
+       - Sinon : tout changement de teammates_signature compte
     3. Heure de coupure pour sessions "en cours"
 
     Args:
@@ -257,6 +289,8 @@ def compute_sessions_with_context_polars(
         gap_minutes: Gap maximum entre matchs.
         cutoff_hour: Heure de coupure.
         teammates_column: Nom de la colonne teammates_signature.
+        friends_xuids: XUIDs des amis proches. Si fourni et non vide, seuls les amis
+            déclenchent une nouvelle session (randoms ignorés).
 
     Returns:
         DataFrame avec colonnes session_id et session_label ajoutées.
@@ -277,19 +311,40 @@ def compute_sessions_with_context_polars(
     gap_break = (gaps > (gap_minutes * 60)).cast(pl.Int8)
 
     # Changement de coéquipiers ?
-    # NULL est traité comme valeur distincte (evite de fusionner A, NULL, B en une session)
+    use_friends_mode = friends_xuids and len(friends_xuids) > 0
+    friends_set = frozenset(friends_xuids) if friends_xuids else frozenset()
+
     if teammates_column and teammates_column in df_sorted.columns:
-        col = df_sorted[teammates_column]
-        prev = col.shift(1)
-        col_fill = col.fill_null("__NULL__")
-        # Seul le premier row (prev=null car pas de precedent) utilise la sentinelle
-        row_idx = pl.int_range(0, pl.len())
-        prev_fill = (
-            pl.when(row_idx == 0)
-            .then(pl.lit("__SENTINEL_FIRST__"))
-            .otherwise(prev.fill_null("__NULL__"))
-        )
-        teammates_break = (col_fill != prev_fill).cast(pl.Int8)
+        if use_friends_mode:
+            # Mode legacy V3 : seuls les amis comptent, randoms ignorés
+            # Traitement row-by-row (logique état dépendant du match précédent)
+            col_vals = df_sorted[teammates_column]
+            teammates_break_list: list[int] = []
+            prev_friends: set[str] = set()
+            for i in range(len(df_sorted)):
+                sig = col_vals[i]
+                curr_teammates = _parse_teammates_signature(sig if sig is not None else None)
+                curr_friends = curr_teammates & friends_set
+                if i == 0:
+                    teammates_break_list.append(0)
+                elif _should_start_new_session_on_teammate_change(prev_friends, curr_friends):
+                    teammates_break_list.append(1)
+                else:
+                    teammates_break_list.append(0)
+                prev_friends = curr_friends
+            teammates_break = pl.Series(teammates_break_list).cast(pl.Int8)
+        else:
+            # Mode actuel : tout changement compte
+            col = df_sorted[teammates_column]
+            prev = col.shift(1)
+            col_fill = col.fill_null("__NULL__")
+            row_idx = pl.int_range(0, pl.len())
+            prev_fill = (
+                pl.when(row_idx == 0)
+                .then(pl.lit("__SENTINEL_FIRST__"))
+                .otherwise(prev.fill_null("__NULL__"))
+            )
+            teammates_break = (col_fill != prev_fill).cast(pl.Int8)
     else:
         teammates_break = pl.lit(0).cast(pl.Int8)
 

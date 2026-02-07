@@ -69,24 +69,17 @@ Créez une Pull Request sur GitHub.
 
 ### Prérequis
 
-- Python 3.10+
+- **Python 3.10 à 3.12** (python.org ou Windows Store). **Ne pas utiliser le Python MSYS2** (Git Bash) : DuckDB n'a pas de wheels pour MINGW, pip tenterait une compilation source qui échoue.
 - Git
 
-### Installation
+### Installation (Git Bash)
 
 ```bash
-# Créer l'environnement virtuel
-python -m venv .venv
-
-# Activer (Windows)
-.venv\Scripts\activate
-
-# Activer (Linux/macOS)
-source .venv/bin/activate
-
-# Installer les dépendances de développement
-pip install -e ".[dev]"
+bash scripts/setup_env.sh
+source activate_env.sh
 ```
+
+Le script utilise `py` (Python Launcher Windows) pour créer un venv avec le Python Windows, afin d'obtenir les wheels précompilées de DuckDB.
 
 ### Outils de Développement
 
@@ -156,6 +149,10 @@ from src.data.repositories import DuckDBRepository
 repo = DuckDBRepository(db_path, xuid)
 matches = repo.load_matches()
 ```
+
+### Backfill des données
+
+**TOUJOURS** utiliser `scripts/backfill_data.py` pour le backfill ou la création de nouvelles fonctions de backfill. Ne pas créer de scripts backfill séparés ; ajouter une option dédiée dans `backfill_data.py` (ex. `--sessions`, `--killer-victim`). Voir la docstring du script pour le pattern à suivre.
 
 ---
 

@@ -38,3 +38,7 @@ Nouvelles données statistiques à ressortir (à traduire forcément (source : h
 - Ratio of Matches at Top to Total Matches Played (%)
 - Correlation between enemy and friendly team MMR
 - Proposer un graphe avec les 3 armes les plus utilisées sur la période session et le nombre de frags avec (si données disponibles)
+
+2. Série temporelle classique (Kills - Deaths Time Series) :Données : Affiche l'évolution du score net ($Kills - Deaths$) minute par minute.Axe X : Temps (format MM:SS).Axe Y : Valeur 'KD' (différentiel). Inclure une ligne horizontale distincte à zéro.
+
+Graphique n°3 (Performance Cumulée) :Logique de calcul pour le graphique 3 :Variable de base : Utilise le différentiel $NetScore = Kills - Deaths$.Continuité : Ne réinitialise pas le score à 0 au début de chaque match.Formule : Le score à l'instant $t$ doit être la somme de tous les scores obtenus depuis le début de la session ($Score_{cumulé} = \sum_{i=1}^{t} (K_i - D_i)$).Visualisation des matchs : Ajoute une ligne verticale pointillée tous les intervalles de 8 minutes pour marquer la fin d'un match et le début du suivant. Cela permettra de voir si un joueur a "gagné" ou "perdu" chaque match spécifique tout en observant sa progression globale sur la soirée.

@@ -127,3 +127,30 @@ def test_teammates_combined_with_gap():
     # m1 != m2 (changement), m2 != m3 (gap)
     assert result["session_id"][0] != result["session_id"][1]
     assert result["session_id"][1] != result["session_id"][2]
+
+
+def test_friends_mode_ignores_randoms():
+    """Mode amis (friends_xuids) : randoms qui changent = même session (legacy V3)."""
+    base = datetime(2026, 2, 5, 14, 0, 0, tzinfo=timezone.utc)
+    friends = frozenset({"friendA", "friendB"})
+    # Matchmaking : amis identiques, randoms différents à chaque match
+    df = pl.DataFrame(
+        {
+            "match_id": ["m1", "m2", "m3", "m4"],
+            "start_time": [
+                base,
+                base + timedelta(minutes=15),
+                base + timedelta(minutes=35),
+                base + timedelta(minutes=50),
+            ],
+            "teammates_signature": [
+                "friendA,friendB,random1",
+                "friendA,friendB,random2",
+                "friendA,friendB,random3",
+                "friendA,friendB,random4",
+            ],
+        }
+    )
+    result = compute_sessions_with_context_polars(df, gap_minutes=120, friends_xuids=friends)
+    # Tous dans la même session (seuls les amis comptent, pas les randoms)
+    assert result["session_id"].n_unique() == 1

@@ -361,6 +361,7 @@ def render_teammates_page(
             xuid=xuid,
             db_path=db_path,
             db_key=db_key,
+            aliases_key=aliases_key,
             picked_xuids=picked_xuids,
             picked_session_labels=picked_session_labels,
             apply_current_filters=apply_current_filters_teammates,
@@ -533,6 +534,7 @@ def _render_multi_teammate_view(
     xuid: str,
     db_path: str,
     db_key: tuple[int, int] | None,
+    aliases_key: int | None,
     picked_xuids: list[str],
     picked_session_labels: list[str] | None,
     apply_current_filters: bool,
@@ -653,6 +655,7 @@ def _render_multi_teammate_view(
             xuid=xuid,
             db_path=db_path,
             db_key=db_key,
+            aliases_key=aliases_key,
             picked_xuids=picked_xuids,
             apply_current_filters=apply_current_filters,
             include_firefight=include_firefight,
@@ -682,6 +685,7 @@ def _render_trio_view(
     xuid: str,
     db_path: str,
     db_key: tuple[int, int] | None,
+    aliases_key: int | None,
     picked_xuids: list[str],
     apply_current_filters: bool,
     include_firefight: bool,
@@ -716,16 +720,16 @@ def _render_trio_view(
         return False
 
     trio_ids_set = {str(x) for x in trio_ids}
-    try:
-        gm = int(st.session_state.get("gap_minutes", 120))
-    except Exception:
-        gm = 120
+    from src.app.filters import get_friends_xuids_for_sessions
+
+    friends_tuple = get_friends_xuids_for_sessions(db_path, xuid.strip(), db_key, aliases_key)
     base_s_trio = cached_compute_sessions_db(
         db_path,
         xuid.strip(),
         db_key,
         include_firefight,
-        gm,
+        120,  # gap figé
+        friends_xuids=friends_tuple,
     )
     trio_rows = base_s_trio.loc[base_s_trio["match_id"].astype(str).isin(trio_ids_set)].copy()
     latest_label = None
@@ -741,7 +745,7 @@ def _render_trio_view(
 
     st.session_state["_trio_latest_session_label"] = latest_label
     if latest_label:
-        st.caption(f"Dernière session trio détectée : {latest_label} (gap {gm} min).")
+        st.caption(f"Dernière session trio détectée : {latest_label}.")
     else:
         st.caption("Impossible de déterminer une session trio (données insuffisantes).")
 

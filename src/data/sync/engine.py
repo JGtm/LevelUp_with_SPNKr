@@ -426,6 +426,32 @@ class DuckDBSyncEngine:
                 except Exception as e:
                     logger.warning(f"Impossible d'ajouter la colonne end_time: {e}")
 
+            # Colonnes session_id, session_label (stockage sessions figées, NULL = calcul à la volée)
+            session_id_cols = conn.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'match_stats' AND column_name = 'session_id'
+                """
+            ).fetchall()
+            if not session_id_cols:
+                logger.info("Ajout de la colonne session_id à match_stats")
+                try:
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN session_id INTEGER")
+                except Exception as e:
+                    logger.warning(f"Impossible d'ajouter session_id: {e}")
+            session_label_cols = conn.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'match_stats' AND column_name = 'session_label'
+                """
+            ).fetchall()
+            if not session_label_cols:
+                logger.info("Ajout de la colonne session_label à match_stats")
+                try:
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN session_label VARCHAR")
+                except Exception as e:
+                    logger.warning(f"Impossible d'ajouter session_label: {e}")
+
     def _ensure_match_participants_rank_score(self) -> None:
         """Ajoute les colonnes rank, score et k/d/a à match_participants si absentes (migration)."""
         conn = self._connection

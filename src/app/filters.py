@@ -153,6 +153,25 @@ def build_friends_opts_map(
     return opts_map, default_labels
 
 
+def get_friends_xuids_for_sessions(
+    db_path: str,
+    self_xuid: str,
+    db_key: tuple[int, int] | None,
+    aliases_key: int | None,
+) -> tuple[str, ...]:
+    """Retourne les XUIDs des amis du joueur pour le calcul des sessions (logique legacy V3).
+
+    Utilise .streamlit/friends_defaults.json ou top 2 coéquipiers par défaut.
+    Ces amis sont seuls considérés pour détecter les ruptures de session
+    (les randoms matchmaking sont ignorés).
+    """
+    opts_map, default_labels = build_friends_opts_map(
+        db_path, str(self_xuid).strip(), db_key, aliases_key
+    )
+    xuids = [opts_map[lbl] for lbl in default_labels if lbl in opts_map]
+    return tuple(sorted(set(xuids)))
+
+
 # =============================================================================
 # Filtres DataFrame
 # =============================================================================
@@ -302,6 +321,9 @@ def render_date_filters(
     return start_date, end_date
 
 
+GAP_MINUTES_FIXED = 120  # Figé (sessions stockées en base)
+
+
 def render_session_filters(
     db_path: str,
     xuid: str,
@@ -309,33 +331,17 @@ def render_session_filters(
     aliases_key: int | None,
     base_for_filters: pd.DataFrame,
 ) -> tuple[int, list[str] | None]:
-    """Rend les filtres de session et retourne la sélection.
+    """Rend les filtres de session et retourne la sélection (gap fixé à 120 min)."""
+    gap_minutes = GAP_MINUTES_FIXED
 
-    Args:
-        db_path: Chemin vers la base de données.
-        xuid: XUID du joueur.
-        db_key: Clé de cache DB.
-        aliases_key: Clé de cache des alias.
-        base_for_filters: DataFrame de base pour construire les sessions.
-
-    Returns:
-        Tuple (gap_minutes, picked_session_labels ou None pour toutes).
-    """
-    gap_minutes = st.slider(
-        "Écart max entre parties (minutes)",
-        min_value=15,
-        max_value=240,
-        value=int(st.session_state.get("gap_minutes", 120)),
-        step=5,
-        key="gap_minutes",
-    )
-
+    friends_tuple = get_friends_xuids_for_sessions(db_path, xuid.strip(), db_key, aliases_key)
     base_s_ui = cached_compute_sessions_db(
         db_path,
         xuid.strip(),
         db_key,
         True,  # Inclure Firefight (filtrage via checkboxes)
         gap_minutes,
+        friends_xuids=friends_tuple,
     )
     session_labels_ui = (
         base_s_ui[["session_id", "session_label"]]

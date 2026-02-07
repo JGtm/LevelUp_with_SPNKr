@@ -1,12 +1,8 @@
 """Tests pour les fonctions d'analyse."""
 
 import pandas as pd
+import polars as pl
 import pytest
-
-try:
-    import polars as pl
-except ImportError:
-    pl = None
 
 from src.analysis.filters import (
     build_option_map,
@@ -174,8 +170,8 @@ class TestBuildOptionMap:
 
     def test_normal_values(self):
         """Test avec des valeurs normales."""
-        names = pd.Series(["Map A", "Map B", "Map C"])
-        ids = pd.Series(["id-a", "id-b", "id-c"])
+        names = pl.Series(["Map A", "Map B", "Map C"])
+        ids = pl.Series(["id-a", "id-b", "id-c"])
         result = build_option_map(names, ids)
 
         assert result["Map A"] == "id-a"
@@ -184,8 +180,8 @@ class TestBuildOptionMap:
 
     def test_with_uuid_suffix(self):
         """Test avec suffixe UUID à nettoyer."""
-        names = pd.Series(["Streets - abc12345"])
-        ids = pd.Series(["id-streets"])
+        names = pl.Series(["Streets - abc12345"])
+        ids = pl.Series(["id-streets"])
         result = build_option_map(names, ids)
 
         assert "Streets" in result
@@ -193,8 +189,8 @@ class TestBuildOptionMap:
 
     def test_empty_values(self):
         """Test avec valeurs vides."""
-        names = pd.Series(["", "Map A", None])
-        ids = pd.Series(["id-empty", "id-a", "id-none"])
+        names = pl.Series(["", "Map A", None])
+        ids = pl.Series(["id-empty", "id-a", "id-none"])
         result = build_option_map(names, ids)
 
         assert len(result) == 1

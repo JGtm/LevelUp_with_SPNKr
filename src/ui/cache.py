@@ -32,6 +32,7 @@ import streamlit as st
 logger = logging.getLogger(__name__)
 
 from src.analysis import compute_sessions, compute_sessions_with_context_polars, mark_firefight
+from src.config import SESSION_CONFIG
 from src.db import (
     get_cache_stats,
     get_match_session_info,
@@ -87,16 +88,23 @@ def cached_compute_sessions_db(
     db_key: tuple[int, int] | None,
     include_firefight: bool,
     gap_minutes: int,
+    friends_xuids: tuple[str, ...] | None = None,
 ) -> pd.DataFrame:
-    """Compute sessions sur la base (cache) avec logique avancée (gap + coéquipiers)."""
-    # DuckDB v4 : charger directement en Polars depuis la DB
+    """Compute sessions sur la base (cache) avec logique avancée (gap + coéquipiers).
+
+    Si friends_xuids est fourni, mode legacy V3 : seuls les amis déclenchent une
+    nouvelle session (randoms matchmaking ignorés).
+    """
+    friends_set = frozenset(friends_xuids) if friends_xuids else None
+
+    # DuckDB v4 : lecture hybride (stocké si stable, sinon calcul à la volée)
     if _is_duckdb_v4_path(db_path):
         try:
+            from datetime import datetime, timezone
+
             import duckdb
 
             conn = duckdb.connect(db_path, read_only=True)
-
-            # Construire la requête SQL
             firefight_filter = "" if include_firefight else "AND is_firefight = FALSE"
 
             query = f"""
@@ -104,14 +112,13 @@ def cached_compute_sessions_db(
                     match_id,
                     start_time,
                     teammates_signature,
-                    is_firefight
+                    session_id,
+                    session_label
                 FROM match_stats
                 WHERE start_time IS NOT NULL
                 {firefight_filter}
                 ORDER BY start_time ASC
             """
-
-            # Charger en Polars
             df_pl = conn.execute(query).pl()
             conn.close()
 
@@ -120,15 +127,31 @@ def cached_compute_sessions_db(
                     columns=["match_id", "start_time", "session_id", "session_label"]
                 )
 
-            # Calculer les sessions avec la logique avancée
+            # Cas A : tous ont session_id et sont >= 4h → utiliser stocké
+            # Cas B : au moins un NULL ou récent → calcul complet à la volée
+            stability_hours = SESSION_CONFIG.session_stability_hours
+            threshold = datetime.now(timezone.utc).timestamp() - (stability_hours * 3600)
+            has_null_session = df_pl.filter(pl.col("session_id").is_null()).height > 0
+            df_pl = df_pl.with_columns(pl.col("start_time").dt.epoch(time_unit="s").alias("_ts"))
+            has_recent = df_pl.filter(pl.col("_ts") > threshold).height > 0
+            df_pl = df_pl.drop("_ts")
+
+            if not has_null_session and not has_recent:
+                # Cas A : tout stable, retourner tel quel
+                return df_pl.select(
+                    ["match_id", "start_time", "session_id", "session_label"]
+                ).to_pandas()
+
+            # Cas B : calcul complet à la volée
             df_pl = compute_sessions_with_context_polars(
-                df_pl,
+                df_pl.select(["match_id", "start_time", "teammates_signature"]),
                 gap_minutes=gap_minutes,
                 teammates_column="teammates_signature",
+                friends_xuids=friends_set,
             )
-
-            # Convertir en Pandas pour compatibilité UI
-            return df_pl.to_pandas()
+            return df_pl.select(
+                ["match_id", "start_time", "session_id", "session_label"]
+            ).to_pandas()
 
         except Exception as e:
             logger.warning(f"Erreur calcul sessions Polars, fallback Pandas: {e}")
@@ -152,6 +175,7 @@ def cached_compute_sessions_db(
                 df_sessions_pl,
                 gap_minutes=gap_minutes,
                 teammates_column="teammates_signature",
+                friends_xuids=friends_set,
             )
             # Fusionner les résultats avec le DataFrame original
             df_result_pl = df0_pl.join(

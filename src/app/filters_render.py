@@ -16,6 +16,7 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
+from src.app.filters import get_friends_xuids_for_sessions
 from src.ui import translate_pair_name, translate_playlist_name
 from src.ui.cache import (
     cached_compute_sessions_db,
@@ -33,6 +34,8 @@ from src.ui.filter_state import (
     save_filter_preferences,
 )
 
+GAP_MINUTES_FIXED = 120  # Figé (sessions stockées en base, cf. SESSIONS_STOCKAGE_PLAN.md)
+
 
 @dataclass
 class FilterState:
@@ -47,6 +50,7 @@ class FilterState:
     modes_selected: list[str]
     maps_selected: list[str]
     base_s_ui: pd.DataFrame | None  # DataFrame sessions (mode Sessions)
+    friends_tuple: tuple[str, ...] | None = None  # Amis pour calcul sessions (mode Sessions)
 
 
 def render_filters_sidebar(
@@ -90,7 +94,7 @@ def render_filters_sidebar(
                 apply_filter_preferences(xuid, db_path, preferences=prefs)
             else:
                 # Aucun filtre en mémoire → charger par défaut la dernière session du joueur
-                _apply_default_last_session(db_path, xuid, db_key)
+                _apply_default_last_session(db_path, xuid, db_key, aliases_key)
             st.session_state[filters_loaded_key] = True
         except Exception:
             # Ne pas bloquer si le chargement échoue
@@ -128,14 +132,15 @@ def render_filters_sidebar(
 
     # Valeurs par défaut
     start_d, end_d = dmin, dmax
-    gap_minutes = 35
+    gap_minutes = GAP_MINUTES_FIXED
     picked_session_labels: list[str] | None = None
     base_s_ui: pd.DataFrame | None = None
+    friends_tuple: tuple[str, ...] | None = None
 
     if filter_mode == "Période":
         start_d, end_d = _render_period_filter(dmin, dmax)
     else:
-        gap_minutes, picked_session_labels, base_s_ui = _render_session_filter(
+        gap_minutes, picked_session_labels, base_s_ui, friends_tuple = _render_session_filter(
             db_path,
             xuid,
             db_key,
@@ -179,6 +184,7 @@ def render_filters_sidebar(
         modes_selected=modes_selected,
         maps_selected=maps_selected,
         base_s_ui=base_s_ui,
+        friends_tuple=friends_tuple,
     )
 
 
@@ -186,13 +192,17 @@ def _apply_default_last_session(
     db_path: str,
     xuid: str,
     db_key: tuple[int, int] | None,
+    aliases_key: int | None = None,
 ) -> None:
     """Applique par défaut la dernière session du joueur quand aucun filtre n'est en mémoire.
 
     Utilisé au premier chargement ou changement de joueur/db.
     """
-    gap_default = 120
-    base_s = cached_compute_sessions_db(db_path, xuid.strip(), db_key, True, gap_default)
+    gap_default = GAP_MINUTES_FIXED
+    friends_tuple = get_friends_xuids_for_sessions(db_path, xuid.strip(), db_key, aliases_key)
+    base_s = cached_compute_sessions_db(
+        db_path, xuid.strip(), db_key, True, gap_default, friends_xuids=friends_tuple
+    )
     session_labels_df = (
         base_s[["session_id", "session_label"]]
         .drop_duplicates()
@@ -276,22 +286,17 @@ def _render_session_filter(
     base_for_filters: pd.DataFrame,
     build_friends_opts_map_fn: Callable,
 ) -> tuple[int, list[str] | None, pd.DataFrame]:
-    """Rend les contrôles en mode Sessions."""
-    gap_minutes = st.slider(
-        "Écart max entre parties (minutes)",
-        min_value=15,
-        max_value=240,
-        value=int(st.session_state.get("gap_minutes", 120)),
-        step=5,
-        key="gap_minutes",
-    )
+    """Rend les contrôles en mode Sessions (gap fixé à 120 min, stockage en base)."""
+    gap_minutes = GAP_MINUTES_FIXED
 
+    friends_tuple = get_friends_xuids_for_sessions(db_path, xuid.strip(), db_key, aliases_key)
     base_s_ui = cached_compute_sessions_db(
         db_path,
         xuid.strip(),
         db_key,
         True,
         gap_minutes,
+        friends_xuids=friends_tuple,
     )
     session_labels_ui = (
         base_s_ui[["session_id", "session_label"]]
@@ -351,7 +356,7 @@ def _render_session_filter(
     )
     picked_session_labels = None if picked_one == "(toutes)" else [picked_one]
 
-    return gap_minutes, picked_session_labels, base_s_ui
+    return gap_minutes, picked_session_labels, base_s_ui, friends_tuple
 
 
 @st.cache_data(show_spinner=False, ttl=120)
@@ -589,7 +594,12 @@ def apply_filters(
     with perf_section("filters/apply"):
         if filter_state.filter_mode == "Sessions":
             base_s = cached_compute_sessions_db(
-                db_path, xuid.strip(), db_key, True, filter_state.gap_minutes
+                db_path,
+                xuid.strip(),
+                db_key,
+                True,
+                filter_state.gap_minutes,
+                friends_xuids=filter_state.friends_tuple,
             )
             # base_s n'a que match_id, session_id, session_label (pas playlist_name, etc.)
             # On filtre dff par les match_id des sessions sélectionnées au lieu de remplacer dff.

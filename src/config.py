@@ -1,5 +1,6 @@
 """Configuration centralisée et constantes du projet."""
 
+import contextlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,10 +14,8 @@ def get_repo_root(start_path: str | None = None) -> str:
     """
 
     def _as_dir(p: Path) -> Path:
-        try:
+        with contextlib.suppress(Exception):
             p = p.resolve()
-        except Exception:
-            pass
         return p.parent if p.is_file() else p
 
     def _looks_like_repo_root(p: Path) -> bool:
@@ -72,7 +71,7 @@ def get_default_db_path() -> str:
 
 def get_default_workshop_exe_path() -> str:
     """Retourne le chemin par défaut de l'exécutable OpenSpartan Workshop."""
-    pf86 = os.environ.get("ProgramFiles(x86)")
+    pf86 = os.environ.get("PROGRAMFILES(X86)")
     if not pf86:
         pf86 = r"C:\Program Files (x86)"
     return os.path.join(pf86, "Den.Dev", "OpenSpartan Workshop", "OpenSpartan.Workshop.exe")
@@ -221,6 +220,9 @@ class SessionConfig:
     bucket_threshold_daily: float = 6.0
     bucket_threshold_weekly: float = 10.0
     bucket_threshold_monthly: float = 45.0
+
+    # Stockage sessions : matchs < N heures = calcul à la volée (session instable)
+    session_stability_hours: float = 4.0
 
 
 SESSION_CONFIG = SessionConfig()

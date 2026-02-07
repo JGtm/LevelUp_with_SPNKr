@@ -40,6 +40,10 @@
 ## Commandes Utiles
 
 ```bash
+# Configurer l'environnement (Python Windows requis pour DuckDB)
+# Depuis PowerShell: .\scripts\setup_env.ps1
+# Puis: source activate_env.sh
+
 # Lancer l'app Streamlit
 streamlit run streamlit_app.py
 
@@ -50,6 +54,10 @@ python scripts/sync.py --delta --gamertag MonGamertag
 python scripts/backup_player.py --gamertag MonGamertag
 python scripts/restore_player.py --gamertag MonGamertag --backup ./backups/
 
+# Backfill sessions (session_id, session_label dans match_stats)
+python scripts/backfill_data.py --player MonGT --sessions
+python scripts/backfill_data.py --all --sessions
+
 # Tests
 pytest tests/ -v
 ```
@@ -58,10 +66,11 @@ pytest tests/ -v
 
 1. Répondre en français
 2. Utiliser Pydantic v2 pour valider les données
-3. **Pandas est PROSCRIT** - Utiliser **Polars** uniquement pour les DataFrames et séries (voir § Pandas interdit ci-dessous)
-4. Utiliser DuckDBRepository pour l'accès aux données
-5. Documenter les décisions dans `.ai/thought_log.md`
-6. **SQLite est PROSCRIT** - Aucun fallback SQLite, tout le code doit utiliser DuckDB v4 uniquement
+3. **Backfill** : Pour tout backfill ou création de nouvelles fonctions de backfill, utiliser `scripts/backfill_data.py`. Ne pas créer de scripts backfill séparés ; ajouter une option dédiée (ex. `--sessions`, `--killer-victim`) dans `backfill_data.py`.
+4. **Pandas est PROSCRIT** - Utiliser **Polars** uniquement pour les DataFrames et séries (voir § Pandas interdit ci-dessous)
+5. Utiliser DuckDBRepository pour l'accès aux données
+6. Documenter les décisions dans `.ai/thought_log.md`
+7. **SQLite est PROSCRIT** - Aucun fallback SQLite, tout le code doit utiliser DuckDB v4 uniquement
 
 ## ⛔ Pandas interdit (règle critique)
 

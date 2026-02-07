@@ -68,7 +68,7 @@ Les valeurs `NULL` sont traitées comme une **valeur distincte** pour la détect
 
 ---
 
-## Backfill
+## Backfill teammates_signature
 
 ### Script
 
@@ -92,6 +92,49 @@ python scripts/backfill_teammates_signature.py --gamertag MonGT --dry-run
 ### Source des données
 
 Le backfill récupère le JSON de chaque match depuis l'API SPNKr (`get_match_stats`), puis calcule `teammates_signature` via `compute_teammates_signature()`.
+
+---
+
+## Stockage session_id / session_label (match_stats)
+
+### Colonnes ajoutées
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `session_id` | VARCHAR | Identifiant unique de la session |
+| `session_label` | VARCHAR | Libellé affiché (ex. « Session 1 », « Session du 07/02 ») |
+
+### Règle de stabilité (4 h)
+
+Les sessions ne sont **pas** stockées pour les matchs de moins de 4 h. Pour ces matchs, le calcul reste à la volée dans `cached_compute_sessions_db`.
+
+### Lecture hybride
+
+`cached_compute_sessions_db` :
+- **Cas A** : Tous les matchs ont `session_id` et sont ≥ 4 h → retour des données stockées
+- **Cas B** : Au moins un match récent ou sans `session_id` → recalcul complet à la volée
+
+### Backfill sessions
+
+```bash
+# Un joueur
+python scripts/backfill_data.py --player MonGT --sessions
+
+# Tous les joueurs
+python scripts/backfill_data.py --all --sessions
+
+# Forcer le recalcul même si session_id déjà rempli
+python scripts/backfill_data.py --all --sessions --force-sessions
+
+# Simuler (dry-run)
+python scripts/backfill_data.py --player MonGT --sessions --dry-run
+```
+
+**Paramètres** : `gap_minutes=120` fixe ; amis via `friends_defaults.json` ou top 2 coéquipiers.
+
+### Plan détaillé
+
+Voir `.ai/features/SESSIONS_STOCKAGE_PLAN.md`.
 
 ---
 
