@@ -247,6 +247,8 @@ class TestTransformMatchStats:
         assert row.team_id == 0
         assert row.playlist_id == "playlist-123"
         assert row.map_id == "map-456"
+        assert row.shots_fired == 200
+        assert row.shots_hit == 90
 
     def test_with_skill_json(self, sample_match_json, sample_skill_json):
         """Vérifie l'extraction des MMR depuis skill_json."""
@@ -280,6 +282,18 @@ class TestTransformMatchStats:
 
         row = transform_match_stats({"MatchId": "test"}, "123")
         assert row is None
+
+    def test_participants_shots_extracted(self, sample_match_json):
+        """Vérifie que extract_participants extrait shots_fired et shots_hit."""
+        from src.data.sync.transformers import extract_participants
+
+        rows = extract_participants(sample_match_json)
+        assert len(rows) >= 1
+        # Premier joueur a ShotsFired: 200, ShotsHit: 90 dans le JSON
+        main = next((r for r in rows if r.xuid == "2535423456789"), None)
+        assert main is not None
+        assert main.shots_fired == 200
+        assert main.shots_hit == 90
 
 
 class TestTransformSkillStats:

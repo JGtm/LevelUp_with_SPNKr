@@ -1158,6 +1158,11 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
         # K/D/A depuis CoreStats (API) — 0 est une valeur valide
         kills_val, deaths_val, assists_val, _ = _extract_player_stats(player)
 
+        # ShotsFired / ShotsHit depuis CoreStats (API)
+        stats_dict = _find_core_stats_dict(player)
+        shots_fired_val = _safe_int(stats_dict.get("ShotsFired")) if stats_dict else None
+        shots_hit_val = _safe_int(stats_dict.get("ShotsHit")) if stats_dict else None
+
         rows.append(
             MatchParticipantRow(
                 match_id=match_id,
@@ -1170,6 +1175,8 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
                 kills=kills_val,
                 deaths=deaths_val,
                 assists=assists_val,
+                shots_fired=shots_fired_val,
+                shots_hit=shots_hit_val,
             )
         )
 

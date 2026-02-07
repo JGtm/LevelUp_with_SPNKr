@@ -7,6 +7,33 @@
 
 ## Journal
 
+### [2026-02-07] - Shots fired / shots hit en BDD et backfill (SHOTS_FIRED_HIT_BDD_PLAN)
+
+**Statut** : Implémenté (Sprints 1–3)
+
+**Objectif** : Persister `shots_fired` et `shots_hit` pour le joueur propriétaire et pour tous les participants, avec options de backfill.
+
+**Sprint 1** :
+- `engine._insert_match_row` : colonnes `shots_fired`, `shots_hit` incluses dans l’INSERT (déjà extraites par `transform_match_stats`).
+- Backfill `--shots` et `--force-shots` dans `backfill_data.py` (sélection matchs NULL, mise à jour, compteur `shots_updated`).
+- Docstring et tests (test_sync_engine : extraction shots dans transform_match_stats ; test_sync_performance_score : schémas avec shots_fired/shots_hit).
+
+**Sprint 2** :
+- `match_participants` : colonnes `shots_fired`, `shots_hit` (SYNC_SCHEMA_DDL + migration `_ensure_match_participants_rank_score`).
+- `MatchParticipantRow` et `extract_participants` : extraction ShotsFired/ShotsHit depuis CoreStats par joueur.
+- Sync engine : `_insert_participant_rows` inclut shots_fired, shots_hit.
+- Backfill `--participants-shots` et `--force-participants-shots` (sélection, UPDATE par participant, `participants_shots_updated`).
+- Test `test_participants_shots_extracted` (extract_participants).
+
+**Sprint 3** :
+- CLAUDE.md : exemples de commandes backfill shots.
+- data_lineage.md : origine `shots_fired` / `shots_hit` (API → match_stats, match_participants).
+- thought_log : cette entrée.
+
+**Fichiers modifiés** : src/data/sync/engine.py, src/data/sync/models.py, src/data/sync/transformers.py, scripts/backfill_data.py, tests/test_sync_engine.py, tests/test_sync_performance_score.py, CLAUDE.md, .ai/data_lineage.md, .ai/thought_log.md.
+
+---
+
 ### [2026-02-07] - Fix association médias : capture_end_utc + tolérance 20 min
 
 **Statut** : Terminé

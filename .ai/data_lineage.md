@@ -148,7 +148,8 @@ Lancement : thread en arrière-plan au démarrage de l’app (`_background_media
 | Donnée | Source | Formule |
 |--------|--------|---------|
 | `kda` | match_stats | `(kills + assists/3) / max(deaths, 1)` |
-| `accuracy` | match_stats | `shots_hit / shots_fired * 100` |
+| `shots_fired` / `shots_hit` | API → match_stats, match_participants | `Players[].PlayerTeamStats[].Stats.CoreStats.ShotsFired` / `ShotsHit` ; joueur propriétaire dans match_stats, tous les joueurs dans match_participants. |
+| `accuracy` | match_stats | `shots_hit / shots_fired * 100` (ou API si fourni) |
 | `net_kills` | antagonists | `times_killed - times_killed_by` |
 | `win_rate` | mv_global_stats | `wins / total_matches * 100` |
 | `headshot_rate` | weapon_stats | `headshot_kills / total_kills * 100` |

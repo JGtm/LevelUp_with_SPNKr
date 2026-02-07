@@ -21,6 +21,12 @@ Usage:
     # Forcer la récupération de accuracy pour TOUS les matchs
     python scripts/backfill_data.py --player JGtm --accuracy --force-accuracy
 
+    # Backfill shots_fired/shots_hit pour les matchs où ils sont NULL
+    python scripts/backfill_data.py --player JGtm --shots
+
+    # Forcer la mise à jour de shots_fired/shots_hit pour TOUS les matchs
+    python scripts/backfill_data.py --player JGtm --shots --force-shots
+
     # Backfill enemy_mmr pour les matchs avec enemy_mmr NULL
     python scripts/backfill_data.py --player JGtm --enemy-mmr
 
@@ -38,6 +44,12 @@ Usage:
 
     # Backfill kills, deaths, assists des participants (matchs où k/d/a sont manquants)
     python scripts/backfill_data.py --player JGtm --participants-kda
+
+    # Backfill shots_fired/shots_hit des participants (matchs où shots manquants)
+    python scripts/backfill_data.py --player JGtm --participants-shots
+
+    # Forcer shots pour tous les participants de tous les matchs
+    python scripts/backfill_data.py --player JGtm --participants-shots --force-participants-shots
 
     # Backfill paires killer/victim pour antagonistes
     python scripts/backfill_data.py --player JGtm --killer-victim
@@ -298,6 +310,10 @@ def _ensure_match_participants_columns(conn) -> None:
             conn.execute("ALTER TABLE match_participants ADD COLUMN deaths SMALLINT")
         if "assists" not in col_names:
             conn.execute("ALTER TABLE match_participants ADD COLUMN assists SMALLINT")
+        if "shots_fired" not in col_names:
+            conn.execute("ALTER TABLE match_participants ADD COLUMN shots_fired INTEGER")
+        if "shots_hit" not in col_names:
+            conn.execute("ALTER TABLE match_participants ADD COLUMN shots_hit INTEGER")
     except Exception as e:
         logger.debug(f"match_participants columns: {e}")
 
@@ -336,8 +352,8 @@ def _insert_participant_rows(conn, rows: list) -> int:
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO match_participants
-                   (match_id, xuid, team_id, outcome, gamertag, rank, score, kills, deaths, assists)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (match_id, xuid, team_id, outcome, gamertag, rank, score, kills, deaths, assists, shots_fired, shots_hit)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     row.match_id,
                     row.xuid,
@@ -349,6 +365,8 @@ def _insert_participant_rows(conn, rows: list) -> int:
                     row.kills,
                     row.deaths,
                     row.assists,
+                    getattr(row, "shots_fired", None),
+                    getattr(row, "shots_hit", None),
                 ),
             )
             inserted += 1
@@ -721,8 +739,12 @@ def _find_matches_missing_data(
     participants: bool = False,
     participants_scores: bool = False,
     participants_kda: bool = False,
+    participants_shots: bool = False,
+    force_participants_shots: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
+    shots: bool = False,
+    force_shots: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
@@ -805,6 +827,12 @@ def _find_matches_missing_data(
         else:
             # Détecter les matchs avec accuracy NULL
             conditions.append("ms.accuracy IS NULL")
+
+    if shots:
+        if force_shots:
+            conditions.append("1=1")  # Tous les matchs pour forcer shots_fired/shots_hit
+        else:
+            conditions.append("(ms.shots_fired IS NULL OR ms.shots_hit IS NULL)")
 
     if enemy_mmr:
         if force_enemy_mmr:
@@ -907,6 +935,31 @@ def _find_matches_missing_data(
         except Exception:
             pass
 
+    if participants_shots:
+        if force_participants_shots:
+            conditions.append("1=1")  # Tous les matchs pour forcer shots des participants
+        else:
+            try:
+                table_ok = conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+                ).fetchone()
+                shots_ok = conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = 'main' AND table_name = 'match_participants' AND column_name = 'shots_fired'"
+                ).fetchone()
+                if table_ok and table_ok[0] and shots_ok and shots_ok[0]:
+                    conditions.append("""
+                        ms.match_id IN (
+                            SELECT match_id FROM match_participants
+                            WHERE shots_fired IS NULL OR shots_hit IS NULL
+                        )
+                    """)
+                else:
+                    conditions.append("1=1")
+            except Exception:
+                conditions.append("1=1")
+
     if not conditions:
         return []
 
@@ -944,12 +997,16 @@ async def backfill_player_data(
     participants: bool = False,
     participants_scores: bool = False,
     participants_kda: bool = False,
+    participants_shots: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     sessions: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
+    shots: bool = False,
+    force_shots: bool = False,
+    force_participants_shots: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
@@ -994,6 +1051,10 @@ async def backfill_player_data(
     if force_accuracy and not accuracy:
         accuracy = True
 
+    # Si force_shots est activé sans shots, l'activer automatiquement
+    if force_shots and not shots:
+        shots = True
+
     # Si force_enemy_mmr est activé sans enemy_mmr, l'activer automatiquement
     if force_enemy_mmr and not enemy_mmr:
         enemy_mmr = True
@@ -1013,6 +1074,9 @@ async def backfill_player_data(
     if force_sessions and not sessions:
         sessions = True
 
+    if force_participants_shots and not participants_shots:
+        participants_shots = True
+
     # Vérifier qu'au moins une option est activée
     if not any(
         [
@@ -1023,11 +1087,13 @@ async def backfill_player_data(
             performance_scores,
             aliases,
             accuracy,
+            shots,
             enemy_mmr,
             assets,
             participants,
             participants_scores,
             participants_kda,
+            participants_shots,
             killer_victim,
             end_time,
             sessions,
@@ -1047,11 +1113,13 @@ async def backfill_player_data(
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
             "accuracy_updated": 0,
+            "shots_updated": 0,
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
             "participants_inserted": 0,
             "participants_scores_updated": 0,
             "participants_kda_updated": 0,
+            "participants_shots_updated": 0,
             "killer_victim_pairs_inserted": 0,
             "end_time_updated": 0,
             "sessions_updated": 0,
@@ -1072,6 +1140,7 @@ async def backfill_player_data(
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
             "accuracy_updated": 0,
+            "shots_updated": 0,
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
             "participants_inserted": 0,
@@ -1096,6 +1165,7 @@ async def backfill_player_data(
             "performance_scores_inserted": 0,
             "aliases_inserted": 0,
             "accuracy_updated": 0,
+            "shots_updated": 0,
             "enemy_mmr_updated": 0,
             "assets_updated": 0,
             "participants_inserted": 0,
@@ -1154,6 +1224,7 @@ async def backfill_player_data(
                     "personal_scores_inserted": 0,
                     "aliases_inserted": 0,
                     "accuracy_updated": 0,
+                    "shots_updated": 0,
                     "enemy_mmr_updated": 0,
                     "assets_updated": 0,
                     "participants_inserted": 0,
@@ -1250,9 +1321,9 @@ async def backfill_player_data(
             except Exception as e:
                 logger.warning(f"Note lors de la vérification de accuracy: {e}")
 
-        # Pour participants_scores / participants_kda, s'assurer que les colonnes existent
+        # Pour participants_scores / participants_kda / participants_shots, s'assurer que les colonnes existent
         # avant de chercher les matchs (sinon la requête ne trouve rien)
-        if participants_scores or participants_kda:
+        if participants_scores or participants_kda or participants_shots:
             with contextlib.suppress(Exception):
                 _ensure_match_participants_columns(conn)
 
@@ -1271,8 +1342,12 @@ async def backfill_player_data(
             participants=participants,
             participants_scores=participants_scores,
             participants_kda=participants_kda,
+            participants_shots=participants_shots,
+            force_participants_shots=force_participants_shots,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
+            shots=shots,
+            force_shots=force_shots,
             force_enemy_mmr=force_enemy_mmr,
             force_aliases=force_aliases,
             force_assets=force_assets,
@@ -1294,11 +1369,13 @@ async def backfill_player_data(
                 "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
+                "shots_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "participants_scores_updated": 0,
                 "participants_kda_updated": 0,
+                "participants_shots_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
                 "sessions_updated": 0,
@@ -1311,6 +1388,7 @@ async def backfill_player_data(
             and not sessions
             and not participants_scores
             and not participants_kda
+            and not participants_shots
         ):
             # Pas de matchs à traiter ET pas de killer_victim ni end_time à backfill
             logger.info("Tous les matchs ont déjà toutes les données demandées")
@@ -1324,11 +1402,13 @@ async def backfill_player_data(
                 "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
+                "shots_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "participants_scores_updated": 0,
                 "participants_kda_updated": 0,
+                "participants_shots_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
                 "sessions_updated": 0,
@@ -1388,11 +1468,13 @@ async def backfill_player_data(
                 "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
+                "shots_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "participants_scores_updated": 0,
                 "participants_kda_updated": 0,
+                "participants_shots_updated": 0,
                 "killer_victim_pairs_inserted": total_killer_victim_pairs,
                 "end_time_updated": total_end_time_updated,
                 "sessions_updated": total_sessions_updated,
@@ -1412,11 +1494,13 @@ async def backfill_player_data(
                 "performance_scores_inserted": 0,
                 "aliases_inserted": 0,
                 "accuracy_updated": 0,
+                "shots_updated": 0,
                 "enemy_mmr_updated": 0,
                 "assets_updated": 0,
                 "participants_inserted": 0,
                 "participants_scores_updated": 0,
                 "participants_kda_updated": 0,
+                "participants_shots_updated": 0,
                 "killer_victim_pairs_inserted": 0,
                 "end_time_updated": 0,
                 "sessions_updated": 0,
@@ -1430,11 +1514,13 @@ async def backfill_player_data(
         total_performance_scores = 0
         total_aliases = 0
         total_accuracy_updated = 0
+        total_shots_updated = 0
         total_enemy_mmr_updated = 0
         total_assets_updated = 0
         total_participants_inserted = 0
         total_participants_scores_updated = 0
         total_participants_kda_updated = 0
+        total_participants_shots_updated = 0
         total_end_time_updated = 0
 
         async with SPNKrAPIClient(
@@ -1451,12 +1537,13 @@ async def backfill_player_data(
                         logger.warning(f"Impossible de récupérer {match_id}")
                         continue
 
-                    # Compteurs pour le log "données insérées" ce match (score/rang et k/d/a)
+                    # Compteurs pour le log "données insérées" ce match (score/rang, k/d/a, shots)
                     participants_scores_this_match = 0
                     participants_kda_this_match = 0
+                    participants_shots_this_match = 0
 
-                    # Mise à jour score/rang ou k/d/a des participants (options distinctes)
-                    if participants_scores or participants_kda:
+                    # Mise à jour score/rang, k/d/a ou shots des participants (options distinctes)
+                    if participants_scores or participants_kda or participants_shots:
                         _ensure_match_participants_columns(conn)
                         participant_rows = extract_participants(stats_json)
                         for row in participant_rows:
@@ -1481,6 +1568,16 @@ async def backfill_player_data(
                                             row.xuid,
                                         ),
                                     )
+                                if participants_shots and (
+                                    row.shots_fired is not None or row.shots_hit is not None
+                                ):
+                                    conn.execute(
+                                        """UPDATE match_participants
+                                           SET shots_fired = ?, shots_hit = ?
+                                           WHERE match_id = ? AND xuid = ?""",
+                                        (row.shots_fired, row.shots_hit, row.match_id, row.xuid),
+                                    )
+                                    participants_shots_this_match += 1
                             except Exception as e:
                                 logger.debug(f"Update participant {row.xuid}: {e}")
                         if participant_rows:
@@ -1490,6 +1587,8 @@ async def backfill_player_data(
                             if participants_kda:
                                 participants_kda_this_match = len(participant_rows)
                                 total_participants_kda_updated += participants_kda_this_match
+                            if participants_shots:
+                                total_participants_shots_updated += participants_shots_this_match
 
                     # Enrichir avec les noms depuis Discovery UGC (playlist, map, pair, game_variant)
                     if assets:
@@ -1517,11 +1616,13 @@ async def backfill_player_data(
                         "performance_scores": 0,
                         "aliases": 0,
                         "accuracy": 0,
+                        "shots": 0,
                         "enemy_mmr": 0,
                         "assets": 0,
                         "participants": 0,
                         "participants_scores": participants_scores_this_match,
                         "participants_kda": participants_kda_this_match,
+                        "participants_shots": participants_shots_this_match,
                     }
 
                     # Assets (noms playlist/map/pair) — mise à jour match_stats
@@ -1556,31 +1657,52 @@ async def backfill_player_data(
                             inserted_this_match["assets"] = 1
                             total_assets_updated += 1
 
-                    # Accuracy (doit être fait avant les autres car utilise transform_match_stats)
-                    if accuracy:
+                    # Accuracy et shots (utilisent transform_match_stats)
+                    if accuracy or shots:
                         match_row = transform_match_stats(stats_json, xuid)
-                        if match_row and match_row.accuracy is not None:
-                            if force_accuracy:
-                                # Forcer la mise à jour même si accuracy existe déjà
-                                conn.execute(
-                                    "UPDATE match_stats SET accuracy = ? WHERE match_id = ?",
-                                    (match_row.accuracy, match_id),
-                                )
-                                inserted_this_match["accuracy"] = 1
-                                total_accuracy_updated += 1
-                            else:
-                                # Ne mettre à jour que si accuracy est NULL
-                                existing = conn.execute(
-                                    "SELECT accuracy FROM match_stats WHERE match_id = ?",
-                                    (match_id,),
-                                ).fetchone()
-                                if existing and existing[0] is None:
+                        if match_row:
+                            if accuracy and match_row.accuracy is not None:
+                                if force_accuracy:
                                     conn.execute(
                                         "UPDATE match_stats SET accuracy = ? WHERE match_id = ?",
                                         (match_row.accuracy, match_id),
                                     )
                                     inserted_this_match["accuracy"] = 1
                                     total_accuracy_updated += 1
+                                else:
+                                    existing = conn.execute(
+                                        "SELECT accuracy FROM match_stats WHERE match_id = ?",
+                                        (match_id,),
+                                    ).fetchone()
+                                    if existing and existing[0] is None:
+                                        conn.execute(
+                                            "UPDATE match_stats SET accuracy = ? WHERE match_id = ?",
+                                            (match_row.accuracy, match_id),
+                                        )
+                                        inserted_this_match["accuracy"] = 1
+                                        total_accuracy_updated += 1
+                            if shots and (
+                                match_row.shots_fired is not None or match_row.shots_hit is not None
+                            ):
+                                if force_shots:
+                                    conn.execute(
+                                        "UPDATE match_stats SET shots_fired = ?, shots_hit = ? WHERE match_id = ?",
+                                        (match_row.shots_fired, match_row.shots_hit, match_id),
+                                    )
+                                    inserted_this_match["shots"] = 1
+                                    total_shots_updated += 1
+                                else:
+                                    existing = conn.execute(
+                                        "SELECT shots_fired, shots_hit FROM match_stats WHERE match_id = ?",
+                                        (match_id,),
+                                    ).fetchone()
+                                    if existing and (existing[0] is None or existing[1] is None):
+                                        conn.execute(
+                                            "UPDATE match_stats SET shots_fired = ?, shots_hit = ? WHERE match_id = ?",
+                                            (match_row.shots_fired, match_row.shots_hit, match_id),
+                                        )
+                                        inserted_this_match["shots"] = 1
+                                        total_shots_updated += 1
 
                     # Médailles
                     if medals:
@@ -1686,6 +1808,8 @@ async def backfill_player_data(
                         parts.append(f"{inserted_this_match['aliases']} alias(es)")
                     if inserted_this_match.get("accuracy", 0) > 0:
                         parts.append("accuracy")
+                    if inserted_this_match.get("shots", 0) > 0:
+                        parts.append("shots")
                     if inserted_this_match.get("enemy_mmr", 0) > 0:
                         parts.append("enemy_mmr")
                     if inserted_this_match.get("assets", 0) > 0:
@@ -1696,6 +1820,10 @@ async def backfill_player_data(
                         parts.append(f"{inserted_this_match['participants_scores']} score(s)/rang")
                     if inserted_this_match.get("participants_kda", 0) > 0:
                         parts.append(f"{inserted_this_match['participants_kda']} k/d/a")
+                    if inserted_this_match.get("participants_shots", 0) > 0:
+                        parts.append(
+                            f"{inserted_this_match['participants_shots']} shots participant(s)"
+                        )
 
                     if parts:
                         logger.info(f"  ✅ {', '.join(parts)} inséré(s)")
@@ -1766,11 +1894,13 @@ async def backfill_player_data(
             "performance_scores_inserted": total_performance_scores,
             "aliases_inserted": total_aliases,
             "accuracy_updated": total_accuracy_updated,
+            "shots_updated": total_shots_updated,
             "enemy_mmr_updated": total_enemy_mmr_updated,
             "assets_updated": total_assets_updated,
             "participants_inserted": total_participants_inserted,
             "participants_scores_updated": total_participants_scores_updated,
             "participants_kda_updated": total_participants_kda_updated,
+            "participants_shots_updated": total_participants_shots_updated,
             "killer_victim_pairs_inserted": total_killer_victim_pairs,
             "end_time_updated": total_end_time_updated,
             "sessions_updated": total_sessions_updated,
@@ -1797,11 +1927,15 @@ async def backfill_all_players(
     participants: bool = False,
     participants_scores: bool = False,
     participants_kda: bool = False,
+    participants_shots: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     all_data: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
+    shots: bool = False,
+    force_shots: bool = False,
+    force_participants_shots: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
@@ -1829,11 +1963,13 @@ async def backfill_all_players(
         "performance_scores_inserted": 0,
         "aliases_inserted": 0,
         "accuracy_updated": 0,
+        "shots_updated": 0,
         "enemy_mmr_updated": 0,
         "assets_updated": 0,
         "participants_inserted": 0,
         "participants_scores_updated": 0,
         "participants_kda_updated": 0,
+        "participants_shots_updated": 0,
         "killer_victim_pairs_inserted": 0,
         "end_time_updated": 0,
         "sessions_updated": 0,
@@ -1861,12 +1997,16 @@ async def backfill_all_players(
             participants=participants,
             participants_scores=participants_scores,
             participants_kda=participants_kda,
+            participants_shots=participants_shots,
             killer_victim=killer_victim,
             end_time=end_time,
             sessions=sessions,
             all_data=all_data,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
+            shots=shots,
+            force_shots=force_shots,
+            force_participants_shots=force_participants_shots,
             force_enemy_mmr=force_enemy_mmr,
             force_aliases=force_aliases,
             force_assets=force_assets,
@@ -1987,6 +2127,18 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--shots",
+        action="store_true",
+        help="Backfill shots_fired/shots_hit pour les matchs où ils sont NULL",
+    )
+
+    parser.add_argument(
+        "--force-shots",
+        action="store_true",
+        help="Force la mise à jour de shots_fired/shots_hit pour TOUS les matchs",
+    )
+
+    parser.add_argument(
         "--enemy-mmr",
         action="store_true",
         help="Backfill enemy_mmr pour les matchs avec enemy_mmr NULL dans player_match_stats",
@@ -2038,6 +2190,18 @@ def main() -> int:
         "--participants-kda",
         action="store_true",
         help="Backfill kills, deaths, assists des participants (matchs où k/d/a sont manquants)",
+    )
+
+    parser.add_argument(
+        "--participants-shots",
+        action="store_true",
+        help="Backfill shots_fired/shots_hit des participants (matchs où shots manquants)",
+    )
+
+    parser.add_argument(
+        "--force-participants-shots",
+        action="store_true",
+        help="Force la mise à jour de shots_fired/shots_hit pour tous les participants de tous les matchs",
     )
 
     parser.add_argument(
@@ -2101,6 +2265,8 @@ def main() -> int:
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
+                    shots=args.shots,
+                    force_shots=args.force_shots,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
@@ -2126,6 +2292,8 @@ def main() -> int:
             logger.info(f"Aliases insérés: {totals['aliases_inserted']}")
             if args.accuracy:
                 logger.info(f"Accuracy mis à jour: {totals['accuracy_updated']}")
+            if args.shots:
+                logger.info(f"Shots mis à jour: {totals['shots_updated']}")
             if args.enemy_mmr:
                 logger.info(f"Enemy MMR mis à jour: {totals['enemy_mmr_updated']}")
             if args.assets:
@@ -2138,6 +2306,10 @@ def main() -> int:
                 )
             if args.participants_kda:
                 logger.info(f"K/D/A participants mis à jour: {totals['participants_kda_updated']}")
+            if args.participants_shots:
+                logger.info(
+                    f"Shots participants mis à jour: {totals['participants_shots_updated']}"
+                )
             if args.killer_victim:
                 logger.info(
                     f"Paires killer/victim insérées: {totals['killer_victim_pairs_inserted']}"
@@ -2165,11 +2337,15 @@ def main() -> int:
                     participants=args.participants,
                     participants_scores=args.participants_scores,
                     participants_kda=args.participants_kda,
+                    participants_shots=args.participants_shots,
                     killer_victim=args.killer_victim,
                     end_time=args.end_time,
                     all_data=args.all_data,
                     force_medals=args.force_medals,
                     force_accuracy=args.force_accuracy,
+                    shots=args.shots,
+                    force_shots=args.force_shots,
+                    force_participants_shots=args.force_participants_shots,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
@@ -2191,6 +2367,8 @@ def main() -> int:
             logger.info(f"Aliases insérés: {result['aliases_inserted']}")
             if args.accuracy:
                 logger.info(f"Accuracy mis à jour: {result['accuracy_updated']}")
+            if args.shots:
+                logger.info(f"Shots mis à jour: {result['shots_updated']}")
             if args.enemy_mmr:
                 logger.info(f"Enemy MMR mis à jour: {result['enemy_mmr_updated']}")
             if args.assets:
@@ -2203,6 +2381,10 @@ def main() -> int:
                 )
             if args.participants_kda:
                 logger.info(f"K/D/A participants mis à jour: {result['participants_kda_updated']}")
+            if args.participants_shots:
+                logger.info(
+                    f"Shots participants mis à jour: {result['participants_shots_updated']}"
+                )
             if args.killer_victim:
                 logger.info(
                     f"Paires killer/victim insérées: {result['killer_victim_pairs_inserted']}"

@@ -154,6 +154,8 @@ CREATE TABLE IF NOT EXISTS match_participants (
     kills SMALLINT,
     deaths SMALLINT,
     assists SMALLINT,
+    shots_fired INTEGER,
+    shots_hit INTEGER,
     PRIMARY KEY (match_id, xuid)
 );
 CREATE INDEX IF NOT EXISTS idx_participants_xuid ON match_participants(xuid);
@@ -441,6 +443,10 @@ class DuckDBSyncEngine:
                 conn.execute("ALTER TABLE match_participants ADD COLUMN deaths SMALLINT")
             if "assists" not in col_names:
                 conn.execute("ALTER TABLE match_participants ADD COLUMN assists SMALLINT")
+            if "shots_fired" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN shots_fired INTEGER")
+            if "shots_hit" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN shots_hit INTEGER")
         except Exception as e:
             logger.debug(f"match_participants columns migration: {e}")
 
@@ -927,8 +933,9 @@ class DuckDBSyncEngine:
                 time_played_seconds, avg_life_seconds,
                 my_team_score, enemy_team_score,
                 team_mmr, enemy_mmr,
+                shots_fired, shots_hit,
                 is_firefight, teammates_signature, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 row.match_id,
                 row.start_time,
@@ -956,6 +963,8 @@ class DuckDBSyncEngine:
                 row.enemy_team_score,
                 row.team_mmr,
                 row.enemy_mmr,
+                row.shots_fired,
+                row.shots_hit,
                 row.is_firefight,
                 row.teammates_signature,
                 datetime.now(timezone.utc),
@@ -1105,8 +1114,8 @@ class DuckDBSyncEngine:
                 conn.execute(
                     """INSERT OR REPLACE INTO match_participants (
                         match_id, xuid, team_id, outcome, gamertag, rank, score,
-                        kills, deaths, assists
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        kills, deaths, assists, shots_fired, shots_hit
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         row.match_id,
                         row.xuid,
@@ -1118,6 +1127,8 @@ class DuckDBSyncEngine:
                         row.kills,
                         row.deaths,
                         row.assists,
+                        row.shots_fired,
+                        row.shots_hit,
                     ),
                 )
 

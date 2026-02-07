@@ -58,6 +58,12 @@ python scripts/restore_player.py --gamertag MonGamertag --backup ./backups/
 python scripts/backfill_data.py --player MonGT --sessions
 python scripts/backfill_data.py --all --sessions
 
+# Backfill shots_fired/shots_hit (match_stats et match_participants)
+python scripts/backfill_data.py --player MonGT --shots
+python scripts/backfill_data.py --player MonGT --shots --force-shots
+python scripts/backfill_data.py --player MonGT --participants-shots
+python scripts/backfill_data.py --player MonGT --participants-shots --force-participants-shots
+
 # Tests
 pytest tests/ -v
 ```
