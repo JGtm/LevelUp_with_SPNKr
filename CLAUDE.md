@@ -71,6 +71,7 @@ pytest tests/ -v
 5. Utiliser DuckDBRepository pour l'accès aux données
 6. Documenter les décisions dans `.ai/thought_log.md`
 7. **SQLite est PROSCRIT** - Aucun fallback SQLite, tout le code doit utiliser DuckDB v4 uniquement
+8. **Streamlit** : Ne jamais utiliser `use_container_width=True` (déprécié). Utiliser `width="stretch"` à la place (`width="content"` si besoin). Pour `st.button`, `st.image`, `st.plotly_chart`, etc.
 
 ## ⛔ Pandas interdit (règle critique)
 

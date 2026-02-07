@@ -622,7 +622,7 @@ class MediaIndexer:
         others = [(p, x) for p, x in all_dbs if p.resolve() != current]
         return current_first + others
 
-    def associate_with_matches(self, tolerance_minutes: int = 5) -> int:
+    def associate_with_matches(self, tolerance_minutes: int = 20) -> int:
         """Associe les médias actifs avec les matchs (mono-DB).
 
         Pour chaque média sans association : on cherche le match le plus proche
@@ -635,7 +635,7 @@ class MediaIndexer:
         try:
             unassociated = conn_read.execute(
                 """
-                SELECT mf.file_path, COALESCE(mf.mtime_paris_epoch, mf.mtime)
+                SELECT mf.file_path, COALESCE(epoch(mf.capture_end_utc), mf.mtime_paris_epoch, mf.mtime)
                 FROM media_files mf
                 WHERE mf.status = 'active'
                 AND NOT EXISTS (
@@ -875,7 +875,7 @@ class MediaIndexer:
             subset=["file_path"], keep="first"
         )
         df = df.drop("_section_rank")
-        return df.sort("capture_end_utc", descending=True)
+        return df.sort("capture_end_utc", descending=True, nulls_last=True)
 
     def generate_thumbnails_for_new(
         self,

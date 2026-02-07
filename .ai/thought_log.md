@@ -7,6 +7,22 @@
 
 ## Journal
 
+### [2026-02-07] - Fix association médias : capture_end_utc + tolérance 20 min
+
+**Statut** : Terminé
+
+**Problème** : Des captures du joueur (ex. JGtm, 41 captures dans son dossier) restaient en « Sans correspondance » alors qu'elles proviennent toutes de ses matchs.
+
+**Cause** : L'association utilisait `COALESCE(mtime_paris_epoch, mtime)` — le mtime du fichier peut être modifié par copie/sync Xbox→PC, OneDrive, etc. Ce n'est pas le moment réel de la capture.
+
+**Correction** :
+- Utiliser `COALESCE(epoch(capture_end_utc), mtime_paris_epoch, mtime)` : `capture_end_utc` = EXIF DateTimeOriginal (images) ou mtime-duration (vidéos) = moment réel de la capture.
+- Tolérance par défaut passée de 5 à 20 min (délais sync Xbox, upload, etc.).
+
+**Fichiers modifiés** : src/data/media_indexer.py.
+
+---
+
 ### [2026-02-07] - Correctif dossier captures par joueur (MEDIA_CAPTURES_PER_PLAYER_PLAN)
 
 **Statut** : Implémenté

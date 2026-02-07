@@ -172,6 +172,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "visualization: marks tests for visualization functions (charts, graphs)",
+    "regression: marks tests as regression tests (e.g. media suite)",
     "asyncio: marks tests as async (use pytest-asyncio)",
 ]
 asyncio_mode = "auto"

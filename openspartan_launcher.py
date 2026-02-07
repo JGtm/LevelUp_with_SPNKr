@@ -692,7 +692,15 @@ def _interactive() -> int:
     print("  Q) Quitter")
     print()
 
-    choice = input("Ton choix (1/2/3/4/Q): ").strip().lower()
+    try:
+        choice = input("Ton choix (1/2/3/4/Q): ").strip().lower()
+    except EOFError:
+        print("\n⚠ stdin fermé ou non connecté (terminal/IDE).")
+        print("  Utilise les arguments CLI:")
+        print("    python openspartan_launcher.py run    # option 1")
+        print("    python openspartan_launcher.py sync   # option 3")
+        print("    python openspartan_launcher.py info   # option 4")
+        return 2
 
     if choice in {"q", "quit", "exit"}:
         return 0

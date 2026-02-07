@@ -1155,7 +1155,7 @@ def render_session_comparison_page(
                         label_b=session_b_label,
                         title="",
                     ),
-                    use_container_width=True,
+                    width="stretch",
                 )
         except Exception:
             pass

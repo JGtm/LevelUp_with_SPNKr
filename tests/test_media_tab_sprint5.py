@@ -40,7 +40,16 @@ def test_render_media_tab_no_settings_media_disabled() -> None:
 def test_render_media_tab_no_db_path() -> None:
     """Sans db_path en session, message d'info."""
     settings = AppSettings(media_enabled=True)
-    with patch("src.ui.pages.media_tab.st") as m_st:
+    mock_identity = type(
+        "Identity",
+        (),
+        {"xuid": "", "xuid_or_gamertag": "", "xuid_fallback": ""},
+    )()
+    with (
+        patch("src.ui.pages.media_tab.st") as m_st,
+        patch("src.app.state.get_default_identity", return_value=mock_identity),
+        patch("src.app.profile.resolve_xuid", return_value=None),
+    ):
         m_st.session_state = {"db_path": "", "xuid_input": ""}
         render_media_tab(settings=settings)
         m_st.info.assert_called()
@@ -57,7 +66,9 @@ def test_render_media_tab_empty_media(tmp_path: Path) -> None:
     db_path.touch()
 
     mock_identity = type(
-        "Identity", (), {"xuid": "x1", "gamertag": "Test", "xuid_fallback": "x1"}
+        "Identity",
+        (),
+        {"xuid": "x1", "xuid_or_gamertag": "Test", "xuid_fallback": "x1"},
     )()
 
     with (
@@ -66,8 +77,8 @@ def test_render_media_tab_empty_media(tmp_path: Path) -> None:
             "src.ui.pages.media_tab.MediaIndexer.load_media_for_ui",
             return_value=pl.DataFrame(),
         ),
-        patch("src.ui.pages.media_tab.get_default_identity", return_value=mock_identity),
-        patch("src.ui.pages.media_tab.resolve_xuid", return_value="x1"),
+        patch("src.app.state.get_default_identity", return_value=mock_identity),
+        patch("src.app.profile.resolve_xuid", return_value="x1"),
     ):
         m_st.session_state = {"db_path": str(db_path), "xuid_input": ""}
         render_media_tab(settings=AppSettings(media_enabled=True))

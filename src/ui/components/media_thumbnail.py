@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
+import json
 import logging
 from pathlib import Path
 
@@ -14,9 +16,32 @@ from src.ui.components.media_lightbox import build_lightbox_html
 logger = logging.getLogger(__name__)
 
 # Taille max pour embarquer en data URI (éviter iframe trop lourd)
-MAX_STATIC_BYTES = 350_000  # ~340 KB pour miniature statique
-MAX_HOVER_BYTES = 500_000  # ~490 KB pour version survol (GIF)
-MAX_LIGHTBOX_BYTES = 1_500_000  # ~1.5 MB pour lightbox (sinon on affiche la miniature)
+# Les GIF de captures Halo peuvent être volumineux → limites assouplies
+MAX_STATIC_BYTES = 3_000_000  # ~3 MB pour miniature statique (dont GIF)
+MAX_HOVER_BYTES = 4_000_000  # ~4 MB pour version survol (GIF animé)
+MAX_LIGHTBOX_BYTES = 5_000_000  # ~5 MB pour lightbox (sinon on affiche la miniature)
+
+
+def _gif_first_frame_to_data_uri(gif_path: Path) -> str | None:
+    """Extrait la première frame d'un GIF et retourne une data URI PNG (statique, ne s'anime pas)."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        with Image.open(gif_path) as img:
+            img.seek(0)
+            frame = img.convert("RGBA")
+            buf = io.BytesIO()
+            frame.save(buf, format="PNG", optimize=True)
+            data = buf.getvalue()
+            if len(data) > MAX_STATIC_BYTES:
+                return None
+            b64 = base64.standard_b64encode(data).decode("ascii")
+            return f"data:image/png;base64,{b64}"
+    except Exception as e:
+        logger.debug("GIF first frame %s: %s", gif_path, e)
+        return None
 
 
 def _path_to_data_uri(path: Path, max_bytes: int, mime: str) -> str | None:
@@ -67,8 +92,9 @@ def build_thumbnail_html(
     """Construit le HTML complet : zone thumbnail (static + survol) + lightbox.
 
     - Affichage par défaut : static_src.
-    - Au survol : hover_src si fourni, sinon inchangé.
-    - Au clic : ouverture du lightbox avec lightbox_src (image ou vidéo).
+    - Au survol uniquement : chargement et affichage de hover_src (GIF ne charge qu'au hover).
+    - Ratio uniforme : boîte fixe 16:9 avec aspect-ratio, object-fit: cover.
+    - Au clic : ouverture du lightbox.
     """
     overlay_id = f"media-lightbox-{element_id}"
     container_id = f"media-thumb-{element_id}"
@@ -76,14 +102,11 @@ def build_thumbnail_html(
     hover_id = f"thumb-hover-{element_id}"
 
     safe_static = static_src.replace("\\", "\\\\").replace('"', "&quot;").replace("<", "&lt;")
-    safe_hover = (
-        (hover_src or static_src).replace("\\", "\\\\").replace('"', "&quot;").replace("<", "&lt;")
-    )
-
-    hover_style = "display:none;" if hover_src else "display:none;"
+    # hover_src n'est pas mis dans le src initial : on l'injecte au mouseenter pour que le GIF ne s'anime qu'au survol
+    hover_js = json.dumps(hover_src) if hover_src else "null"
     hover_img = (
-        f'<img id="{hover_id}" src="{safe_hover}" alt="" style="width:100%;height:100%;object-fit:cover;{hover_style}" />'
-        if safe_hover
+        f'<img id="{hover_id}" src="" alt="" style="width:100%;height:100%;object-fit:cover;object-position:center;position:absolute;top:0;left:0;display:none;" />'
+        if hover_src
         else ""
     )
 
@@ -93,17 +116,21 @@ def build_thumbnail_html(
         element_id=element_id,
     )
 
+    # Ratio 16:9 pour toutes les captures (grille alignée), contenu recadré
     return f"""
-<div id="{container_id}" style="
-  width: {width}px;
-  height: {height}px;
+<div id="{container_id}" class="media-thumb-container" style="
+  width: 100%;
+  max-width: {width}px;
+  aspect-ratio: 16 / 9;
   position: relative;
   overflow: hidden;
   border-radius: 8px;
   cursor: pointer;
   background: #1a1a1a;
+  flex-shrink: 0;
+  margin: 0 auto;
 ">
-  <img id="{static_id}" src="{safe_static}" alt="" style="width:100%;height:100%;object-fit:cover;" />
+  <img id="{static_id}" src="{safe_static}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;" />
   {hover_img}
 </div>
 {lightbox_html}
@@ -113,12 +140,21 @@ def build_thumbnail_html(
   var s = document.getElementById('{static_id}');
   var h = document.getElementById('{hover_id}');
   var overlay = document.getElementById('{overlay_id}');
+  var hoverSrc = {hover_js};
   if (!c || !overlay) return;
   c.addEventListener('mouseenter', function() {{
-    if (h) {{ s.style.display = 'none'; h.style.display = 'block'; }}
+    if (h && hoverSrc) {{
+      h.src = hoverSrc;
+      s.style.display = 'none';
+      h.style.display = 'block';
+    }}
   }});
   c.addEventListener('mouseleave', function() {{
-    if (h) {{ s.style.display = 'block'; h.style.display = 'none'; }}
+    if (h) {{
+      h.src = '';
+      h.style.display = 'none';
+      s.style.display = 'block';
+    }}
   }});
   c.addEventListener('click', function() {{
     overlay.style.display = 'flex';
@@ -158,11 +194,21 @@ def render_media_thumbnail(
 
     element_id = media_id or hashlib.md5(str(static_path.resolve()).encode()).hexdigest()[:12]
 
-    static_uri = _path_to_data_uri(
-        static_path, MAX_STATIC_BYTES, _mime_for_path(static_path, "image")
-    )
+    # Pour les GIF (vidéos) : utiliser la première frame en statique, le GIF uniquement au survol
+    is_gif_thumbnail = str(static_path).lower().endswith(".gif") and hover_path
+    static_uri: str | None = None
+    if is_gif_thumbnail:
+        static_uri = _gif_first_frame_to_data_uri(static_path)
     if not static_uri:
-        st.caption(f"Miniature trop volumineuse : {static_path.name}")
+        static_uri = _path_to_data_uri(
+            static_path, MAX_STATIC_BYTES, _mime_for_path(static_path, "image")
+        )
+    if not static_uri:
+        # Fallback : afficher via st.image (pas d'embed data URI) pour fichiers trop volumineux
+        try:
+            st.image(str(static_path), width=width)
+        except Exception:
+            st.caption(f"Miniature trop volumineuse : {static_path.name}")
         return
 
     hover_uri: str | None = None

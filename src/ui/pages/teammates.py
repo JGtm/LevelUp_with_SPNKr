@@ -330,7 +330,7 @@ def render_teammates_page(
             pl_dff = pl.from_pandas(dff.sort_values("start_time")[_req_trend].copy())
             st.subheader("Tendance de session (matchs affichés)")
             st.caption("Compare ta performance en première vs seconde moitié des matchs affichés.")
-            st.plotly_chart(plot_session_trend(pl_dff), use_container_width=True)
+            st.plotly_chart(plot_session_trend(pl_dff), width="stretch")
         except Exception:
             pass
 
