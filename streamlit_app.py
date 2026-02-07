@@ -291,10 +291,13 @@ def _background_media_indexing(settings, db_path: str) -> None:
             n_associated = indexer.associate_with_matches(tolerance_minutes=tolerance)
             logger.info(f"✅ {n_associated} association(s) créée(s)")
 
-            # Générer les thumbnails pour les nouvelles vidéos
-            if videos_path:
+            # Générer les thumbnails pour vidéos (GIF) et images (miniatures)
+            if videos_path or screens_path:
                 logger.info("🎬 Génération des thumbnails...")
-                n_thumb_gen, n_thumb_errors = indexer.generate_thumbnails_for_new(videos_path)
+                n_thumb_gen, n_thumb_errors = indexer.generate_thumbnails_for_new(
+                    videos_dir=videos_path,
+                    screens_dir=screens_path,
+                )
                 if n_thumb_gen > 0:
                     logger.info(f"✅ {n_thumb_gen} thumbnail(s) généré(s)")
                 if n_thumb_errors > 0:
@@ -302,7 +305,7 @@ def _background_media_indexing(settings, db_path: str) -> None:
                         f"⚠️  {n_thumb_errors} erreur(s) lors de la génération de thumbnails"
                     )
                 if n_thumb_gen == 0 and n_thumb_errors == 0:
-                    logger.info("ℹ️  Aucune vidéo sans thumbnail à générer")
+                    logger.info("ℹ️  Aucun thumbnail à générer")
 
             logger.info("✅ Indexation médias terminée avec succès")
 
@@ -389,10 +392,6 @@ def main() -> None:
         if os.path.exists(logo_path):
             st.image(logo_path, width="stretch")
 
-        st.markdown(
-            "<div class='os-sidebar-brand' style='font-size: 2.5em;'>LevelUp</div>",
-            unsafe_allow_html=True,
-        )
         st.markdown("<div class='os-sidebar-divider'></div>", unsafe_allow_html=True)
 
         # Indicateur de dernière synchronisation
@@ -417,7 +416,6 @@ def main() -> None:
                     "filter_mode",
                     "start_date_cal",
                     "end_date_cal",
-                    "gap_minutes",
                     "picked_session_label",
                     "picked_sessions",
                     "filter_playlists",

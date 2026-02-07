@@ -1,12 +1,12 @@
-"""Module d'indexation des médias et association avec les matchs.
+"""Module d'indexation des médias – Onglet Médias (Sprint 1+).
 
-Ce module gère :
-- Le scan incrémental des dossiers de médias
-- L'association automatique média → match via proximité temporelle (multi-joueurs)
-- La génération de thumbnails pour les nouveaux contenus
+Gère :
+- Scan delta des dossiers configurés
+- Schéma media_files (capture_start_utc, capture_end_utc, duration_seconds, title, status)
+- Association média ↔ match (Sprint 2)
+- Thumbnails (Sprint 3)
 
-Note: Les médias n'ont plus de propriétaire unique. Les associations se font
-via media_match_associations pour tous les joueurs ayant un match correspondant.
+Chaque joueur a sa propre BDD : data/players/{gamertag}/stats.duckdb
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,13 +26,16 @@ from src.utils.paths import PLAYER_DB_FILENAME, PLAYERS_DIR
 
 logger = logging.getLogger(__name__)
 
+# Extensions supportées
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".mov", ".avi"}
+
+# Version du schéma pour migrations
+SCAN_VERSION = 2
+
 
 def _match_start_to_epoch(start_time: datetime | str | float) -> float | None:
-    """Convertit start_time (DB/API) en epoch seconds pour comparaison avec mtime_paris_epoch.
-
-    L'API et le sync stockent start_time en UTC. DuckDB peut retourner un datetime naïf
-    (sans timezone) = UTC. On convertit en epoch UTC pour comparer avec les mtime des fichiers.
-    """
+    """Convertit start_time (DB/API) en epoch seconds."""
     try:
         if isinstance(start_time, int | float):
             return float(start_time)
@@ -46,7 +50,6 @@ def _match_start_to_epoch(start_time: datetime | str | float) -> float | None:
                 dt = datetime.fromisoformat(start_time + "+00:00")
         else:
             return None
-        # Datetime naïf depuis DuckDB = UTC (convention API/sync)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.timestamp()
@@ -54,9 +57,57 @@ def _match_start_to_epoch(start_time: datetime | str | float) -> float | None:
         return None
 
 
-# Extensions supportées
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
-VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".mov", ".avi"}
+def _get_video_duration(file_path: Path) -> float | None:
+    """Récupère la durée d'une vidéo via ffprobe."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(file_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
+    except Exception:
+        pass
+    return None
+
+
+def _get_image_exif_datetime(file_path: Path) -> datetime | None:
+    """Récupère DateTimeOriginal ou CreateDate depuis EXIF (PIL)."""
+    try:
+        from PIL import Image
+        from PIL.ExifTags import TAGS
+    except ImportError:
+        return None
+
+    try:
+        with Image.open(file_path) as img:
+            exif = img.getexif()
+            if not exif:
+                return None
+            for tag_id, value in exif.items():
+                if TAGS.get(tag_id) in ("DateTimeOriginal", "DateTime", "CreateDate") and value:
+                    s = str(value).strip()
+                    if " " in s:
+                        date_part, time_part = s.split(" ", 1)
+                        s = date_part.replace(":", "-") + " " + time_part
+                    try:
+                        return datetime.fromisoformat(s.replace(":", "-", 2))
+                    except ValueError:
+                        pass
+    except Exception:
+        pass
+    return None
 
 
 @dataclass
@@ -66,6 +117,7 @@ class ScanResult:
     n_scanned: int = 0
     n_new: int = 0
     n_updated: int = 0
+    n_deleted: int = 0
     n_associated: int = 0
     errors: list[str] = None
 
@@ -75,25 +127,12 @@ class ScanResult:
 
 
 class MediaIndexer:
-    """Gère l'indexation des médias et l'association avec les matchs.
-
-    Les médias sont indexés sans propriétaire unique. Les associations se font
-    automatiquement avec tous les joueurs ayant un match correspondant.
-    """
+    """Gère l'indexation des médias (scan delta, schéma v2)."""
 
     def __init__(self, db_path: Path | None = None):
-        """Initialise l'indexeur.
-
-        Args:
-            db_path: Chemin vers une DB DuckDB pour le stockage des médias.
-                    Si None, utilise la première DB trouvée dans data/players/.
-                    Note: Les médias sont stockés dans une seule DB mais associés
-                    à tous les joueurs via media_match_associations.
-        """
         if db_path:
             self.db_path = Path(db_path)
         else:
-            # Auto-détection : utiliser la première DB trouvée
             if not PLAYERS_DIR.exists():
                 raise ValueError("Aucune DB joueur trouvée dans data/players/")
             for player_dir in PLAYERS_DIR.iterdir():
@@ -106,14 +145,11 @@ class MediaIndexer:
                 raise ValueError("Aucune DB joueur valide trouvée")
 
     def _get_existing_columns(self, conn: duckdb.DuckDBPyConnection, table: str) -> set[str]:
-        """Récupère les colonnes existantes d'une table."""
         try:
             cols = conn.execute(
                 """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'main'
-                AND table_name = ?
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'main' AND table_name = ?
                 """,
                 [table],
             ).fetchall()
@@ -122,179 +158,161 @@ class MediaIndexer:
             return set()
 
     def ensure_schema(self) -> None:
-        """Crée les tables si elles n'existent pas et migre si nécessaire."""
+        """Crée ou migre le schéma media_files et media_match_associations."""
+        conn = duckdb.connect(str(self.db_path), read_only=False)
         try:
-            conn = duckdb.connect(str(self.db_path), read_only=False)
-            try:
-                # Vérifier si les tables existent
-                tables = conn.execute(
-                    """
-                    SELECT table_name
-                    FROM information_schema.tables
-                    WHERE table_schema = 'main'
-                    AND table_name IN ('media_files', 'media_match_associations')
-                    """
-                ).fetchall()
+            tables = conn.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'main'
+                AND table_name IN ('media_files', 'media_match_associations')
+                """
+            ).fetchall()
+            existing_tables = {row[0] for row in tables}
 
-                existing_tables = {row[0] for row in tables}
-
-                # Migration: supprimer owner_xuid si la table existe avec l'ancien schéma
-                if "media_files" in existing_tables:
-                    existing_cols = self._get_existing_columns(conn, "media_files")
-                    if "owner_xuid" in existing_cols:
-                        logger.info(
-                            "Migration: suppression de la colonne owner_xuid de media_files"
+            # media_files : schéma v2 (Sprint 1)
+            if "media_files" in existing_tables:
+                cols = self._get_existing_columns(conn, "media_files")
+                migrations = []
+                if "capture_start_utc" not in cols:
+                    migrations.append(
+                        (
+                            "capture_start_utc",
+                            "ALTER TABLE media_files ADD COLUMN capture_start_utc TIMESTAMP",
                         )
-                        try:
-                            # Supprimer l'index d'abord si il existe
-                            import contextlib
-
-                            with contextlib.suppress(Exception):
-                                conn.execute("DROP INDEX IF EXISTS idx_media_owner")
-                            # Essayer de supprimer la colonne directement
-                            try:
-                                conn.execute("ALTER TABLE media_files DROP COLUMN owner_xuid")
-                                conn.commit()
-                                logger.info("✅ Migration réussie: colonne owner_xuid supprimée")
-                            except Exception as drop_error:
-                                # Si DROP COLUMN échoue, recréer la table sans owner_xuid
-                                logger.warning(
-                                    f"DROP COLUMN échoué ({drop_error}), recréation de la table..."
-                                )
-                                # Sauvegarder les données existantes (sans owner_xuid)
-                                conn.execute(
-                                    """
-                                    CREATE TABLE media_files_new (
-                                        file_path VARCHAR PRIMARY KEY,
-                                        file_hash VARCHAR NOT NULL,
-                                        file_name VARCHAR NOT NULL,
-                                        file_size BIGINT NOT NULL,
-                                        file_ext VARCHAR NOT NULL,
-                                        kind VARCHAR NOT NULL,
-                                        mtime DOUBLE NOT NULL,
-                                        mtime_paris_epoch DOUBLE NOT NULL,
-                                        thumbnail_path VARCHAR,
-                                        thumbnail_generated_at TIMESTAMP,
-                                        first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                        last_scan_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                        scan_version INTEGER DEFAULT 1
-                                    )
-                                    """
-                                )
-                                # Copier les données (sans owner_xuid)
-                                conn.execute(
-                                    """
-                                    INSERT INTO media_files_new
-                                    SELECT
-                                        file_path, file_hash, file_name, file_size, file_ext, kind,
-                                        mtime, mtime_paris_epoch, thumbnail_path, thumbnail_generated_at,
-                                        first_seen_at, last_scan_at, scan_version
-                                    FROM media_files
-                                    """
-                                )
-                                # Supprimer l'ancienne table et renommer
-                                conn.execute("DROP TABLE media_files")
-                                conn.execute("ALTER TABLE media_files_new RENAME TO media_files")
-                                # Recréer les index
-                                conn.execute(
-                                    "CREATE INDEX IF NOT EXISTS idx_media_mtime ON media_files(mtime_paris_epoch DESC)"
-                                )
-                                conn.execute(
-                                    "CREATE INDEX IF NOT EXISTS idx_media_kind ON media_files(kind)"
-                                )
-                                conn.execute(
-                                    "CREATE INDEX IF NOT EXISTS idx_media_hash ON media_files(file_hash)"
-                                )
-                                conn.commit()
-                                logger.info("✅ Migration réussie: table recréée sans owner_xuid")
-                        except Exception as e:
-                            logger.error(
-                                f"❌ Erreur lors de la migration (colonne owner_xuid): {e}",
-                                exc_info=True,
-                            )
-                            # Si la migration échoue complètement, on continue quand même
-                            # L'utilisateur devra peut-être supprimer manuellement la colonne
-
-                # Créer media_files si nécessaire
-                if "media_files" not in existing_tables:
-                    conn.execute("""
-                        CREATE TABLE media_files (
-                            file_path VARCHAR PRIMARY KEY,
-                            file_hash VARCHAR NOT NULL,
-                            file_name VARCHAR NOT NULL,
-                            file_size BIGINT NOT NULL,
-                            file_ext VARCHAR NOT NULL,
-                            kind VARCHAR NOT NULL,
-                            mtime DOUBLE NOT NULL,
-                            mtime_paris_epoch DOUBLE NOT NULL,
-                            thumbnail_path VARCHAR,
-                            thumbnail_generated_at TIMESTAMP,
-                            first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            last_scan_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            scan_version INTEGER DEFAULT 1
+                    )
+                if "capture_end_utc" not in cols:
+                    migrations.append(
+                        (
+                            "capture_end_utc",
+                            "ALTER TABLE media_files ADD COLUMN capture_end_utc TIMESTAMP",
                         )
-                    """)
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_media_mtime ON media_files(mtime_paris_epoch DESC)"
                     )
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_media_kind ON media_files(kind)")
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_media_hash ON media_files(file_hash)"
-                    )
-                    logger.info("Table media_files créée")
-
-                # Créer media_match_associations si nécessaire
-                if "media_match_associations" not in existing_tables:
-                    conn.execute("""
-                        CREATE TABLE media_match_associations (
-                            media_path VARCHAR NOT NULL,
-                            match_id VARCHAR NOT NULL,
-                            xuid VARCHAR NOT NULL,
-                            match_start_time TIMESTAMP NOT NULL,
-                            association_confidence DOUBLE DEFAULT 1.0,
-                            associated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            PRIMARY KEY (media_path, match_id, xuid)
+                if "duration_seconds" not in cols:
+                    migrations.append(
+                        (
+                            "duration_seconds",
+                            "ALTER TABLE media_files ADD COLUMN duration_seconds DOUBLE",
                         )
-                    """)
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_assoc_media ON media_match_associations(media_path)"
                     )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_assoc_match ON media_match_associations(match_id, xuid)"
+                if "title" not in cols:
+                    migrations.append(("title", "ALTER TABLE media_files ADD COLUMN title VARCHAR"))
+                if "status" not in cols:
+                    migrations.append(
+                        (
+                            "status",
+                            "ALTER TABLE media_files ADD COLUMN status VARCHAR DEFAULT 'active'",
+                        )
                     )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_assoc_xuid ON media_match_associations(xuid)"
+                if "mtime_paris_epoch" not in cols and "mtime" in cols:
+                    migrations.append(
+                        (
+                            "mtime_paris_epoch",
+                            "ALTER TABLE media_files ADD COLUMN mtime_paris_epoch DOUBLE",
+                        )
                     )
+                for _name, sql in migrations:
+                    try:
+                        conn.execute(sql)
+                        conn.commit()
+                    except Exception as e:
+                        logger.warning("Migration %s: %s", _name, e)
+                try:
+                    conn.execute("UPDATE media_files SET status = 'active' WHERE status IS NULL")
                     conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_assoc_time ON media_match_associations(match_start_time DESC)"
+                        "UPDATE media_files SET mtime_paris_epoch = mtime WHERE mtime_paris_epoch IS NULL"
                     )
-                    logger.info("Table media_match_associations créée")
-
+                    conn.commit()
+                except Exception:
+                    pass
+            else:
+                conn.execute("""
+                    CREATE TABLE media_files (
+                        file_path VARCHAR PRIMARY KEY,
+                        file_hash VARCHAR NOT NULL,
+                        file_name VARCHAR NOT NULL,
+                        file_size BIGINT NOT NULL,
+                        file_ext VARCHAR NOT NULL,
+                        kind VARCHAR NOT NULL,
+                        capture_start_utc TIMESTAMP,
+                        capture_end_utc TIMESTAMP NOT NULL,
+                        duration_seconds DOUBLE,
+                        title VARCHAR,
+                        thumbnail_path VARCHAR,
+                        mtime DOUBLE NOT NULL,
+                        mtime_paris_epoch DOUBLE,
+                        status VARCHAR NOT NULL DEFAULT 'active',
+                        first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_scan_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        scan_version INTEGER DEFAULT 2
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_media_mtime ON media_files(mtime DESC)"
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_media_status ON media_files(status)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_media_kind ON media_files(kind)")
                 conn.commit()
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error(f"Erreur lors de la création du schéma: {e}", exc_info=True)
-            raise
+
+            # media_match_associations : map_id, map_name
+            if "media_match_associations" in existing_tables:
+                cols = self._get_existing_columns(conn, "media_match_associations")
+                if "map_id" not in cols:
+                    try:
+                        conn.execute(
+                            "ALTER TABLE media_match_associations ADD COLUMN map_id VARCHAR"
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
+                if "map_name" not in cols:
+                    try:
+                        conn.execute(
+                            "ALTER TABLE media_match_associations ADD COLUMN map_name VARCHAR"
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
+            else:
+                conn.execute("""
+                    CREATE TABLE media_match_associations (
+                        media_path VARCHAR NOT NULL,
+                        match_id VARCHAR NOT NULL,
+                        xuid VARCHAR NOT NULL,
+                        match_start_time TIMESTAMP NOT NULL,
+                        map_id VARCHAR,
+                        map_name VARCHAR,
+                        association_confidence DOUBLE DEFAULT 1.0,
+                        associated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (media_path, match_id, xuid)
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_assoc_media ON media_match_associations(media_path)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_assoc_match ON media_match_associations(match_id, xuid)"
+                )
+                conn.commit()
+        finally:
+            conn.close()
 
     def _compute_file_hash(self, file_path: Path) -> str:
-        """Calcule le hash MD5 d'un fichier."""
         try:
-            hash_md5 = hashlib.md5()
+            h = hashlib.md5()
             with open(file_path, "rb") as f:
                 for chunk in iter(lambda: f.read(4096), b""):
-                    hash_md5.update(chunk)
-            return hash_md5.hexdigest()
+                    h.update(chunk)
+            return h.hexdigest()
         except Exception as e:
-            logger.warning(f"Impossible de calculer le hash de {file_path}: {e}")
+            logger.warning("Hash %s: %s", file_path, e)
             return ""
 
     def _get_file_metadata(self, file_path: Path) -> dict[str, Any] | None:
-        """Récupère les métadonnées d'un fichier."""
+        """Récupère les métadonnées (capture_start_utc, capture_end_utc, duration_seconds, title)."""
         try:
             if not file_path.exists():
                 return None
-
             stat = file_path.stat()
             ext = file_path.suffix.lower()
             kind = (
@@ -304,14 +322,32 @@ class MediaIndexer:
                 if ext in IMAGE_EXTENSIONS
                 else "unknown"
             )
-
             if kind == "unknown":
                 return None
 
-            # Timestamp système : st_mtime est toujours en epoch UTC (POSIX).
-            # On le garde tel quel pour l'association (comparaison avec start_time en UTC).
-            mtime_sys = float(stat.st_mtime)
-            mtime_paris_epoch = mtime_sys
+            mtime = float(stat.st_mtime)
+            capture_end_utc = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            capture_start_utc: datetime | None = None
+            duration_seconds: float | None = None
+            title: str | None = None
+
+            if kind == "video":
+                duration_seconds = _get_video_duration(file_path)
+                if duration_seconds is not None and duration_seconds > 0:
+                    capture_start_utc = datetime.fromtimestamp(
+                        mtime - duration_seconds, tz=timezone.utc
+                    )
+                else:
+                    capture_start_utc = capture_end_utc
+            else:
+                exif_dt = _get_image_exif_datetime(file_path)
+                if exif_dt:
+                    if exif_dt.tzinfo is None:
+                        exif_dt = exif_dt.replace(tzinfo=timezone.utc)
+                    capture_end_utc = exif_dt
+                    capture_start_utc = exif_dt
+                else:
+                    capture_start_utc = capture_end_utc
 
             return {
                 "file_path": str(file_path.resolve()),
@@ -319,11 +355,14 @@ class MediaIndexer:
                 "file_size": stat.st_size,
                 "file_ext": ext.lstrip("."),
                 "kind": kind,
-                "mtime": mtime_sys,
-                "mtime_paris_epoch": mtime_paris_epoch,
+                "mtime": mtime,
+                "capture_start_utc": capture_start_utc,
+                "capture_end_utc": capture_end_utc,
+                "duration_seconds": duration_seconds,
+                "title": title,
             }
         except Exception as e:
-            logger.warning(f"Erreur lors de la lecture de {file_path}: {e}")
+            logger.warning("Métadonnées %s: %s", file_path, e)
             return None
 
     def scan_and_index(
@@ -333,32 +372,21 @@ class MediaIndexer:
         *,
         force_rescan: bool = False,
     ) -> ScanResult:
-        """Scanne les dossiers et met à jour l'index en BDD.
-
-        Args:
-            videos_dir: Dossier des vidéos.
-            screens_dir: Dossier des captures d'écran.
-            force_rescan: Si True, re-scanner tous les fichiers même s'ils existent déjà.
-
-        Returns:
-            ScanResult avec statistiques du scan.
-        """
+        """Scan delta : nouveaux, modifiés, absents → status='deleted'."""
         self.ensure_schema()
-
         result = ScanResult()
         now = datetime.now()
 
-        # Récupérer les fichiers déjà indexés pour comparaison
         conn = duckdb.connect(str(self.db_path), read_only=False)
         try:
-            existing_files = {}
+            existing = {}
             if not force_rescan:
-                existing = conn.execute(
-                    "SELECT file_path, file_hash, mtime FROM media_files"
+                rows = conn.execute(
+                    "SELECT file_path, file_hash, mtime FROM media_files WHERE status != 'deleted'"
                 ).fetchall()
-                existing_files = {row[0]: {"hash": row[1], "mtime": row[2]} for row in existing}
+                existing = {row[0]: {"hash": row[1], "mtime": row[2]} for row in rows}
 
-            # Scanner les dossiers
+            paths_on_disk: set[str] = set()
             files_to_process: list[dict[str, Any]] = []
 
             for media_dir, exts in [
@@ -367,93 +395,108 @@ class MediaIndexer:
             ]:
                 if not media_dir or not Path(media_dir).exists():
                     continue
-
-                media_path = Path(media_dir)
-                for root, _dirs, files in os.walk(media_path):
-                    for filename in files:
-                        file_path = Path(root) / filename
-                        ext = file_path.suffix.lower()
-
-                        if ext not in exts:
+                for root, _dirs, files in os.walk(media_dir):
+                    for name in files:
+                        fp = Path(root) / name
+                        if fp.suffix.lower() not in exts:
                             continue
-
                         result.n_scanned += 1
-
-                        # Récupérer métadonnées
-                        metadata = self._get_file_metadata(file_path)
-                        if not metadata:
+                        meta = self._get_file_metadata(fp)
+                        if not meta:
                             continue
-
-                        file_path_str = str(file_path.resolve())
-
-                        # Vérifier si nouveau ou modifié
-                        if file_path_str in existing_files:
-                            existing = existing_files[file_path_str]
-                            # Calculer hash seulement si nécessaire
-                            if (
-                                not force_rescan
-                                and abs(metadata["mtime"] - existing["mtime"]) < 1.0
-                            ):
-                                continue  # Pas de changement
-
-                        # Calculer hash
-                        file_hash = self._compute_file_hash(file_path)
-                        if not file_hash:
-                            result.errors.append(
-                                f"Impossible de calculer hash pour {file_path_str}"
-                            )
+                        path_str = meta["file_path"]
+                        paths_on_disk.add(path_str)
+                        if path_str in existing:
+                            ex = existing[path_str]
+                            if not force_rescan and abs(meta["mtime"] - ex["mtime"]) < 1.0:
+                                continue
+                        h = self._compute_file_hash(fp)
+                        if not h:
+                            result.errors.append(f"Hash impossible: {path_str}")
                             continue
+                        meta["file_hash"] = h
+                        files_to_process.append(meta)
 
-                        metadata["file_hash"] = file_hash
-                        files_to_process.append(metadata)
-
-            # Insérer/mettre à jour en BDD
-            for metadata in files_to_process:
-                file_path_str = metadata["file_path"]
-                is_new = file_path_str not in existing_files
-
+            for meta in files_to_process:
+                path_str = meta["file_path"]
+                is_new = path_str not in existing
                 try:
-                    conn.execute(
-                        """
-                        INSERT INTO media_files (
-                            file_path, file_hash, file_name, file_size, file_ext, kind,
-                            mtime, mtime_paris_epoch, last_scan_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (file_path) DO UPDATE SET
-                            file_hash = EXCLUDED.file_hash,
-                            file_size = EXCLUDED.file_size,
-                            mtime = EXCLUDED.mtime,
-                            mtime_paris_epoch = EXCLUDED.mtime_paris_epoch,
-                            last_scan_at = EXCLUDED.last_scan_at
-                        """,
-                        [
-                            file_path_str,
-                            metadata["file_hash"],
-                            metadata["file_name"],
-                            metadata["file_size"],
-                            metadata["file_ext"],
-                            metadata["kind"],
-                            metadata["mtime"],
-                            metadata["mtime_paris_epoch"],
-                            now,
-                        ],
-                    )
-
                     if is_new:
+                        conn.execute(
+                            """
+                            INSERT INTO media_files (
+                                file_path, file_hash, file_name, file_size, file_ext, kind,
+                                capture_start_utc, capture_end_utc, duration_seconds, title,
+                                mtime, mtime_paris_epoch, status, first_seen_at, last_scan_at, scan_version
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                            """,
+                            [
+                                path_str,
+                                meta["file_hash"],
+                                meta["file_name"],
+                                meta["file_size"],
+                                meta["file_ext"],
+                                meta["kind"],
+                                meta["capture_start_utc"],
+                                meta["capture_end_utc"],
+                                meta["duration_seconds"],
+                                meta["title"],
+                                meta["mtime"],
+                                meta["mtime"],
+                                now,
+                                now,
+                                SCAN_VERSION,
+                            ],
+                        )
                         result.n_new += 1
                     else:
+                        conn.execute(
+                            """
+                            UPDATE media_files SET
+                                file_hash = ?, file_size = ?, capture_start_utc = ?,
+                                capture_end_utc = ?, duration_seconds = ?, title = ?,
+                                mtime = ?, mtime_paris_epoch = ?, status = 'active',
+                                last_scan_at = ?
+                            WHERE file_path = ?
+                            """,
+                            [
+                                meta["file_hash"],
+                                meta["file_size"],
+                                meta["capture_start_utc"],
+                                meta["capture_end_utc"],
+                                meta["duration_seconds"],
+                                meta["title"],
+                                meta["mtime"],
+                                meta["mtime"],
+                                now,
+                                path_str,
+                            ],
+                        )
                         result.n_updated += 1
-
                 except Exception as e:
-                    result.errors.append(f"Erreur insertion {file_path_str}: {e}")
-                    logger.error(f"Erreur insertion média: {e}", exc_info=True)
+                    result.errors.append(f"Insert {path_str}: {e}")
+                    logger.error("Insert média: %s", e, exc_info=True)
+
+            # Marquer deleted les fichiers absents du disque
+            for path_str in existing:
+                if path_str not in paths_on_disk:
+                    try:
+                        conn.execute(
+                            "UPDATE media_files SET status = 'deleted' WHERE file_path = ?",
+                            [path_str],
+                        )
+                        result.n_deleted += 1
+                    except Exception as e:
+                        result.errors.append(f"Delete {path_str}: {e}")
 
             conn.commit()
             logger.info(
-                f"Scan terminé: {result.n_scanned} fichiers scannés, "
-                f"{result.n_new} nouveaux, {result.n_updated} mis à jour"
+                "Scan: %d scannés, %d nouveaux, %d modifiés, %d supprimés",
+                result.n_scanned,
+                result.n_new,
+                result.n_updated,
+                result.n_deleted,
             )
-
         finally:
             conn.close()
 
@@ -461,340 +504,328 @@ class MediaIndexer:
 
     @staticmethod
     def _get_all_player_dbs() -> list[tuple[Path, str]]:
-        """Récupère toutes les DBs joueurs avec leurs XUIDs.
-
-        Returns:
-            Liste de tuples (db_path, xuid) pour chaque joueur.
-        """
         player_dbs = []
         if not PLAYERS_DIR.exists():
             return player_dbs
-
         for player_dir in PLAYERS_DIR.iterdir():
             if not player_dir.is_dir():
                 continue
-
             db_path = player_dir / PLAYER_DB_FILENAME
             if not db_path.exists():
                 continue
-
-            # Essayer de récupérer le XUID depuis sync_meta
             xuid = None
             try:
-                conn = duckdb.connect(str(db_path), read_only=True)
+                c = duckdb.connect(str(db_path), read_only=True)
                 try:
-                    result = conn.execute(
-                        "SELECT value FROM sync_meta WHERE key = 'xuid'"
-                    ).fetchone()
-                    if result:
-                        xuid = result[0]
+                    r = c.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
+                    if r:
+                        xuid = r[0]
                 except Exception:
                     pass
                 finally:
-                    conn.close()
+                    c.close()
             except Exception:
                 pass
-
-            # Si pas de XUID dans sync_meta, utiliser le gamertag comme fallback
             if not xuid:
-                xuid = player_dir.name  # Gamertag comme fallback
-
+                xuid = player_dir.name
             player_dbs.append((db_path, xuid))
-
         return player_dbs
 
-    def associate_with_matches(
-        self,
-        tolerance_minutes: int = 5,
-    ) -> int:
-        """Associe les médias non associés avec les matchs de TOUS les joueurs.
-
-        Parcourt toutes les DBs joueurs et crée des associations pour chaque joueur
-        ayant un match correspondant au média.
-
-        Args:
-            tolerance_minutes: Tolérance en minutes pour l'association temporelle.
-
-        Returns:
-            Nombre total d'associations créées (peut être > nombre de médias si multi-joueurs).
-        """
+    def associate_with_matches(self, tolerance_minutes: int = 5) -> int:
+        """Associe les médias actifs non associés avec les matchs (Sprint 2)."""
         self.ensure_schema()
-
-        # Corriger une fois les médias indexés avec l'ancienne logique (mtime_paris_epoch ≠ mtime)
-        conn_fix = duckdb.connect(str(self.db_path), read_only=False)
-        try:
-            conn_fix.execute(
-                "UPDATE media_files SET mtime_paris_epoch = mtime WHERE mtime_paris_epoch != mtime"
-            )
-            conn_fix.commit()
-        except Exception:
-            pass
-        finally:
-            conn_fix.close()
-
-        # Récupérer tous les médias non associés depuis la DB centrale
         conn_read = duckdb.connect(str(self.db_path), read_only=True)
         try:
             unassociated = conn_read.execute(
                 """
-                SELECT
-                    mf.file_path,
-                    mf.mtime_paris_epoch
+                SELECT mf.file_path, COALESCE(mf.mtime_paris_epoch, mf.mtime)
                 FROM media_files mf
-                WHERE NOT EXISTS (
+                WHERE mf.status = 'active'
+                AND NOT EXISTS (
                     SELECT 1 FROM media_match_associations mma
                     WHERE mma.media_path = mf.file_path
                 )
-                ORDER BY mf.mtime_paris_epoch DESC
+                ORDER BY mf.mtime DESC
                 """
             ).fetchall()
-
-            if not unassociated:
-                logger.info("Aucun média non associé trouvé")
-                return 0
-
-            logger.info(f"{len(unassociated)} média(s) non associé(s) à traiter")
-
         finally:
             conn_read.close()
 
-        # Parcourir toutes les DBs joueurs
-        player_dbs = self._get_all_player_dbs()
-        if not player_dbs:
-            logger.warning("Aucune DB joueur trouvée pour l'association")
+        if not unassociated:
             return 0
 
-        logger.info(f"Parcours de {len(player_dbs)} DB(s) joueur(s) pour l'association")
+        player_dbs = self._get_all_player_dbs()
+        if not player_dbs:
+            return 0
 
         tol_seconds = tolerance_minutes * 60
-        total_associations = 0
-
-        # Connexion pour les insertions (réutilisée pour toutes les associations)
-        # Quand la DB joueur = DB médias, on réutilise cette connexion pour éviter
-        # "Can't open same database file with different configuration"
+        total = 0
         conn_write = duckdb.connect(str(self.db_path), read_only=False)
         try:
             for player_db_path, player_xuid in player_dbs:
                 try:
-                    # Réutiliser conn_write si on lit la même DB (évite double connexion DuckDB)
-                    if player_db_path.resolve() == self.db_path.resolve():
-                        player_conn = conn_write
-                    else:
-                        player_conn = duckdb.connect(str(player_db_path), read_only=True)
-
+                    pc = (
+                        conn_write
+                        if player_db_path.resolve() == self.db_path.resolve()
+                        else duckdb.connect(str(player_db_path), read_only=True)
+                    )
                     try:
-                        # Récupérer les fenêtres temporelles des matchs de ce joueur
-                        match_windows = player_conn.execute(
-                            """
-                            SELECT
-                                match_id,
-                                start_time,
-                                time_played_seconds
-                            FROM match_stats
-                            WHERE start_time IS NOT NULL
-                            ORDER BY start_time DESC
-                            """
-                        ).fetchall()
-
-                        if not match_windows:
-                            continue  # Pas de matchs pour ce joueur
-
-                        # Pour chaque média non associé, chercher des matchs correspondants
+                        try:
+                            matches = pc.execute(
+                                """
+                                SELECT match_id, start_time, time_played_seconds,
+                                       COALESCE(map_id, ''), COALESCE(map_name, '')
+                                FROM match_stats WHERE start_time IS NOT NULL
+                                """
+                            ).fetchall()
+                        except Exception:
+                            matches = pc.execute(
+                                """
+                                SELECT match_id, start_time, time_played_seconds, '', ''
+                                FROM match_stats WHERE start_time IS NOT NULL
+                                """
+                            ).fetchall()
+                        if not matches:
+                            continue
                         for media_path, mtime_epoch in unassociated:
-                            best_matches = []  # Peut avoir plusieurs matchs dans la fenêtre
-
-                            for match_id, start_time, time_played in match_windows:
-                                try:
-                                    # start_time en DB = UTC ; convertir en epoch pour comparaison
-                                    start_epoch = _match_start_to_epoch(start_time)
-                                    if start_epoch is None:
-                                        continue
-
-                                    duration = float(time_played or 0) if time_played else 12 * 60
-                                    end_epoch = start_epoch + duration
-
-                                    window_start = start_epoch - tol_seconds
-                                    window_end = end_epoch + tol_seconds
-
-                                    if window_start <= mtime_epoch <= window_end:
-                                        distance = abs(mtime_epoch - start_epoch)
-                                        best_matches.append((match_id, start_time, distance))
-
-                                except Exception as e:
-                                    logger.debug(f"Erreur traitement match {match_id}: {e}")
+                            best: list[tuple[Any, Any, str, str, float]] = []
+                            for row in matches:
+                                match_id, st, dur = row[0], row[1], row[2]
+                                map_id = row[3] if len(row) > 3 else ""
+                                map_name = row[4] if len(row) > 4 else ""
+                                start_epoch = _match_start_to_epoch(st)
+                                if start_epoch is None:
                                     continue
-
-                            # Créer une association pour chaque match correspondant
-                            if best_matches:
-                                # Trier par distance et prendre le meilleur (ou tous si plusieurs très proches)
-                                best_matches.sort(key=lambda x: x[2])
-                                for match_id, start_time, _distance in best_matches:
-                                    try:
-                                        conn_write.execute(
-                                            """
-                                            INSERT INTO media_match_associations (
-                                                media_path, match_id, xuid, match_start_time, association_confidence
-                                            ) VALUES (?, ?, ?, ?, ?)
-                                            ON CONFLICT (media_path, match_id, xuid) DO NOTHING
-                                            """,
-                                            [media_path, match_id, player_xuid, start_time, 1.0],
+                                d = float(dur or 0) if dur else 12 * 60
+                                end_epoch = start_epoch + d
+                                if (
+                                    start_epoch - tol_seconds
+                                    <= mtime_epoch
+                                    <= end_epoch + tol_seconds
+                                ):
+                                    best.append(
+                                        (
+                                            match_id,
+                                            st,
+                                            map_id,
+                                            map_name,
+                                            abs(mtime_epoch - start_epoch),
                                         )
-                                        total_associations += 1
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"Erreur association {media_path} → {match_id} (joueur {player_xuid}): {e}"
-                                        )
-
+                                    )
+                            if best:
+                                best.sort(key=lambda x: x[4])
+                                match_id, start_time, map_id, map_name, _ = best[0]
+                                try:
+                                    conn_write.execute(
+                                        """
+                                        INSERT INTO media_match_associations
+                                        (media_path, match_id, xuid, match_start_time, map_id, map_name, association_confidence)
+                                        VALUES (?, ?, ?, ?, ?, ?, 1.0)
+                                        ON CONFLICT (media_path, match_id, xuid) DO NOTHING
+                                        """,
+                                        [
+                                            media_path,
+                                            match_id,
+                                            player_xuid,
+                                            start_time,
+                                            map_id,
+                                            map_name,
+                                        ],
+                                    )
+                                    total += 1
+                                except Exception as e:
+                                    logger.warning("Association %s: %s", media_path, e)
                     finally:
-                        if player_conn is not conn_write:
-                            player_conn.close()
-
+                        if pc is not conn_write:
+                            pc.close()
                 except Exception as e:
-                    logger.warning(f"Erreur lecture DB joueur {player_db_path}: {e}")
-                    continue
-
-            # Commit toutes les associations
+                    logger.warning("DB %s: %s", player_db_path, e)
             conn_write.commit()
-
-            # Vérifier s'il reste des médias non associés
-            remaining_unassociated = conn_write.execute(
-                """
-                SELECT COUNT(*)
-                FROM media_files mf
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM media_match_associations mma
-                    WHERE mma.media_path = mf.file_path
-                )
-                """
-            ).fetchone()[0]
-
-            if remaining_unassociated > 0:
-                logger.warning(
-                    f"{remaining_unassociated} média(s) non associé(s) - "
-                    "vérifier la tolérance temporelle ou la synchronisation des matchs"
-                )
-
-            logger.info(
-                f"{total_associations} association(s) créée(s) pour {len(unassociated)} média(s)"
-            )
-
         finally:
             conn_write.close()
-
-        return total_associations
+        return total
 
     def generate_thumbnails_for_new(
         self,
-        videos_dir: Path,
+        videos_dir: Path | None = None,
+        screens_dir: Path | None = None,
         *,
         max_concurrent: int = 2,  # noqa: ARG002
     ) -> tuple[int, int]:
-        """Génère les thumbnails pour les vidéos sans thumbnail.
+        """Génère les thumbnails vidéo (GIF) et image (miniatures) – Sprint 3.
 
         Args:
-            videos_dir: Dossier contenant les vidéos.
-            max_concurrent: Nombre maximum de générations simultanées (non utilisé pour l'instant).
+            videos_dir: Dossier des vidéos.
+            screens_dir: Dossier des captures d'écran.
+            max_concurrent: Non utilisé.
 
         Returns:
-            Tuple (generated, errors).
+            (generated, errors)
         """
-        if not videos_dir or not videos_dir.exists():
-            return 0, 0
+        total_gen = 0
+        total_err = 0
 
-        # Importer les fonctions du script existant
+        # Vidéos : GIF animé via ffmpeg
+        if videos_dir and videos_dir.exists():
+            gen, err = self._generate_video_thumbnails(videos_dir)
+            total_gen += gen
+            total_err += err
+
+        # Images : miniatures dédiées via PIL
+        if screens_dir and screens_dir.exists():
+            gen, err = self._generate_image_thumbnails(screens_dir)
+            total_gen += gen
+            total_err += err
+
+        return total_gen, total_err
+
+    def _generate_video_thumbnails(self, videos_dir: Path) -> tuple[int, int]:
+        """Génère les thumbnails GIF pour les vidéos."""
         try:
             from scripts.generate_thumbnails import (
                 check_ffmpeg,
                 generate_thumbnail_gif,
                 get_thumbnail_path,
             )
-        except ImportError as e:
-            logger.warning(
-                f"Impossible d'importer generate_thumbnails: {e} - vérifier que le module existe"
-            )
+        except ImportError:
             return 0, 0
-
-        # Vérifier que ffmpeg est disponible
         if not check_ffmpeg():
-            logger.warning(
-                "ffmpeg n'est pas disponible - génération thumbnails ignorée. "
-                "Installez ffmpeg pour générer les thumbnails automatiquement."
-            )
             return 0, 0
-
         self.ensure_schema()
-
         conn = duckdb.connect(str(self.db_path), read_only=False)
         try:
-            # Récupérer les vidéos sans thumbnail
-            videos_without_thumb = conn.execute(
+            videos = conn.execute(
                 """
-                SELECT file_path, file_name
-                FROM media_files
-                WHERE kind = 'video'
-                    AND (thumbnail_path IS NULL OR thumbnail_path = '')
-                ORDER BY mtime_paris_epoch DESC
+                SELECT file_path, file_name FROM media_files
+                WHERE kind = 'video' AND status = 'active'
+                AND (thumbnail_path IS NULL OR thumbnail_path = '')
+                ORDER BY mtime DESC
                 """
             ).fetchall()
-
-            if not videos_without_thumb:
-                logger.info("Aucune vidéo sans thumbnail à générer")
+            if not videos:
                 return 0, 0
-
             thumbs_dir = videos_dir / "thumbs"
             thumbs_dir.mkdir(exist_ok=True)
-
-            generated = 0
-            errors = 0
-
-            for file_path_str, file_name in videos_without_thumb:
-                video_path = Path(file_path_str)
-
-                # Vérifier que le fichier existe toujours
-                if not video_path.exists():
-                    logger.warning(f"Fichier vidéo introuvable: {video_path}")
+            generated = errors = 0
+            for path_str, _fname in videos:
+                p = Path(path_str)
+                if not p.exists():
                     continue
-
-                # Générer le chemin du thumbnail
-                thumb_path = get_thumbnail_path(video_path, thumbs_dir)
-
-                # Vérifier si déjà généré (au cas où)
-                if thumb_path.exists():
-                    # Mettre à jour en BDD
-                    try:
-                        conn.execute(
-                            "UPDATE media_files SET thumbnail_path = ?, thumbnail_generated_at = CURRENT_TIMESTAMP WHERE file_path = ?",
-                            [str(thumb_path), file_path_str],
-                        )
-                        generated += 1
-                        continue
-                    except Exception as e:
-                        logger.warning(f"Erreur mise à jour thumbnail {file_path_str}: {e}")
-
-                # Générer le thumbnail
-                logger.info(f"Génération thumbnail pour: {file_name}")
+                thumb = get_thumbnail_path(p, thumbs_dir)
+                if thumb.exists():
+                    conn.execute(
+                        "UPDATE media_files SET thumbnail_path = ? WHERE file_path = ?",
+                        [str(thumb), path_str],
+                    )
+                    generated += 1
+                    continue
                 try:
-                    if generate_thumbnail_gif(video_path, thumb_path):
-                        # Mettre à jour en BDD
+                    if generate_thumbnail_gif(p, thumb):
                         conn.execute(
-                            "UPDATE media_files SET thumbnail_path = ?, thumbnail_generated_at = CURRENT_TIMESTAMP WHERE file_path = ?",
-                            [str(thumb_path), file_path_str],
+                            "UPDATE media_files SET thumbnail_path = ? WHERE file_path = ?",
+                            [str(thumb), path_str],
                         )
                         generated += 1
-                        logger.info(f"  OK: {thumb_path.name}")
                     else:
                         errors += 1
-                        logger.warning(f"  ERREUR: échec génération pour {file_name}")
-                except Exception as e:
+                except Exception:
                     errors += 1
-                    logger.error(f"Erreur génération thumbnail {file_name}: {e}", exc_info=True)
-
             conn.commit()
-            logger.info(
-                f"Génération thumbnails terminée: {generated} généré(s), {errors} erreur(s)"
-            )
-
         finally:
             conn.close()
-
         return generated, errors
+
+    def _generate_image_thumbnails(self, screens_dir: Path) -> tuple[int, int]:
+        """Génère les miniatures pour les images (redimensionnement)."""
+        import importlib.util
+
+        if importlib.util.find_spec("PIL") is None:
+            return 0, 0
+        self.ensure_schema()
+        conn = duckdb.connect(str(self.db_path), read_only=False)
+        try:
+            images = conn.execute(
+                """
+                SELECT file_path, file_name FROM media_files
+                WHERE kind = 'image' AND status = 'active'
+                AND (thumbnail_path IS NULL OR thumbnail_path = '')
+                ORDER BY mtime DESC
+                """
+            ).fetchall()
+            if not images:
+                return 0, 0
+            thumbs_dir = screens_dir / "thumbs"
+            thumbs_dir.mkdir(exist_ok=True)
+            generated = errors = 0
+            max_width = 320
+            for path_str, _fname in images:
+                p = Path(path_str)
+                if not p.exists():
+                    continue
+                thumb = _get_image_thumbnail_path(p, thumbs_dir)
+                if thumb.exists():
+                    conn.execute(
+                        "UPDATE media_files SET thumbnail_path = ? WHERE file_path = ?",
+                        [str(thumb), path_str],
+                    )
+                    generated += 1
+                    continue
+                try:
+                    if _generate_image_thumbnail(p, thumb, max_width=max_width):
+                        conn.execute(
+                            "UPDATE media_files SET thumbnail_path = ? WHERE file_path = ?",
+                            [str(thumb), path_str],
+                        )
+                        generated += 1
+                    else:
+                        errors += 1
+                except Exception:
+                    errors += 1
+            conn.commit()
+        finally:
+            conn.close()
+        return generated, errors
+
+
+def _get_image_thumbnail_path(image_path: Path, thumbs_dir: Path) -> Path:
+    """Chemin du thumbnail pour une image (miniature dédiée)."""
+    path_hash = hashlib.md5(str(image_path.resolve()).encode()).hexdigest()[:12]
+    stem = image_path.stem[:50]
+    ext = image_path.suffix.lower()
+    out_ext = ".jpg" if ext in {".jpg", ".jpeg"} else ".png"
+    return thumbs_dir / f"{stem}_{path_hash}{out_ext}"
+
+
+def _generate_image_thumbnail(
+    image_path: Path,
+    output_path: Path,
+    *,
+    max_width: int = 320,
+) -> bool:
+    """Génère une miniature pour une image (PIL resize)."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    try:
+        with Image.open(image_path) as img:
+            img.load()
+            w, h = img.size
+            if w <= max_width and h <= max_width:
+                ratio = 1.0
+            elif w >= h:
+                ratio = max_width / w
+            else:
+                ratio = max_width / h
+            new_w = max(1, int(w * ratio))
+            new_h = max(1, int(h * ratio))
+            resample = getattr(Image.Resampling, "LANCZOS", Image.LANCZOS)
+            thumb = img.resize((new_w, new_h), resample)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            if output_path.suffix.lower() in {".jpg", ".jpeg"}:
+                thumb.save(output_path, "JPEG", quality=85, optimize=True)
+            else:
+                thumb.save(output_path, "PNG", optimize=True)
+            return output_path.exists()
+    except Exception:
+        return False

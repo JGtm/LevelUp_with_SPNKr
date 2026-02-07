@@ -7,6 +7,67 @@
 
 ## Journal
 
+### [2026-02-07] - ✅ Stockage sessions (session_id / session_label)
+
+**Statut** : Terminé
+
+**Réalisations** :
+- Sprint 1 : Schéma `session_id`, `session_label` dans `match_stats`, constante `session_stability_hours = 4.0`, migration dans `engine.py`
+- Sprint 2 : `src/data/sessions_backfill.py` (get_friends_xuids_for_backfill), script `scripts/backfill_sessions.py` (--all, --force, --dry-run)
+- Sprint 3 : Lecture hybride dans `cached_compute_sessions_db` (données stockées si tous matchs ≥ 4h et session_id présent, sinon recalcul)
+- Sprint 4 : Suppression slider gap_minutes, valeur fixe 120, passage de `friends_tuple` au cache
+- Sprint 5 : Doc CLAUDE.md, DATA_SESSIONS.md, SESSIONS_STOCKAGE_PLAN.md
+
+**Fichiers modifiés** : src/config.py, src/data/sync/engine.py, src/data/sessions_backfill.py, scripts/backfill_sessions.py, src/ui/cache.py, src/app/filters_render.py, src/app/filters.py, page_router.py, teammates.py, streamlit_app.py
+
+---
+
+### [2026-02-07] - ✅ Sprint 3 Médias : Thumbnails (vidéos + images)
+
+**Statut** : Terminé
+
+**Réalisations** :
+- Vidéos : GIF animé via ffmpeg (scripts/generate_thumbnails), stockage dans videos_dir/thumbs/
+- Images : miniatures dédiées via PIL (redimensionnement max 320px), stockage dans screens_dir/thumbs/
+- generate_thumbnails_for_new(videos_dir, screens_dir) — étendu pour vidéos ET images
+- Gestion erreurs : ffmpeg absent → skip vidéos sans bloquer ; PIL absent → skip images
+- Intégration streamlit : passe videos_dir et screens_dir
+- 4 nouveaux tests : generate_image_thumbnails, no_ffmpeg_skips, empty_dirs, get_image_thumbnail_path
+- Exécution pytest : 18 passed
+
+**Fichiers modifiés** : src/data/media_indexer.py, streamlit_app.py, tests/test_media_indexer.py
+
+---
+
+### [2026-02-07] - ✅ Sprint 2 Médias : Association capture ↔ match (multi-joueurs)
+
+**Statut** : Terminé
+
+**Réalisations** :
+- Algorithme déjà implémenté en Sprint 1 : fenêtre temporelle, match le plus proche, map_id/map_name
+- Parcours de toutes les BDD joueurs (_get_all_player_dbs), stockage dans BDD du joueur actuel
+- 4 nouveaux tests Sprint 2 : closest_match, multi_players, map_id_map_name, search_all_player_dbs
+- Exécution pytest : 14 passed (10 Sprint 1 + 4 Sprint 2)
+
+**Fichiers modifiés** : tests/test_media_indexer.py
+
+---
+
+### [2026-02-07] - ✅ Sprint 1 Médias : Fondations BDD et scan delta
+
+**Statut** : Terminé
+
+**Réalisations** :
+- Schéma `media_files` : capture_start_utc, capture_end_utc, duration_seconds, title, status (active/deleted)
+- Schéma `media_match_associations` : map_id, map_name
+- Module `media_indexer.py` réécrit : scan delta, métadonnées (ffprobe vidéos, EXIF images), status='deleted' pour fichiers absents
+- Migration pour tables existantes (ajout colonnes, mtime_paris_epoch, status)
+- Tests : 10 tests créés et exécutés (pytest tests/test_media_indexer.py -v) — 10 passed
+
+**Fichiers modifiés** : src/data/media_indexer.py, tests/test_media_indexer.py
+
+---
+
 ### [2026-02-07] - 📋 Planification onglet « Médias » (remplace Bibliothèque médias)
 
 **Statut** : Planification terminée (v2 – décisions validées + sprints)

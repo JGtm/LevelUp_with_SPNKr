@@ -203,6 +203,15 @@ Si plusieurs matchs candidats : choisir celui dont la fenêtre temporelle est **
 
 # Sprints
 
+## Règle OBLIGATOIRE : tests
+
+**À chaque sprint**, l’agent doit :
+
+1. **Créer** tous les tests nécessaires (unitaires, intégration, etc.).
+2. **Exécuter** ces tests lui-même — **OBLIGATOIRE**, sans exception.
+
+L’exécution des tests par l’agent est **obligatoire**. Aucun sprint ne peut être considéré comme terminé sans création ET exécution réussie des tests.
+
 ---
 
 ## Sprint 1 : Fondations BDD et scan delta
@@ -225,6 +234,7 @@ Si plusieurs matchs candidats : choisir celui dont la fenêtre temporelle est **
 - Les tables sont créées dans `stats.duckdb` du joueur actuel.
 - Le scan détecte les nouveaux fichiers, met à jour les modifiés, marque `deleted` les absents.
 - Aucune réutilisation du code de l’onglet actuel.
+- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
 
 **Estimation** : 2–3 jours.
 
@@ -250,6 +260,7 @@ Si plusieurs matchs candidats : choisir celui dont la fenêtre temporelle est **
 - Une capture est associée au plus un match par joueur (le plus proche).
 - Une capture peut avoir plusieurs lignes dans `media_match_associations` (une par xuid).
 - Recherche effectuée dans toutes les BDD joueurs si pas de match pour le joueur actuel.
+- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
 
 **Estimation** : 2–3 jours.
 
@@ -271,6 +282,7 @@ Si plusieurs matchs candidats : choisir celui dont la fenêtre temporelle est **
 - Chaque vidéo indexée a un GIF thumbnail.
 - Chaque image indexée a une miniature.
 - Les chemins sont persistés correctement.
+- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
 
 **Estimation** : 1–2 jours.
 
@@ -298,6 +310,7 @@ Si plusieurs matchs candidats : choisir celui dont la fenêtre temporelle est **
 - Le survol déclenche l’animation.
 - Le clic ouvre le lightbox avec le média correct.
 - Comportement identique sur desktop.
+- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v` ou tests visuels documentés si non automatisables).
 
 **Estimation** : 2 jours.
 
@@ -324,6 +337,7 @@ Si plusieurs matchs candidats : choisir celui dont la fenêtre temporelle est **
 - Le bouton « Ouvrir le match » redirige vers le bon match.
 - La grille est alignée et lisible.
 - Aucun code de l’ancien onglet réutilisé.
+- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
 
 **Estimation** : 2–3 jours.
 
@@ -346,6 +360,7 @@ Si plusieurs matchs candidats : choisir celui dont la fenêtre temporelle est **
 - L’onglet « Médias » fonctionne de bout en bout.
 - Les captures sont correctement associées et affichées.
 - Pas de régression sur le reste de l’app.
+- **Tests** : création + exécution OBLIGATOIRES — l’agent exécute `pytest tests/ -v` et vérifie que tous les tests passent.
 
 **Estimation** : 1–2 jours.
 
