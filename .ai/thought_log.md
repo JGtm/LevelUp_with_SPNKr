@@ -7,6 +7,28 @@
 
 ## Journal
 
+### [2026-02-07] - 📋 Planification onglet « Médias » (remplace Bibliothèque médias)
+
+**Statut** : Planification terminée (v2 – décisions validées + sprints)
+
+**Contexte** :
+Refonte complète à partir de zéro de l'onglet "Bibliothèque de médias" → nouvel onglet "Médias". Aucune réutilisation du code existant (UI/UX chaotique et inacceptable).
+
+**Document** : `.ai/features/MEDIA_TAB_IMPLEMENTATION_PLAN.md`
+
+**Décisions validées** :
+- Orphelines : si pas de match chez l'utilisateur → chercher dans BDD des autres joueurs ; "Sans correspondance" = aucune correspondance trouvée nulle part.
+- Multi-matchs : associer au match le plus proche.
+- Fichiers supprimés : marquer `deleted` en BDD, ne pas afficher.
+- Lightbox HTML pour consultation des médias.
+- Composant HTML/JS pour animation au survol.
+- Images : générer miniature dédiée (plus rapide).
+- Sous-dossiers : scan récursif ; NAS prévu, latences mineures.
+
+**Sprints prévus** : 1 Fondations BDD / 2 Association match multi-joueurs / 3 Thumbnails / 4 Composants UI (thumbnail + lightbox) / 5 Page Médias / 6 Intégration. Total estimé : 10–15 jours.
+
+---
+
 ### [2026-02-06] - ✅ Radar participation unifié : implémentation + raffinements
 
 **Statut** : ✅ **Terminé**
