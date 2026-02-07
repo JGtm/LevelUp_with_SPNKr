@@ -1,5 +1,11 @@
 """Page Bibliothèque médias.
 
+**Note** : L’onglet principal est désormais « Médias » (media_tab.py), qui charge
+les données depuis la BDD (media_files, media_match_associations) et affiche
+les sections Mes captures / Captures de XXX / Sans correspondance. Ce module
+reste disponible pour compatibilité (dispatch « Bibliothèque médias » → render_media_tab)
+et pour options avancées (re-scan manuel, etc.) si besoin.
+
 Objectif: proposer une vue "bibliothèque" qui scanne les dossiers de médias
 (configurés dans les paramètres) et permet d'ouvrir rapidement le match associé.
 

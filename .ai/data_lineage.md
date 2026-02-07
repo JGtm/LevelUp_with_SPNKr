@@ -88,6 +88,22 @@ Script: scripts/restore_player.py
 Destination: data/players/{gamertag}/stats.duckdb
 ```
 
+### 5. Dossiers médias → DuckDB (Onglet Médias)
+
+```
+Source: Dossiers configurés (Paramètres → media_screens_dir, media_videos_dir)
+     ↓
+MediaIndexer.scan_and_index() — scan delta récursif, ffprobe/EXIF
+     ↓
+media_files (status=active/deleted), media_match_associations (après associate_with_matches)
+     ↓
+Thumbnails: generate_thumbnails_for_new() → thumbs/ (GIF vidéo, miniatures images)
+     ↓
+UI: media_tab.py (load_media_for_ui → sections Mes captures / Captures de XXX / Sans correspondance)
+```
+
+Lancement : thread en arrière-plan au démarrage de l’app (`_background_media_indexing` dans streamlit_app.py).
+
 ## Tables et Cardinalité
 
 ### Métadonnées (metadata.duckdb)
@@ -115,6 +131,8 @@ Destination: data/players/{gamertag}/stats.duckdb
 | `xuid_aliases` | 1:1 | Mapping XUID→Gamertag |
 | `career_progression` | 1:N | Historique rangs |
 | `sync_meta` | 1:1 | Métadonnées sync |
+| `media_files` | 1:N | Fichiers médias indexés (captures/vidéos), status active/deleted |
+| `media_match_associations` | M:N | Association média ↔ match ↔ xuid (map_name, match_start_time) |
 
 ### Vues Matérialisées
 

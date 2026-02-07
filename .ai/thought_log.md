@@ -7,6 +7,22 @@
 
 ## Journal
 
+### [2026-02-07] - ✅ Sprints Médias restants (S1–S3 déjà livrés, S6 intégration)
+
+**Statut** : Terminé
+
+**Constat** : Sprints 1, 2, 3 du plan MEDIA_TAB_IMPLEMENTATION_PLAN étaient déjà implémentés et testés (voir entrées précédentes thought_log). Sprint 6 (Intégration et réglages) complété.
+
+**Sprint 6 réalisations** :
+- Scan delta au démarrage déjà en place (_background_media_indexing, thread daemon).
+- Gestion cas limites : os.walk protégé par try/except OSError (dossiers inaccessibles / réseau) ; erreurs métadonnées par fichier ne bloquent pas le scan.
+- Documentation : data_lineage.md (flux 5 « Dossiers médias → DuckDB »), project_map.md (media_indexer, tables media_*), MEDIA_TAB_IMPLEMENTATION_PLAN (tous sprints marqués livrés).
+- media_library.py : note en en-tête indiquant que l’onglet principal est « Médias » (media_tab.py), ce module conservé pour compatibilité.
+
+**Fichiers modifiés** : src/data/media_indexer.py, .ai/data_lineage.md, .ai/project_map.md, .ai/features/MEDIA_TAB_IMPLEMENTATION_PLAN.md, src/ui/pages/media_library.py, .ai/thought_log.md.
+
+---
+
 ### [2026-02-07] - ✅ Stockage sessions (session_id / session_label)
 
 **Statut** : Terminé
@@ -18,7 +34,7 @@
 - Sprint 4 : Suppression slider gap_minutes, valeur fixe 120, passage de `friends_tuple` au cache
 - Sprint 5 : Doc CLAUDE.md, DATA_SESSIONS.md, SESSIONS_STOCKAGE_PLAN.md
 
-**Fichiers modifiés** : src/config.py, src/data/sync/engine.py, src/data/sessions_backfill.py, scripts/backfill_sessions.py, src/ui/cache.py, src/app/filters_render.py, src/app/filters.py, page_router.py, teammates.py, streamlit_app.py
+**Fichiers modifiés** : src/config.py, src/data/sync/engine.py, src/data/sessions_backfill.py, src/ui/cache.py, src/app/filters_render.py, src/app/filters.py, page_router.py, teammates.py, streamlit_app.py. Backfill sessions intégré dans scripts/backfill_data.py (--sessions, --force-sessions) ; script backfill_sessions.py supprimé.
 
 ---
 

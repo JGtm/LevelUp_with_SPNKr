@@ -5,6 +5,7 @@ from src.ui.pages.last_match import render_last_match_page, render_match_search_
 from src.ui.pages.match_history import render_match_history_page
 from src.ui.pages.match_view import render_match_view
 from src.ui.pages.media_library import render_media_library_page
+from src.ui.pages.media_tab import render_media_tab
 from src.ui.pages.objective_analysis import (
     render_objective_analysis_page,
     render_objective_analysis_page_from_session_state,
@@ -27,6 +28,7 @@ __all__ = [
     "render_last_match_page",
     "render_match_search_page",
     "render_media_library_page",
+    "render_media_tab",
     # Sprint 7: Page objectifs
     "render_objective_analysis_page",
     "render_objective_analysis_page_from_session_state",

@@ -110,7 +110,7 @@ from src.ui.pages import (
     render_match_history_page,
     render_match_search_page,
     render_match_view,
-    render_media_library_page,
+    render_media_tab,
     render_session_comparison_page,
     render_settings_page,
     render_teammates_page,
@@ -653,7 +653,7 @@ def main() -> None:
         render_win_loss_page_fn=render_win_loss_page,
         render_teammates_page_fn=render_teammates_page,
         render_match_history_page_fn=render_match_history_page,
-        render_media_library_page_fn=render_media_library_page,
+        render_media_tab_fn=render_media_tab,
         render_settings_page_fn=render_settings_page,
         # Fonctions utilitaires
         cached_compute_sessions_db_fn=cached_compute_sessions_db,

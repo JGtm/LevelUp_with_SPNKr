@@ -75,6 +75,7 @@ data/
 - `src/data/repositories/duckdb_repo.py` : Repository principal DuckDB
 - `src/data/repositories/factory.py` : Factory pattern
 - `src/data/sync/engine.py` : Moteur de synchronisation
+- `src/data/media_indexer.py` : Indexation médias (scan delta, associations, thumbnails), chargement pour UI
 
 ### Analyse
 - `src/analysis/killer_victim.py` : Calcul antagonistes
@@ -104,6 +105,8 @@ data/
 | `match_participants` | Tous les joueurs par match : xuid, team_id, outcome, rank, score, kills, deaths, assists. Identifiant = xuid ; gamertag via xuid_aliases. Voir .ai/MATCH_PARTICIPANTS.md. |
 | `career_progression` | Historique rangs |
 | `sync_meta` | Métadonnées sync |
+| `media_files` | Fichiers médias indexés (status, thumbnail_path, capture_end_utc) |
+| `media_match_associations` | Média ↔ match ↔ xuid (map_name, match_id) |
 | `mv_*` | Vues matérialisées |
 
 ### Base Métadonnées (metadata.duckdb)

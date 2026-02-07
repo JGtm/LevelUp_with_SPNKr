@@ -21,7 +21,7 @@ PAGES: list[str] = [
     "Comparaison de sessions",
     "Dernier match",
     "Match",
-    "Bibliothèque médias",
+    "Médias",
     "Citations",
     "Victoires/Défaites",
     "Mes coéquipiers",
@@ -50,25 +50,25 @@ def build_match_view_params(
     paris_tz,
 ) -> dict:
     """Construit les paramètres communs pour les pages de match."""
-    return dict(
-        db_path=db_path,
-        xuid=xuid,
-        waypoint_player=waypoint_player,
-        db_key=db_key,
-        settings=settings,
-        df_full=df_full,
-        render_match_view_fn=render_match_view_fn,
-        normalize_mode_label_fn=normalize_mode_label_fn,
-        format_score_label_fn=format_score_label_fn,
-        score_css_color_fn=score_css_color_fn,
-        format_datetime_fn=format_datetime_fn,
-        load_player_match_result_fn=load_player_match_result_fn,
-        load_match_medals_fn=load_match_medals_fn,
-        load_highlight_events_fn=load_highlight_events_fn,
-        load_match_gamertags_fn=load_match_gamertags_fn,
-        load_match_rosters_fn=load_match_rosters_fn,
-        paris_tz=paris_tz,
-    )
+    return {
+        "db_path": db_path,
+        "xuid": xuid,
+        "waypoint_player": waypoint_player,
+        "db_key": db_key,
+        "settings": settings,
+        "df_full": df_full,
+        "render_match_view_fn": render_match_view_fn,
+        "normalize_mode_label_fn": normalize_mode_label_fn,
+        "format_score_label_fn": format_score_label_fn,
+        "score_css_color_fn": score_css_color_fn,
+        "format_datetime_fn": format_datetime_fn,
+        "load_player_match_result_fn": load_player_match_result_fn,
+        "load_match_medals_fn": load_match_medals_fn,
+        "load_highlight_events_fn": load_highlight_events_fn,
+        "load_match_gamertags_fn": load_match_gamertags_fn,
+        "load_match_rosters_fn": load_match_rosters_fn,
+        "paris_tz": paris_tz,
+    }
 
 
 def consume_pending_page() -> None:
@@ -121,7 +121,7 @@ def dispatch_page(
     render_win_loss_page_fn: Callable,
     render_teammates_page_fn: Callable,
     render_match_history_page_fn: Callable,
-    render_media_library_page_fn: Callable,
+    render_media_tab_fn: Callable,
     render_settings_page_fn: Callable,
     # Fonctions utilitaires
     cached_compute_sessions_db_fn: Callable,
@@ -150,8 +150,11 @@ def dispatch_page(
         )
 
     elif page == "Comparaison de sessions":
+        from src.app.filters import get_friends_xuids_for_sessions
+
+        friends_tuple = get_friends_xuids_for_sessions(db_path, xuid.strip(), db_key, aliases_key)
         all_sessions_df = cached_compute_sessions_db_fn(
-            db_path, xuid.strip(), db_key, True, gap_minutes
+            db_path, xuid.strip(), db_key, True, gap_minutes, friends_xuids=friends_tuple
         )
         render_session_comparison_page_fn(all_sessions_df, df_full=df)
 
@@ -198,8 +201,8 @@ def dispatch_page(
             df_full=df,
         )
 
-    elif page == "Bibliothèque médias":
-        render_media_library_page_fn(
+    elif page == "Médias" or page == "Bibliothèque médias":
+        render_media_tab_fn(
             df_full=df,
             settings=settings,
         )

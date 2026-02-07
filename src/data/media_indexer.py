@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import polars as pl
 
 from src.utils.paths import PLAYER_DB_FILENAME, PLAYERS_DIR
 
@@ -395,13 +396,24 @@ class MediaIndexer:
             ]:
                 if not media_dir or not Path(media_dir).exists():
                     continue
-                for root, _dirs, files in os.walk(media_dir):
+                try:
+                    walk_iter = os.walk(media_dir)
+                except OSError as e:
+                    result.errors.append(f"Dossier inaccessible {media_dir}: {e}")
+                    logger.warning("Scan dossier %s: %s", media_dir, e)
+                    continue
+                for root, _dirs, files in walk_iter:
                     for name in files:
                         fp = Path(root) / name
                         if fp.suffix.lower() not in exts:
                             continue
                         result.n_scanned += 1
-                        meta = self._get_file_metadata(fp)
+                        try:
+                            meta = self._get_file_metadata(fp)
+                        except Exception as e:
+                            result.errors.append(f"Métadonnées {fp}: {e}")
+                            logger.debug("Métadonnées %s: %s", fp, e)
+                            continue
                         if not meta:
                             continue
                         path_str = meta["file_path"]
@@ -644,6 +656,84 @@ class MediaIndexer:
         finally:
             conn_write.close()
         return total
+
+    @staticmethod
+    def load_media_for_ui(db_path: Path | str, current_xuid: str | None) -> pl.DataFrame:
+        """Charge les médias actifs avec associations pour l'onglet Médias (Sprint 5).
+
+        Returns:
+            Polars DataFrame avec colonnes: file_path, file_name, kind, thumbnail_path,
+            capture_end_utc, map_name, match_id, match_start_time, xuid, gamertag, section.
+            section ∈ {'mine', 'teammate', 'unassigned'}.
+        """
+        db_path = Path(db_path)
+        if not db_path.exists():
+            return pl.DataFrame()
+        try:
+            conn = duckdb.connect(str(db_path), read_only=True)
+            try:
+                tables = conn.execute(
+                    """
+                    SELECT table_name FROM information_schema.tables
+                    WHERE table_schema = 'main' AND table_name = 'media_files'
+                    """
+                ).fetchall()
+                if not tables:
+                    return pl.DataFrame()
+                # Une ligne par (média, association) ; médias sans assoc ont match_id NULL
+                q = """
+                    SELECT
+                        mf.file_path,
+                        mf.file_name,
+                        mf.kind,
+                        mf.thumbnail_path,
+                        mf.capture_end_utc,
+                        mma.map_name,
+                        mma.match_id,
+                        mma.match_start_time,
+                        mma.xuid
+                    FROM media_files mf
+                    LEFT JOIN media_match_associations mma ON mf.file_path = mma.media_path
+                    WHERE mf.status = 'active'
+                    ORDER BY mf.capture_end_utc DESC NULLS LAST, mf.file_path
+                """
+                df = conn.execute(q).pl()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning("load_media_for_ui: %s", e)
+            return pl.DataFrame()
+        if df.is_empty():
+            return df
+        # xuid → gamertag depuis data/players/{gamertag}/stats.duckdb
+        xuid_to_gamertag: dict[str, str] = {}
+        for pdb, xu in MediaIndexer._get_all_player_dbs():
+            gamertag = Path(pdb).parent.name
+            xuid_to_gamertag[str(xu)] = gamertag
+
+        # Colonne gamertag (xuid → nom du dossier joueur)
+        def _gamertag(u: Any) -> str:
+            if u is None:
+                return ""
+            return xuid_to_gamertag.get(str(u), str(u))
+
+        df = df.with_columns(
+            pl.col("xuid").map_elements(_gamertag, return_dtype=pl.Utf8).alias("gamertag")
+        )
+        # Section: unassigned si pas de match_id, sinon mine ou teammate
+        cu = str(current_xuid or "")
+        df = df.with_columns(
+            pl.when(
+                pl.col("match_id").is_null()
+                | (pl.col("match_id").cast(pl.Utf8).str.strip_chars() == "")
+            )
+            .then(pl.lit("unassigned"))
+            .when(pl.col("xuid").cast(pl.Utf8) == cu)
+            .then(pl.lit("mine"))
+            .otherwise(pl.lit("teammate"))
+            .alias("section")
+        )
+        return df
 
     def generate_thumbnails_for_new(
         self,

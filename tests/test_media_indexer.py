@@ -194,6 +194,25 @@ def test_scan_result_has_n_deleted(temp_db: Path, temp_media_dir: Path) -> None:
     assert result.n_deleted == 0
 
 
+def test_scan_handles_inaccessible_directory(temp_db: Path, tmp_path: Path) -> None:
+    """Test que un dossier inaccessible (ex. réseau) ne fait pas planter le scan (Sprint 6)."""
+    indexer = MediaIndexer(temp_db)
+    indexer.ensure_schema()
+    bad_dir = tmp_path / "inaccessible"
+    bad_dir.mkdir()
+
+    with patch("src.data.media_indexer.os.walk") as m_walk:
+        m_walk.side_effect = OSError(13, "Permission denied")
+        result = indexer.scan_and_index(videos_dir=bad_dir, screens_dir=None)
+    assert len(result.errors) >= 1
+    assert (
+        "inaccessible" in result.errors[0]
+        or "Permission" in result.errors[0]
+        or str(bad_dir) in result.errors[0]
+    )
+    assert result.n_scanned >= 0
+
+
 def test_associate_with_matches(temp_db: Path, temp_media_dir: Path) -> None:
     """Test l'association des médias avec les matchs."""
     indexer = MediaIndexer(temp_db)
@@ -747,3 +766,57 @@ def test_association_search_all_player_dbs(tmp_path: Path) -> None:
     rows = conn.execute("SELECT match_id, xuid FROM media_match_associations").fetchall()
     conn.close()
     assert any(r[1] == "xuid_other" for r in rows)
+
+
+def test_load_media_for_ui(temp_db: Path) -> None:
+    """Test load_media_for_ui (Sprint 5) : colonnes et section mine/teammate/unassigned."""
+    import polars as pl
+
+    indexer = MediaIndexer(temp_db)
+    indexer.ensure_schema()
+    conn = duckdb.connect(str(temp_db), read_only=False)
+    try:
+        conn.execute(
+            """
+            INSERT INTO media_files (
+                file_path, file_hash, file_name, file_size, file_ext, kind,
+                capture_start_utc, capture_end_utc, duration_seconds, title,
+                mtime, status, scan_version
+            ) VALUES
+                ('/path/a.png', 'h1', 'a.png', 100, 'png', 'image', NULL, '2026-02-07 12:00:00', NULL, NULL, 1.0, 'active', 2),
+                ('/path/b.png', 'h2', 'b.png', 200, 'png', 'image', NULL, '2026-02-07 11:00:00', NULL, NULL, 2.0, 'active', 2)
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO media_match_associations (media_path, match_id, xuid, match_start_time, map_name)
+            VALUES ('/path/a.png', 'match_1', 'xuid_me', '2026-02-07 11:55:00', 'Aquarius')
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with patch.object(MediaIndexer, "_get_all_player_dbs") as mock_dbs:
+        mock_dbs.return_value = [(temp_db, "xuid_me")]
+        df = MediaIndexer.load_media_for_ui(temp_db, "xuid_me")
+
+    assert isinstance(df, pl.DataFrame)
+    assert not df.is_empty()
+    required = {
+        "file_path",
+        "file_name",
+        "kind",
+        "map_name",
+        "match_id",
+        "xuid",
+        "gamertag",
+        "section",
+    }
+    assert required.issubset(df.columns)
+    mine = df.filter(pl.col("section") == "mine")
+    unassigned = df.filter(pl.col("section") == "unassigned")
+    assert len(mine) >= 1
+    assert len(unassigned) >= 1
+    assert mine.filter(pl.col("file_path") == "/path/a.png").height == 1
+    assert unassigned.filter(pl.col("file_path") == "/path/b.png").height == 1

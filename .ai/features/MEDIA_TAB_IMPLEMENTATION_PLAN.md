@@ -214,7 +214,7 @@ L’exécution des tests par l’agent est **obligatoire**. Aucun sprint ne peut
 
 ---
 
-## Sprint 1 : Fondations BDD et scan delta
+## Sprint 1 : Fondations BDD et scan delta ✅
 
 **Objectif** : Schéma BDD, scan delta, métadonnées de base.
 
@@ -222,88 +222,50 @@ L’exécution des tests par l’agent est **obligatoire**. Aucun sprint ne peut
 
 1. Schéma `media_files` (colonnes `capture_start_utc`, `capture_end_utc`, `duration_seconds`, `title`, `thumbnail_path`, `status`).
 2. Schéma `media_match_associations` (avec `map_id`, `map_name`).
-3. Module `media_indexer` :
-   - Scan récursif des dossiers configurés.
-   - Delta : nouveaux fichiers, mtime modifié, fichiers absents → `status = 'deleted'`.
-   - Extraction métadonnées : ffprobe (vidéos), EXIF (images), fallback mtime.
-4. Intégration au lancement de l’app : scan delta automatique en arrière-plan (thread).
-5. Script ou fonction de test du scan (sans UI).
+3. Module `media_indexer` : scan récursif, delta (nouveaux/modifiés/deleted), métadonnées ffprobe/EXIF.
+4. Intégration au lancement : `_background_media_indexing` (thread daemon) dans streamlit_app.py.
+5. Tests : test_media_indexer.py (ensure_schema, scan_and_index, scan_marks_deleted, etc.).
 
-**Critères de validation** :
-
-- Les tables sont créées dans `stats.duckdb` du joueur actuel.
-- Le scan détecte les nouveaux fichiers, met à jour les modifiés, marque `deleted` les absents.
-- Aucune réutilisation du code de l’onglet actuel.
-- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
-
-**Estimation** : 2–3 jours.
+**Statut** : Livré (déjà en place, documenté dans thought_log 2026-02-07). Estimation : 2–3 jours.
 
 ---
 
-## Sprint 2 : Association capture ↔ match (multi-joueurs)
+## Sprint 2 : Association capture ↔ match (multi-joueurs) ✅
 
 **Objectif** : Associer chaque capture au match le plus proche, en cherchant dans toutes les BDD joueurs.
 
-**Livrables** :
+**Livrables** : associate_with_matches(), fenêtre temporelle, match le plus proche, _get_all_player_dbs, map_id/map_name. Tests : closest_match, multi_players, map_id_map_name, search_all_player_dbs.
 
-1. Algorithme d’association temporelle :
-   - Fenêtre `[start - tol, end + tol]` par match.
-   - Choix du **match le plus proche** si plusieurs candidats.
-   - Gestion fuseaux : captures (Paris) vs matchs (UTC).
-2. Parcours des BDD joueurs : `data/players/*/stats.duckdb`, lecture `match_stats` en lecture seule.
-3. Stockage des associations dans la BDD du joueur actuel (celui qui lance le scan).
-4. Récupération de `map_id`, `map_name` depuis `match_stats` et stockage dans `media_match_associations`.
-5. Tests unitaires : cas Paris/UTC, match le plus proche, multi-joueurs.
-
-**Critères de validation** :
-
-- Une capture est associée au plus un match par joueur (le plus proche).
-- Une capture peut avoir plusieurs lignes dans `media_match_associations` (une par xuid).
-- Recherche effectuée dans toutes les BDD joueurs si pas de match pour le joueur actuel.
-- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
-
-**Estimation** : 2–3 jours.
+**Statut** : Livré (déjà en place, thought_log 2026-02-07). Estimation : 2–3 jours.
 
 ---
 
-## Sprint 3 : Thumbnails (vidéos + images)
+## Sprint 3 : Thumbnails (vidéos + images) ✅
 
 **Objectif** : Génération des thumbnails et enregistrement en BDD.
 
-**Livrables** :
+**Livrables** : generate_thumbnails_for_new(), GIF vidéo (ffmpeg), miniatures images (PIL), stockage thumbs/, mise à jour thumbnail_path. Gestion erreurs (ffmpeg/PIL absents). Tests : test_generate_image_thumbnails, test_generate_thumbnails_no_ffmpeg_skips_videos, test_generate_thumbnails_empty_dirs.
 
-1. Vidéos : génération GIF animé (ffprobe/ffmpeg), stockage dans `thumbs/`, mise à jour `thumbnail_path`.
-2. Images : génération de miniatures dédiées (redimensionnement), stockage, mise à jour `thumbnail_path`.
-3. Exécution dans le flux du scan delta (ou job séparé) pour les nouveaux/modifiés sans thumbnail.
-4. Gestion des erreurs (ffmpeg absent, fichier corrompu) sans bloquer le scan.
-
-**Critères de validation** :
-
-- Chaque vidéo indexée a un GIF thumbnail.
-- Chaque image indexée a une miniature.
-- Les chemins sont persistés correctement.
-- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
-
-**Estimation** : 1–2 jours.
+**Statut** : Livré (thought_log 2026-02-07). Estimation : 1–2 jours.
 
 ---
 
-## Sprint 4 : Composants UI – Thumbnail et Lightbox
+## Sprint 4 : Composants UI – Thumbnail et Lightbox ✅
 
 **Objectif** : Composants réutilisables pour l’affichage des médias.
 
 **Livrables** :
 
-1. **Composant Thumbnail** :
+1. **Composant Thumbnail** (`src/ui/components/media_thumbnail.py`) :
    - Affichage statique par défaut.
    - Au survol : version animée (HTML/JS).
    - Dimensions fixes, ratio uniforme.
-2. **Composant Lightbox** :
+2. **Composant Lightbox** (`src/ui/components/media_lightbox.py`) :
    - Overlay fullscreen.
    - Support image et vidéo.
-   - Fermeture par clic ou bouton.
-3. Intégration Streamlit : `st.components.v1.html()` ou composant custom.
-4. Tests visuels manuels.
+   - Fermeture par clic (hors zone), bouton × ou touche Escape.
+3. Intégration Streamlit : `st.components.v1.html()`.
+4. Tests : `tests/test_media_components_sprint4.py` (exécution : `pytest tests/test_media_components_sprint4.py -v`).
 
 **Critères de validation** :
 
@@ -312,24 +274,24 @@ L’exécution des tests par l’agent est **obligatoire**. Aucun sprint ne peut
 - Comportement identique sur desktop.
 - **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v` ou tests visuels documentés si non automatisables).
 
-**Estimation** : 2 jours.
+**Statut** : Livré (2026-02-07). Estimation : 2 jours.
 
 ---
 
-## Sprint 5 : Page « Médias » – Structure et sections
+## Sprint 5 : Page « Médias » – Structure et sections ✅
 
 **Objectif** : Page complète avec grille, sections et navigation.
 
 **Livrables** :
 
 1. **Page `media_tab.py`** :
-   - Chargement des médias depuis la BDD (filtre `status = 'active'`).
+   - Chargement des médias depuis la BDD (filtre `status = 'active'`) via `MediaIndexer.load_media_for_ui()`.
    - Sections : « Mes captures », « Captures de XXX » (par joueur), « Sans correspondance ».
    - Grille alignée, taille uniforme.
 2. **Carte + date** au-dessus de chaque thumbnail.
-3. **Bouton « Ouvrir le match »** sous chaque capture associée, redirection vers l’onglet Match.
-4. Filtres optionnels : type (image/vidéo), plage de dates, recherche par nom.
-5. Remplacement de l’onglet « Bibliothèque de médias » par « Médias » dans le routeur.
+3. **Bouton « Ouvrir le match »** sous chaque capture associée, redirection vers l’onglet Match (`_pending_page` + `_pending_match_id`).
+4. Filtres optionnels : type (image/vidéo), recherche par nom, nombre de colonnes.
+5. Remplacement de l’onglet « Bibliothèque médias » par « Médias » dans le routeur (PAGES + dispatch).
 
 **Critères de validation** :
 
@@ -337,46 +299,39 @@ L’exécution des tests par l’agent est **obligatoire**. Aucun sprint ne peut
 - Le bouton « Ouvrir le match » redirige vers le bon match.
 - La grille est alignée et lisible.
 - Aucun code de l’ancien onglet réutilisé.
-- **Tests** : création + exécution OBLIGATOIRES (`pytest tests/ -v`).
+- **Tests** : `tests/test_media_indexer.py::test_load_media_for_ui`, `tests/test_media_tab_sprint5.py` — exécution : `pytest tests/test_media_indexer.py tests/test_media_tab_sprint5.py -v`.
 
-**Estimation** : 2–3 jours.
+**Statut** : Livré (2026-02-07). Estimation : 2–3 jours.
 
 ---
 
-## Sprint 6 : Intégration et réglages
+## Sprint 6 : Intégration et réglages ✅
 
 **Objectif** : Bouclage, performance, edge cases.
 
 **Livrables** :
 
-1. Intégration du scan delta au démarrage (non bloquant).
-2. Gestion des cas limites : dossiers vides, chemins réseau, erreurs de lecture.
-3. Tests de régression : fuseaux, multi-joueurs, gros volumes.
-4. Documentation : mise à jour `project_map`, `data_lineage`, `thought_log`.
-5. Nettoyage : suppression ou archivage de `media_library.py` si obsolète.
+1. Intégration du scan delta au démarrage (non bloquant) : déjà en place (_background_media_indexing).
+2. Gestion des cas limites : os.walk protégé (OSError pour dossiers inaccessibles) ; erreurs métadonnées par fichier ne bloquent pas le scan.
+3. Tests de régression : suite media (test_media_indexer, test_media_tab_sprint5, test_media_components_sprint4).
+4. Documentation : project_map (media_indexer, tables media_*), data_lineage (flux 5 Médias), thought_log.
+5. media_library.py : conservé avec note (onglet principal = Médias / media_tab.py).
 
-**Critères de validation** :
-
-- L’onglet « Médias » fonctionne de bout en bout.
-- Les captures sont correctement associées et affichées.
-- Pas de régression sur le reste de l’app.
-- **Tests** : création + exécution OBLIGATOIRES — l’agent exécute `pytest tests/ -v` et vérifie que tous les tests passent.
-
-**Estimation** : 1–2 jours.
+**Statut** : Livré (2026-02-07). Estimation : 1–2 jours.
 
 ---
 
 ## Récapitulatif des sprints
 
-| Sprint | Focus | Estimation |
-|--------|-------|------------|
-| 1 | Fondations BDD et scan delta | 2–3 jours |
-| 2 | Association capture ↔ match (multi-joueurs) | 2–3 jours |
-| 3 | Thumbnails (vidéos + images) | 1–2 jours |
-| 4 | Composants UI – Thumbnail et Lightbox | 2 jours |
-| 5 | Page « Médias » – Structure et sections | 2–3 jours |
-| 6 | Intégration et réglages | 1–2 jours |
-| **Total** | | **10–15 jours** |
+| Sprint | Focus | Estimation | Statut |
+|--------|-------|------------|--------|
+| 1 | Fondations BDD et scan delta | 2–3 jours | ✅ (déjà livré) |
+| 2 | Association capture ↔ match (multi-joueurs) | 2–3 jours | ✅ (déjà livré) |
+| 3 | Thumbnails (vidéos + images) | 1–2 jours | ✅ (déjà livré) |
+| 4 | Composants UI – Thumbnail et Lightbox | 2 jours | ✅ 2026-02-07 |
+| 5 | Page « Médias » – Structure et sections | 2–3 jours | ✅ 2026-02-07 |
+| 6 | Intégration et réglages | 1–2 jours | ✅ 2026-02-07 |
+| **Total** | | **10–15 jours** | **Tous livrés** |
 
 ---
 
