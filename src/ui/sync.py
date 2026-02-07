@@ -276,15 +276,16 @@ def _sync_duckdb_player(
                 tokens=tokens,
             )
 
-            # Exécuter la sync
+            # Exécuter la sync — toujours tout récupérer (match stats, highlight_events, skill, aliases)
             options = SyncOptions(
                 max_matches=max_matches,
+                with_highlight_events=True,
                 with_skill=True,
                 with_aliases=True,
             )
 
             if delta:
-                result = await engine.sync_delta()
+                result = await engine.sync_delta(options)
             else:
                 result = await engine.sync_full(options)
 

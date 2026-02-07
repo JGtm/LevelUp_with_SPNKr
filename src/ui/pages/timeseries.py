@@ -98,7 +98,10 @@ def render_timeseries_page(
                 elif len(acc_data) == 0:
                     st.info("Aucune donnée de précision disponible pour ce filtre.")
                 else:
-                    st.info(f"Pas assez de données de précision ({len(acc_data)} matchs).")
+                    st.info(
+                        f"Pas assez de données de précision ({len(acc_data)} matchs). "
+                        "Il en faut au moins 6 pour afficher la distribution."
+                    )
             else:
                 st.info("Colonne précision non disponible dans les données.")
 
@@ -117,7 +120,10 @@ def render_timeseries_page(
                     )
                     st.plotly_chart(fig_kills, width="stretch")
                 else:
-                    st.info("Pas assez de données de kills.")
+                    st.info(
+                        f"Pas assez de données de kills ({len(kills_data)} matchs). "
+                        "Il en faut au moins 6 pour afficher la distribution."
+                    )
             else:
                 st.info("Colonne kills non disponible.")
 
@@ -143,7 +149,10 @@ def render_timeseries_page(
                     )
                     st.plotly_chart(fig_life, width="stretch")
                 else:
-                    st.info("Pas assez de données de durée de vie.")
+                    st.info(
+                        f"Pas assez de données de durée de vie ({len(life_data)} matchs). "
+                        "Il en faut au moins 6 pour afficher la distribution."
+                    )
             else:
                 st.info("Colonne durée de vie non disponible.")
 
@@ -162,7 +171,10 @@ def render_timeseries_page(
                     )
                     st.plotly_chart(fig_perf, width="stretch")
                 else:
-                    st.info("Pas assez de données de performance.")
+                    st.info(
+                        f"Pas assez de données de performance ({len(perf_data)} matchs). "
+                        "Il en faut au moins 6 pour afficher la distribution."
+                    )
             else:
                 st.info("Score de performance non disponible.")
 
@@ -211,7 +223,10 @@ def render_timeseries_page(
                     )
                     st.plotly_chart(fig_corr2, width="stretch")
                 else:
-                    st.info("Pas assez de données de précision/FDA disponibles.")
+                    st.info(
+                        f"Pas assez de données de précision/FDA ({len(valid_data)} matchs). "
+                        "Il en faut au moins 6 pour la corrélation."
+                    )
             else:
                 st.info("Colonnes précision ou FDA non disponibles.")
 
@@ -246,8 +261,10 @@ def render_timeseries_page(
             st.plotly_chart(fig_events, width="stretch")
         else:
             st.info(
-                "Données d'événements non disponibles. "
-                "Synchronise tes matchs avec l'option highlight_events activée."
+                "Données d'événements non disponibles (premier kill / première mort). "
+                "L’**Actualiser** récupère déjà ces données pour les **nouveaux** matchs. "
+                "Pour les matchs déjà en base sans événements film, active dans **Paramètres** "
+                "→ **Options du bouton Actualiser** l’option **Backfill events**, puis **Actualiser**."
             )
 
         st.subheader("Performance")
