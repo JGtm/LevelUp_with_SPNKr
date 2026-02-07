@@ -396,9 +396,7 @@ def render_session_filters(
         st.session_state["min_matches_maps_friends"] = 1
         st.session_state["_min_matches_maps_friends_auto"] = True
         st.rerun()
-    if disabled_trio:
-        st.caption('Trio : sélectionne 2 amis dans "Avec mes amis" pour activer.')
-    else:
+    if not disabled_trio:
         st.caption(f"Trio : {trio_label}")
 
     picked_one = st.selectbox(
