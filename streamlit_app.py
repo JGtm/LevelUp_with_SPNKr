@@ -206,33 +206,31 @@ def _aliases_cache_key() -> int | None:
 def _background_media_indexing(settings, db_path: str) -> None:
     """Lance l'indexation des médias en arrière-plan (non-bloquant).
 
-    Args:
-        settings: Paramètres de l'application.
-        db_path: Chemin vers la DB DuckDB (utilisée pour stocker les médias).
+    Dossier par joueur : base_dir/{gamertag}/. Indexe tous les joueurs connus.
     """
     import logging
 
     logger = logging.getLogger(__name__)
 
-    # Vérifier si les médias sont activés
     if not bool(getattr(settings, "media_enabled", True)):
         logger.debug("Indexation médias désactivée dans les paramètres")
         return
 
-    # Vérifier si les dossiers sont configurés
-    videos_dir = str(getattr(settings, "media_videos_dir", "") or "").strip()
-    screens_dir = str(getattr(settings, "media_screens_dir", "") or "").strip()
+    base_dir = str(getattr(settings, "media_captures_base_dir", "") or "").strip()
+    # Fallback legacy
+    if not base_dir:
+        videos_dir = str(getattr(settings, "media_videos_dir", "") or "").strip()
+        screens_dir = str(getattr(settings, "media_screens_dir", "") or "").strip()
+        if not videos_dir and not screens_dir:
+            logger.debug("Aucun dossier média configuré - indexation ignorée")
+            return
+    else:
+        videos_dir = screens_dir = ""
 
-    if not videos_dir and not screens_dir:
-        logger.debug("Aucun dossier média configuré - indexation ignorée")
-        return
-
-    # Vérifier si c'est une DB DuckDB v4
     if not db_path or not db_path.endswith(".duckdb"):
-        logger.debug(f"DB non DuckDB ou invalide: {db_path} - indexation ignorée")
+        logger.debug("DB non DuckDB ou invalide - indexation ignorée")
         return
 
-    # Ne lancer qu'une fois par session
     if st.session_state.get("_media_indexing_started"):
         logger.debug("Indexation médias déjà démarrée dans cette session")
         return
@@ -241,81 +239,76 @@ def _background_media_indexing(settings, db_path: str) -> None:
     logger.info("🚀 Démarrage indexation médias en arrière-plan")
 
     def worker():
-        """Worker thread pour l'indexation."""
         import logging
 
         logger = logging.getLogger(__name__)
-
         try:
             from pathlib import Path
 
             from src.data.media_indexer import MediaIndexer
+            from src.utils.paths import PLAYER_DB_FILENAME, PLAYERS_DIR
 
-            logger.info(f"📁 Indexation médias - DB: {db_path}")
-            logger.info(f"   Vidéos: {videos_dir or '(non configuré)'}")
-            logger.info(f"   Captures: {screens_dir or '(non configuré)'}")
-
-            # Créer l'indexeur (utilise la DB fournie pour stocker les médias)
-            indexer = MediaIndexer(Path(db_path))
-
-            # Scanner les dossiers
-            videos_path = Path(videos_dir) if videos_dir and os.path.exists(videos_dir) else None
-            screens_path = (
-                Path(screens_dir) if screens_dir and os.path.exists(screens_dir) else None
-            )
-
-            if not videos_path and not screens_path:
-                logger.warning("Aucun dossier média valide trouvé - indexation ignorée")
-                return
-
-            logger.info("📂 Scan des dossiers médias...")
-            result = indexer.scan_and_index(
-                videos_dir=videos_path,
-                screens_dir=screens_path,
-                force_rescan=False,
-            )
-
-            logger.info(
-                f"✅ Scan terminé: {result.n_scanned} scannés, "
-                f"{result.n_new} nouveaux, {result.n_updated} mis à jour"
-            )
-
-            if result.errors:
-                logger.warning(f"⚠️  {len(result.errors)} erreur(s) lors du scan")
-                for err in result.errors[:5]:
-                    logger.warning(f"   - {err}")
-
-            # Associer avec les matchs de TOUS les joueurs
             tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
-            logger.info(f"🔗 Association avec les matchs (tolérance: {tolerance} min)...")
-            n_associated = indexer.associate_with_matches(tolerance_minutes=tolerance)
-            logger.info(f"✅ {n_associated} association(s) créée(s)")
+            base_path = Path(base_dir) if base_dir else None
 
-            # Générer les thumbnails pour vidéos (GIF) et images (miniatures)
-            if videos_path or screens_path:
-                logger.info("🎬 Génération des thumbnails...")
-                n_thumb_gen, n_thumb_errors = indexer.generate_thumbnails_for_new(
+            if base_path is not None and base_path.exists():
+                # Nouvelle logique : indexer tous les joueurs ayant base_dir/gamertag
+                for player_dir in sorted(PLAYERS_DIR.iterdir(), key=lambda p: p.name):
+                    if not player_dir.is_dir():
+                        continue
+                    db_file = player_dir / PLAYER_DB_FILENAME
+                    if not db_file.exists():
+                        continue
+                    gamertag = player_dir.name
+                    player_captures = base_path / gamertag
+                    if not player_captures.exists():
+                        continue
+                    indexer = MediaIndexer(db_file)
+                    result = indexer.scan_and_index(
+                        player_captures_dir=player_captures,
+                        force_rescan=False,
+                    )
+                    n_associated = indexer.associate_with_matches(tolerance_minutes=tolerance)
+                    n_thumb_gen, n_thumb_err = indexer.generate_thumbnails_for_new(
+                        videos_dir=player_captures,
+                        screens_dir=player_captures,
+                    )
+                    logger.info(
+                        f"✅ {gamertag}: {result.n_new + result.n_updated} médias, "
+                        f"{n_associated} assoc., {n_thumb_gen} thumbs"
+                    )
+            else:
+                # Legacy : deux dossiers globaux, DB courante uniquement
+                videos_path = (
+                    Path(videos_dir) if videos_dir and os.path.exists(videos_dir) else None
+                )
+                screens_path = (
+                    Path(screens_dir) if screens_dir and os.path.exists(screens_dir) else None
+                )
+                if not videos_path and not screens_path:
+                    logger.warning("Aucun dossier média valide trouvé")
+                    return
+                indexer = MediaIndexer(Path(db_path))
+                result = indexer.scan_and_index(
+                    videos_dir=videos_path,
+                    screens_dir=screens_path,
+                    force_rescan=False,
+                )
+                n_associated = indexer.associate_with_matches(tolerance_minutes=tolerance)
+                n_thumb_gen, n_thumb_err = indexer.generate_thumbnails_for_new(
                     videos_dir=videos_path,
                     screens_dir=screens_path,
                 )
-                if n_thumb_gen > 0:
-                    logger.info(f"✅ {n_thumb_gen} thumbnail(s) généré(s)")
-                if n_thumb_errors > 0:
-                    logger.warning(
-                        f"⚠️  {n_thumb_errors} erreur(s) lors de la génération de thumbnails"
-                    )
-                if n_thumb_gen == 0 and n_thumb_errors == 0:
-                    logger.info("ℹ️  Aucun thumbnail à générer")
-
-            logger.info("✅ Indexation médias terminée avec succès")
-
+                logger.info(
+                    f"✅ Scan: {result.n_scanned} scannés, {n_associated} assoc., "
+                    f"{n_thumb_gen} thumbs"
+                )
+            logger.info("✅ Indexation médias terminée")
         except Exception as e:
-            logger.error(f"❌ Erreur indexation médias: {e}", exc_info=True)
+            logger.error("❌ Erreur indexation médias: %s", e, exc_info=True)
 
-    # Lancer en thread daemon (ne bloque pas l'app)
     thread = threading.Thread(target=worker, daemon=True, name="media-indexer")
     thread.start()
-    logger.debug(f"Thread d'indexation démarré: {thread.name} (daemon={thread.daemon})")
 
 
 # =============================================================================

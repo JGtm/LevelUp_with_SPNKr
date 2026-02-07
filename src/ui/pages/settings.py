@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import streamlit as st
 
@@ -161,20 +162,18 @@ def render_settings_page(
 
     with st.expander("Médias", expanded=True):
         media_enabled = st.toggle("Activer la section Médias", value=bool(settings.media_enabled))
-        media_screens_dir = directory_input(
-            "Dossier captures (images)",
-            value=str(settings.media_screens_dir or ""),
-            key="settings_media_screens_dir",
-            help="Chemin vers un dossier contenant des captures (png/jpg/webp).",
-            placeholder="Ex: C:\\Users\\Guillaume\\Pictures\\Halo",
+        media_captures_base_dir = directory_input(
+            "Dossier de base des captures",
+            value=str(getattr(settings, "media_captures_base_dir", "") or ""),
+            key="settings_media_captures_base_dir",
+            help=(
+                "Racine des captures. Un sous-dossier par joueur, nommé comme le gamertag "
+                "(ex: D:/Captures/PlayerA/, D:/Captures/PlayerB/). Images et vidéos dans le même dossier."
+            ),
+            placeholder="Ex: D:/Captures",
         )
-        media_videos_dir = directory_input(
-            "Dossier vidéos",
-            value=str(settings.media_videos_dir or ""),
-            key="settings_media_videos_dir",
-            help="Chemin vers un dossier contenant des vidéos (mp4/webm/mkv).",
-            placeholder="Ex: C:\\Users\\Guillaume\\Videos",
-        )
+        media_screens_dir = str(getattr(settings, "media_screens_dir", "") or "").strip()
+        media_videos_dir = str(getattr(settings, "media_videos_dir", "") or "").strip()
         media_tolerance_minutes = st.slider(
             "Tolérance (minutes) autour du match",
             min_value=0,
@@ -182,6 +181,18 @@ def render_settings_page(
             value=int(settings.media_tolerance_minutes or 0),
             step=1,
         )
+        # Bouton reset index médias
+        if st.button("Réinitialiser l'index médias", key="settings_reset_media_index"):
+            from src.data.media_indexer import MediaIndexer
+
+            db_path = st.session_state.get("db_path") or get_default_db_path()
+            if db_path:
+                try:
+                    idx = MediaIndexer(Path(db_path))
+                    idx.reset_media_tables()
+                    st.success("Index médias réinitialisé (joueur courant).")
+                except Exception as e:
+                    st.error(f"Erreur: {e}")
 
     with st.expander("Expérience", expanded=True):
         refresh_clears_caches = st.toggle(
@@ -190,22 +201,9 @@ def render_settings_page(
             help="Utile si la DB change en dehors de l'app (NAS / import externe).",
         )
 
-    # Section Architecture de données (v4 - DuckDB uniquement)
-    with st.expander("Architecture de données", expanded=False):
-        st.caption(
-            "LevelUp utilise DuckDB pour des analyses haute performance. "
-            "L'architecture v4 remplace les anciens modes legacy/hybrid/shadow."
-        )
-
-        st.info(
-            "**Architecture v4 (DuckDB)** : Toutes les données sont stockées dans "
-            "des fichiers DuckDB (`data/players/{gamertag}/stats.duckdb`). "
-            "Les modes legacy, shadow et hybrid ont été supprimés."
-        )
-
-        # Garder les valeurs pour compatibilité mais en lecture seule
-        repository_mode = "duckdb"
-        enable_duckdb_analytics = True
+    # Architecture v4 : DuckDB uniquement (valeurs fixes, plus d'UI dédiée)
+    repository_mode_val = "duckdb"
+    enable_duckdb_val = True
 
     # Section "Fichiers (avancé)" masquée - valeurs conservées depuis settings
     aliases_path = str(getattr(settings, "aliases_path", "") or "").strip()
@@ -236,24 +234,13 @@ def render_settings_page(
 
     # Section "Profil joueur (avancé)" masquée - valeurs conservées depuis settings
 
-    # Récupérer les valeurs de l'architecture de données
-    # (définies dans la section expander plus haut, ou valeurs par défaut)
-    try:
-        repository_mode_val = repository_mode  # type: ignore
-    except NameError:
-        repository_mode_val = str(getattr(settings, "repository_mode", "legacy") or "legacy")
-
-    try:
-        enable_duckdb_val = enable_duckdb_analytics  # type: ignore
-    except NameError:
-        enable_duckdb_val = bool(getattr(settings, "enable_duckdb_analytics", False))
-
     cols = st.columns(2)
     if cols[0].button("Enregistrer", width="stretch"):
         new_settings = AppSettings(
             media_enabled=bool(media_enabled),
             media_screens_dir=str(media_screens_dir or "").strip(),
             media_videos_dir=str(media_videos_dir or "").strip(),
+            media_captures_base_dir=str(media_captures_base_dir or "").strip(),
             media_tolerance_minutes=int(media_tolerance_minutes),
             refresh_clears_caches=bool(refresh_clears_caches),
             prefer_spnkr_db_if_available=bool(prefer_spnkr),

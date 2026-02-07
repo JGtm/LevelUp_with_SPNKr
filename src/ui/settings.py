@@ -27,8 +27,9 @@ def get_settings_path() -> str:
 class AppSettings:
     # Médias
     media_enabled: bool = True
-    media_screens_dir: str = ""
-    media_videos_dir: str = ""
+    media_screens_dir: str = ""  # Déprécié: migration vers media_captures_base_dir
+    media_videos_dir: str = ""  # Déprécié: migration vers media_captures_base_dir
+    media_captures_base_dir: str = ""  # Base unique: base_dir/{gamertag}/ pour captures
     media_tolerance_minutes: int = 3
 
     # UX
@@ -123,6 +124,21 @@ def load_settings() -> AppSettings:
     s.media_enabled = _coerce_bool(obj.get("media_enabled"), s.media_enabled)
     s.media_screens_dir = str(obj.get("media_screens_dir") or "").strip()
     s.media_videos_dir = str(obj.get("media_videos_dir") or "").strip()
+    s.media_captures_base_dir = str(obj.get("media_captures_base_dir") or "").strip()
+    # Migration: si base vide mais anciens champs renseignés, proposer parent commun
+    if not s.media_captures_base_dir and (s.media_screens_dir or s.media_videos_dir):
+        from pathlib import Path
+
+        paths = [Path(p) for p in [s.media_screens_dir, s.media_videos_dir] if p]
+        if paths:
+            try:
+                common = paths[0].parent
+                for p in paths[1:]:
+                    common = Path(os.path.commonpath([str(common), str(p)]))
+                if str(common).strip():
+                    s.media_captures_base_dir = str(common)
+            except (ValueError, TypeError):
+                pass
     s.media_tolerance_minutes = max(
         0, _coerce_int(obj.get("media_tolerance_minutes"), s.media_tolerance_minutes)
     )

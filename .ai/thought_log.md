@@ -7,6 +7,43 @@
 
 ## Journal
 
+### [2026-02-07] - Correctif dossier captures par joueur (MEDIA_CAPTURES_PER_PLAYER_PLAN)
+
+**Statut** : Implémenté
+
+**Objectif** : Dossier par joueur (`base_dir/{gamertag}/`), association mono-DB, affichage cross-DB pour partage par match_id.
+
+**Réalisations** :
+- **Paramètres** : `media_captures_base_dir` dans AppSettings, migration depuis media_screens_dir/media_videos_dir (parent commun). UI Paramètres : un seul champ « Dossier de base des captures », bouton « Réinitialiser l'index médias ».
+- **Scan** : `scan_and_index(player_captures_dir=...)` accepte un dossier joueur unique (images + vidéos). Fallback legacy : videos_dir + screens_dir.
+- **Association** : mono-DB uniquement. Une seule ligne (media_path, match_id, xuid) avec xuid = propriétaire de la DB. Suppression de `_backfill_media_associations_missing_xuids`.
+- **load_media_for_ui** : cross-DB. « Mes captures » = DB courante ; « Captures de XXX » = médias des autres DB dont match_id dans match_stats de la DB courante. Une seule ligne par média (priorité mine > teammate > unassigned).
+- **Indexation** : au démarrage, indexe tous les joueurs ayant base_dir/gamertag. Fallback legacy si base_dir vide.
+- **Scripts** : `index_media.py` (--gamertag, --all), `reset_media_db.py` (--gamertag, --all).
+
+**Fichiers modifiés** : src/ui/settings.py, src/ui/pages/settings.py, src/data/media_indexer.py, streamlit_app.py, scripts/index_media.py, scripts/reset_media_db.py (nouveau).
+
+---
+
+### [2026-02-07] - Correction association médias (onglet Médias)
+
+**Statut** : Terminé
+
+**Problème** : Sur le profil d’un joueur (ex. JGtm), les médias apparaissaient parfois tous sous « Captures de MAdina », parfois sous « Captures de Chocoboflor », sans stabilité. Les captures proviennent pourtant de matchs où le joueur du profil a joué (au minimum).
+
+**Causes identifiées** :
+1. **Association** : On parcourait les BDD joueurs dans un ordre non déterministe (`iterdir()`). Pour chaque média on associait le « meilleur » match **par BDD** puis on insérait une seule ligne (celle du premier joueur trouvé). Résultat : un seul xuid par média, dépendant de l’ordre des dossiers.
+2. **Affichage** : Une même capture pouvait avoir plusieurs lignes (une par xuid associé) ; l’UI affichait la même capture dans plusieurs sections selon l’ordre des lignes.
+
+**Corrections** :
+- **`associate_with_matches`** : Pour chaque média sans association, on collecte tous les candidats (match_id, distance) parmi **toutes** les BDD joueurs, on retient **un seul** match (distance minimale), puis on insère une ligne `(media_path, match_id, xuid)` pour **chaque** joueur dont la BDD contient ce match. Ainsi le propriétaire du profil est toujours associé s’il a ce match. Ordre des BDD rendu déterministe : `sorted(iterdir())` et `_get_all_player_dbs_current_first()` pour prioriser la BDD courante.
+- **Backfill** : `_backfill_media_associations_missing_xuids()` complète les associations existantes en ajoutant les xuid manquants pour chaque `(media_path, match_id)` (autres joueurs ayant ce match).
+- **`load_media_for_ui`** : Une seule ligne par média : priorité section « mine » > « teammate » > « unassigned », puis tri stable par gamertag. Chaque capture n’apparaît plus que dans une seule section.
+
+**Fichiers modifiés** : src/data/media_indexer.py, .ai/thought_log.md.
+
+---
+
 ### [2026-02-07] - ✅ Sprints Médias restants (S1–S3 déjà livrés, S6 intégration)
 
 **Statut** : Terminé

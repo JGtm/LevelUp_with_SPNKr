@@ -27,6 +27,18 @@ from src.utils.paths import PLAYER_DB_FILENAME, PLAYERS_DIR
 
 logger = logging.getLogger(__name__)
 
+
+def get_gamertag_from_db_path(db_path: Path | str) -> str | None:
+    """Extrait le gamertag depuis data/players/{gamertag}/stats.duckdb."""
+    try:
+        p = Path(db_path).resolve()
+        if p.name == PLAYER_DB_FILENAME:
+            return p.parent.name
+    except Exception:
+        pass
+    return None
+
+
 # Extensions supportées
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".mov", ".avi"}
@@ -158,6 +170,17 @@ class MediaIndexer:
         except Exception:
             return set()
 
+    def reset_media_tables(self) -> None:
+        """Vide les tables media_files et media_match_associations (schéma conservé)."""
+        conn = duckdb.connect(str(self.db_path), read_only=False)
+        try:
+            self.ensure_schema()
+            conn.execute("DELETE FROM media_match_associations")
+            conn.execute("DELETE FROM media_files")
+            conn.commit()
+        finally:
+            conn.close()
+
     def ensure_schema(self) -> None:
         """Crée ou migre le schéma media_files et media_match_associations."""
         conn = duckdb.connect(str(self.db_path), read_only=False)
@@ -175,6 +198,7 @@ class MediaIndexer:
             if "media_files" in existing_tables:
                 cols = self._get_existing_columns(conn, "media_files")
                 migrations = []
+                # owner_xuid (legacy) : conservée si présente, on la remplit à l'INSERT
                 if "capture_start_utc" not in cols:
                     migrations.append(
                         (
@@ -368,12 +392,17 @@ class MediaIndexer:
 
     def scan_and_index(
         self,
-        videos_dir: Path | None,
-        screens_dir: Path | None,
+        videos_dir: Path | None = None,
+        screens_dir: Path | None = None,
         *,
+        player_captures_dir: Path | None = None,
         force_rescan: bool = False,
     ) -> ScanResult:
-        """Scan delta : nouveaux, modifiés, absents → status='deleted'."""
+        """Scan delta : nouveaux, modifiés, absents → status='deleted'.
+
+        Si player_captures_dir est fourni, on scanne ce dossier (images + vidéos).
+        Sinon on utilise videos_dir et screens_dir (legacy).
+        """
         self.ensure_schema()
         result = ScanResult()
         now = datetime.now()
@@ -390,10 +419,18 @@ class MediaIndexer:
             paths_on_disk: set[str] = set()
             files_to_process: list[dict[str, Any]] = []
 
-            for media_dir, exts in [
-                (videos_dir, VIDEO_EXTENSIONS),
-                (screens_dir, IMAGE_EXTENSIONS),
-            ]:
+            # Nouvelle logique: un seul dossier joueur (base_dir/gamertag)
+            if player_captures_dir and Path(player_captures_dir).exists():
+                dirs_exts = [
+                    (player_captures_dir, VIDEO_EXTENSIONS | IMAGE_EXTENSIONS),
+                ]
+            else:
+                dirs_exts = [
+                    (videos_dir, VIDEO_EXTENSIONS),
+                    (screens_dir, IMAGE_EXTENSIONS),
+                ]
+
+            for media_dir, exts in dirs_exts:
                 if not media_dir or not Path(media_dir).exists():
                     continue
                 try:
@@ -429,37 +466,71 @@ class MediaIndexer:
                         meta["file_hash"] = h
                         files_to_process.append(meta)
 
+            # owner_xuid (legacy) : certaines DB l'ont encore
+            has_owner_xuid = "owner_xuid" in self._get_existing_columns(conn, "media_files")
+            owner_xuid_val = get_gamertag_from_db_path(self.db_path) or ""
+
             for meta in files_to_process:
                 path_str = meta["file_path"]
                 is_new = path_str not in existing
                 try:
                     if is_new:
-                        conn.execute(
-                            """
-                            INSERT INTO media_files (
-                                file_path, file_hash, file_name, file_size, file_ext, kind,
-                                capture_start_utc, capture_end_utc, duration_seconds, title,
-                                mtime, mtime_paris_epoch, status, first_seen_at, last_scan_at, scan_version
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
-                            """,
-                            [
-                                path_str,
-                                meta["file_hash"],
-                                meta["file_name"],
-                                meta["file_size"],
-                                meta["file_ext"],
-                                meta["kind"],
-                                meta["capture_start_utc"],
-                                meta["capture_end_utc"],
-                                meta["duration_seconds"],
-                                meta["title"],
-                                meta["mtime"],
-                                meta["mtime"],
-                                now,
-                                now,
-                                SCAN_VERSION,
-                            ],
-                        )
+                        if has_owner_xuid:
+                            conn.execute(
+                                """
+                                INSERT INTO media_files (
+                                    file_path, file_hash, file_name, file_size, file_ext, kind,
+                                    capture_start_utc, capture_end_utc, duration_seconds, title,
+                                    mtime, mtime_paris_epoch, status, first_seen_at, last_scan_at,
+                                    scan_version, owner_xuid
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                                """,
+                                [
+                                    path_str,
+                                    meta["file_hash"],
+                                    meta["file_name"],
+                                    meta["file_size"],
+                                    meta["file_ext"],
+                                    meta["kind"],
+                                    meta["capture_start_utc"],
+                                    meta["capture_end_utc"],
+                                    meta["duration_seconds"],
+                                    meta["title"],
+                                    meta["mtime"],
+                                    meta["mtime"],
+                                    now,
+                                    now,
+                                    SCAN_VERSION,
+                                    owner_xuid_val,
+                                ],
+                            )
+                        else:
+                            conn.execute(
+                                """
+                                INSERT INTO media_files (
+                                    file_path, file_hash, file_name, file_size, file_ext, kind,
+                                    capture_start_utc, capture_end_utc, duration_seconds, title,
+                                    mtime, mtime_paris_epoch, status, first_seen_at, last_scan_at, scan_version
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                                """,
+                                [
+                                    path_str,
+                                    meta["file_hash"],
+                                    meta["file_name"],
+                                    meta["file_size"],
+                                    meta["file_ext"],
+                                    meta["kind"],
+                                    meta["capture_start_utc"],
+                                    meta["capture_end_utc"],
+                                    meta["duration_seconds"],
+                                    meta["title"],
+                                    meta["mtime"],
+                                    meta["mtime"],
+                                    now,
+                                    now,
+                                    SCAN_VERSION,
+                                ],
+                            )
                         result.n_new += 1
                     else:
                         conn.execute(
@@ -519,7 +590,7 @@ class MediaIndexer:
         player_dbs = []
         if not PLAYERS_DIR.exists():
             return player_dbs
-        for player_dir in PLAYERS_DIR.iterdir():
+        for player_dir in sorted(PLAYERS_DIR.iterdir(), key=lambda p: p.name):
             if not player_dir.is_dir():
                 continue
             db_path = player_dir / PLAYER_DB_FILENAME
@@ -543,8 +614,22 @@ class MediaIndexer:
             player_dbs.append((db_path, xuid))
         return player_dbs
 
+    def _get_all_player_dbs_current_first(self) -> list[tuple[Path, str]]:
+        """Liste des (db_path, xuid) avec la DB courante (profil actuel) en premier."""
+        all_dbs = self._get_all_player_dbs()
+        current = self.db_path.resolve()
+        current_first = [(p, x) for p, x in all_dbs if p.resolve() == current]
+        others = [(p, x) for p, x in all_dbs if p.resolve() != current]
+        return current_first + others
+
     def associate_with_matches(self, tolerance_minutes: int = 5) -> int:
-        """Associe les médias actifs non associés avec les matchs (Sprint 2)."""
+        """Associe les médias actifs avec les matchs (mono-DB).
+
+        Pour chaque média sans association : on cherche le match le plus proche
+        temporellement **uniquement dans cette DB**. Une seule association par média :
+        (media_path, match_id, xuid) avec xuid = propriétaire de la DB.
+        Le partage par match_id se fait à l'affichage (load_media_for_ui cross-DB).
+        """
         self.ensure_schema()
         conn_read = duckdb.connect(str(self.db_path), read_only=True)
         try:
@@ -566,92 +651,86 @@ class MediaIndexer:
         if not unassociated:
             return 0
 
-        player_dbs = self._get_all_player_dbs()
-        if not player_dbs:
-            return 0
+        # xuid du propriétaire de cette DB (sync_meta ou gamertag)
+        owner_xuid = None
+        matches = []
+        with duckdb.connect(str(self.db_path), read_only=True) as c:
+            try:
+                r = c.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
+                if r:
+                    owner_xuid = r[0]
+            except Exception:
+                pass
+            if not owner_xuid:
+                owner_xuid = get_gamertag_from_db_path(self.db_path) or ""
+            try:
+                matches = c.execute(
+                    """
+                    SELECT match_id, start_time, time_played_seconds,
+                           COALESCE(map_id, ''), COALESCE(map_name, '')
+                    FROM match_stats WHERE start_time IS NOT NULL
+                    """
+                ).fetchall()
+            except Exception:
+                matches = c.execute(
+                    """
+                    SELECT match_id, start_time, time_played_seconds, '', ''
+                    FROM match_stats WHERE start_time IS NOT NULL
+                    """
+                ).fetchall()
 
         tol_seconds = tolerance_minutes * 60
         total = 0
         conn_write = duckdb.connect(str(self.db_path), read_only=False)
         try:
-            for player_db_path, player_xuid in player_dbs:
+            for media_path, mtime_epoch in unassociated:
+                candidates: list[tuple[str, Any, Any, str, str, float]] = []
+                for row in matches:
+                    match_id, st, dur = row[0], row[1], row[2]
+                    map_id = row[3] if len(row) > 3 else ""
+                    map_name = row[4] if len(row) > 4 else ""
+                    start_epoch = _match_start_to_epoch(st)
+                    if start_epoch is None:
+                        continue
+                    d = float(dur or 0) if dur else 12 * 60
+                    end_epoch = start_epoch + d
+                    if start_epoch - tol_seconds <= mtime_epoch <= end_epoch + tol_seconds:
+                        dist = abs(mtime_epoch - start_epoch)
+                        candidates.append(
+                            (
+                                str(owner_xuid),
+                                match_id,
+                                st,
+                                map_id,
+                                map_name,
+                                dist,
+                            )
+                        )
+
+                if not candidates:
+                    continue
+                candidates.sort(key=lambda x: (x[5], x[1]))
+                best = candidates[0]
                 try:
-                    pc = (
-                        conn_write
-                        if player_db_path.resolve() == self.db_path.resolve()
-                        else duckdb.connect(str(player_db_path), read_only=True)
+                    conn_write.execute(
+                        """
+                        INSERT INTO media_match_associations
+                        (media_path, match_id, xuid, match_start_time, map_id, map_name, association_confidence)
+                        VALUES (?, ?, ?, ?, ?, ?, 1.0)
+                        ON CONFLICT (media_path, match_id, xuid) DO NOTHING
+                        """,
+                        [
+                            media_path,
+                            best[1],
+                            best[0],
+                            best[2],
+                            best[3],
+                            best[4],
+                        ],
                     )
-                    try:
-                        try:
-                            matches = pc.execute(
-                                """
-                                SELECT match_id, start_time, time_played_seconds,
-                                       COALESCE(map_id, ''), COALESCE(map_name, '')
-                                FROM match_stats WHERE start_time IS NOT NULL
-                                """
-                            ).fetchall()
-                        except Exception:
-                            matches = pc.execute(
-                                """
-                                SELECT match_id, start_time, time_played_seconds, '', ''
-                                FROM match_stats WHERE start_time IS NOT NULL
-                                """
-                            ).fetchall()
-                        if not matches:
-                            continue
-                        for media_path, mtime_epoch in unassociated:
-                            best: list[tuple[Any, Any, str, str, float]] = []
-                            for row in matches:
-                                match_id, st, dur = row[0], row[1], row[2]
-                                map_id = row[3] if len(row) > 3 else ""
-                                map_name = row[4] if len(row) > 4 else ""
-                                start_epoch = _match_start_to_epoch(st)
-                                if start_epoch is None:
-                                    continue
-                                d = float(dur or 0) if dur else 12 * 60
-                                end_epoch = start_epoch + d
-                                if (
-                                    start_epoch - tol_seconds
-                                    <= mtime_epoch
-                                    <= end_epoch + tol_seconds
-                                ):
-                                    best.append(
-                                        (
-                                            match_id,
-                                            st,
-                                            map_id,
-                                            map_name,
-                                            abs(mtime_epoch - start_epoch),
-                                        )
-                                    )
-                            if best:
-                                best.sort(key=lambda x: x[4])
-                                match_id, start_time, map_id, map_name, _ = best[0]
-                                try:
-                                    conn_write.execute(
-                                        """
-                                        INSERT INTO media_match_associations
-                                        (media_path, match_id, xuid, match_start_time, map_id, map_name, association_confidence)
-                                        VALUES (?, ?, ?, ?, ?, ?, 1.0)
-                                        ON CONFLICT (media_path, match_id, xuid) DO NOTHING
-                                        """,
-                                        [
-                                            media_path,
-                                            match_id,
-                                            player_xuid,
-                                            start_time,
-                                            map_id,
-                                            map_name,
-                                        ],
-                                    )
-                                    total += 1
-                                except Exception as e:
-                                    logger.warning("Association %s: %s", media_path, e)
-                    finally:
-                        if pc is not conn_write:
-                            pc.close()
+                    total += 1
                 except Exception as e:
-                    logger.warning("DB %s: %s", player_db_path, e)
+                    logger.warning("Association %s: %s", media_path, e)
             conn_write.commit()
         finally:
             conn_write.close()
@@ -660,6 +739,10 @@ class MediaIndexer:
     @staticmethod
     def load_media_for_ui(db_path: Path | str, current_xuid: str | None) -> pl.DataFrame:
         """Charge les médias actifs avec associations pour l'onglet Médias (Sprint 5).
+
+        Cross-DB : « Mes captures » depuis la DB courante ; « Captures de XXX »
+        depuis les autres DB dont le match_id existe dans la DB courante.
+        Une seule ligne par média : priorité mine > teammate > unassigned.
 
         Returns:
             Polars DataFrame avec colonnes: file_path, file_name, kind, thumbnail_path,
@@ -670,48 +753,93 @@ class MediaIndexer:
         if not db_path.exists():
             return pl.DataFrame()
         try:
-            conn = duckdb.connect(str(db_path), read_only=True)
-            try:
-                tables = conn.execute(
+            MediaIndexer(db_path).ensure_schema()
+        except Exception as e:
+            logger.warning("load_media_for_ui ensure_schema: %s", e)
+            return pl.DataFrame()
+
+        cu = str(current_xuid or "")
+        current_resolved = db_path.resolve()
+        player_dbs = MediaIndexer._get_all_player_dbs()
+
+        # 1) Match_ids du joueur courant
+        match_ids_current: set[str] = set()
+        try:
+            with duckdb.connect(str(db_path), read_only=True) as c:
+                rows = c.execute(
+                    "SELECT DISTINCT match_id FROM match_stats WHERE match_id IS NOT NULL"
+                ).fetchall()
+                match_ids_current = {str(r[0]).strip() for r in rows if r[0]}
+        except Exception:
+            pass
+
+        # 2) Charger médias DB courante (mine + unassigned)
+        df_current = pl.DataFrame()
+        try:
+            with duckdb.connect(str(db_path), read_only=True) as c:
+                tables = c.execute(
                     """
                     SELECT table_name FROM information_schema.tables
                     WHERE table_schema = 'main' AND table_name = 'media_files'
                     """
                 ).fetchall()
-                if not tables:
-                    return pl.DataFrame()
-                # Une ligne par (média, association) ; médias sans assoc ont match_id NULL
-                q = """
-                    SELECT
-                        mf.file_path,
-                        mf.file_name,
-                        mf.kind,
-                        mf.thumbnail_path,
-                        mf.capture_end_utc,
-                        mma.map_name,
-                        mma.match_id,
-                        mma.match_start_time,
-                        mma.xuid
-                    FROM media_files mf
-                    LEFT JOIN media_match_associations mma ON mf.file_path = mma.media_path
-                    WHERE mf.status = 'active'
-                    ORDER BY mf.capture_end_utc DESC NULLS LAST, mf.file_path
-                """
-                df = conn.execute(q).pl()
-            finally:
-                conn.close()
+                if tables:
+                    df_current = c.execute("""
+                        SELECT
+                            mf.file_path, mf.file_name, mf.kind, mf.thumbnail_path,
+                            mf.capture_end_utc, mma.map_name, mma.match_id, mma.match_start_time,
+                            mma.xuid
+                        FROM media_files mf
+                        LEFT JOIN media_match_associations mma ON mf.file_path = mma.media_path
+                        WHERE mf.status = 'active'
+                    """).pl()
         except Exception as e:
-            logger.warning("load_media_for_ui: %s", e)
+            logger.warning("load_media_for_ui current: %s", e)
+
+        # 3) Charger médias des autres DB (match_id dans match_ids_current) → Captures de XXX
+        dfs_teammate: list[pl.DataFrame] = []
+        for pdb, _xuid in player_dbs:
+            if Path(pdb).resolve() == current_resolved:
+                continue
+            if not match_ids_current:
+                continue
+            try:
+                with duckdb.connect(str(pdb), read_only=True) as c:
+                    tables = c.execute(
+                        """
+                        SELECT table_name FROM information_schema.tables
+                        WHERE table_schema = 'main' AND table_name = 'media_match_associations'
+                        """
+                    ).fetchall()
+                    if not tables:
+                        continue
+                    placeholders = ",".join("?" for _ in match_ids_current)
+                    q = f"""
+                        SELECT mf.file_path, mf.file_name, mf.kind, mf.thumbnail_path,
+                               mf.capture_end_utc, mma.map_name, mma.match_id, mma.match_start_time,
+                               mma.xuid
+                        FROM media_files mf
+                        JOIN media_match_associations mma ON mf.file_path = mma.media_path
+                        WHERE mf.status = 'active' AND mma.match_id IN ({placeholders})
+                    """
+                    df_t = c.execute(q, list(match_ids_current)).pl()
+                    if not df_t.is_empty():
+                        dfs_teammate.append(df_t)
+            except Exception as e:
+                logger.debug("load_media_for_ui other db %s: %s", pdb, e)
+
+        # 4) Concaténer
+        if df_current.is_empty() and not dfs_teammate:
             return pl.DataFrame()
-        if df.is_empty():
-            return df
-        # xuid → gamertag depuis data/players/{gamertag}/stats.duckdb
+        dfs = [df_current] + dfs_teammate
+        df = pl.concat(dfs) if len(dfs) > 1 else dfs[0]
+
+        # xuid → gamertag
         xuid_to_gamertag: dict[str, str] = {}
-        for pdb, xu in MediaIndexer._get_all_player_dbs():
+        for pdb, xu in player_dbs:
             gamertag = Path(pdb).parent.name
             xuid_to_gamertag[str(xu)] = gamertag
 
-        # Colonne gamertag (xuid → nom du dossier joueur)
         def _gamertag(u: Any) -> str:
             if u is None:
                 return ""
@@ -721,19 +849,33 @@ class MediaIndexer:
             pl.col("xuid").map_elements(_gamertag, return_dtype=pl.Utf8).alias("gamertag")
         )
         # Section: unassigned si pas de match_id, sinon mine ou teammate
-        cu = str(current_xuid or "")
+        # Mine = xuid match OU gamertag match (current_xuid peut être gamertag en DuckDB v4)
+        current_gamertag = get_gamertag_from_db_path(db_path) or cu
         df = df.with_columns(
             pl.when(
                 pl.col("match_id").is_null()
                 | (pl.col("match_id").cast(pl.Utf8).str.strip_chars() == "")
             )
             .then(pl.lit("unassigned"))
-            .when(pl.col("xuid").cast(pl.Utf8) == cu)
+            .when((pl.col("xuid").cast(pl.Utf8) == cu) | (pl.col("gamertag") == current_gamertag))
             .then(pl.lit("mine"))
             .otherwise(pl.lit("teammate"))
             .alias("section")
         )
-        return df
+        # Une seule ligne par média : priorité mine > teammate > unassigned
+        df = df.with_columns(
+            pl.when(pl.col("section") == "mine")
+            .then(0)
+            .when(pl.col("section") == "teammate")
+            .then(1)
+            .otherwise(2)
+            .alias("_section_rank")
+        )
+        df = df.sort(["file_path", "_section_rank", "gamertag"]).unique(
+            subset=["file_path"], keep="first"
+        )
+        df = df.drop("_section_rank")
+        return df.sort("capture_end_utc", descending=True)
 
     def generate_thumbnails_for_new(
         self,
