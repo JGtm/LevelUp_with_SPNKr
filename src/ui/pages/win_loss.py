@@ -371,7 +371,7 @@ def _render_map_table(breakdown: pd.DataFrame, base_scope: pd.DataFrame) -> None
     tbl["accuracy_avg"] = pd.to_numeric(tbl["accuracy_avg"], errors="coerce").round(2)
     tbl["ratio_global"] = pd.to_numeric(tbl["ratio_global"], errors="coerce").round(2)
     if "performance_avg" in tbl.columns:
-        tbl["performance_avg"] = tbl["performance_avg"].round(1)
+        tbl["performance_avg"] = pd.to_numeric(tbl["performance_avg"], errors="coerce").round(1)
 
     def _single_or_multi_label(series: pd.Series) -> str:
         try:
