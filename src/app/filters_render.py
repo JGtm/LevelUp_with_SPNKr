@@ -37,6 +37,22 @@ from src.ui.filter_state import (
 GAP_MINUTES_FIXED = 120  # Figé (sessions stockées en base, cf. SESSIONS_STOCKAGE_PLAN.md)
 
 
+def _session_labels_ordered_by_last_match(base_s: pd.DataFrame) -> list[str]:
+    """Retourne les session_label ordonnées par date du dernier match (plus récent en premier).
+
+    Robuste au type de session_id (stocké VARCHAR ou calculé) et à la logique 4h (Cas A/B).
+    """
+    if base_s.empty or "start_time" not in base_s.columns or "session_label" not in base_s.columns:
+        return []
+    agg = (
+        base_s.groupby(["session_id", "session_label"], dropna=False)["start_time"]
+        .max()
+        .reset_index()
+    )
+    agg = agg.sort_values("start_time", ascending=False)
+    return agg["session_label"].tolist()
+
+
 @dataclass
 class FilterState:
     """État des filtres après rendu."""
@@ -203,12 +219,7 @@ def _apply_default_last_session(
     base_s = cached_compute_sessions_db(
         db_path, xuid.strip(), db_key, True, gap_default, friends_xuids=friends_tuple
     )
-    session_labels_df = (
-        base_s[["session_id", "session_label"]]
-        .drop_duplicates()
-        .sort_values("session_id", ascending=False)
-    )
-    options = session_labels_df["session_label"].tolist()
+    options = _session_labels_ordered_by_last_match(base_s)
     last_label = options[0] if options else "(toutes)"
     st.session_state["filter_mode"] = "Sessions"
     st.session_state["gap_minutes"] = gap_default
@@ -296,12 +307,7 @@ def _render_session_filter(
         gap_minutes,
         friends_xuids=friends_tuple,
     )
-    session_labels_ui = (
-        base_s_ui[["session_id", "session_label"]]
-        .drop_duplicates()
-        .sort_values("session_id", ascending=False)
-    )
-    options_ui = session_labels_ui["session_label"].tolist()
+    options_ui = _session_labels_ordered_by_last_match(base_s_ui)
     st.session_state["_latest_session_label"] = options_ui[0] if options_ui else None
 
     def _set_session_selection(label: str) -> None:
