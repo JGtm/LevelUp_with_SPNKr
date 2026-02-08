@@ -156,7 +156,25 @@ def dispatch_page(
         all_sessions_df = cached_compute_sessions_db_fn(
             db_path, xuid.strip(), db_key, True, gap_minutes, friends_xuids=friends_tuple
         )
-        render_session_comparison_page_fn(all_sessions_df, df_full=df)
+        # La page a besoin d'un DataFrame "sessions" enrichi : session_id/session_label
+        # + toutes les stats match (kills, pair_name, etc.). En DuckDB v4, cached_compute_sessions_db
+        # ne renvoie que match_id, start_time, session_id, session_label → on fusionne avec df.
+        if (
+            not all_sessions_df.empty
+            and "match_id" in df.columns
+            and "match_id" in all_sessions_df.columns
+        ):
+            sess_cols = ["match_id", "session_id", "session_label"]
+            df_for_merge = df.drop(
+                columns=[c for c in ("session_id", "session_label") if c in df.columns],
+                errors="ignore",
+            )
+            sessions_for_compare = df_for_merge.merge(
+                all_sessions_df[sess_cols], on="match_id", how="inner"
+            )
+        else:
+            sessions_for_compare = all_sessions_df
+        render_session_comparison_page_fn(sessions_for_compare, df_full=df)
 
     elif page == "Séries temporelles":
         render_timeseries_page_fn(dff, df_full=df, db_path=db_path, xuid=xuid)

@@ -279,16 +279,14 @@ def render_date_filters(
         if pd.isna(end_limit):
             end_limit = start_default
         end_limit_date = end_limit.date()
-        start_value = st.session_state.get("start_date_cal", start_default_date)
-        if (
-            not isinstance(start_value, date)
-            or start_value < start_default_date
-            or start_value > end_limit_date
-        ):
-            start_value = start_default_date
+        if "start_date_cal" not in st.session_state:
+            st.session_state["start_date_cal"] = start_default_date
+        else:
+            cur = st.session_state["start_date_cal"]
+            if not isinstance(cur, date) or cur < start_default_date or cur > end_limit_date:
+                st.session_state["start_date_cal"] = start_default_date
         start_date = st.date_input(
             "Début",
-            value=start_value,
             min_value=start_default_date,
             max_value=end_limit_date,
             format="DD/MM/YYYY",
@@ -303,16 +301,14 @@ def render_date_filters(
         if pd.isna(start_limit):
             start_limit = end_default
         start_limit_date = start_limit.date()
-        end_value = st.session_state.get("end_date_cal", end_default_date)
-        if (
-            not isinstance(end_value, date)
-            or end_value < start_limit_date
-            or end_value > end_default_date
-        ):
-            end_value = end_default_date
+        if "end_date_cal" not in st.session_state:
+            st.session_state["end_date_cal"] = end_default_date
+        else:
+            cur = st.session_state["end_date_cal"]
+            if not isinstance(cur, date) or cur < start_limit_date or cur > end_default_date:
+                st.session_state["end_date_cal"] = end_default_date
         end_date = st.date_input(
             "Fin",
-            value=end_value,
             min_value=start_limit_date,
             max_value=end_default_date,
             format="DD/MM/YYYY",

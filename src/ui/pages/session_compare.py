@@ -243,8 +243,8 @@ def compute_similar_sessions_average(
     if len(matching_session_ids) == 0:
         return {}
 
-    # Filtrer par catégorie dominante si demandée
-    if mode_category:
+    # Filtrer par catégorie dominante si demandée (nécessite pair_name dans le DataFrame)
+    if mode_category and "pair_name" in df.columns:
         df_candidates = df[df["session_id"].isin(matching_session_ids)].copy()
         if df_candidates.empty:
             return {}

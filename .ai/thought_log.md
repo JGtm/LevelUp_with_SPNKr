@@ -7,6 +7,22 @@
 
 ## Journal
 
+### [2026-02-08] - Comparaison de sessions : KeyError kills / pair_name (root cause)
+
+**Statut** : Corrigé
+
+**Problème** : Sur l’onglet « Comparaison de sessions », KeyError sur `pair_name` puis sur `kills`.
+
+**Root cause** : La page reçoit `all_sessions_df` issu de `cached_compute_sessions_db()`. En chemin **DuckDB v4**, cette fonction ne sélectionne que `match_id`, `start_time`, `session_id`, `session_label` (pour limiter la lecture disque). Elle ne charge pas `pair_name`, `kills`, `deaths`, etc. La page suppose au contraire un DataFrame « sessions » **enrichi** (une ligne par match avec session_id, session_label + toutes les colonnes de match_stats). D’où les KeyError dès qu’on accède à `pair_name` ou `kills`.
+
+**Correction** :
+- **page_router** : Pour « Comparaison de sessions », fusionner `df` (stats complètes) avec `all_sessions_df` sur `match_id` avant d’appeler la page. La page reçoit ainsi un DataFrame enrichi (session_id, session_label + kills, pair_name, etc.). Si merge impossible (all_sessions_df vide ou pas de match_id), on garde l’ancien comportement (all_sessions_df tel quel).
+- **session_compare.py** : Garde déjà ajoutée pour le filtre par catégorie : `if mode_category and "pair_name" in df.columns` pour éviter KeyError si `pair_name` absent.
+
+**Fichiers modifiés** : src/app/page_router.py, src/ui/pages/session_compare.py (garde pair_name), .ai/thought_log.md.
+
+---
+
 ### [2026-02-07] - Shots fired / shots hit en BDD et backfill (SHOTS_FIRED_HIT_BDD_PLAN)
 
 **Statut** : Implémenté (Sprints 1–3)
