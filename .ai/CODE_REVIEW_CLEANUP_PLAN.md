@@ -37,6 +37,10 @@
 | Implémentations dupliquées (load_matches) | 6 versions | Legacy + DuckDB + Cache + Bridge + Query |
 | Taille données legacy (.db) | ~370 Mo | SQLite inutilisé en production |
 | Fichiers JSON volumineux (racine) | ~224 Mo | `xuid_aliases.json` + `Playlist_modes_translations.json` |
+| venv doublon (`.venv_windows/`) | 985 Mo | Python 3.14.1 expérimental, doublon de `.venv/` |
+| Dossier `out/` | 520 Ko | Fichiers one-shot (mappings commendations) |
+| `levelup_halo.egg-info/` | 28 Ko | Metadata auto-générée, supprimable |
+| `thumbs/` (tracké git) | 8.7 Mo | 102 images de cartes — à relocaliser dans `static/maps/` |
 | Documents .ai/ | 173+ fichiers | Beaucoup obsolètes |
 
 ### Problèmes Architecturaux Majeurs
@@ -464,7 +468,31 @@ src/
 | `xuid_aliases.json` | 180 Mo | **Déplacer** dans `data/` ou `data/warehouse/` |
 | `Playlist_modes_translations.json` | 44 Mo | **Déplacer** dans `data/` ou `data/warehouse/` |
 
-### 6.3 Fichiers Racine à Évaluer
+### 6.3 Dossiers Racine à Nettoyer
+
+| Dossier | Taille | Git tracked ? | Contenu | Action |
+|---------|--------|---------------|---------|--------|
+| **`out/`** | 520 Ko | Non (.gitignore) | Fichiers one-shot : mappings commendations, liens waypoint | **SUPPRIMER** le contenu |
+| **`levelup_halo.egg-info/`** | 28 Ko | Non (.gitignore `*.egg-info/`) | Metadata auto-générée par `pip install -e .` | **SUPPRIMER** (se régénère) |
+| **`.venv_windows/`** | **985 Mo** | Non (.gitignore) | venv Python **3.14.1** (expérimental) — doublon de `.venv/` (Python 3.12.12) | **SUPPRIMER** |
+| **`thumbs/`** | 8.7 Mo | **OUI — tracké par git** | **102 images de cartes Halo** (JPG/PNG) utilisées par l'UI | **RELOCALISER** (voir ci-dessous) |
+
+> **Libération supplémentaire estimée : ~986 Mo** (principalement `.venv_windows/`)
+
+#### `thumbs/` — Relocalisation des Images de Cartes
+
+Ces 102 images sont **essentielles** à l'application (affichage des cartes dans l'UI). Elles doivent être conservées mais mieux organisées :
+
+1. **Déplacer** `thumbs/` → `static/maps/` (cohérent avec le dossier `static/` existant qui contient déjà `medals/` et `commendations/`)
+2. **Mettre à jour** toutes les références dans le code Python qui pointent vers `thumbs/`
+3. **Ajouter** `thumbs/` au `.gitignore` après déplacement (l'ancien chemin)
+4. **Vérifier** que `static/maps/` est bien tracké par git (ces images doivent rester versionnées)
+
+Fichiers à mettre à jour après relocalisation :
+- Tous les fichiers Python référençant le chemin `thumbs/` (à identifier par grep)
+- Les éventuels templates ou configs Streamlit
+
+### 6.4 Fichiers Racine à Évaluer
 
 | Fichier | Action |
 |---------|--------|
@@ -559,6 +587,9 @@ Le dossier `.ai/` contient **173+ fichiers** accumulés sur plusieurs mois. Beau
 | A1 | Backup complet des données (`backup_player.py` pour chaque joueur) | Nul | Faible |
 | A2 | Commit/tag de l'état actuel avant nettoyage | Nul | Faible |
 | A3 | Archiver les docs `.ai/` obsolètes | Nul | Faible |
+| A4 | Supprimer `.venv_windows/` (985 Mo, doublon de `.venv/`, Python 3.14 expérimental) | Nul | Faible |
+| A5 | Supprimer `levelup_halo.egg-info/` (se régénère via `pip install -e .`) | Nul | Faible |
+| A6 | Supprimer le contenu de `out/` (fichiers one-shot) | Nul | Faible |
 
 ### Phase B — Nettoyage des Scripts (impact faible)
 
@@ -610,7 +641,7 @@ Le dossier `.ai/` contient **173+ fichiers** accumulés sur plusieurs mois. Beau
 | E3 | Nettoyer `src/config.py` (recherche `.db`) | Faible | Faible |
 | E4 | Nettoyer `src/db/profiles.py` ou le déplacer | Faible | Faible |
 
-### Phase F — Nettoyage Données (libérer 580+ Mo)
+### Phase F — Nettoyage Données & Assets (libérer 1.5+ Go)
 
 | # | Action | Risque | Effort |
 |---|--------|--------|--------|
@@ -618,6 +649,9 @@ Le dossier `.ai/` contient **173+ fichiers** accumulés sur plusieurs mois. Beau
 | F2 | Supprimer les `.db` legacy dans `data/` | Moyen | Faible |
 | F3 | Supprimer `data/investigation/` | Faible | Faible |
 | F4 | Déplacer les gros JSON dans `data/` | Faible | Faible |
+| F5 | Relocaliser `thumbs/` → `static/maps/` (images de cartes pour l'UI) | Faible | Moyen |
+| F6 | Mettre à jour les refs dans le code Python vers `static/maps/` | Faible | Moyen |
+| F7 | `git rm -r thumbs/` + `git add static/maps/` (déplacement propre dans git) | Faible | Faible |
 
 ### Phase G — Nettoyage Tests & Finalisation
 
@@ -647,6 +681,10 @@ Après exécution de toutes les phases, vérifier :
 - [ ] Aucun fichier `.db` dans `data/` (hors `scripts/migration/` qui les lit)
 - [ ] `data/investigation/` supprimé
 - [ ] Gros JSON déplacés dans `data/`
+- [ ] `thumbs/` relocalisé dans `static/maps/` et refs mises à jour
+- [ ] `.venv_windows/` supprimé
+- [ ] `levelup_halo.egg-info/` supprimé
+- [ ] `out/` vidé
 - [ ] `.ai/` nettoyé : ~10 fichiers vivants + archive datée
 - [ ] `pytest tests/ -v` passe à 100%
 - [ ] `CLAUDE.md` à jour (sections "Code Déprécié" vidées)
