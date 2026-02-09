@@ -29,7 +29,7 @@ def plot_metric_bars_by_match(
     smooth_window: int = 10,
 ) -> go.Figure | None:
     """Graphique en barres d'une métrique par match avec courbe de moyenne lissée.
-    
+
     Args:
         df_: DataFrame avec colonnes 'start_time' et la métrique.
         metric_col: Nom de la colonne de métrique.
@@ -39,7 +39,7 @@ def plot_metric_bars_by_match(
         bar_color: Couleur des barres.
         smooth_color: Couleur de la courbe lissée.
         smooth_window: Fenêtre de lissage (défaut: 10).
-        
+
     Returns:
         Figure Plotly ou None si données insuffisantes.
     """
@@ -80,13 +80,13 @@ def plot_metric_bars_by_match(
             y=smooth,
             mode="lines",
             name="Moyenne (lissée)",
-            line=dict(width=3, color=smooth_color),
+            line={"width": 3, "color": smooth_color},
             hovertemplate="moyenne=%{y:.2f}<extra></extra>",
         )
     )
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=40, b=90),
+        margin={"l": 40, "r": 20, "t": 40, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
     )
@@ -114,7 +114,7 @@ def plot_multi_metric_bars_by_match(
     show_smooth_lines: bool = True,
 ) -> go.Figure | None:
     """Graphique en barres multi-joueurs d'une métrique par match.
-    
+
     Args:
         series: Liste de tuples (nom, DataFrame).
         metric_col: Nom de la colonne de métrique.
@@ -124,7 +124,7 @@ def plot_multi_metric_bars_by_match(
         colors: Dict ou liste de couleurs par joueur.
         smooth_window: Fenêtre de lissage (défaut: 10).
         show_smooth_lines: Afficher les courbes lissées.
-        
+
     Returns:
         Figure Plotly ou None si données insuffisantes.
     """
@@ -134,32 +134,31 @@ def plot_multi_metric_bars_by_match(
     # Vérifier si match_id est disponible dans tous les DataFrames non-vides
     has_match_id = True
     for _, df_ in series:
-        if df_ is not None and not df_.empty:
-            if "match_id" not in df_.columns:
-                has_match_id = False
-                break
+        if df_ is not None and not df_.empty and "match_id" not in df_.columns:
+            has_match_id = False
+            break
 
     prepared: list[tuple[str, pd.DataFrame]] = []
     all_match_data: list[pd.DataFrame] = []  # Pour construire l'axe X commun
-    
+
     for name, df_ in series:
         if df_ is None or df_.empty:
             continue
         if metric_col not in df_.columns or "start_time" not in df_.columns:
             continue
-        
+
         cols_to_use = ["start_time", metric_col]
         if has_match_id:
             cols_to_use.append("match_id")
-        
+
         d = df_[cols_to_use].copy()
         d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
         d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
         if d.empty:
             continue
-        
+
         prepared.append((str(name), d))
-        
+
         # Collecter les données pour l'axe X commun (vectorisé)
         if has_match_id:
             match_df = d[["match_id", "start_time"]].copy()
@@ -177,17 +176,17 @@ def plot_multi_metric_bars_by_match(
     # Garder le premier start_time par match_id (le plus ancien)
     match_times = combined.groupby("match_id")["start_time"].min().reset_index()
     match_times = match_times.sort_values("start_time").reset_index(drop=True)
-    
+
     match_ids_ordered = match_times["match_id"].tolist()
     idx_map = {mid: i for i, mid in enumerate(match_ids_ordered)}
-    
+
     # Labels pour l'axe X (dates)
     labels = match_times["start_time"].dt.strftime("%d/%m %H:%M").tolist()
     step = max(1, len(labels) // 10) if labels else 1
 
     fig = go.Figure()
     w = int(smooth_window) if smooth_window else 0
-    
+
     for i, (name, d) in enumerate(prepared):
         if isinstance(colors, dict):
             color = colors.get(name) or "#35D0FF"
@@ -195,34 +194,57 @@ def plot_multi_metric_bars_by_match(
             color = colors[i % len(colors)]
         else:
             color = "#35D0FF"
-        
+
         y = pd.to_numeric(d[metric_col], errors="coerce")
         mask = y.notna()
         d2 = d.loc[mask].copy()
         if d2.empty:
             continue
-        
+
         y2 = pd.to_numeric(d2[metric_col], errors="coerce")
-        
+
         # Mapper vers l'axe X commun via match_id (vectorisé)
         if has_match_id:
             d2["_match_key"] = d2["match_id"].astype(str)
         else:
             d2["_match_key"] = d2["start_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
-        
+
         d2["_x"] = d2["_match_key"].map(idx_map)
         valid_mask = d2["_x"].notna()
         d2 = d2.loc[valid_mask].copy()
-        y2 = y2.loc[valid_mask].reset_index(drop=True)
-        x = d2["_x"].astype(int).tolist()
-        
+        y2 = y2.loc[valid_mask]
+
+        # Calculer la moyenne lissée sur les valeurs dans l'ordre chronologique
+        # (d2 est déjà trié par start_time, donc y2 est dans l'ordre chronologique)
+        if bool(show_smooth_lines):
+            smooth_chrono = (
+                y2.rolling(window=max(1, w), min_periods=1).mean() if w and w > 1 else y2
+            )
+        else:
+            smooth_chrono = None
+
+        # Trier par indices X pour garantir l'ordre correct (évite les boucles visuelles)
+        # Créer un DataFrame temporaire pour trier ensemble x, y2 et smooth
+        temp_df = pd.DataFrame(
+            {
+                "_x": d2["_x"].astype(int),
+                "y": y2.values,
+            }
+        )
+        if smooth_chrono is not None:
+            temp_df["smooth"] = smooth_chrono.values
+        temp_df = temp_df.sort_values("_x").reset_index(drop=True)
+
+        x = temp_df["_x"].tolist()
+        y2_sorted = temp_df["y"].tolist()
+
         if not x:
             continue
 
         fig.add_trace(
             go.Bar(
                 x=x,
-                y=y2,
+                y=y2_sorted,
                 name=name,
                 marker_color=color,
                 opacity=0.70,
@@ -231,15 +253,16 @@ def plot_multi_metric_bars_by_match(
             )
         )
 
-        if bool(show_smooth_lines):
-            smooth = y2.rolling(window=max(1, w), min_periods=1).mean() if w and w > 1 else y2
+        if bool(show_smooth_lines) and smooth_chrono is not None:
+            smooth_sorted = temp_df["smooth"].tolist()
+
             fig.add_trace(
                 go.Scatter(
                     x=x,
-                    y=smooth,
+                    y=smooth_sorted,
                     mode="lines",
                     name=f"{name} — moyenne lissée",
-                    line=dict(width=3, color=color),
+                    line={"width": 3, "color": color},
                     opacity=0.95,
                     hovertemplate=f"{name}<br>moyenne=%{{y:.2f}}<extra></extra>",
                     legendgroup=name,
@@ -251,7 +274,7 @@ def plot_multi_metric_bars_by_match(
 
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=40, b=90),
+        margin={"l": 40, "r": 20, "t": 40, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
         barmode="group",
