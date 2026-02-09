@@ -750,10 +750,26 @@ def _find_matches_missing_data(
     force_assets: bool = False,
     force_participants: bool = False,
     max_matches: int | None = None,
+    all_data: bool = False,
 ) -> list[str]:
     """Trouve les matchs avec des données manquantes."""
     conditions = []
     params = []
+
+    # Détecter si on utilise --all-data (beaucoup d'options activées)
+    # Pour éviter de retraiter les matchs déjà complets, on exclut ceux qui ont
+    # déjà toutes les données principales ET qui sont parmi les plus récents
+    # (car les matchs récents sont plus susceptibles d'avoir été traités récemment)
+    exclude_complete_matches = (
+        all_data
+        and medals
+        and events
+        and skill
+        and personal_scores
+        and participants
+        and not force_medals
+        and not force_participants
+    )
 
     if medals:
         if force_medals:
@@ -964,10 +980,37 @@ def _find_matches_missing_data(
         return []
 
     where_clause = " OR ".join(conditions)
+
+    # Si on utilise --all-data, exclure les matchs qui ont déjà toutes les données principales
+    # ET qui sont parmi les plus récents (car ils sont plus susceptibles d'avoir été traités récemment)
+    # Cela évite de retraiter les matchs déjà complets lors d'un relancement
+    exclude_clause = ""
+    if exclude_complete_matches:
+        # Exclure les matchs qui ont toutes les données principales ET qui sont parmi les 500 plus récents
+        # (les matchs récents sont plus susceptibles d'avoir été traités récemment avec --all-data)
+        exclude_clause = """
+            AND ms.match_id NOT IN (
+                SELECT DISTINCT ms2.match_id
+                FROM match_stats ms2
+                WHERE ms2.match_id IN (SELECT DISTINCT match_id FROM medals_earned)
+                  AND ms2.match_id IN (SELECT DISTINCT match_id FROM highlight_events)
+                  AND ms2.match_id IN (SELECT DISTINCT match_id FROM player_match_stats WHERE xuid = ?)
+                  AND ms2.match_id IN (SELECT DISTINCT match_id FROM personal_score_awards WHERE xuid = ?)
+                  AND ms2.match_id IN (SELECT DISTINCT match_id FROM match_participants)
+                  AND ms2.match_id IN (
+                      SELECT match_id FROM match_stats
+                      ORDER BY start_time DESC
+                      LIMIT 500
+                  )
+            )
+        """
+        params.append(xuid)
+        params.append(xuid)
+
     query = f"""
         SELECT DISTINCT ms.match_id
         FROM match_stats ms
-        WHERE ({where_clause})
+        WHERE ({where_clause}){exclude_clause}
         ORDER BY ms.start_time DESC
     """
 
@@ -1357,6 +1400,7 @@ async def backfill_player_data(
             force_assets=force_assets,
             force_participants=force_participants,
             max_matches=max_matches,
+            all_data=all_data,
         )
 
         logger.info(f"Matchs trouvés avec données manquantes: {len(match_ids)}")
