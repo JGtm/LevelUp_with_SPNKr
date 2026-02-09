@@ -276,12 +276,13 @@ def _sync_duckdb_player(
                 tokens=tokens,
             )
 
-            # Exécuter la sync — toujours tout récupérer (match stats, highlight_events, skill, aliases)
+            # Exécuter la sync — toujours tout récupérer (match stats, highlight_events, skill, aliases, participants)
             options = SyncOptions(
                 max_matches=max_matches,
                 with_highlight_events=True,
                 with_skill=True,
                 with_aliases=True,
+                with_participants=True,  # Récupérer le roster complet pour chaque match
             )
 
             if delta:

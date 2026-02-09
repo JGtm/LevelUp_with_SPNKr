@@ -6,7 +6,7 @@ Ce script identifie les matchs existants qui ont des données manquantes
 et les remplit en re-téléchargeant les données nécessaires depuis l'API SPNKr.
 
 Usage:
-    # Backfill toutes les données pour un joueur
+    # Backfill toutes les données pour un joueur (inclut shots et participants-*)
     python scripts/backfill_data.py --player JGtm --all-data
 
     # Backfill uniquement les médailles
@@ -1026,7 +1026,7 @@ async def backfill_player_data(
         skill: Backfill les stats skill/MMR.
         personal_scores: Backfill les personal score awards.
         aliases: Mettre à jour les aliases.
-        all_data: Backfill toutes les données.
+        all_data: Backfill toutes les données (inclut shots et participants-*).
 
     Returns:
         Dict avec les statistiques.
@@ -1043,6 +1043,10 @@ async def backfill_player_data(
         enemy_mmr = True
         assets = True
         participants = True
+        shots = True  # shots_fired/shots_hit pour le joueur principal
+        participants_scores = True  # rank et score des participants
+        participants_kda = True  # kills, deaths, assists des participants
+        participants_shots = True  # shots_fired/shots_hit des participants
         killer_victim = True
         end_time = True
         sessions = True
@@ -2105,7 +2109,7 @@ def main() -> int:
     parser.add_argument(
         "--all-data",
         action="store_true",
-        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --participants --killer-victim --end-time --sessions)",
+        help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --accuracy --enemy-mmr --assets --participants --shots --participants-scores --participants-kda --participants-shots --killer-victim --end-time --sessions)",
     )
 
     parser.add_argument(

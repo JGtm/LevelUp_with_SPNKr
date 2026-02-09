@@ -225,7 +225,7 @@ def render_timeseries_page(
         # === Corrélations Sprint 5.4.5 ===
         st.divider()
         st.subheader("Corrélations")
-        st.caption("Analyse les relations entre tes métriques.")
+        st.caption("Analyse les relations entre tes métriques et le résultat du match.")
 
         col_corr1, col_corr2 = st.columns(2)
 

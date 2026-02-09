@@ -93,8 +93,9 @@ CREATE TABLE IF NOT EXISTS player_match_stats (
 );
 
 -- Table highlight_events (kills, deaths depuis les films)
+CREATE SEQUENCE IF NOT EXISTS highlight_events_id_seq;
 CREATE TABLE IF NOT EXISTS highlight_events (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY DEFAULT nextval('highlight_events_id_seq'),
     match_id VARCHAR NOT NULL,
     event_type VARCHAR NOT NULL,
     time_ms INTEGER,
@@ -298,6 +299,9 @@ class DuckDBSyncEngine:
         # Colonnes rank/score sur match_participants (migration)
         self._ensure_match_participants_rank_score()
 
+        # S'assurer que la séquence pour highlight_events existe (migration)
+        self._ensure_highlight_events_sequence()
+
     def _ensure_match_stats_table(self) -> None:
         """S'assure que la table match_stats existe avec toutes les colonnes nécessaires."""
         conn = self._connection
@@ -449,6 +453,45 @@ class DuckDBSyncEngine:
                 conn.execute("ALTER TABLE match_participants ADD COLUMN shots_hit INTEGER")
         except Exception as e:
             logger.debug(f"match_participants columns migration: {e}")
+
+    def _ensure_highlight_events_sequence(self) -> None:
+        """S'assure que la séquence pour highlight_events.id existe (migration)."""
+        conn = self._connection
+        if conn is None:
+            return
+        try:
+            # Vérifier si la séquence existe
+            seq_check = conn.execute(
+                "SELECT sequence_name FROM information_schema.sequences "
+                "WHERE sequence_schema = 'main' AND sequence_name = 'highlight_events_id_seq'"
+            ).fetchone()
+            if not seq_check:
+                logger.info("Création de la séquence highlight_events_id_seq")
+                conn.execute("CREATE SEQUENCE highlight_events_id_seq")
+
+            # Vérifier si la table existe et si elle utilise la séquence
+            table_check = conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'highlight_events'"
+            ).fetchone()
+            if table_check:
+                # Vérifier si la colonne id utilise la séquence
+                col_info = conn.execute(
+                    """
+                    SELECT column_default
+                    FROM information_schema.columns
+                    WHERE table_schema = 'main' AND table_name = 'highlight_events' AND column_name = 'id'
+                    """
+                ).fetchone()
+
+                if col_info and col_info[0] and "nextval" not in str(col_info[0]).lower():
+                    logger.warning(
+                        "La colonne highlight_events.id n'utilise pas la séquence. "
+                        "Pour les nouvelles insertions, utilisez INSERT sans spécifier id. "
+                        "Une migration manuelle peut être nécessaire pour les tables existantes."
+                    )
+        except Exception as e:
+            logger.debug(f"highlight_events sequence check: {e}")
 
     def _load_existing_match_ids(self) -> set[str]:
         """Charge les IDs des matchs existants depuis la DB."""
@@ -1007,7 +1050,7 @@ class DuckDBSyncEngine:
         conn = self._get_connection()
 
         for row in rows:
-            with contextlib.suppress(Exception):
+            try:
                 conn.execute(
                     """INSERT INTO highlight_events (
                         match_id, event_type, time_ms, xuid, gamertag, type_hint, raw_json
@@ -1021,6 +1064,11 @@ class DuckDBSyncEngine:
                         row.type_hint,
                         row.raw_json,
                     ),
+                )
+            except Exception as e:
+                # Logger l'erreur au lieu de la supprimer silencieusement
+                logger.warning(
+                    f"Erreur insertion highlight_event {row.event_type} pour {row.match_id}: {e}"
                 )
 
     def _insert_alias_rows(self, rows: list) -> None:
