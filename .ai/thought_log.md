@@ -7,6 +7,23 @@
 
 ## Journal
 
+### [2026-02-09] - Analyse persistance des filtres multi-joueurs (sans modification de code)
+
+**Statut** : 📋 Analyse et plan détaillé rédigés
+
+**Contexte** : L'utilisateur signale des conflits et une mauvaise persistance des filtres par DB joueur : au switch utilisateur les filtres ne sont pas correctement restaurés, au retour sur le joueur initial encore plus de filtres sont désélectionnés ; demande d’analyse approfondie + plan de correction ultra détaillé, sans toucher au code.
+
+**Cause racine identifiée** :
+- Les **clés des widgets** Streamlit (checkboxes playlists/modes/cartes : `filter_playlists_cb_*`, `filter_playlists_cat_*`, `*_version`, etc.) sont **globales** et **non supprimées** au changement de joueur.
+- Après `apply_filter_preferences(new_player)`, les données en `session_state` sont correctes mais Streamlit réaffiche l’état des **widgets** (ancien joueur) → affichage incohérent → l’utilisateur « corrige » en cliquant → la sélection est modifiée → la sauvegarde automatique en fin de rendu **écrase** le JSON du joueur avec une sélection dégradée.
+- Liste de nettoyage au changement de joueur **incomplète** : manquent `gap_minutes`, `_latest_session_label`, `min_matches_maps`, etc., et surtout **toutes les clés dont le nom commence par** `filter_playlists_`, `filter_modes_`, `filter_maps_`.
+
+**Livrable** : `.ai/ANALYSE_PERSISTANCE_FILTRES_MULTI_JOUEURS.md` — analyse détaillée, scénario type « encore plus de filtres désélectionnés », plan de correction en 7 phases (nettoyage exhaustif, centralisation des clés, tests, option scopage widgets par joueur, doc).
+
+**Prochaines étapes** : Implémenter le plan (Phase 1–2 en priorité : nettoyage exhaustif + centralisation des clés).
+
+---
+
 ### [2026-02-09] - Revue complète du script backfill_data.py + Diagnostic persistance
 
 **Statut** : 🔧 Correctif partiel appliqué (commit final), diagnostic complet documenté

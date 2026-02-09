@@ -32,6 +32,7 @@
 | **P5** | Score de performance v4 | `PERFORMANCE_SCORE_V4_PLAN.md` | 🟡 Moyenne | Haute |
 | **P6** | Nouvelles visualisations statistiques | `PLAN_DETAIL_STATS_NOUVELLES.md` | 🟢 Normale | Très haute |
 | **P7** | Section Carrière (progression Héros) | `CAREER_PROGRESS_HERO_PLAN.md` | 🟢 Normale (autonome) | Moyenne |
+| **P8** | Persistance filtres par joueur / DB | `ANALYSE_PERSISTANCE_FILTRES_MULTI_JOUEURS.md` | 🔴 Urgente (bug UX) | Faible |
 
 ---
 
@@ -61,6 +62,7 @@ P2 (Backfill refactoring) ──► P3 (Participants damage)
 | **P5** (Perf Score v4) | **P2** (Pandas→Polars), **P3** (damage_dealt dans history) | La v4 utilise `personal_score`, `damage_dealt`, `rank`, `team_mmr`, `enemy_mmr` — colonnes déjà en `match_stats` mais le calcul dans le backfill utilise Pandas (à migrer P2). Le DPM damage nécessite que le champ soit rempli. |
 | **P6** (Nouvelles stats) | **P3** (damage participants pour comparaison coéquipiers), **P5** (score v4 pour distributions) | Les graphes de dégâts comparatifs (coéquipiers) nécessitent damage_dealt/taken dans `match_participants`. Le graphe "Distribution score de performance" utilise le score v4. |
 | **P7** (Carrière Héros) | Rien | Section autonome (career_progression existe déjà en BDD) |
+| **P8** (Persistance filtres) | Rien | Bug UX autonome : nettoyage session_state au changement de joueur |
 
 ### 2.2 Conflits de fichiers identifiés
 
@@ -80,7 +82,9 @@ Plusieurs plans touchent les mêmes fichiers. Ordre d'exécution critique :
 | `src/data/sync/engine.py` | P3, P5 | 🟡 Faible — Sections différentes |
 | `src/ui/pages/media_tab.py` | P4 | 🟢 Faible |
 | `src/ui/pages/teammates_charts.py` | P4, P6 | 🟠 Moyen — P4 (frags parfaits) puis P6 (nouvelles comparaisons) |
-| `src/app/filters_render.py` | P1 | 🟢 Faible |
+| `src/app/filters_render.py` | P1, P8 | 🟠 Moyen — P1 (tri session) puis P8 (sauvegarde/nettoyage) |
+| `streamlit_app.py` | P8 | 🟢 Faible |
+| `src/ui/filter_state.py` | P8 | 🟢 Faible |
 
 ### 2.3 Dette technique à résoudre en prérequis
 
@@ -158,6 +162,7 @@ Semaine 8 (Sprint 8)
 | Plan | Tests à créer | Tests à modifier |
 |------|---------------|------------------|
 | **P1** | `test_session_last_button.py` (tri par max(start_time)) | — |
+| **P8** | Étendre `test_filter_state.py` ou `scripts/test_filter_persistence_by_player.py` (nettoyage clés, A→B→A) | — |
 | **P2** | `test_perf_score_polars_only.py` (vérifier que Pandas n'est plus requis) | `test_performance_score.py` (migrer fixtures Pandas→Polars), `test_backfill_performance_score.py` (idem) |
 | **P3** | `test_participants_damage.py` (extraction, insertion, backfill) | `test_models.py` (MatchParticipantRow avec damage) |
 | **P4** | `test_distributions_median.py` (médiane sur 6 graphes), `test_mode_normalization.py` (graphe "Par mode") | `test_visualizations.py` (plot_histogram show_median, plot_kda_distribution médiane, plot_first_event médianes) |
@@ -202,6 +207,39 @@ streamlit run streamlit_app.py  # Vérifier bouton "Dernière session"
 - Nouveau fichier `tests/test_session_last_button.py`
 - Mise à jour `.ai/BACKFILL_SCRIPT_REVIEW.md` (workaround OR documenté)
 - Mise à jour `.ai/thought_log.md`
+
+---
+
+### Sprint 0bis — Persistance filtres multi-joueurs (P8) (½–1 jour)
+
+**Objectif** : Rétablir la conservation des filtres (sélectionnés/désélectionnés) par joueur malgré les changements de DB. Source : `ANALYSE_PERSISTANCE_FILTRES_MULTI_JOUEURS.md`.
+
+**Prérequis** : Aucun (parallélisable avec Sprint 0)
+
+| # | Tâche | Source | Fichier(s) | Tests |
+|---|-------|--------|-----------|-------|
+| 0bis.1 | Nettoyage exhaustif au changement de joueur : supprimer toutes les clés dont le nom **commence par** `filter_playlists_`, `filter_modes_`, `filter_maps_` (widgets checkboxes) | P8 §5.1 | `streamlit_app.py` (bloc changement de joueur) | — |
+| 0bis.2 | Ajouter au nettoyage les clés manquantes : `gap_minutes`, `_latest_session_label`, `_trio_latest_session_label`, `min_matches_maps`, `_min_matches_maps_auto`, `min_matches_maps_friends`, `_min_matches_maps_friends_auto` | P8 §5.1 | `streamlit_app.py` | — |
+| 0bis.3 | Centraliser la liste des clés et préfixes dans un module (ex. `src/ui/filter_state.py` ou `src/app/filter_keys.py`) : `FILTER_DATA_KEYS`, `FILTER_WIDGET_KEY_PREFIXES`, fonction `get_all_filter_keys_to_clear(session_state)` | P8 §5.2 | `src/ui/filter_state.py` ou nouveau `src/app/filter_keys.py`, `streamlit_app.py` | — |
+| 0bis.4 | Tests : scénario A→B→A (isolation), cohérence checkboxes après switch, extension de `test_filter_state.py` ou `scripts/test_filter_persistence_by_player.py` | P8 §5.6 | `tests/test_filter_state.py` ou script existant | Créer/étendre tests |
+
+**Gate de livraison** :
+- [ ] Après changement de joueur, aucune clé `session_state` ne commence par `filter_playlists_`, `filter_modes_`, `filter_maps_`
+- [ ] Test manuel : joueur A (filtres X) → joueur B (filtres Y) → retour A → les filtres de A sont identiques à X
+- [ ] `pytest tests/test_filter_state.py -v` passe (et nouveaux tests persistance multi-joueurs si ajoutés)
+
+**Commandes de validation** :
+```bash
+pytest tests/test_filter_state.py -v
+streamlit run streamlit_app.py  # Switch A → B → A, vérifier filtres conservés
+```
+
+**Livrables** :
+- Code : `streamlit_app.py` (nettoyage exhaustif), `src/ui/filter_state.py` ou `src/app/filter_keys.py` (centralisation)
+- Tests : extension tests persistance filtres
+- Mise à jour `docs/FILTER_PERSISTANCE.md` et `.ai/thought_log.md`
+
+**Optionnel (phases ultérieures P8)** : Scopage des clés des widgets par joueur (`checkbox_filter.py`) ; garde sur la sauvegarde automatique ; éviter double chargement. Voir `.ai/ANALYSE_PERSISTANCE_FILTRES_MULTI_JOUEURS.md` §5.3–5.5.
 
 ---
 
@@ -812,6 +850,8 @@ grep -r "import sqlite3" src/  # Vérifier conformité
 |---------|---------|
 | `src/app/filters_render.py` | S0 |
 | `src/app/filters.py` | S0 |
+| `streamlit_app.py` | S0bis |
+| `src/ui/filter_state.py` | S0bis |
 | `src/analysis/performance_score.py` | S1, S4 |
 | `src/analysis/performance_config.py` | S4 |
 | `scripts/backfill_data.py` | S1, S2, S4, (S8) |
@@ -851,6 +891,7 @@ grep -r "import sqlite3" src/  # Vérifier conformité
 | Complexité excessive Sprint 7 (9 sous-tâches coéquipiers) | Haute | 🟠 Moyen | Découper S7 en 2 sous-sprints (7a : stats individuelles, 7b : comparaisons) | S7 |
 | Performance dégradée (trop de graphiques par page) | Moyenne | 🟠 Moyen | Tests de charge S9 ; lazy loading si nécessaire ; limiter le nombre de graphiques visibles simultanément | S5-S9 |
 | Dépassement de budget temps | Moyenne | 🟡 Faible | Priorisation stricte (S0-S4 non négociables) ; possibilité de reporter S6-S7 | S0-S9 |
+| Régression affichage filtres (nettoyage trop large) | Faible | 🟡 Faible | Ne supprimer que les clés listées + préfixes widgets ; tests A→B→A | S0bis |
 
 ---
 
@@ -890,6 +931,7 @@ Chaque sprint est considéré livré quand :
 | Sprint | Durée | Plans | Parallélisable |
 |--------|-------|-------|---------------|
 | **S0** | ½ j | P1 | — |
+| **S0bis** | ½–1 j | P8 | ✅ avec S0 |
 | **S1** | 2 j | P2 (partiel) | — |
 | **S2** | 2.5 j | P3 + P7 | ✅ avec S3 |
 | **S3** | 3 j | P4 | ✅ avec S2 |
@@ -952,15 +994,16 @@ git checkout -b feature/consolidated-roadmap-2026-q1
 git checkout feature/hybrid-data-architecture
 ```
 
-### 10.3 Démarrer Sprint 0
+### 10.3 Démarrer Sprint 0 / Sprint 0bis
 
-Sprint 0 est le point d'entrée immédiat : correction du bug "Dernière session" (½ jour).
+Sprint 0 est le point d'entrée immédiat : correction du bug "Dernière session" (½ jour). Sprint 0bis (persistance filtres multi-joueurs, P8) peut être fait en parallèle ou juste après : conservation des filtres par joueur au switch de DB.
 
 ### 10.4 Ordre de priorité si contrainte de temps
 
 Si le budget temps est limité, prioriser strictement :
-1. **S0** (bug fix visible) — non négociable
-2. **S1** (backfill fiable + Pandas) — non négociable (dette technique critique)
+1. **S0** (bug fix visible "Dernière session") — non négociable
+2. **S0bis** (persistance filtres par joueur) — fort impact UX, rapide
+3. **S1** (backfill fiable + Pandas) — non négociable (dette technique critique)
 3. **S2** (damage participants + carrière) — haut impact utilisateur
 4. **S4** (perf score v4) — forte valeur ajoutée
 5. **S3** (médianes, UI) — qualité de vie
@@ -971,6 +1014,6 @@ Si le budget temps est limité, prioriser strictement :
 ---
 
 **Document généré le** : 2026-02-09
-**Dernière mise à jour** : 2026-02-09
+**Dernière mise à jour** : 2026-02-09 (intégration P8 — Persistance filtres multi-joueurs)
 **Auteur** : Claude Code (analyse et compilation)
 **Mis à jour avec** : Éléments du premier jet (`nouveau 1.txt`)
