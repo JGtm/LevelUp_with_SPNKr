@@ -482,7 +482,13 @@ def _launch_streamlit(
     print(f"   Données: {_display_path(PLAYERS_DIR)}")
 
     global _active_process
-    proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), creationflags=_subprocess_creation_flags())
+    # Ne pas hériter stdin pour éviter que le sous-processus bloque (ex. Cursor/IDE)
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(REPO_ROOT),
+        stdin=subprocess.DEVNULL,
+        creationflags=_subprocess_creation_flags(),
+    )
     _active_process = proc
 
     if not no_browser:
@@ -692,15 +698,24 @@ def _interactive() -> int:
     print("  Q) Quitter")
     print()
 
-    try:
-        choice = input("Ton choix (1/2/3/4/Q): ").strip().lower()
-    except EOFError:
-        print("\n⚠ stdin fermé ou non connecté (terminal/IDE).")
-        print("  Utilise les arguments CLI:")
-        print("    python openspartan_launcher.py run    # option 1")
-        print("    python openspartan_launcher.py sync   # option 3")
-        print("    python openspartan_launcher.py info   # option 4")
-        return 2
+    # Si stdin n'est pas un terminal (IDE, Cursor, pipe), ne pas bloquer sur input()
+    if not sys.stdin.isatty():
+        print("⚠ Terminal non interactif détecté → lancement direct du dashboard (option 1).")
+        print("  Pour d'autres actions, utilise la CLI: run / sync / info")
+        choice = "1" if players else ""
+        if not choice:
+            print("  Aucun joueur trouvé. Lance: python openspartan_launcher.py sync")
+            return 2
+    else:
+        try:
+            choice = input("Ton choix (1/2/3/4/Q): ").strip().lower()
+        except EOFError:
+            print("\n⚠ stdin fermé ou non connecté (terminal/IDE).")
+            print("  Utilise les arguments CLI:")
+            print("    python openspartan_launcher.py run    # option 1")
+            print("    python openspartan_launcher.py sync   # option 3")
+            print("    python openspartan_launcher.py info   # option 4")
+            return 2
 
     if choice in {"q", "quit", "exit"}:
         return 0

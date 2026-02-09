@@ -1955,7 +1955,13 @@ async def backfill_player_data(
         }
 
     finally:
-        conn.close()
+        try:
+            # Commit final pour assurer que toutes les données sont persistées
+            conn.commit()
+        except Exception as e:
+            logger.debug(f"Note lors du commit final: {e}")
+        finally:
+            conn.close()
 
 
 async def backfill_all_players(

@@ -169,7 +169,15 @@ L'API SPNKr fournit ces données dans `Players[].PlayerTeamStats[].Stats.CoreSta
 **Modifications** :
 - Ajouter les paramètres `participants_damage: bool = False` (ligne ~1000)
 - Ajouter les paramètres `force_participants_damage: bool = False` (ligne ~1010)
-- Dans `all_data` (ligne ~1035), ajouter `participants_damage = True`
+- **IMPORTANT** : Dans le bloc `if all_data:` (ligne ~1035), ajouter `participants_damage = True` après `participants_shots = True` (ligne ~1049)
+  ```python
+  if all_data:
+      # ... autres options ...
+      participants_shots = True  # shots_fired/shots_hit des participants
+      participants_damage = True  # damage_dealt/damage_taken des participants
+      killer_victim = True
+      # ...
+  ```
 - Dans la vérification des options activées (ligne ~1081), ajouter `participants_damage`
 - Dans le dict de retour par défaut (ligne ~1106), ajouter `"participants_damage_updated": 0`
 - Dans le dict de retour d'erreur XUID (ligne ~1218), ajouter `"participants_damage_updated": 0`
@@ -284,13 +292,21 @@ L'API SPNKr fournit ces données dans `Players[].PlayerTeamStats[].Stats.CoreSta
 #### 5.7. Documentation en-tête (ligne ~1)
 
 **Modifications** :
-- Ajouter des exemples d'usage dans la docstring :
+- Ajouter des exemples d'usage dans la docstring (après la ligne ~52, avant `# Backfill paires killer/victim`) :
   ```python
   # Backfill damage_dealt/damage_taken des participants (matchs où damage manquants)
   python scripts/backfill_data.py --player JGtm --participants-damage
 
   # Forcer damage pour tous les participants de tous les matchs
   python scripts/backfill_data.py --player JGtm --participants-damage --force-participants-damage
+  ```
+- Mettre à jour la description de `--all-data` (ligne ~2110) pour inclure `--participants-damage` dans la liste :
+  ```python
+  parser.add_argument(
+      "--all-data",
+      action="store_true",
+      help="Backfill toutes les données (équivalent à --medals --events --skill --personal-scores --performance-scores --aliases --accuracy --enemy-mmr --assets --participants --shots --participants-scores --participants-kda --participants-shots --participants-damage --killer-victim --end-time --sessions)",
+  )
   ```
 
 ---
@@ -338,6 +354,7 @@ L'API SPNKr fournit ces données dans `Players[].PlayerTeamStats[].Stats.CoreSta
 3. **Valeurs NULL** : Gérer correctement les cas où `DamageDealt` ou `DamageTaken` ne sont pas présents dans l'API
 4. **Logs** : S'assurer que les logs indiquent clairement le nombre de participants avec dommages mis à jour
 5. **Performance** : Le backfill peut être long si beaucoup de matchs, utiliser `--max-matches` pour tester
+6. **Option `--all-data`** : ⚠️ **CRITIQUE** - S'assurer que `participants_damage = True` est bien ajouté dans le bloc `if all_data:` (ligne ~1035) pour que `--all-data` inclue automatiquement le backfill des dommages des participants
 
 ---
 

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(test -f \"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph/src/analysis/win_streaks.py\")"
+    ]
+  }
+}

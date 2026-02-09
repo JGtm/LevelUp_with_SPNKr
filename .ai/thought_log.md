@@ -7,6 +7,74 @@
 
 ## Journal
 
+### [2026-02-09] - Revue complète du script backfill_data.py + Diagnostic persistance
+
+**Statut** : 🔧 Correctif partiel appliqué (commit final), diagnostic complet documenté
+
+**Contexte** : L'utilisateur signale que le script backfill_data.py "ne semble pas bien fonctionner". Symptôme concret : 605 matchs détectés, après traitement de 200 et relance → toujours 605.
+
+**Symptôme utilisateur (Madina97294)** :
+1. Lance `--all --all-data` → Trouve **605 matchs** à traiter
+2. Traite **200 matchs** puis interrompt (Ctrl+C)
+3. Relance → Trouve toujours **605 matchs** (au lieu de ~405)
+4. **Conclusion** : Les données ne sont PAS persistées
+
+**Diagnostic double problème** :
+
+**Problème A - Commit non persisté lors d'interruption (✅ CORRIGÉ)** :
+- **Cause** : `finally: conn.close()` sans commit final (ligne 1957-1958)
+- **Impact** : DuckDB perd les données en cache lors d'interruption Ctrl+C
+- **Correction appliquée** : Ajout de `conn.commit()` dans le `finally` avant `conn.close()`
+- **Fichier modifié** : `scripts/backfill_data.py` ligne 1957-1964
+
+**Problème B - Détection OR inefficace (⚠️ NON CORRIGÉ)** :
+- **Cause** : `where_clause = " OR ".join(conditions)` (ligne 982)
+- **Impact** : Un match est sélectionné s'il manque **AU MOINS UNE** donnée parmi ~15 types
+- **Conséquence** : Matchs partiellement traités sont RE-SÉLECTIONNÉS et RE-TÉLÉCHARGÉS depuis l'API
+- **Exemple** : Match avec medals/events/skill présents mais sans `sessions` → RE-téléchargé complètement
+- **Workaround** : Traiter par étapes au lieu de `--all-data` (voir document)
+
+**Analyse effectuée** :
+- Lecture du fichier complet (2461 lignes)
+- Identification de 10 problèmes classés par sévérité
+- Diagnostic du problème de persistance (commit + détection)
+- Rédaction document détaillé + section "Problème Urgent" : `.ai/BACKFILL_SCRIPT_REVIEW.md`
+
+**Problèmes critiques identifiés** :
+1. **🔴 Commit non persisté** : Interruption perd les données (✅ corrigé ligne 1957-1964)
+2. **🔴 Détection OR inefficace** : Re-téléchargements inutiles avec `--all-data` (⚠️ workaround documenté)
+3. **🔴 Violation règle Pandas** : Usage de `pd.Series` (lignes 119, 698, 709)
+4. **🔴 Gestion erreurs silencieuse** : 9 blocs `except Exception: pass` sans logs
+5. **🔴 Taille excessive** : 2461 lignes, difficile à maintenir
+
+**Solutions proposées (Problème B)** :
+- **Court terme** : Mode `--strict-detection` (AND au lieu de OR)
+- **Long terme** : Table `backfill_status` pour tracker par type de donnée
+
+**Tests de validation** :
+1. Test persistance : Traiter 30 matchs, interrompre, relancer → Devrait trouver ~575 matchs
+2. Test re-téléchargement : Traiter medals uniquement, relancer `--all-data` → Observer si re-sélection
+
+**Recommandations prioritaires** :
+- **Phase 0** (immédiat) : ✅ Commit final ajouté, à tester
+- **Phase 1** (1-2j) : Supprimer Pandas, ajouter logs exceptions, implémenter `--strict-detection`
+- **Phase 2** (3-5j) : Optimiser SQL (CTEs), centraliser migrations
+- **Phase 3** (1-2 sem) : Découper en modules, table `backfill_status`
+
+**Impact estimé** :
+- Commit final : **Données persistées** lors d'interruption (✅ critique)
+- Mode strict : **Pas de re-téléchargements** inutiles (gain énorme)
+- SQL optimisé : **10-20x plus rapide**
+
+**Fichiers modifiés** :
+- `scripts/backfill_data.py` (ligne 1957-1964)
+- `.ai/BACKFILL_SCRIPT_REVIEW.md` (section "Problème Urgent" ajoutée)
+- `.ai/thought_log.md` (cette entrée)
+
+**Prochaines étapes** : Utilisateur teste la persistance, puis implémenter mode strict si validé.
+
+---
+
 ### [2026-02-08] - Comparaison de sessions : KeyError kills / pair_name (root cause)
 
 **Statut** : Corrigé
