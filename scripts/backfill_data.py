@@ -77,6 +77,16 @@ Usage:
 
 Note: Pour combiner sync + backfill en une seule commande, utilisez :
     python scripts/sync.py --delta --player JGtm --with-backfill
+
+Workaround OR — Exécution par étapes:
+    La détection des matchs manquants combine les conditions avec OR.
+    Avec --all-data, un match qui ne manque QUE les médailles sera sélectionné
+    et retraité pour TOUS les types de données (shots, participants, etc.).
+    Pour un backfill ciblé et plus rapide, exécuter par étapes :
+        python scripts/backfill_data.py --player JGtm --medals
+        python scripts/backfill_data.py --player JGtm --sessions
+        python scripts/backfill_data.py --player JGtm --participants-kda
+    Réserver --all-data pour le backfill initial ou un rattrapage complet.
 """
 
 from __future__ import annotations

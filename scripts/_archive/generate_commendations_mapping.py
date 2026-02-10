@@ -24,7 +24,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -106,7 +106,9 @@ def _load_medals(paths: list[Path]) -> list[Medal]:
 
     out: list[Medal] = []
     for nid, label in medals.items():
-        out.append(Medal(name_id=nid, label=label, label_norm=_norm(label), tokens=_token_set(label)))
+        out.append(
+            Medal(name_id=nid, label=label, label_norm=_norm(label), tokens=_token_set(label))
+        )
     return out
 
 
@@ -205,7 +207,26 @@ def _match_stat_rule(name: str, desc: str, category: str) -> dict[str, Any] | No
     # on évite de la mapper à des kills génériques (trop trompeur sans event breakdown).
     if cat_norm in {"arme", "vehicule", "ennemi"}:
         # Cas fréquents: "à l'aide de ..." / "occupées" / nom d'ennemi (élite, chasseur...)
-        if any(k in bnorm for k in ["a l aide", "a l'aide", "a l'aide d", "occup", "vehicule", "elite", "chasseur", "grognard", "sentinelle", "chevalier", "rampant", "soldat", "prometheen", "covenant", "forerunner"]):
+        if any(
+            k in bnorm
+            for k in [
+                "a l aide",
+                "a l'aide",
+                "a l'aide d",
+                "occup",
+                "vehicule",
+                "elite",
+                "chasseur",
+                "grognard",
+                "sentinelle",
+                "chevalier",
+                "rampant",
+                "soldat",
+                "prometheen",
+                "covenant",
+                "forerunner",
+            ]
+        ):
             return None
 
     # Règles spécifiques: si headshot mentionné => headshot, même si "tuez" aussi.
@@ -229,7 +250,19 @@ def _match_stat_rule(name: str, desc: str, category: str) -> dict[str, Any] | No
         }
 
     # Matches joués (terminer des parties)
-    if any(k in bnorm for k in ["terminez", "terminer", "jouez", "jouer", "complete", "completer", "completez", "compl\u00e9tez"]):
+    if any(
+        k in bnorm
+        for k in [
+            "terminez",
+            "terminer",
+            "jouez",
+            "jouer",
+            "complete",
+            "completer",
+            "completez",
+            "compl\u00e9tez",
+        ]
+    ):
         return {
             "type": "stat",
             "stat": "matches_played",
@@ -252,7 +285,9 @@ def _match_stat_rule(name: str, desc: str, category: str) -> dict[str, Any] | No
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Génère un mapping heuristique citations Halo 5 -> stats/médailles")
+    ap = argparse.ArgumentParser(
+        description="Génère un mapping heuristique citations Halo 5 -> stats/médailles"
+    )
     ap.add_argument(
         "--commendations-json",
         default=str(Path("data") / "wiki" / "halo5_commendations_fr.json"),
@@ -294,7 +329,9 @@ def main() -> int:
 
         # 3) Candidate "kills génériques" (faible confiance) pour aider le tri
         generic_kills = None
-        if not stat_match and any(k in _norm(desc) for k in ["tuez", "tuer", "eliminez", "\u00e9liminez"]):
+        if not stat_match and any(
+            k in _norm(desc) for k in ["tuez", "tuer", "eliminez", "\u00e9liminez"]
+        ):
             generic_kills = {
                 "type": "stat",
                 "stat": "kills",
@@ -342,7 +379,10 @@ def main() -> int:
 
     assumed_path = out_dir / "commendations_mapping_assumed.json"
     unmatched_path = out_dir / "commendations_mapping_unmatched.json"
-    assumed_path.write_text(json.dumps({"count": len(assumed), "items": assumed}, ensure_ascii=False, indent=2), encoding="utf-8")
+    assumed_path.write_text(
+        json.dumps({"count": len(assumed), "items": assumed}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     unmatched_path.write_text(
         json.dumps({"count": len(unmatched), "items": unmatched}, ensure_ascii=False, indent=2),
         encoding="utf-8",

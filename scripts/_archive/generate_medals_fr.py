@@ -26,8 +26,7 @@ import json
 import os
 import sqlite3
 import urllib.request
-from typing import Iterable
-
+from collections.abc import Iterable
 
 SQL_DISTINCT_MEDAL_IDS = """
 WITH base AS (
@@ -108,7 +107,7 @@ def _load_json_from_source(source: str) -> dict:
 
     if os.path.exists(s):
         try:
-            with open(s, "r", encoding="utf-8") as f:
+            with open(s, encoding="utf-8") as f:
                 return json.load(f) or {}
         except Exception:
             return {}
@@ -237,7 +236,7 @@ def main() -> None:
     existing: dict = {}
     if os.path.exists(out_path):
         try:
-            with open(out_path, "r", encoding="utf-8") as f:
+            with open(out_path, encoding="utf-8") as f:
                 existing = json.load(f) or {}
         except Exception:
             existing = {}
@@ -258,7 +257,10 @@ def main() -> None:
     filled = 0
     if meta_map:
         filled = sum(1 for v in merged.values() if isinstance(v, str) and v.strip())
-    print(f"OK: {len(ids)} NameId écrits dans {out_path}" + (f" | {filled} libellés non-vides" if meta_map else ""))
+    print(
+        f"OK: {len(ids)} NameId écrits dans {out_path}"
+        + (f" | {filled} libellés non-vides" if meta_map else "")
+    )
 
 
 if __name__ == "__main__":

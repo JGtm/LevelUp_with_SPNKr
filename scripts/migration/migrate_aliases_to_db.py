@@ -52,12 +52,12 @@ def migrate_aliases_json_to_db(
     overwrite: bool = False,
 ) -> tuple[int, int]:
     """Migre les aliases du fichier JSON vers la table XuidAliases.
-    
+
     Args:
         json_path: Chemin vers le fichier JSON d'aliases
         db_path: Chemin vers la DB SQLite
         overwrite: Si True, remplace les aliases existants
-    
+
     Returns:
         Tuple (inserted, skipped)
     """
@@ -65,35 +65,35 @@ def migrate_aliases_json_to_db(
     if not os.path.exists(json_path):
         print(f"[WARN] Fichier JSON non trouvé: {json_path}")
         return 0, 0
-    
-    with open(json_path, "r", encoding="utf-8") as f:
+
+    with open(json_path, encoding="utf-8") as f:
         aliases = json.load(f)
-    
+
     if not isinstance(aliases, dict):
         print(f"[ERROR] Le fichier JSON doit contenir un objet (dict), pas {type(aliases)}")
         return 0, 0
-    
+
     # Ouvrir la DB
     con = sqlite3.connect(db_path)
     try:
         _ensure_xuid_aliases_table(con)
-        
+
         cur = con.cursor()
         now = _get_iso_now()
         inserted = 0
         skipped = 0
-        
+
         for xuid, gamertag in aliases.items():
             xuid_str = str(xuid).strip()
             gt_str = str(gamertag).strip()
-            
+
             if not xuid_str or not gt_str:
                 skipped += 1
                 continue
-            
+
             if overwrite:
                 cur.execute(
-                    """INSERT OR REPLACE INTO XuidAliases 
+                    """INSERT OR REPLACE INTO XuidAliases
                        (Xuid, Gamertag, Source, UpdatedAt)
                        VALUES (?, ?, 'migrated', ?)""",
                     (xuid_str, gt_str, now),
@@ -101,7 +101,7 @@ def migrate_aliases_json_to_db(
                 inserted += 1
             else:
                 cur.execute(
-                    """INSERT OR IGNORE INTO XuidAliases 
+                    """INSERT OR IGNORE INTO XuidAliases
                        (Xuid, Gamertag, Source, UpdatedAt)
                        VALUES (?, ?, 'migrated', ?)""",
                     (xuid_str, gt_str, now),
@@ -110,7 +110,7 @@ def migrate_aliases_json_to_db(
                     inserted += 1
                 else:
                     skipped += 1
-        
+
         con.commit()
         return inserted, skipped
     finally:
@@ -136,27 +136,27 @@ def main() -> int:
         action="store_true",
         help="Remplace les aliases existants (par défaut: ignore)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Déterminer le chemin du JSON
     if args.json:
         json_path = args.json
     else:
         repo_root = Path(__file__).resolve().parent.parent
         json_path = str(repo_root / "xuid_aliases.json")
-    
-    print(f"[INFO] Migration des aliases:")
+
+    print("[INFO] Migration des aliases:")
     print(f"  - JSON: {json_path}")
     print(f"  - DB: {args.db}")
     print(f"  - Mode: {'OVERWRITE' if args.overwrite else 'IGNORE si existe'}")
-    
+
     inserted, skipped = migrate_aliases_json_to_db(
         json_path,
         args.db,
         overwrite=args.overwrite,
     )
-    
+
     print(f"[OK] {inserted} aliases insérés, {skipped} ignorés")
     return 0
 

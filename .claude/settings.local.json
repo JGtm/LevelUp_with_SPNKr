@@ -25,7 +25,8 @@
       "Bash(/c/msys64/usr/bin/pacman.exe -S --noconfirm:*)",
       "Bash(/c/msys64/ucrt64/bin/python3.12.exe:*)",
       "Bash(python3:*)",
-      "Bash(pacman:*)"
+      "Bash(pacman:*)",
+      "Bash(git rm:*)"
     ]
   }
 }

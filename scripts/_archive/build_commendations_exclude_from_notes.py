@@ -18,9 +18,7 @@ from typing import Any
 
 
 def _strip_accents(s: str) -> str:
-    return "".join(
-        ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch)
-    )
+    return "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
 
 
 def _norm_space_lower(s: str) -> str:
@@ -77,7 +75,9 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Construit halo5_commendations_exclude.json depuis les notes de mapping")
+    ap = argparse.ArgumentParser(
+        description="Construit halo5_commendations_exclude.json depuis les notes de mapping"
+    )
     ap.add_argument(
         "--inputs",
         nargs="*",

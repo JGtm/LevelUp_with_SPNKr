@@ -7,6 +7,31 @@
 
 ## Journal
 
+### [2026-02-10] - Sprint 1 livré — Nettoyage scripts + Archivage documentation
+
+**Statut** : Livré
+
+**Sprint 1 — PLAN_UNIFIE.md** : Toutes les tâches 1.1 à 1.9 réalisées.
+
+**Résultat scripts/** :
+- 113 scripts → **16 actifs** + 10 en `migration/` + 71 archivés dans `_archive/` + 13 supprimés + 3 dans `_obsolete/` supprimé
+- 7 backfill redondants supprimés (couverts par `backfill_data.py`)
+- 6 fix one-shot supprimés (corrections déjà appliquées)
+- `scripts/_obsolete/` supprimé
+- 9 scripts `test_*`/`validate_*`/`verify_*` archivés (équivalents dans `tests/`)
+
+**Résultat .ai/** :
+- 5 documents racine archivés : `SUPER_PLAN.md`, `CODE_REVIEW_CLEANUP_PLAN.md`, `AGENT_ARCHITECTURE.md`, `ORCHESTRATION_PROMPTS.md`, `workflows.md` (consolidés dans `PLAN_UNIFIE.md`)
+- Recherches killfeed (KILL_FEED_*.md, JSON, etc.) archivées dans `.ai/archive/research/`
+
+**Corrections** :
+- `tests/test_spnkr_refactoring.py` : mis à jour `sys.path` vers `scripts/_archive/` (spnkr_import_db.py archivé)
+- Docstring `backfill_data.py` : documenté le workaround OR (exécution par étapes recommandée)
+
+**Tests** : 93 passés, aucune régression. Échecs préexistants (pyarrow/duckdb absents en MSYS2).
+
+---
+
 ### [2026-02-10] - Sprint 0 livré + Documentation environnement MSYS2
 
 **Statut** : Livré

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
@@ -29,7 +29,9 @@ DEFAULT_URL = "https://wiki.halo.fr/index.php?title=Citations_de_Halo_5_:_Guardi
 
 def _normalize_name(s: str) -> str:
     base = " ".join(str(s or "").strip().lower().split())
-    return "".join(ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch))
+    return "".join(
+        ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch)
+    )
 
 
 def _load_exclusions(path: str | None) -> tuple[set[str], set[str]]:
@@ -220,12 +222,12 @@ class Commendation:
     category: str
     name: str
     description: str
-    image_url: Optional[str]
-    file_page_url: Optional[str]
+    image_url: str | None
+    file_page_url: str | None
     tiers: list[CommendationTier]
 
 
-def _parse_int_loose(s: str) -> Optional[int]:
+def _parse_int_loose(s: str) -> int | None:
     s = (s or "").strip()
     m = re.search(r"\d+", s)
     if not m:
@@ -269,11 +271,11 @@ _TITLE_H4_RE = re.compile(
 _TITLE_DL_RE = re.compile(r"<dl>\s*<dt>(?P<title>.*?)</dt>\s*</dl>", flags=re.S)
 
 
-def _nearest_title_before(html_text: str, pos: int) -> Optional[str]:
+def _nearest_title_before(html_text: str, pos: int) -> str | None:
     # Cherche dans une fenêtre pour éviter un scan complet.
     start = max(0, pos - 6000)
     window = html_text[start:pos]
-    best: Optional[tuple[int, str]] = None
+    best: tuple[int, str] | None = None
 
     for rx in (_TITLE_H4_RE, _TITLE_DL_RE):
         for m in rx.finditer(window):
@@ -331,7 +333,10 @@ def _category_at(pos: int, headings: list[tuple[int, str]]) -> str:
 
 
 def parse_commendations(html_text: str, base_url: str = BASE_URL) -> list[Commendation]:
-    headings = [(m.start(), _compact_spaces(_strip_tags(m.group("title")))) for m in _H2_RE.finditer(html_text)]
+    headings = [
+        (m.start(), _compact_spaces(_strip_tags(m.group("title"))))
+        for m in _H2_RE.finditer(html_text)
+    ]
     headings.sort(key=lambda x: x[0])
 
     out: list[Commendation] = []
@@ -393,7 +398,9 @@ def parse_commendations(html_text: str, base_url: str = BASE_URL) -> list[Commen
     return list(unique.values())
 
 
-def find_missing_commendations(html_text: str, extracted: list[Commendation], base_url: str = BASE_URL) -> list[dict[str, Any]]:
+def find_missing_commendations(
+    html_text: str, extracted: list[Commendation], base_url: str = BASE_URL
+) -> list[dict[str, Any]]:
     icon_map = _extract_all_citation_icon_map(html_text, base_url=base_url)
 
     def _basename(url: str) -> str:
@@ -406,7 +413,10 @@ def find_missing_commendations(html_text: str, extracted: list[Commendation], ba
     missing_files = sorted(all_files - extracted_files)
 
     # Index headings once.
-    headings = [(m.start(), _compact_spaces(_strip_tags(m.group("title")))) for m in _H2_RE.finditer(html_text)]
+    headings = [
+        (m.start(), _compact_spaces(_strip_tags(m.group("title"))))
+        for m in _H2_RE.finditer(html_text)
+    ]
     headings.sort(key=lambda x: x[0])
 
     out: list[dict[str, Any]] = []
@@ -416,11 +426,13 @@ def find_missing_commendations(html_text: str, extracted: list[Commendation], ba
 
         category = _category_at(pos if pos >= 0 else 10**18, headings)
         guess = _nearest_title_before(html_text, pos) if pos >= 0 else None
-        out.append({"category": category, "name_guess": guess, "image_file": fname, "image_url": url})
+        out.append(
+            {"category": category, "name_guess": guess, "image_file": fname, "image_url": url}
+        )
     return out
 
 
-def _image_basename_from_item(item: dict[str, Any]) -> Optional[str]:
+def _image_basename_from_item(item: dict[str, Any]) -> str | None:
     for k in ("image_url", "image_path", "image_file"):
         v = item.get(k)
         if not isinstance(v, str) or not v.strip():
@@ -429,7 +441,9 @@ def _image_basename_from_item(item: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _load_existing_items_for_merge(path: Path) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+def _load_existing_items_for_merge(
+    path: Path,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     """Charge un JSON existant et retourne un index stable pour merge.
 
     Returns:
@@ -477,8 +491,12 @@ def _merge_existing_item(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Extrait les citations Halo 5 (commendations) depuis WikiHalo")
-    ap.add_argument("--url", default=DEFAULT_URL, help="URL source (défaut: page WikiHalo imprimable)")
+    ap = argparse.ArgumentParser(
+        description="Extrait les citations Halo 5 (commendations) depuis WikiHalo"
+    )
+    ap.add_argument(
+        "--url", default=DEFAULT_URL, help="URL source (défaut: page WikiHalo imprimable)"
+    )
     ap.add_argument(
         "--input-html",
         default=None,
@@ -602,7 +620,9 @@ def main() -> int:
         if merge_existing:
             key = _image_basename_from_item(item)
             if key and key in existing_by_img:
-                item = _merge_existing_item(item, existing_by_img[key], preserve_fields=preserve_fields)
+                item = _merge_existing_item(
+                    item, existing_by_img[key], preserve_fields=preserve_fields
+                )
 
         generated_items.append(item)
 
@@ -655,7 +675,9 @@ def main() -> int:
             if not img_out_path.exists():
                 _download_file(url, img_out_path)
             # Chemin relatif utilisable par Streamlit
-            item["image_path"] = str(Path("static") / "commendations" / "h5g" / fname).replace("\\", "/")
+            item["image_path"] = str(Path("static") / "commendations" / "h5g" / fname).replace(
+                "\\", "/"
+            )
 
     # Nettoyage final si demandé: on retire les champs externes/redondants.
     if bool(args.clean_output):
@@ -713,7 +735,9 @@ def main() -> int:
             for it in miss_items:
                 key = _image_basename_from_item(it)
                 if key and key in existing_missing_by_img:
-                    it = _merge_existing_item(it, existing_missing_by_img[key], preserve_fields=set())
+                    it = _merge_existing_item(
+                        it, existing_missing_by_img[key], preserve_fields=set()
+                    )
                 if key:
                     seen.add(key)
                 merged.append(it)

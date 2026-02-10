@@ -12,7 +12,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from pathlib import Path
 
@@ -36,18 +35,18 @@ def merge_assets(
     table: str,
 ) -> tuple[int, int]:
     """Fusionne les assets d'une table depuis les sources vers la base unifiée.
-    
+
     Returns:
         Tuple (nouveaux assets ajoutés, total assets après fusion)
     """
     # Ouvrir la base unifiée
     unified_con = sqlite3.connect(unified_path)
-    
+
     # Recharger les assets existants à chaque appel (pour idempotence)
     existing = get_asset_ids_from_table(unified_con, table)
     initial_count = len(existing)
     print(f"  {table}: {initial_count} assets existants")
-    
+
     # Collecter les assets de toutes les sources
     added_count = 0
     for src_path in source_paths:
@@ -57,11 +56,11 @@ def merge_assets(
         src_con = sqlite3.connect(src_path)
         src_assets = get_asset_ids_from_table(src_con, table)
         src_con.close()
-        
+
         # Compter les nouveaux pour cet source
         new_from_source = 0
         cur = unified_con.cursor()
-        
+
         for aid, body in src_assets.items():
             if aid not in existing:
                 # Insérer le nouvel asset
@@ -69,42 +68,42 @@ def merge_assets(
                 existing[aid] = body  # Marquer comme existant pour éviter les doublons
                 added_count += 1
                 new_from_source += 1
-        
+
         unified_con.commit()
         print(f"    {src_path.name}: {len(src_assets)} assets ({new_from_source} nouveaux)")
-    
+
     unified_con.close()
-    
+
     return added_count, initial_count + added_count
 
 
 def main():
     data_dir = Path(__file__).parent.parent / "data"
     unified_path = data_dir / "halo_unified.db"
-    
+
     if not unified_path.exists():
         print(f"ERREUR: Base unifiée non trouvée: {unified_path}")
         return
-    
+
     # Lister les bases sources
     source_paths = list(data_dir.glob("spnkr_gt_*.db"))
     print(f"Bases sources trouvées: {len(source_paths)}")
     for p in source_paths:
         print(f"  - {p.name}")
-    
+
     print(f"\nBase cible: {unified_path.name}")
     print()
-    
+
     # Fusionner les tables d'assets
     tables = ["PlaylistMapModePairs", "Maps", "Playlists", "GameVariants"]
-    
+
     total_added = 0
     for table in tables:
         added, total = merge_assets(unified_path, source_paths, table)
         total_added += added
         print(f"  -> {added} nouveaux ajoutés, {total} total\n")
-    
-    print(f"=== Fusion terminée ===")
+
+    print("=== Fusion terminée ===")
     print(f"Total assets ajoutés: {total_added}")
 
 
