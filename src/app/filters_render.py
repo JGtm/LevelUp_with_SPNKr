@@ -434,19 +434,18 @@ def _compute_trio_label(
         if not trio_ids:
             return None
 
-        # Trouver la dernière session trio
+        # Trouver la dernière session trio (par max(start_time), pas session_id)
         trio_rows = base_s_ui.loc[base_s_ui["match_id"].astype(str).isin(trio_ids)].copy()
-        if trio_rows.empty:
+        if trio_rows.empty or "start_time" not in trio_rows.columns:
             return None
 
-        latest_sid = int(trio_rows["session_id"].max())
-        latest_labels = (
-            trio_rows.loc[trio_rows["session_id"] == latest_sid, "session_label"]
-            .dropna()
-            .unique()
-            .tolist()
+        agg = (
+            trio_rows.groupby(["session_id", "session_label"], dropna=False)["start_time"]
+            .max()
+            .reset_index()
         )
-        return latest_labels[0] if latest_labels else None
+        agg = agg.sort_values("start_time", ascending=False)
+        return agg["session_label"].iloc[0] if not agg.empty else None
     except Exception:
         return None
 

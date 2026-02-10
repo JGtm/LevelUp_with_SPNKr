@@ -3,6 +3,9 @@
 Ce module permet de sauvegarder et charger les filtres activés/désactivés
 pour chaque joueur, afin d'améliorer l'UX en conservant les préférences
 entre les sessions et les changements de joueur.
+
+Il centralise aussi les clés session_state liées aux filtres pour garantir
+un nettoyage exhaustif lors du changement de joueur.
 """
 
 from __future__ import annotations
@@ -15,6 +18,55 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
+
+# ---------------------------------------------------------------------------
+# Clés session_state liées aux filtres (centralisées pour nettoyage exhaustif)
+# ---------------------------------------------------------------------------
+
+FILTER_DATA_KEYS: list[str] = [
+    "filter_mode",
+    "start_date_cal",
+    "end_date_cal",
+    "picked_session_label",
+    "picked_sessions",
+    "filter_playlists",
+    "filter_modes",
+    "filter_maps",
+    "gap_minutes",
+    "_latest_session_label",
+    "_trio_latest_session_label",
+    "min_matches_maps",
+    "_min_matches_maps_auto",
+    "min_matches_maps_friends",
+    "_min_matches_maps_friends_auto",
+]
+
+FILTER_WIDGET_KEY_PREFIXES: tuple[str, ...] = (
+    "filter_playlists_",
+    "filter_modes_",
+    "filter_maps_",
+)
+
+
+def get_all_filter_keys_to_clear(session_state: dict) -> list[str]:
+    """Retourne toutes les clés de filtres à supprimer lors du changement de joueur.
+
+    Inclut les clés de données explicites et toutes les clés de widgets
+    dont le nom commence par un préfixe connu.
+
+    Args:
+        session_state: Le dictionnaire session_state Streamlit.
+
+    Returns:
+        Liste de clés à supprimer.
+    """
+    keys: list[str] = [k for k in FILTER_DATA_KEYS if k in session_state]
+    keys.extend(
+        k
+        for k in session_state
+        if any(k.startswith(prefix) for prefix in FILTER_WIDGET_KEY_PREFIXES)
+    )
+    return keys
 
 
 @dataclass

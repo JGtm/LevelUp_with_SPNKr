@@ -8,9 +8,12 @@ from pathlib import Path
 import pytest
 
 from src.ui.filter_state import (
+    FILTER_DATA_KEYS,
+    FILTER_WIDGET_KEY_PREFIXES,
     FilterPreferences,
     apply_filter_preferences,
     clear_filter_preferences,
+    get_all_filter_keys_to_clear,
     load_filter_preferences,
     save_filter_preferences,
 )
@@ -301,3 +304,107 @@ class TestPlayerKeyGeneration:
         db_path = "some/other/path.db"
         key = _get_player_key("123456789", db_path)
         assert key == "xuid_123456789"
+
+
+class TestGetAllFilterKeysToClear:
+    """Tests pour get_all_filter_keys_to_clear (nettoyage exhaustif)."""
+
+    def test_returns_matching_data_keys(self):
+        """Les clés de données présentes dans session_state sont retournées."""
+        session_state = {
+            "filter_mode": "Sessions",
+            "picked_session_label": "Session 1",
+            "unrelated_key": "value",
+        }
+        result = get_all_filter_keys_to_clear(session_state)
+        assert "filter_mode" in result
+        assert "picked_session_label" in result
+        assert "unrelated_key" not in result
+
+    def test_returns_widget_prefix_keys(self):
+        """Les clés de widgets checkbox (préfixes) sont retournées."""
+        session_state = {
+            "filter_playlists_cb_Partie rapide_v1": True,
+            "filter_playlists_cb_Arène classée_v1": False,
+            "filter_modes_cb_Assassin_v1": True,
+            "filter_maps_cb_Carte 1_v1": True,
+            "page": "Statistiques",
+        }
+        result = get_all_filter_keys_to_clear(session_state)
+        assert len(result) == 4
+        assert "page" not in result
+        for key in result:
+            assert any(key.startswith(p) for p in FILTER_WIDGET_KEY_PREFIXES)
+
+    def test_returns_both_data_and_widget_keys(self):
+        """Combinaison : clés de données + clés de widgets."""
+        session_state = {
+            "filter_mode": "Période",
+            "start_date_cal": "2024-01-01",
+            "filter_playlists_cb_test_v1": True,
+            "filter_modes_cb_test_v1": False,
+            "other_state": 42,
+        }
+        result = get_all_filter_keys_to_clear(session_state)
+        assert "filter_mode" in result
+        assert "start_date_cal" in result
+        assert "filter_playlists_cb_test_v1" in result
+        assert "filter_modes_cb_test_v1" in result
+        assert "other_state" not in result
+
+    def test_empty_session_state(self):
+        """Aucune clé à retourner si session_state est vide."""
+        assert get_all_filter_keys_to_clear({}) == []
+
+    def test_all_data_keys_covered(self):
+        """Toutes les clés de FILTER_DATA_KEYS sont reconnues."""
+        session_state = {k: "dummy" for k in FILTER_DATA_KEYS}
+        result = get_all_filter_keys_to_clear(session_state)
+        for k in FILTER_DATA_KEYS:
+            assert k in result
+
+    def test_no_duplicate_keys(self):
+        """Pas de doublons si une clé est à la fois dans DATA_KEYS et commence par un préfixe."""
+        # filter_playlists est dans DATA_KEYS et commence par "filter_playlists_" ? Non.
+        # Mais filter_playlists_ est un prefix, et "filter_playlists" ne commence pas par "filter_playlists_"
+        session_state = {"filter_playlists": {"a"}, "filter_playlists_cb_x_v1": True}
+        result = get_all_filter_keys_to_clear(session_state)
+        assert len(result) == len(set(result))  # Pas de doublons
+
+    def test_simulates_player_switch_cleanup(self):
+        """Scénario complet A -> B : après nettoyage, plus de clés de filtres."""
+        session_state = {
+            # Clés de données
+            "filter_mode": "Sessions",
+            "picked_session_label": "Session 5",
+            "picked_sessions": ["Session 5"],
+            "filter_playlists": {"Partie rapide"},
+            "filter_modes": {"Assassin"},
+            "filter_maps": {"Recharge"},
+            "min_matches_maps": 1,
+            "_min_matches_maps_auto": True,
+            "_latest_session_label": "Session 5",
+            # Clés de widgets (générées par les checkboxes Streamlit)
+            "filter_playlists_cb_Partie rapide_v2": True,
+            "filter_playlists_cb_Arène classée_v2": False,
+            "filter_modes_cb_Assassin_v2": True,
+            "filter_maps_cb_Recharge_v2": True,
+            "filter_maps_cb_Aquarius_v2": True,
+            # Clés non liées aux filtres (ne doivent pas être supprimées)
+            "db_path": "/some/path.duckdb",
+            "xuid_input": "player1",
+            "page": "Statistiques",
+        }
+
+        keys_to_clear = get_all_filter_keys_to_clear(session_state)
+        for key in keys_to_clear:
+            del session_state[key]
+
+        # Seules les clés non liées aux filtres restent
+        assert "db_path" in session_state
+        assert "xuid_input" in session_state
+        assert "page" in session_state
+        # Aucune clé de filtre ne subsiste
+        assert "filter_mode" not in session_state
+        assert "filter_playlists" not in session_state
+        assert not any(k.startswith(p) for k in session_state for p in FILTER_WIDGET_KEY_PREFIXES)

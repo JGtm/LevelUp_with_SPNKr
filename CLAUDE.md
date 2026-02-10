@@ -37,16 +37,63 @@
 | `career_progression` | Historique rangs |
 | `mv_*` | Vues matérialisées |
 
+## Environnement Python
+
+Le projet tourne sur **MSYS2/MinGW** (Git Bash sous Windows). Le Python système est `/c/msys64/ucrt64/bin/python3.exe`.
+
+### Contraintes importantes
+
+- **Pas de Python Windows natif** (python.org) sur cette machine — uniquement MSYS2.
+- Les wheels pré-compilés Windows (`win_amd64`) ne sont **pas compatibles**. Le tag pip est `mingw_x86_64_ucrt_gnu`.
+- Les packages C (numpy, pandas, polars, duckdb) doivent être installés **via pacman** (pré-compilés MSYS2) et non via pip (compilation depuis les sources = très long ou impossible).
+- **DuckDB n'a pas de package MSYS2** : il ne peut pas s'installer dans cet environnement. Les tests qui importent `duckdb` (transitif via `src.data.repositories.duckdb_repo`) échouent en `ModuleNotFoundError`. Ce n'est **pas une régression** mais une limitation connue.
+
+### Setup du venv (une seule fois)
+
+```bash
+# 1. Installer les packages C via pacman (si pas déjà fait)
+pacman -S --noconfirm \
+  mingw-w64-ucrt-x86_64-python \
+  mingw-w64-ucrt-x86_64-python-numpy \
+  mingw-w64-ucrt-x86_64-python-pandas \
+  mingw-w64-ucrt-x86_64-python-polars \
+  mingw-w64-ucrt-x86_64-python-tornado
+
+# 2. Créer le venv avec --system-site-packages (hérite numpy/pandas/polars)
+/c/msys64/ucrt64/bin/python3.exe -m venv .venv --system-site-packages
+
+# 3. Installer les packages pure-Python via pip
+.venv/bin/pip.exe install pytest streamlit pydantic plotly altair \
+  blinker toml tenacity cachetools pydeck protobuf click rich \
+  typing-extensions gitpython pluggy iniconfig pygments colorama
+```
+
+### Exécution
+
+```bash
+# Activer le venv (le Python est dans .venv/bin/, PAS .venv/Scripts/)
+source .venv/bin/activate
+
+# Tests
+.venv/bin/python.exe -m pytest tests/ -v
+
+# Lancer l'app Streamlit
+.venv/bin/python.exe -m streamlit run streamlit_app.py
+```
+
+### Pièges courants pour les agents IA
+
+| Piège | Solution |
+|-------|----------|
+| `pip install numpy` compile depuis les sources (>30 min) | Utiliser `pacman -S mingw-w64-ucrt-x86_64-python-numpy` |
+| `.venv/Scripts/python.exe` n'existe pas | Sur MSYS2 c'est `.venv/bin/python.exe` |
+| `pacman` : "unable to lock database" | `rm -f /c/msys64/var/lib/pacman/db.lck` puis réessayer |
+| `ModuleNotFoundError: duckdb` dans les tests | Limitation connue, pas de package MSYS2 pour duckdb. Les tests qui en dépendent sont ignorés |
+| Le venv n'a pas numpy/polars | Le venv doit être créé avec `--system-site-packages` |
+
 ## Commandes Utiles
 
 ```bash
-# Configurer l'environnement (Python Windows requis pour DuckDB)
-# Depuis PowerShell: .\scripts\setup_env.ps1
-# Puis: source activate_env.sh
-
-# Lancer l'app Streamlit
-streamlit run streamlit_app.py
-
 # Synchronisation
 python scripts/sync.py --delta --gamertag MonGamertag
 
@@ -65,7 +112,7 @@ python scripts/backfill_data.py --player MonGT --participants-shots
 python scripts/backfill_data.py --player MonGT --participants-shots --force-participants-shots
 
 # Tests
-pytest tests/ -v
+.venv/bin/python.exe -m pytest tests/ -v
 ```
 
 ## Règles

@@ -7,6 +7,37 @@
 
 ## Journal
 
+### [2026-02-10] - Sprint 0 livré + Documentation environnement MSYS2
+
+**Statut** : Livré
+
+**Sprint 0 — PLAN_UNIFIE.md** : Toutes les tâches 0.1 à 0.7 réalisées.
+
+**Changements code** :
+- `src/app/filters_render.py` : `_compute_trio_label()` utilise maintenant `max(start_time)` par session au lieu de `session_id.max()` pour trouver la dernière session trio. Évite le tri lexicographique incorrect des session_id VARCHAR.
+- `src/app/filters.py` : même correction dans la version dupliquée de `_compute_trio_label()`.
+- `src/ui/filter_state.py` : ajout de `FILTER_DATA_KEYS`, `FILTER_WIDGET_KEY_PREFIXES` et `get_all_filter_keys_to_clear()` pour centraliser les clés de filtres à nettoyer lors du changement de joueur.
+- `streamlit_app.py` : remplacement du nettoyage partiel (8 clés hardcodées) par `get_all_filter_keys_to_clear()` qui couvre 15 clés de données + toutes les clés de widgets checkbox (`filter_playlists_*`, `filter_modes_*`, `filter_maps_*`).
+
+**Tests** :
+- `tests/test_session_last_button.py` (nouveau, 8 tests) : tri par `max(start_time)`, cas VARCHAR, cas trio.
+- `tests/test_filter_state.py` (étendu, +7 tests) : `get_all_filter_keys_to_clear()`, simulation switch joueur A→B→A.
+
+**Nettoyage** :
+- `.venv_windows/` supprimé (était déjà vide/cassé)
+- `levelup_halo.egg-info/` supprimé
+- `out/` vidé
+
+**Environnement MSYS2** :
+- Découverte que `.venv` était vide (aucun package) et que l'environnement est MSYS2/MinGW, pas Windows natif.
+- Les packages C (numpy, pandas, polars) doivent être installés via `pacman`, pas `pip`.
+- DuckDB n'a pas de package MSYS2, donc les tests qui importent `duckdb` transitoirement échouent en `ModuleNotFoundError` — c'est une limitation connue, pas une régression.
+- Venv recréé avec `--system-site-packages` pour hériter des packages pacman.
+- `.venv/bin/` (pas `.venv/Scripts/`) car MSYS2 suit les conventions Unix.
+- Documenté dans `CLAUDE.md` section "Environnement Python" pour éviter que les futurs agents perdent du temps.
+
+---
+
 ### [2026-02-09] - Analyse persistance des filtres multi-joueurs (sans modification de code)
 
 **Statut** : 📋 Analyse et plan détaillé rédigés

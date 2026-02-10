@@ -93,7 +93,12 @@ from src.ui.cache import (
     db_cache_key,
     top_medals_smart,
 )
-from src.ui.filter_state import _get_player_key, apply_filter_preferences, save_filter_preferences
+from src.ui.filter_state import (
+    _get_player_key,
+    apply_filter_preferences,
+    get_all_filter_keys_to_clear,
+    save_filter_preferences,
+)
 from src.ui.formatting import (
     PARIS_TZ,
     format_datetime_fr_hm,
@@ -404,20 +409,9 @@ def main() -> None:
                     # Ne pas bloquer le changement de joueur si la sauvegarde échoue
                     save_filter_preferences(old_xuid, old_db_path)
 
-                # Nettoyer les filtres de session_state pour forcer le rechargement
-                filter_keys_to_clear = [
-                    "filter_mode",
-                    "start_date_cal",
-                    "end_date_cal",
-                    "picked_session_label",
-                    "picked_sessions",
-                    "filter_playlists",
-                    "filter_modes",
-                    "filter_maps",
-                ]
-                for key in filter_keys_to_clear:
-                    if key in st.session_state:
-                        del st.session_state[key]
+                # Nettoyer exhaustivement les filtres (données + widgets checkbox)
+                for key in get_all_filter_keys_to_clear(st.session_state):
+                    del st.session_state[key]
 
                 # Réinitialiser les flags de chargement et sauvegarde pour l'ancien joueur
                 old_player_key = _get_player_key(old_xuid, old_db_path)
