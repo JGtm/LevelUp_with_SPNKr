@@ -1,7 +1,6 @@
 # Plan Unifié — LevelUp v4.1
 
 > **Date** : 2026-02-10
-> **Branche** : `feature/hybrid-data-architecture`
 > **Sources** : `SUPER_PLAN.md` (features P1-P8) + `CODE_REVIEW_CLEANUP_PLAN.md` (nettoyage 8 axes)
 > **Statut** : Plan consolidé — aucune modification de code
 
