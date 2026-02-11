@@ -280,7 +280,7 @@ pytest tests/ -v
 - [x] Page Carrière visible avec gauge, métriques, historique XP
 - [x] `damage_dealt`, `damage_taken` dans DDL, migration, INSERT, backfill
 
-**Sprint 3 livré le 2026-02-11.**
+**Sprint 3 livré le 2026-02-11.** (commit `2cdeeb3`, inclut aussi Sprint 4.0-4.2)
 
 #### 🔍 Revue Sprint 3
 

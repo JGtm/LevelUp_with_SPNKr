@@ -9,7 +9,7 @@
 
 ### [2026-02-11] - Sprints 3 + 4 (partiel) — Damage participants, Carrière, UI améliorations
 
-**Statut** : Sprint 3 livré, Sprint 4 partiellement livré
+**Statut** : Sprint 3 livré, Sprint 4 partiellement livré (commit `2cdeeb3`)
 
 **Sprint 3A — Damage participants** : Toutes les tâches 3A.1 à 3A.6 réalisées.
 
