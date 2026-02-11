@@ -166,7 +166,7 @@ def render_objective_analysis_page(
 
     with col2:
         st.metric(
-            label="Score Kills",
+            label="Score Frags",
             value=_format_score(total_kill),
             help="Points gagnés avec les éliminations",
         )
@@ -221,7 +221,7 @@ def render_objective_analysis_page(
         fig_scatter = plot_objective_vs_kills_scatter(
             my_awards_df,
             match_stats_df,
-            title="Score Objectifs vs Kills par Match",
+            title="Score Objectifs vs Frags par Match",
         )
         st.plotly_chart(fig_scatter, width="stretch")
 

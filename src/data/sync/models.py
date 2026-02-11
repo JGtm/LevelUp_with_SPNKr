@@ -324,6 +324,8 @@ class MatchParticipantRow:
     assists: int | None = None  # Assists depuis CoreStats (API)
     shots_fired: int | None = None  # ShotsFired depuis CoreStats (API)
     shots_hit: int | None = None  # ShotsHit depuis CoreStats (API)
+    damage_dealt: float | None = None  # DamageDealt depuis CoreStats (API)
+    damage_taken: float | None = None  # DamageTaken depuis CoreStats (API)
 
 
 # =============================================================================

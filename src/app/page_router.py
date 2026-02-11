@@ -26,6 +26,7 @@ PAGES: list[str] = [
     "Victoires/Défaites",
     "Mes coéquipiers",
     "Historique des parties",
+    "Carrière",
     "Paramètres",
 ]
 
@@ -122,6 +123,7 @@ def dispatch_page(
     render_teammates_page_fn: Callable,
     render_match_history_page_fn: Callable,
     render_media_tab_fn: Callable,
+    render_career_page_fn: Callable,
     render_settings_page_fn: Callable,
     # Fonctions utilitaires
     cached_compute_sessions_db_fn: Callable,
@@ -223,6 +225,13 @@ def dispatch_page(
         render_media_tab_fn(
             df_full=df,
             settings=settings,
+        )
+
+    elif page == "Carrière":
+        render_career_page_fn(
+            db_path=db_path,
+            xuid=xuid,
+            db_key=db_key,
         )
 
     elif page == "Paramètres":

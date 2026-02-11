@@ -156,8 +156,8 @@ def render_timeseries_page(
                 if len(kills_data) > 5:
                     fig_kills = plot_histogram(
                         kills_data,
-                        title="Distribution des Kills",
-                        x_label="Kills",
+                        title="Distribution des Frags",
+                        x_label="Frags",
                         y_label="Matchs",
                         show_kde=True,
                         color=colors["green"],
@@ -276,10 +276,10 @@ def render_timeseries_page(
 
         # === Distribution Premier Kill/Death (Sprint 5.4.4) ===
         st.divider()
-        st.subheader("Temps du premier kill / première mort")
+        st.subheader("Temps du premier frag / première mort")
         st.caption(
-            "Distribution des timestamps du premier kill et de la première mort. "
-            "Visualise à quelle vitesse tu obtiens ton premier kill vs ta première mort."
+            "Distribution des timestamps du premier frag et de la première mort. "
+            "Visualise à quelle vitesse tu obtiens ton premier frag vs ta première mort."
         )
 
         first_kills: dict[str, int | None] = {}
@@ -305,7 +305,7 @@ def render_timeseries_page(
             st.plotly_chart(fig_events, width="stretch")
         else:
             st.info(
-                "Données d'événements non disponibles (premier kill / première mort). "
+                "Données d'événements non disponibles (premier frag / première mort). "
                 "L’**Actualiser** récupère déjà ces données pour les **nouveaux** matchs. "
                 "Pour les matchs déjà en base sans événements film, active dans **Paramètres** "
                 "→ **Options du bouton Actualiser** l’option **Backfill events**, puis **Actualiser**."

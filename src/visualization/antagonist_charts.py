@@ -183,13 +183,13 @@ def plot_killer_victim_stacked_bars(
                 x=x_vals,
                 orientation="h",
                 marker={"color": color},
-                hovertemplate=f"<b>%{{y}}</b> → <b>{safe_v}</b><br>Kills: %{{x}}<extra></extra>",
+                hovertemplate=f"<b>%{{y}}</b> → <b>{safe_v}</b><br>Frags: %{{x}}<extra></extra>",
             )
         )
 
     fig.update_layout(
         barmode="stack",
-        xaxis_title="Nombre de kills",
+        xaxis_title="Nombre de frags",
         yaxis_title="Tueur (rang)",
         yaxis={"categoryorder": "array", "categoryarray": killer_labels},
         margin={"l": 140},
@@ -254,11 +254,11 @@ def plot_kd_timeseries(
     # Barres pour kills par minute
     fig.add_trace(
         go.Bar(
-            name="Kills",
+            name="Frags",
             x=minutes,
             y=kills,
             marker={"color": COLORS["kills"], "opacity": 0.7},
-            hovertemplate="Min %{x}<br>Kills: %{y}<extra></extra>",
+            hovertemplate="Min %{x}<br>Frags: %{y}<extra></extra>",
         )
     )
 
@@ -298,7 +298,7 @@ def plot_kd_timeseries(
     fig.update_layout(
         barmode="relative",
         xaxis_title="Minute",
-        yaxis_title="Kills / Morts",
+        yaxis_title="Frags / Morts",
         yaxis2={
             "title": "K/D cumulé",
             "overlaying": "y",
@@ -427,7 +427,7 @@ def plot_duel_history(
     fig.update_layout(
         barmode="group",
         xaxis_title="Match #",
-        yaxis_title="Kills",
+        yaxis_title="Frags",
         yaxis2={
             "title": "Net",
             "overlaying": "y",
@@ -656,7 +656,7 @@ def plot_top_antagonists_bars(
                 x=vic_counts,
                 orientation="h",
                 marker={"color": COLORS["victim"]},
-                name="Kills",
+                name="Frags",
                 hovertemplate="<b>%{y}</b><br>Tué: %{x} fois<extra></extra>",
             ),
             row=1,

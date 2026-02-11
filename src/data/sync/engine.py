@@ -157,6 +157,8 @@ CREATE TABLE IF NOT EXISTS match_participants (
     assists SMALLINT,
     shots_fired INTEGER,
     shots_hit INTEGER,
+    damage_dealt FLOAT,
+    damage_taken FLOAT,
     PRIMARY KEY (match_id, xuid)
 );
 CREATE INDEX IF NOT EXISTS idx_participants_xuid ON match_participants(xuid);
@@ -451,6 +453,10 @@ class DuckDBSyncEngine:
                 conn.execute("ALTER TABLE match_participants ADD COLUMN shots_fired INTEGER")
             if "shots_hit" not in col_names:
                 conn.execute("ALTER TABLE match_participants ADD COLUMN shots_hit INTEGER")
+            if "damage_dealt" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN damage_dealt FLOAT")
+            if "damage_taken" not in col_names:
+                conn.execute("ALTER TABLE match_participants ADD COLUMN damage_taken FLOAT")
         except Exception as e:
             logger.debug(f"match_participants columns migration: {e}")
 
@@ -1162,8 +1168,9 @@ class DuckDBSyncEngine:
                 conn.execute(
                     """INSERT OR REPLACE INTO match_participants (
                         match_id, xuid, team_id, outcome, gamertag, rank, score,
-                        kills, deaths, assists, shots_fired, shots_hit
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        kills, deaths, assists, shots_fired, shots_hit,
+                        damage_dealt, damage_taken
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         row.match_id,
                         row.xuid,
@@ -1177,6 +1184,8 @@ class DuckDBSyncEngine:
                         row.assists,
                         row.shots_fired,
                         row.shots_hit,
+                        row.damage_dealt,
+                        row.damage_taken,
                     ),
                 )
 

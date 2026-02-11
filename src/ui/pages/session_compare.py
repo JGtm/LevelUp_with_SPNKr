@@ -1145,7 +1145,7 @@ def render_session_comparison_page(
             if not pl_a.is_empty() and not pl_b.is_empty():
                 st.markdown("#### Net score cumulé par session")
                 st.caption(
-                    "Évolution du net score (Kills − Deaths) au fil des matchs de chaque session."
+                    "Évolution du net score (Frags − Deaths) au fil des matchs de chaque session."
                 )
                 st.plotly_chart(
                     plot_cumulative_comparison(

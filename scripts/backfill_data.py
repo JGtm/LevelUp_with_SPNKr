@@ -727,7 +727,9 @@ def _find_matches_missing_data(
     participants_scores: bool = False,
     participants_kda: bool = False,
     participants_shots: bool = False,
+    participants_damage: bool = False,
     force_participants_shots: bool = False,
+    force_participants_damage: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     shots: bool = False,
@@ -963,6 +965,31 @@ def _find_matches_missing_data(
             except Exception:
                 conditions.append("1=1")
 
+    if participants_damage:
+        if force_participants_damage:
+            conditions.append("1=1")  # Tous les matchs pour forcer damage des participants
+        else:
+            try:
+                table_ok = conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_schema = 'main' AND table_name = 'match_participants'"
+                ).fetchone()
+                dmg_ok = conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = 'main' AND table_name = 'match_participants' AND column_name = 'damage_dealt'"
+                ).fetchone()
+                if table_ok and table_ok[0] and dmg_ok and dmg_ok[0]:
+                    conditions.append("""
+                        ms.match_id IN (
+                            SELECT match_id FROM match_participants
+                            WHERE damage_dealt IS NULL OR damage_taken IS NULL
+                        )
+                    """)
+                else:
+                    conditions.append("1=1")
+            except Exception:
+                conditions.append("1=1")
+
     if not conditions:
         return []
 
@@ -1028,6 +1055,7 @@ async def backfill_player_data(
     participants_scores: bool = False,
     participants_kda: bool = False,
     participants_shots: bool = False,
+    participants_damage: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     sessions: bool = False,
@@ -1037,6 +1065,7 @@ async def backfill_player_data(
     shots: bool = False,
     force_shots: bool = False,
     force_participants_shots: bool = False,
+    force_participants_damage: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
@@ -1077,6 +1106,7 @@ async def backfill_player_data(
         participants_scores = True  # rank et score des participants
         participants_kda = True  # kills, deaths, assists des participants
         participants_shots = True  # shots_fired/shots_hit des participants
+        participants_damage = True  # damage_dealt/damage_taken des participants
         killer_victim = True
         end_time = True
         sessions = True
@@ -1111,6 +1141,9 @@ async def backfill_player_data(
     if force_participants_shots and not participants_shots:
         participants_shots = True
 
+    if force_participants_damage and not participants_damage:
+        participants_damage = True
+
     # Vérifier qu'au moins une option est activée
     if not any(
         [
@@ -1128,6 +1161,7 @@ async def backfill_player_data(
             participants_scores,
             participants_kda,
             participants_shots,
+            participants_damage,
             killer_victim,
             end_time,
             sessions,
@@ -1154,6 +1188,7 @@ async def backfill_player_data(
             "participants_scores_updated": 0,
             "participants_kda_updated": 0,
             "participants_shots_updated": 0,
+            "participants_damage_updated": 0,
             "killer_victim_pairs_inserted": 0,
             "end_time_updated": 0,
             "sessions_updated": 0,
@@ -1180,6 +1215,8 @@ async def backfill_player_data(
             "participants_inserted": 0,
             "participants_scores_updated": 0,
             "participants_kda_updated": 0,
+            "participants_shots_updated": 0,
+            "participants_damage_updated": 0,
             "killer_victim_pairs_inserted": 0,
             "end_time_updated": 0,
             "sessions_updated": 0,
@@ -1205,6 +1242,8 @@ async def backfill_player_data(
             "participants_inserted": 0,
             "participants_scores_updated": 0,
             "participants_kda_updated": 0,
+            "participants_shots_updated": 0,
+            "participants_damage_updated": 0,
             "killer_victim_pairs_inserted": 0,
         }
 
@@ -1357,7 +1396,7 @@ async def backfill_player_data(
 
         # Pour participants_scores / participants_kda / participants_shots, s'assurer que les colonnes existent
         # avant de chercher les matchs (sinon la requête ne trouve rien)
-        if participants_scores or participants_kda or participants_shots:
+        if participants_scores or participants_kda or participants_shots or participants_damage:
             with contextlib.suppress(Exception):
                 _ensure_match_participants_columns(conn)
 
@@ -1377,7 +1416,9 @@ async def backfill_player_data(
             participants_scores=participants_scores,
             participants_kda=participants_kda,
             participants_shots=participants_shots,
+            participants_damage=participants_damage,
             force_participants_shots=force_participants_shots,
+            force_participants_damage=force_participants_damage,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
             shots=shots,
@@ -1424,6 +1465,7 @@ async def backfill_player_data(
             and not participants_scores
             and not participants_kda
             and not participants_shots
+            and not participants_damage
         ):
             # Pas de matchs à traiter ET pas de killer_victim ni end_time à backfill
             logger.info("Tous les matchs ont déjà toutes les données demandées")
@@ -1556,6 +1598,7 @@ async def backfill_player_data(
         total_participants_scores_updated = 0
         total_participants_kda_updated = 0
         total_participants_shots_updated = 0
+        total_participants_damage_updated = 0
         total_end_time_updated = 0
 
         async with SPNKrAPIClient(
@@ -1576,9 +1619,15 @@ async def backfill_player_data(
                     participants_scores_this_match = 0
                     participants_kda_this_match = 0
                     participants_shots_this_match = 0
+                    participants_damage_this_match = 0
 
-                    # Mise à jour score/rang, k/d/a ou shots des participants (options distinctes)
-                    if participants_scores or participants_kda or participants_shots:
+                    # Mise à jour score/rang, k/d/a ou shots ou damage des participants (options distinctes)
+                    if (
+                        participants_scores
+                        or participants_kda
+                        or participants_shots
+                        or participants_damage
+                    ):
                         _ensure_match_participants_columns(conn)
                         participant_rows = extract_participants(stats_json)
                         for row in participant_rows:
@@ -1613,6 +1662,21 @@ async def backfill_player_data(
                                         (row.shots_fired, row.shots_hit, row.match_id, row.xuid),
                                     )
                                     participants_shots_this_match += 1
+                                if participants_damage and (
+                                    row.damage_dealt is not None or row.damage_taken is not None
+                                ):
+                                    conn.execute(
+                                        """UPDATE match_participants
+                                           SET damage_dealt = ?, damage_taken = ?
+                                           WHERE match_id = ? AND xuid = ?""",
+                                        (
+                                            row.damage_dealt,
+                                            row.damage_taken,
+                                            row.match_id,
+                                            row.xuid,
+                                        ),
+                                    )
+                                    participants_damage_this_match += 1
                             except Exception as e:
                                 logger.debug(f"Update participant {row.xuid}: {e}")
                         if participant_rows:
@@ -1624,6 +1688,8 @@ async def backfill_player_data(
                                 total_participants_kda_updated += participants_kda_this_match
                             if participants_shots:
                                 total_participants_shots_updated += participants_shots_this_match
+                            if participants_damage:
+                                total_participants_damage_updated += participants_damage_this_match
 
                     # Enrichir avec les noms depuis Discovery UGC (playlist, map, pair, game_variant)
                     if assets:
@@ -1658,6 +1724,7 @@ async def backfill_player_data(
                         "participants_scores": participants_scores_this_match,
                         "participants_kda": participants_kda_this_match,
                         "participants_shots": participants_shots_this_match,
+                        "participants_damage": participants_damage_this_match,
                     }
 
                     # Assets (noms playlist/map/pair) — mise à jour match_stats
@@ -1859,6 +1926,10 @@ async def backfill_player_data(
                         parts.append(
                             f"{inserted_this_match['participants_shots']} shots participant(s)"
                         )
+                    if inserted_this_match.get("participants_damage", 0) > 0:
+                        parts.append(
+                            f"{inserted_this_match['participants_damage']} damage participant(s)"
+                        )
 
                     if parts:
                         logger.info(f"  ✅ {', '.join(parts)} inséré(s)")
@@ -1936,6 +2007,7 @@ async def backfill_player_data(
             "participants_scores_updated": total_participants_scores_updated,
             "participants_kda_updated": total_participants_kda_updated,
             "participants_shots_updated": total_participants_shots_updated,
+            "participants_damage_updated": total_participants_damage_updated,
             "killer_victim_pairs_inserted": total_killer_victim_pairs,
             "end_time_updated": total_end_time_updated,
             "sessions_updated": total_sessions_updated,
@@ -1969,6 +2041,7 @@ async def backfill_all_players(
     participants_scores: bool = False,
     participants_kda: bool = False,
     participants_shots: bool = False,
+    participants_damage: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     all_data: bool = False,
@@ -1977,6 +2050,7 @@ async def backfill_all_players(
     shots: bool = False,
     force_shots: bool = False,
     force_participants_shots: bool = False,
+    force_participants_damage: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
@@ -2039,6 +2113,7 @@ async def backfill_all_players(
             participants_scores=participants_scores,
             participants_kda=participants_kda,
             participants_shots=participants_shots,
+            participants_damage=participants_damage,
             killer_victim=killer_victim,
             end_time=end_time,
             sessions=sessions,
@@ -2048,6 +2123,7 @@ async def backfill_all_players(
             shots=shots,
             force_shots=force_shots,
             force_participants_shots=force_participants_shots,
+            force_participants_damage=force_participants_damage,
             force_enemy_mmr=force_enemy_mmr,
             force_aliases=force_aliases,
             force_assets=force_assets,
@@ -2246,6 +2322,18 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--participants-damage",
+        action="store_true",
+        help="Backfill damage_dealt/damage_taken des participants (matchs où damage manquant)",
+    )
+
+    parser.add_argument(
+        "--force-participants-damage",
+        action="store_true",
+        help="Force la mise à jour de damage_dealt/damage_taken pour tous les participants de tous les matchs",
+    )
+
+    parser.add_argument(
         "--killer-victim",
         action="store_true",
         help="Backfill les paires killer/victim depuis highlight_events pour antagonistes",
@@ -2302,6 +2390,7 @@ def main() -> int:
                     participants_scores=args.participants_scores,
                     participants_kda=args.participants_kda,
                     participants_shots=args.participants_shots,
+                    participants_damage=args.participants_damage,
                     killer_victim=args.killer_victim,
                     end_time=args.end_time,
                     all_data=args.all_data,
@@ -2310,6 +2399,7 @@ def main() -> int:
                     shots=args.shots,
                     force_shots=args.force_shots,
                     force_participants_shots=args.force_participants_shots,
+                    force_participants_damage=args.force_participants_damage,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
@@ -2353,6 +2443,10 @@ def main() -> int:
                 logger.info(
                     f"Shots participants mis à jour: {totals['participants_shots_updated']}"
                 )
+            if args.participants_damage:
+                logger.info(
+                    f"Damage participants mis à jour: {totals['participants_damage_updated']}"
+                )
             if args.killer_victim:
                 logger.info(
                     f"Paires killer/victim insérées: {totals['killer_victim_pairs_inserted']}"
@@ -2381,6 +2475,7 @@ def main() -> int:
                     participants_scores=args.participants_scores,
                     participants_kda=args.participants_kda,
                     participants_shots=args.participants_shots,
+                    participants_damage=args.participants_damage,
                     killer_victim=args.killer_victim,
                     end_time=args.end_time,
                     all_data=args.all_data,
@@ -2389,6 +2484,7 @@ def main() -> int:
                     shots=args.shots,
                     force_shots=args.force_shots,
                     force_participants_shots=args.force_participants_shots,
+                    force_participants_damage=args.force_participants_damage,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
@@ -2427,6 +2523,10 @@ def main() -> int:
             if args.participants_shots:
                 logger.info(
                     f"Shots participants mis à jour: {result['participants_shots_updated']}"
+                )
+            if args.participants_damage:
+                logger.info(
+                    f"Damage participants mis à jour: {result['participants_damage_updated']}"
                 )
             if args.killer_victim:
                 logger.info(

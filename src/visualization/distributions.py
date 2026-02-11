@@ -43,7 +43,9 @@ def plot_kda_distribution(df: pd.DataFrame | pl.DataFrame) -> go.Figure:
 
     if x.size == 0:
         fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height, margin=dict(l=40, r=20, t=30, b=40))
+        fig.update_layout(
+            height=PLOT_CONFIG.default_height, margin={"l": 40, "r": 20, "t": 30, "b": 40}
+        )
         fig.update_xaxes(title_text="FDA")
         fig.update_yaxes(title_text="Densité")
         return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height)
@@ -72,7 +74,7 @@ def plot_kda_distribution(df: pd.DataFrame | pl.DataFrame) -> go.Figure:
             y=dens,
             mode="lines",
             name="Densité (KDE)",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["cyan"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["cyan"]},
             fill="tozeroy",
             fillcolor="rgba(53,208,255,0.18)",
             hovertemplate="FDA=%{x:.2f}<br>densité=%{y:.3f}<extra></extra>",
@@ -86,13 +88,28 @@ def plot_kda_distribution(df: pd.DataFrame | pl.DataFrame) -> go.Figure:
             y=np.zeros_like(x),
             mode="markers",
             name="Matchs",
-            marker=dict(symbol="line-ns-open", size=10, color="rgba(255,255,255,0.45)"),
+            marker={"symbol": "line-ns-open", "size": 10, "color": "rgba(255,255,255,0.45)"},
             hovertemplate="FDA=%{x:.2f}<extra></extra>",
         )
     )
 
     fig.add_vline(x=0, line_width=1, line_dash="dot", line_color="rgba(255,255,255,0.35)")
-    fig.update_layout(height=PLOT_CONFIG.default_height, margin=dict(l=40, r=20, t=30, b=40))
+
+    # Ligne médiane
+    if len(x) > 0:
+        median_val = float(np.median(x))
+        fig.add_vline(
+            x=median_val,
+            line_dash="dash",
+            line_color="#ffaa00",
+            annotation_text=f"Médiane: {median_val:.2f}",
+            annotation_position="top right",
+            annotation_font_color="#ffaa00",
+        )
+
+    fig.update_layout(
+        height=PLOT_CONFIG.default_height, margin={"l": 40, "r": 20, "t": 30, "b": 40}
+    )
     fig.update_xaxes(title_text="FDA", zeroline=True)
     fig.update_yaxes(title_text="Densité", rangemode="tozero")
 
@@ -121,7 +138,9 @@ def plot_outcomes_over_time(
 
     if d.empty:
         fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height, margin=dict(l=40, r=20, t=30, b=40))
+        fig.update_layout(
+            height=PLOT_CONFIG.default_height, margin={"l": 40, "r": 20, "t": 30, "b": 40}
+        )
         fig.update_yaxes(title_text="Nombre")
         return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height), "période"
 
@@ -221,7 +240,7 @@ def plot_outcomes_over_time(
     fig.update_layout(
         barmode="relative",
         height=PLOT_CONFIG.default_height,
-        margin=dict(l=40, r=20, t=30, b=40),
+        margin={"l": 40, "r": 20, "t": 30, "b": 40},
     )
     fig.update_yaxes(title_text="Nombre", zeroline=True)
 
@@ -372,7 +391,7 @@ def plot_stacked_outcomes_by_category(
         barmode="stack",
         bargap=0.15,
         height=height,
-        margin=dict(l=40, r=20, t=60 if title else 30, b=100),
+        margin={"l": 40, "r": 20, "t": 60 if title else 30, "b": 100},
         legend=get_legend_horizontal_bottom(),
     )
     fig.update_xaxes(tickangle=45, title_text="")
@@ -462,16 +481,16 @@ def plot_win_ratio_heatmap(
             hovertemplate=(
                 "%{y} %{x}<br>" "Win Rate: %{z:.1%}<br>" "Matchs: %{text}<extra></extra>"
             ),
-            colorbar=dict(
-                title="Win Rate",
-                tickformat=".0%",
-            ),
+            colorbar={
+                "title": "Win Rate",
+                "tickformat": ".0%",
+            },
         )
     )
 
     fig.update_layout(
         height=PLOT_CONFIG.default_height,
-        margin=dict(l=60, r=20, t=60 if title else 30, b=40),
+        margin={"l": 60, "r": 20, "t": 60 if title else 30, "b": 40},
     )
     fig.update_xaxes(title_text="Heure", side="bottom")
     fig.update_yaxes(title_text="Jour", autorange="reversed")
@@ -585,10 +604,7 @@ def plot_histogram(
         return apply_halo_plot_style(fig, title=title)
 
     # Calculer les bins
-    if bins == "auto":
-        n_bins = min(50, max(10, int(np.sqrt(x.size))))
-    else:
-        n_bins = int(bins)
+    n_bins = min(50, max(10, int(np.sqrt(x.size)))) if bins == "auto" else int(bins)
 
     fig = go.Figure()
 
@@ -628,85 +644,32 @@ def plot_histogram(
                     y=dens_scaled,
                     mode="lines",
                     name="Densité",
-                    line=dict(color=colors["amber"], width=2),
+                    line={"color": colors["amber"], "width": 2},
                     hoverinfo="skip",
                 )
             )
 
+    # Ligne médiane
+    if len(x) > 0:
+        median_val = float(np.median(x))
+        fig.add_vline(
+            x=median_val,
+            line_dash="dash",
+            line_color="#ffaa00",
+            annotation_text=f"Médiane: {median_val:.1f}",
+            annotation_position="top right",
+            annotation_font_color="#ffaa00",
+        )
+
     fig.update_layout(
         height=PLOT_CONFIG.default_height,
-        margin=dict(l=40, r=20, t=60 if title else 30, b=40),
+        margin={"l": 40, "r": 20, "t": 60 if title else 30, "b": 40},
         bargap=0.05,
     )
     fig.update_xaxes(title_text=x_label)
     fig.update_yaxes(title_text=y_label)
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
-
-
-def plot_top_weapons(
-    weapons_data: list[dict],
-    *,
-    title: str | None = None,
-    top_n: int = 10,
-) -> go.Figure:
-    """Graphique des armes les plus utilisées.
-
-    Args:
-        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
-        title: Titre optionnel.
-        top_n: Nombre d'armes à afficher.
-
-    Returns:
-        Figure Plotly avec barres horizontales.
-    """
-    colors = HALO_COLORS.as_dict()
-
-    if not weapons_data:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
-
-    names = [w.get("weapon_name", "?") for w in data][::-1]
-    kills = [w.get("total_kills", 0) for w in data][::-1]
-    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
-    accuracies = [w.get("accuracy", 0) for w in data][::-1]
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=kills,
-            y=names,
-            orientation="h",
-            name="Kills",
-            marker_color=colors["cyan"],
-            opacity=0.85,
-            text=[f"{k} kills" for k in kills],
-            textposition="outside",
-            customdata=list(zip(hs_rates, accuracies, strict=False)),
-            hovertemplate=(
-                "%{y}<br>"
-                "Kills: %{x}<br>"
-                "Headshot: %{customdata[0]:.1f}%<br>"
-                "Précision: %{customdata[1]:.1f}%<extra></extra>"
-            ),
-        )
-    )
-
-    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
-
-    fig.update_layout(
-        height=height,
-        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
-    )
-    fig.update_xaxes(title_text="Kills")
-    fig.update_yaxes(title_text="")
-
-    return apply_halo_plot_style(fig, title=title, height=height)
 
 
 def plot_medals_distribution(
@@ -738,7 +701,7 @@ def plot_medals_distribution(
     names = [medal_names.get(m[0], f"Médaille #{m[0]}") for m in sorted_medals]
     counts = [m[1] for m in sorted_medals]
 
-    # Inverser pour afficher du plus grand au plus petit (haut → bas)
+    # Inverser pour afficher du plus grand au plus petit (haut -> bas)
     names = names[::-1]
     counts = counts[::-1]
 
@@ -762,7 +725,7 @@ def plot_medals_distribution(
 
     fig.update_layout(
         height=height,
-        margin=dict(l=40, r=60, t=60 if title else 30, b=40),
+        margin={"l": 40, "r": 60, "t": 60 if title else 30, "b": 40},
     )
     fig.update_xaxes(title_text="Nombre")
     fig.update_yaxes(title_text="")
@@ -836,11 +799,11 @@ def plot_correlation_scatter(
             x=x,
             y=y,
             mode="markers",
-            marker=dict(
-                color=marker_colors,
-                size=8,
-                opacity=0.6,
-            ),
+            marker={
+                "color": marker_colors,
+                "size": 8,
+                "opacity": 0.6,
+            },
             hovertemplate=(
                 f"{x_label or x_col}: %{{x:.2f}}<br>"
                 f"{y_label or y_col}: %{{y:.2f}}<extra></extra>"
@@ -872,85 +835,20 @@ def plot_correlation_scatter(
                     y=y_trend,
                     mode="lines",
                     name=f"Tendance (R²={r_squared:.2f})",
-                    line=dict(color=colors["amber"], width=2, dash="dash"),
+                    line={"color": colors["amber"], "width": 2, "dash": "dash"},
                     hoverinfo="skip",
                 )
             )
 
     fig.update_layout(
         height=PLOT_CONFIG.default_height,
-        margin=dict(l=40, r=20, t=60 if title else 30, b=40),
+        margin={"l": 40, "r": 20, "t": 60 if title else 30, "b": 40},
         showlegend=show_trendline,
     )
     fig.update_xaxes(title_text=x_label or x_col)
     fig.update_yaxes(title_text=y_label or y_col)
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
-
-
-def plot_top_weapons(
-    weapons_data: list[dict],
-    *,
-    title: str | None = None,
-    top_n: int = 10,
-) -> go.Figure:
-    """Graphique des armes les plus utilisées.
-
-    Args:
-        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
-        title: Titre optionnel.
-        top_n: Nombre d'armes à afficher.
-
-    Returns:
-        Figure Plotly avec barres horizontales.
-    """
-    colors = HALO_COLORS.as_dict()
-
-    if not weapons_data:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
-
-    names = [w.get("weapon_name", "?") for w in data][::-1]
-    kills = [w.get("total_kills", 0) for w in data][::-1]
-    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
-    accuracies = [w.get("accuracy", 0) for w in data][::-1]
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=kills,
-            y=names,
-            orientation="h",
-            name="Kills",
-            marker_color=colors["cyan"],
-            opacity=0.85,
-            text=[f"{k} kills" for k in kills],
-            textposition="outside",
-            customdata=list(zip(hs_rates, accuracies, strict=False)),
-            hovertemplate=(
-                "%{y}<br>"
-                "Kills: %{x}<br>"
-                "Headshot: %{customdata[0]:.1f}%<br>"
-                "Précision: %{customdata[1]:.1f}%<extra></extra>"
-            ),
-        )
-    )
-
-    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
-
-    fig.update_layout(
-        height=height,
-        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
-    )
-    fig.update_xaxes(title_text="Kills")
-    fig.update_yaxes(title_text="")
-
-    return apply_halo_plot_style(fig, title=title, height=height)
 
 
 def plot_matches_at_top_by_week(
@@ -1041,8 +939,8 @@ def plot_matches_at_top_by_week(
             mode="lines+markers",
             name="Taux Top (%)",
             yaxis="y2",
-            line=dict(color=colors["amber"], width=2),
-            marker=dict(size=6),
+            line={"color": colors["amber"], "width": 2},
+            marker={"size": 6},
             hovertemplate="%{x}<br>Taux Top: %{y:.1f}%<extra></extra>",
         )
     )
@@ -1051,85 +949,20 @@ def plot_matches_at_top_by_week(
         barmode="stack",
         bargap=0.15,
         height=PLOT_CONFIG.default_height,
-        margin=dict(l=40, r=60, t=60 if title else 30, b=80),
+        margin={"l": 40, "r": 60, "t": 60 if title else 30, "b": 80},
         legend=get_legend_horizontal_bottom(),
-        yaxis2=dict(
-            title="Taux (%)",
-            overlaying="y",
-            side="right",
-            range=[0, 100],
-            showgrid=False,
-        ),
+        yaxis2={
+            "title": "Taux (%)",
+            "overlaying": "y",
+            "side": "right",
+            "range": [0, 100],
+            "showgrid": False,
+        },
     )
     fig.update_xaxes(tickangle=45, title_text="Semaine")
     fig.update_yaxes(title_text="Matchs")
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
-
-
-def plot_top_weapons(
-    weapons_data: list[dict],
-    *,
-    title: str | None = None,
-    top_n: int = 10,
-) -> go.Figure:
-    """Graphique des armes les plus utilisées.
-
-    Args:
-        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
-        title: Titre optionnel.
-        top_n: Nombre d'armes à afficher.
-
-    Returns:
-        Figure Plotly avec barres horizontales.
-    """
-    colors = HALO_COLORS.as_dict()
-
-    if not weapons_data:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
-
-    names = [w.get("weapon_name", "?") for w in data][::-1]
-    kills = [w.get("total_kills", 0) for w in data][::-1]
-    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
-    accuracies = [w.get("accuracy", 0) for w in data][::-1]
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=kills,
-            y=names,
-            orientation="h",
-            name="Kills",
-            marker_color=colors["cyan"],
-            opacity=0.85,
-            text=[f"{k} kills" for k in kills],
-            textposition="outside",
-            customdata=list(zip(hs_rates, accuracies, strict=False)),
-            hovertemplate=(
-                "%{y}<br>"
-                "Kills: %{x}<br>"
-                "Headshot: %{customdata[0]:.1f}%<br>"
-                "Précision: %{customdata[1]:.1f}%<extra></extra>"
-            ),
-        )
-    )
-
-    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
-
-    fig.update_layout(
-        height=height,
-        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
-    )
-    fig.update_xaxes(title_text="Kills")
-    fig.update_yaxes(title_text="")
-
-    return apply_halo_plot_style(fig, title=title, height=height)
 
 
 def plot_first_event_distribution(
@@ -1165,7 +998,7 @@ def plot_first_event_distribution(
         fig.add_trace(
             go.Histogram(
                 x=kills_sec,
-                name="Premier kill",
+                name="Premier frag",
                 marker_color=colors["green"],
                 opacity=0.7,
                 nbinsx=20,
@@ -1192,7 +1025,7 @@ def plot_first_event_distribution(
             x=avg_kill,
             line_dash="dash",
             line_color=colors["green"],
-            annotation_text=f"Moy. kill: {avg_kill:.0f}s",
+            annotation_text=f"Moy. frag: {avg_kill:.0f}s",
             annotation_position="top",
         )
 
@@ -1206,6 +1039,29 @@ def plot_first_event_distribution(
             annotation_position="bottom",
         )
 
+    # Ajouter des lignes verticales pour les médianes
+    if kills_sec:
+        median_kill = float(np.median(kills_sec))
+        fig.add_vline(
+            x=median_kill,
+            line_dash="dot",
+            line_color="#ffaa00",
+            annotation_text=f"Méd. frag: {median_kill:.0f}s",
+            annotation_position="top right",
+            annotation_font_color="#ffaa00",
+        )
+
+    if deaths_sec:
+        median_death = float(np.median(deaths_sec))
+        fig.add_vline(
+            x=median_death,
+            line_dash="dot",
+            line_color="#ffaa00",
+            annotation_text=f"Méd. mort: {median_death:.0f}s",
+            annotation_position="bottom right",
+            annotation_font_color="#ffaa00",
+        )
+
     fig.update_layout(
         barmode="overlay",
         height=PLOT_CONFIG.default_height,
@@ -1216,68 +1072,3 @@ def plot_first_event_distribution(
     fig.update_yaxes(title_text="Nombre de matchs")
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
-
-
-def plot_top_weapons(
-    weapons_data: list[dict],
-    *,
-    title: str | None = None,
-    top_n: int = 10,
-) -> go.Figure:
-    """Graphique des armes les plus utilisées.
-
-    Args:
-        weapons_data: Liste de dicts avec weapon_name, total_kills, headshot_rate, accuracy.
-        title: Titre optionnel.
-        top_n: Nombre d'armes à afficher.
-
-    Returns:
-        Figure Plotly avec barres horizontales.
-    """
-    colors = HALO_COLORS.as_dict()
-
-    if not weapons_data:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    # Limiter et trier
-    data = sorted(weapons_data, key=lambda x: x.get("total_kills", 0), reverse=True)[:top_n]
-
-    names = [w.get("weapon_name", "?") for w in data][::-1]
-    kills = [w.get("total_kills", 0) for w in data][::-1]
-    hs_rates = [w.get("headshot_rate", 0) for w in data][::-1]
-    accuracies = [w.get("accuracy", 0) for w in data][::-1]
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=kills,
-            y=names,
-            orientation="h",
-            name="Kills",
-            marker_color=colors["cyan"],
-            opacity=0.85,
-            text=[f"{k} kills" for k in kills],
-            textposition="outside",
-            customdata=list(zip(hs_rates, accuracies, strict=False)),
-            hovertemplate=(
-                "%{y}<br>"
-                "Kills: %{x}<br>"
-                "Headshot: %{customdata[0]:.1f}%<br>"
-                "Précision: %{customdata[1]:.1f}%<extra></extra>"
-            ),
-        )
-    )
-
-    height = max(PLOT_CONFIG.default_height, 30 * len(names) + 80)
-
-    fig.update_layout(
-        height=height,
-        margin={"l": 120, "r": 60, "t": 60 if title else 30, "b": 40},
-    )
-    fig.update_xaxes(title_text="Kills")
-    fig.update_yaxes(title_text="")
-
-    return apply_halo_plot_style(fig, title=title, height=height)

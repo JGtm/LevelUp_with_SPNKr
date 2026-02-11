@@ -1163,6 +1163,10 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
         shots_fired_val = _safe_int(stats_dict.get("ShotsFired")) if stats_dict else None
         shots_hit_val = _safe_int(stats_dict.get("ShotsHit")) if stats_dict else None
 
+        # DamageDealt / DamageTaken depuis CoreStats (API)
+        damage_dealt_val = _safe_float(stats_dict.get("DamageDealt")) if stats_dict else None
+        damage_taken_val = _safe_float(stats_dict.get("DamageTaken")) if stats_dict else None
+
         rows.append(
             MatchParticipantRow(
                 match_id=match_id,
@@ -1177,6 +1181,8 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
                 assists=assists_val,
                 shots_fired=shots_fired_val,
                 shots_hit=shots_hit_val,
+                damage_dealt=damage_dealt_val,
+                damage_taken=damage_taken_val,
             )
         )
 

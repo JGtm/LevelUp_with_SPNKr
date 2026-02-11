@@ -89,7 +89,7 @@ def render_global_stats_card(
         col5, col6, col7, col8 = st.columns(4)
 
         col5.metric(
-            "Kills",
+            "Frags",
             f"{stats['total_kills']:,}",
         )
         col6.metric(

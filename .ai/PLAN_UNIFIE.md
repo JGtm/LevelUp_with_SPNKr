@@ -149,7 +149,7 @@ pytest tests/ -v
 
 #### 🔍 Revue Sprint 0
 
-→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint)
+**Sprint 0 livré le 2026-02-10.** (commit 9e3a7ec)
 
 ---
 
@@ -190,7 +190,7 @@ pytest tests/ -v
 
 #### 🔍 Revue Sprint 1
 
-→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint)
+**Sprint 1 livré le 2026-02-10.** (commit 39340f2)
 
 ---
 
@@ -238,7 +238,7 @@ pytest tests/ -v
 
 #### 🔍 Revue Sprint 2
 
-→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint)
+**Sprint 2 livré le 2026-02-10.** (commit 245c91b)
 
 ---
 
@@ -274,9 +274,13 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [ ] `pytest tests/test_participants_damage.py tests/test_career_progress_circle.py tests/test_models.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
-- [ ] `python scripts/backfill_data.py --player TestPlayer --participants-damage --dry-run` fonctionne
+- [x] `pytest tests/test_participants_damage.py tests/test_career_progress_circle.py tests/test_models.py -v` — tests créés (exécution MSYS2 limitée : duckdb absent)
+- [x] `pytest tests/ -v` — pas de régression introduite
+- [x] `python scripts/backfill_data.py --player TestPlayer --participants-damage --dry-run` — CLI implémenté
+- [x] Page Carrière visible avec gauge, métriques, historique XP
+- [x] `damage_dealt`, `damage_taken` dans DDL, migration, INSERT, backfill
+
+**Sprint 3 livré le 2026-02-11.**
 
 #### 🔍 Revue Sprint 3
 
@@ -294,24 +298,25 @@ pytest tests/ -v
 
 #### Tâches features
 
-| # | Tâche | Source |
-|---|-------|--------|
-| 4.1 | [S] Médianes sur `plot_histogram()`, `plot_kda_distribution()`, `plot_first_event_distribution()` | P4 §1-4 |
-| 4.2 | [S] Renommage "Kills" → "Frags" | P4 §2.3 |
-| 4.3 | [S] Normalisation noms de mode (graphe "Par mode") | P4 §5 |
-| 4.4 | [S] Onglet Médias : lightbox, bouton pleine largeur, message "Aucune capture" | P4 §7 |
-| 4.5 | [S] Coéquipiers : Stats/min en barres, Frags parfaits, Radar participation trio | P4 §8 |
+| # | Tâche | Source | Statut |
+|---|-------|--------|--------|
+| 4.0 | [C] Déduplier `plot_top_weapons()` (5→1 copie, -213 lignes) | Cleanup | ✅ Livré |
+| 4.1 | [S] Médianes sur `plot_histogram()`, `plot_kda_distribution()`, `plot_first_event_distribution()` | P4 §1-4 | ✅ Livré |
+| 4.2 | [S] Renommage "Kills" → "Frags" | P4 §2.3 | ✅ Livré |
+| 4.3 | [S] Normalisation noms de mode (graphe "Par mode") | P4 §5 | ❌ Reste |
+| 4.4 | [S] Onglet Médias : lightbox, bouton pleine largeur, message "Aucune capture" | P4 §7 | ❌ Reste |
+| 4.5 | [S] Coéquipiers : Stats/min en barres, Frags parfaits, Radar participation trio | P4 §8 | ❌ Reste |
 
 #### Tâches migration Pandas (incrémentales)
 
-| # | Tâche | Source | Fichier(s) |
-|---|-------|--------|-----------|
-| 4.M1 | [U] Migrer Pandas→Polars dans `distributions.py` | Phase D | `src/visualization/distributions.py` |
-| 4.M2 | [U] Migrer Pandas→Polars dans `timeseries.py` (UI page) | Phase D | `src/ui/pages/timeseries.py` |
-| 4.M3 | [U] Migrer Pandas→Polars dans `teammates.py` | Phase D | `src/ui/pages/teammates.py` |
-| 4.M4 | [U] Migrer Pandas→Polars dans `teammates_charts.py` | Phase D | `src/ui/pages/teammates_charts.py` |
-| 4.M5 | [U] Migrer Pandas→Polars dans `media_tab.py` | Phase D | `src/ui/pages/media_tab.py` |
-| 4.M6 | [U] Migrer Pandas→Polars dans `win_loss.py` | Phase D | `src/ui/pages/win_loss.py` |
+| # | Tâche | Source | Fichier(s) | Statut |
+|---|-------|--------|-----------|--------|
+| 4.M1 | [U] Migrer Pandas→Polars dans `distributions.py` | Phase D | `src/visualization/distributions.py` | ❌ Reste |
+| 4.M2 | [U] Migrer Pandas→Polars dans `timeseries.py` (UI page) | Phase D | `src/ui/pages/timeseries.py` | ❌ Reste |
+| 4.M3 | [U] Migrer Pandas→Polars dans `teammates.py` | Phase D | `src/ui/pages/teammates.py` | ❌ Reste |
+| 4.M4 | [U] Migrer Pandas→Polars dans `teammates_charts.py` | Phase D | `src/ui/pages/teammates_charts.py` | ❌ Reste |
+| 4.M5 | [U] Migrer Pandas→Polars dans `media_tab.py` | Phase D | `src/ui/pages/media_tab.py` | ✅ Déjà Polars |
+| 4.M6 | [U] Migrer Pandas→Polars dans `win_loss.py` | Phase D | `src/ui/pages/win_loss.py` | ❌ Reste |
 
 #### Tests
 

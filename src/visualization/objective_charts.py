@@ -51,7 +51,7 @@ def plot_objective_vs_kills_scatter(
     awards_df: pl.DataFrame,
     match_stats_df: pl.DataFrame,
     *,
-    title: str = "Score Objectifs vs Kills",
+    title: str = "Score Objectifs vs Frags",
     height: int = 450,
 ) -> go.Figure:
     """Crée un scatter plot comparant score objectifs et kills par match.
@@ -166,7 +166,7 @@ def plot_objective_vs_kills_scatter(
             )
 
     fig.update_layout(
-        xaxis_title="Kills",
+        xaxis_title="Frags",
         yaxis_title="Score Objectifs",
         hovermode="closest",
     )

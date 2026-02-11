@@ -84,8 +84,8 @@ data/
 - `src/analysis/performance_score.py` : Score de performance
 
 ### UI
-- `src/ui/pages/` : Pages du dashboard
-- `src/ui/components/` : Composants réutilisables
+- `src/ui/pages/` : Pages du dashboard (career.py ajouté Sprint 3B)
+- `src/ui/components/` : Composants réutilisables (career_progress_circle.py ajouté Sprint 3B)
 - `src/visualization/` : Graphiques Plotly
 
 ## Tables DuckDB
@@ -190,20 +190,27 @@ data/
 
 ## Sprint en Cours
 
-**Sprint Gamertag & Roster Fix** (2026-02-05)  
-📄 `.ai/sprints/SPRINT_GAMERTAG_ROSTER_FIX.md`
+**Sprints 3-4 du PLAN_UNIFIE** (2026-02-11)
+📄 `.ai/PLAN_UNIFIE.md`
 
-Objectifs :
-- Créer `match_participants` pour restaurer la logique coéquipiers
-- Backfill `killer_victim_pairs` depuis `highlight_events`
-- Corriger les gamertags corrompus (NUL chars)
-- Intégrer les graphiques antagonistes dans l'UI
+### Sprints livrés
+- **S0** ✅ Bugs urgents (tri session, nettoyage filtres)
+- **S1** ✅ Nettoyage scripts (113→16 actifs) + archivage .ai/
+- **S2** ✅ Migration Pandas→Polars core (performance_score, backfill, sessions, killer_victim)
+- **S3** ✅ Damage participants + Page Carrière
+- **S4 (partiel)** ✅ 4.0 Déduplic plot_top_weapons, 4.1 Médianes, 4.2 Kills→Frags
 
-Tables concernées :
-- `killer_victim_pairs` : ❌ Vide → À peupler
-- `xuid_aliases` : ❌ Vide → À peupler
-- `match_participants` : ❌ N'existe pas → À créer
-- `antagonists` : ❌ Vide → À peupler
+### Sprint 4 — Reste à faire
+- 4.3 Normalisation noms de mode (`win_loss.py`)
+- 4.M1-M6 Migration Polars (distributions, timeseries, teammates, teammates_charts, win_loss)
+- 4.5 Features teammates (stats/min barres, frags parfaits, radar trio)
+- Tests Sprint 4
+
+### Prochains sprints
+- **S5** Score de Performance v4
+- **S6-S8** Nouvelles stats (Timeseries, V/D, Coéquipiers)
+- **S9** Suppression code legacy + Migration Pandas complète
+- **S10-S11** Nettoyage données + Finalisation
 
 ## Exploration Complète du Projet
 
@@ -225,7 +232,7 @@ Consulter ce fichier pour une cartographie exhaustive ; le présent `project_map
 
 ## Dernière Mise à Jour
 
-**2026-02-05** : Exploration complète du projet refaite → `.ai/explore/PROJECT_EXPLORE_2026-02-05.md`  
-**2026-02-05** : Sprint Gamertag & Roster Fix initié + Documentation killer_victim  
-**2026-02-05** : 🔴 Problème critique identifié - Données manquantes en BDD (en exploration)  
+**2026-02-11** : Sprints 3A+3B livrés (damage participants + page Carrière) + Sprint 4 partiel (4.0-4.2)
+**2026-02-10** : Sprints 0-2 livrés (bugs, nettoyage, migration Polars core)
+**2026-02-05** : Sprint Gamertag & Roster Fix + Documentation killer_victim
 **2026-02-01** : Phase 6 terminée - Documentation & Branding "LevelUp"

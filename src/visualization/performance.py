@@ -144,7 +144,7 @@ def plot_cumulative_net_score(
 
     # Layout
     fig.update_layout(
-        yaxis_title="Net Score (Kills - Deaths)",
+        yaxis_title="Net Score (Frags - Deaths)",
         xaxis_title="Match",
         hovermode="x unified",
         showlegend=True,
@@ -567,7 +567,7 @@ def create_cumulative_metrics_indicator(
         rows=1,
         cols=4,
         specs=[[{"type": "indicator"}] * 4],
-        subplot_titles=["Kills", "Deaths", "Net Score", "K/D"],
+        subplot_titles=["Frags", "Deaths", "Net Score", "K/D"],
     )
 
     # Kills

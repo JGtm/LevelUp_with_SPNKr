@@ -7,6 +7,72 @@
 
 ## Journal
 
+### [2026-02-11] - Sprints 3 + 4 (partiel) — Damage participants, Carrière, UI améliorations
+
+**Statut** : Sprint 3 livré, Sprint 4 partiellement livré
+
+**Sprint 3A — Damage participants** : Toutes les tâches 3A.1 à 3A.6 réalisées.
+
+**Changements code (3A)** :
+- `src/data/sync/models.py` : Ajout `damage_dealt: float | None` et `damage_taken: float | None` à `MatchParticipantRow`
+- `src/data/sync/transformers.py` : Extraction `DamageDealt`/`DamageTaken` via `_safe_float()` dans `extract_participants()`
+- `src/data/sync/engine.py` : DDL mis à jour (14 colonnes), migration `_ensure_match_participants_rank_score()` étendue, `_insert_participant_rows()` avec 14 colonnes
+- `scripts/backfill_data.py` : 16+ points d'édition pour `--participants-damage` et `--force-participants-damage` (détection, UPDATE, compteurs, argparse)
+- `tests/test_participants_damage.py` (nouveau) : 10 tests couvrant extraction damage, valeurs None, zéro valide, multi-joueur
+
+**Sprint 3B — Page Carrière** : Toutes les tâches 3B.1 à 3B.5 réalisées.
+
+**Changements code (3B)** :
+- `src/ui/components/career_progress_circle.py` (nouveau) : Gauge Plotly `go.Indicator(mode="gauge+number")` avec couleurs par palier (rouge→ambre→cyan→vert)
+- `src/ui/pages/career.py` (nouveau) : Page complète avec `_load_career_data()`, `_load_career_history()`, `_create_xp_history_chart()`, layout 3 colonnes (icône, métriques, gauge) + historique XP
+- `src/app/page_router.py` : "Carrière" ajouté à PAGES + dispatch
+- `src/ui/pages/__init__.py` : Export `render_career_page`
+- `streamlit_app.py` : Import + wiring `render_career_page_fn`
+- `tests/test_career_page.py` (nouveau) : Tests gauge (go.Figure, max_rank, zero XP, custom height) + labels FR
+
+**Sprint 4.0 — Nettoyage duplications** : Livré.
+
+- `src/visualization/distributions.py` : 4 copies dupliquées de `plot_top_weapons()` supprimées (lignes 647, 891, 1070, 1221). Fichier passé de 1284 à 1071 lignes. Une seule définition conservée (ligne 495).
+
+**Sprint 4.1 — Médianes sur histogrammes** : Livré.
+
+- `plot_kda_distribution()` : Ligne médiane `add_vline` (dash ambre #ffaa00) avec annotation
+- `plot_histogram()` : Ligne médiane après la section KDE
+- `plot_first_event_distribution()` : Médianes frag et mort (dot ambre) en plus des moyennes existantes
+
+**Sprint 4.2 — Renommage Kills→Frags** : Livré.
+
+- Fichiers modifiés : `timeseries.py`, `session_compare.py`, `match_history.py`, `match_view_charts.py`, `objective_analysis.py`, `teammates.py`, `teammates_charts.py`
+- "Kills" conservé uniquement dans `plot_top_weapons` (contexte armes spécifique)
+
+**Ce qui RESTE à faire pour le Sprint 4** :
+
+| Tâche | Statut | Détail |
+|-------|--------|--------|
+| 4.3 Normalisation noms de mode | Pas commencé | Appliquer `translate_pair_name()` dans le graphe "Par mode" de `win_loss.py` |
+| 4.M1 Migration Polars `distributions.py` | Pas commencé | Remplacer `_normalize_df()` par `_to_polars()`, migrer les fonctions simples |
+| 4.M2 Migration Polars `timeseries.py` | Pas commencé | Convertir `dff` en Polars au début, travailler en Polars |
+| 4.M3+M4 Migration Polars `teammates.py` + `teammates_charts.py` | Pas commencé | Arrêter de convertir en Pandas, modifier signatures |
+| 4.M6 Migration Polars `win_loss.py` | Pas commencé | Convertir en Polars pour la logique, garder `.to_pandas()` pour styler |
+| 4.5 Features teammates | Pas commencé | Stats/min en barres, frags parfaits, radar trio |
+| Tests Sprint 4 | Pas commencé | Étendre test_visualizations.py, créer tests normalisation/teammates |
+
+**Analyse technique pour la reprise (4.M6 win_loss.py)** :
+- Le fichier utilise `pivot_table`, `pd.to_datetime`, `.dt.to_period()`, et surtout `tbl.style.apply()` (Pandas styler)
+- Stratégie recommandée : accepter `pl.DataFrame | pd.DataFrame`, convertir à Polars au début, passer Polars aux fonctions de distributions.py (qui gèrent les deux types via `_normalize_df()`), convertir à Pandas uniquement pour le pivot_table (section "Par période") et le styler (section map table)
+- `plot_win_ratio_heatmap` et `plot_matches_at_top_by_week` n'ont PAS de `_normalize_df()` → requièrent Pandas → convertir avant appel
+- `compute_map_breakdown` accepte déjà les deux types, retourne Pandas
+
+**Tests** : Non exécutables en MSYS2 (duckdb absent — limitation connue, pas une régression).
+
+---
+
+### [2026-02-10] - Sprint 2 livré — Migration Pandas→Polars core
+
+**Statut** : Livré (commit 245c91b)
+
+---
+
 ### [2026-02-10] - Sprint 1 livré — Nettoyage scripts + Archivage documentation
 
 **Statut** : Livré

@@ -1,5 +1,6 @@
 """Pages UI du dashboard."""
 
+from src.ui.pages.career import render_career_page
 from src.ui.pages.citations import render_citations_page
 from src.ui.pages.last_match import render_last_match_page, render_match_search_page
 from src.ui.pages.match_history import render_match_history_page
@@ -28,6 +29,7 @@ __all__ = [
     "render_last_match_page",
     "render_match_search_page",
     "render_media_library_page",
+    "render_career_page",
     "render_media_tab",
     # Sprint 7: Page objectifs
     "render_objective_analysis_page",
