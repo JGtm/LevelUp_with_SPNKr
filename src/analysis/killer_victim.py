@@ -23,7 +23,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import pandas as pd
+import polars as pl
 
 if TYPE_CHECKING:
     from src.db.loaders import MatchPlayerStats
@@ -638,71 +638,9 @@ def compute_personal_antagonists(
     )
 
 
-def killer_victim_counts_long(pairs: Iterable[KVPair]) -> pd.DataFrame:
-    """Retourne un DF long: killer, victim, count (agrégé).
-
-    ⚠️ DÉPRÉCIÉ : Utiliser killer_victim_counts_long_polars() avec un DataFrame Polars.
-    Cette fonction sera supprimée dans une future version.
-    """
-
-    counter = Counter(
-        (p.killer_xuid, p.killer_gamertag, p.victim_xuid, p.victim_gamertag) for p in pairs
-    )
-    rows = [
-        {
-            "killer_xuid": kx,
-            "killer_gamertag": kgt,
-            "victim_xuid": vx,
-            "victim_gamertag": vgt,
-            "count": int(cnt),
-        }
-        for (kx, kgt, vx, vgt), cnt in counter.items()
-    ]
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    return df.sort_values(
-        ["count", "killer_gamertag", "victim_gamertag"], ascending=[False, True, True]
-    )
-
-
-def killer_victim_matrix(pairs: Iterable[KVPair]) -> pd.DataFrame:
-    """Retourne un DF matrice: index=killer, colonnes=victim, valeurs=count.
-
-    ⚠️ DÉPRÉCIÉ : Utiliser killer_victim_matrix_polars() avec un DataFrame Polars.
-    Cette fonction sera supprimée dans une future version.
-    """
-
-    df = killer_victim_counts_long(pairs)
-    if df.empty:
-        return df
-
-    pivot = df.pivot_table(
-        index="killer_gamertag",
-        columns="victim_gamertag",
-        values="count",
-        aggfunc="sum",
-        fill_value=0,
-    )
-
-    # Tri stable: killers/victims les plus "actifs" d'abord
-    pivot = pivot.loc[pivot.sum(axis=1).sort_values(ascending=False).index]
-    pivot = pivot[pivot.sum(axis=0).sort_values(ascending=False).index]
-    return pivot
-
-
 # =============================================================================
 # Sprint 3 : Fonctions d'analyse Polars
 # =============================================================================
-
-try:
-    import polars as pl
-
-    POLARS_AVAILABLE = True
-except ImportError:
-    POLARS_AVAILABLE = False
-    pl = None  # type: ignore
 
 
 @dataclass(frozen=True)
@@ -739,8 +677,6 @@ def compute_personal_antagonists_from_pairs_polars(
     Returns:
         AntagonistsResultPolars avec némésis et souffre-douleur.
     """
-    if not POLARS_AVAILABLE:
-        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
 
     if pairs_df.is_empty():
         return AntagonistsResultPolars(
@@ -825,8 +761,6 @@ def killer_victim_counts_long_polars(pairs_df: pl.DataFrame) -> pl.DataFrame:
         DataFrame Polars avec colonnes killer_xuid, killer_gamertag,
         victim_xuid, victim_gamertag, count, trié par count desc.
     """
-    if not POLARS_AVAILABLE:
-        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
 
     if pairs_df.is_empty():
         return pairs_df
@@ -856,8 +790,6 @@ def compute_kd_timeseries_by_minute_polars(
     Returns:
         DataFrame Polars avec colonnes minute, kills, deaths, net_kd, cumulative_net_kd.
     """
-    if not POLARS_AVAILABLE:
-        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
 
     if pairs_df.is_empty():
         return pl.DataFrame(
@@ -944,8 +876,6 @@ def compute_duel_history_polars(
     Returns:
         DataFrame Polars avec colonnes match_id, my_kills, opponent_kills, net.
     """
-    if not POLARS_AVAILABLE:
-        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
 
     if pairs_df.is_empty():
         return pl.DataFrame(
@@ -1018,8 +948,6 @@ def killer_victim_matrix_polars(pairs_df: pl.DataFrame) -> pl.DataFrame:
     Returns:
         DataFrame Polars pivotée avec gamertags en lignes et colonnes.
     """
-    if not POLARS_AVAILABLE:
-        raise ImportError("Polars n'est pas installé. Installez-le avec: pip install polars")
 
     if pairs_df.is_empty():
         return pairs_df

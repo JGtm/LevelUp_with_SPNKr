@@ -10,7 +10,7 @@ from src.analysis.filters import (
 )
 from src.analysis.killer_victim import (
     compute_killer_victim_pairs,
-    killer_victim_counts_long,
+    killer_victim_counts_long_polars,
 )
 from src.analysis.stats import (
     compute_global_ratio,
@@ -281,5 +281,15 @@ class TestKillerVictim:
             {"event_type": "death", "time_ms": 2000, "xuid": "2", "gamertag": "Bob"},
         ]
         pairs = compute_killer_victim_pairs(events, tolerance_ms=0)
-        df = killer_victim_counts_long(pairs)
-        assert int(df.iloc[0]["count"]) == 2
+        # Convertir les KVPair en DataFrame Polars pour killer_victim_counts_long_polars
+        pairs_df = pl.DataFrame(
+            {
+                "killer_xuid": [p.killer_xuid for p in pairs],
+                "killer_gamertag": [p.killer_gamertag for p in pairs],
+                "victim_xuid": [p.victim_xuid for p in pairs],
+                "victim_gamertag": [p.victim_gamertag for p in pairs],
+                "kill_count": [1] * len(pairs),
+            }
+        )
+        df = killer_victim_counts_long_polars(pairs_df)
+        assert int(df.row(0, named=True)["count"]) == 2

@@ -35,9 +35,7 @@ from src.analysis.killer_victim import (
     compute_killer_victim_pairs,
     compute_personal_antagonists,
     compute_personal_antagonists_from_pairs_polars,
-    killer_victim_counts_long,
     killer_victim_counts_long_polars,
-    killer_victim_matrix,
     killer_victim_matrix_polars,
 )
 from src.analysis.maps import compute_map_breakdown
@@ -60,7 +58,6 @@ from src.analysis.objective_participation import (
 )
 from src.analysis.performance_config import MIN_MATCHES_FOR_RELATIVE
 from src.analysis.performance_score import (
-    compute_match_performance_from_row,
     compute_performance_series,
     compute_relative_performance_score,
 )
@@ -68,7 +65,6 @@ from src.analysis.sessions import (
     DEFAULT_SESSION_GAP_MINUTES,
     SESSION_CUTOFF_HOUR,
     compute_sessions,
-    compute_sessions_with_context,
     compute_sessions_with_context_polars,
     is_session_potentially_active,
 )
@@ -85,7 +81,6 @@ __all__ = [
     "compute_outcome_rates",
     "compute_global_ratio",
     "compute_sessions",
-    "compute_sessions_with_context",
     "compute_sessions_with_context_polars",
     "is_session_potentially_active",
     "DEFAULT_SESSION_GAP_MINUTES",
@@ -101,8 +96,8 @@ __all__ = [
     "AntagonistsResult",
     "OpponentDuel",
     "EstimatedCount",
-    "killer_victim_counts_long",
-    "killer_victim_matrix",
+    "killer_victim_counts_long_polars",
+    "killer_victim_matrix_polars",
     # Sprint 3: Fonctions Polars
     "AntagonistsResultPolars",
     "compute_personal_antagonists_from_pairs_polars",
@@ -110,7 +105,6 @@ __all__ = [
     "compute_kd_timeseries_by_minute_polars",
     "compute_duel_history_polars",
     "killer_victim_matrix_polars",
-    "compute_match_performance_from_row",
     "compute_relative_performance_score",
     "compute_performance_series",
     "MIN_MATCHES_FOR_RELATIVE",

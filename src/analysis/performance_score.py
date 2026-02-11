@@ -5,7 +5,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import pandas as pd
 import polars as pl
 
 from src.analysis.performance_config import (
@@ -14,11 +13,12 @@ from src.analysis.performance_config import (
 )
 
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+def _normalize_df(df: pl.DataFrame | Any) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
     if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
+        return df
+    # Assume Pandas-like — Polars gère l'import en interne
+    return pl.from_pandas(df)
 
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -47,17 +47,17 @@ def _compute_per_minute(value: float | None, duration_seconds: float | None) -> 
     return float(value) / (float(duration_seconds) / 60.0)
 
 
-def _percentile_rank(value: float, series: pd.Series) -> float:
+def _percentile_rank(value: float, series: pl.Series) -> float:
     """Calcule le percentile d'une valeur dans une série (0-100).
 
     Args:
         value: Valeur à évaluer.
-        series: Série de référence (historique).
+        series: Série Polars de référence (historique).
 
     Returns:
         Percentile 0-100 où 50 = médiane.
     """
-    if series.empty or len(series) < 2:
+    if series.is_empty() or len(series) < 2:
         return 50.0  # Pas assez de données, on retourne la moyenne
 
     # Nombre de valeurs inférieures ou égales
@@ -67,9 +67,9 @@ def _percentile_rank(value: float, series: pd.Series) -> float:
     return _clamp(percentile, 0.0, 100.0)
 
 
-def _percentile_rank_inverse(value: float, series: pd.Series) -> float:
+def _percentile_rank_inverse(value: float, series: pl.Series) -> float:
     """Percentile inversé (pour les morts: moins = mieux)."""
-    if series.empty or len(series) < 2:
+    if series.is_empty() or len(series) < 2:
         return 50.0
     # Plus la valeur est basse, meilleur est le percentile
     above_or_equal = (series >= value).sum()
@@ -77,88 +77,101 @@ def _percentile_rank_inverse(value: float, series: pd.Series) -> float:
     return _clamp(percentile, 0.0, 100.0)
 
 
-def _prepare_history_metrics(df_history: pd.DataFrame) -> pd.DataFrame:
+def _safe_col(df: pl.DataFrame, col: str, default: float = 0.0) -> pl.Expr:
+    """Retourne une expression pour une colonne, ou un literal si absente."""
+    if col in df.columns:
+        return pl.col(col).cast(pl.Float64, strict=False).fill_null(default)
+    return pl.lit(default)
+
+
+def _prepare_history_metrics(df_history: pl.DataFrame) -> pl.DataFrame:
     """Prépare les métriques normalisées par minute pour l'historique.
 
     Args:
-        df_history: DataFrame de l'historique des matchs.
+        df_history: DataFrame Polars de l'historique des matchs.
 
     Returns:
-        DataFrame avec colonnes kpm, dpm, apm, kda, accuracy.
+        DataFrame Polars avec colonnes kpm, dpm, apm, kda, accuracy.
     """
-    if df_history.empty:
-        return pd.DataFrame(columns=["kpm", "dpm", "apm", "kda", "accuracy"])
-
-    df = df_history.copy()
+    if df_history.is_empty():
+        return pl.DataFrame(
+            schema={
+                "kpm": pl.Float64,
+                "dpm": pl.Float64,
+                "apm": pl.Float64,
+                "kda": pl.Float64,
+                "accuracy": pl.Float64,
+            }
+        )
 
     # Durée du match en secondes
     duration_col = None
     for col in ["time_played_seconds", "duration_seconds", "match_duration_seconds"]:
-        if col in df.columns:
+        if col in df_history.columns:
             duration_col = col
             break
 
     if duration_col is None:
-        # Fallback: estimer 10 minutes par défaut
-        df["_duration"] = 600.0
+        df = df_history.with_columns(pl.lit(600.0).alias("_duration"))
     else:
-        df["_duration"] = pd.to_numeric(df[duration_col], errors="coerce").fillna(600.0)
-        df.loc[df["_duration"] <= 0, "_duration"] = 600.0
+        df = df_history.with_columns(
+            pl.when(pl.col(duration_col).cast(pl.Float64, strict=False).fill_null(0.0) <= 0)
+            .then(600.0)
+            .otherwise(pl.col(duration_col).cast(pl.Float64, strict=False).fill_null(600.0))
+            .alias("_duration")
+        )
 
     # Calcul des métriques par minute
-    df["kpm"] = pd.to_numeric(df.get("kills", 0), errors="coerce").fillna(0) / (
-        df["_duration"] / 60.0
-    )
-    df["dpm"] = pd.to_numeric(df.get("deaths", 0), errors="coerce").fillna(0) / (
-        df["_duration"] / 60.0
-    )
-    df["apm"] = pd.to_numeric(df.get("assists", 0), errors="coerce").fillna(0) / (
-        df["_duration"] / 60.0
+    minutes_expr = pl.col("_duration") / 60.0
+    df = df.with_columns(
+        [
+            (_safe_col(df, "kills") / minutes_expr).alias("kpm"),
+            (_safe_col(df, "deaths") / minutes_expr).alias("dpm"),
+            (_safe_col(df, "assists") / minutes_expr).alias("apm"),
+        ]
     )
 
-    # FDA (KDA)
+    # KDA
     if "kda" in df.columns:
-        df["kda"] = pd.to_numeric(df["kda"], errors="coerce")
+        df = df.with_columns(pl.col("kda").cast(pl.Float64, strict=False).alias("kda"))
     else:
-        # Calculer KDA : (K + A) / max(1, D)
-        k = pd.to_numeric(df.get("kills", 0), errors="coerce").fillna(0)
-        d = pd.to_numeric(df.get("deaths", 0), errors="coerce").fillna(0)
-        a = pd.to_numeric(df.get("assists", 0), errors="coerce").fillna(0)
-        df["kda"] = (k + a) / d.clip(lower=1)
+        k = _safe_col(df, "kills")
+        d = pl.when(_safe_col(df, "deaths") < 1.0).then(1.0).otherwise(_safe_col(df, "deaths"))
+        a = _safe_col(df, "assists")
+        df = df.with_columns(((k + a) / d).alias("kda"))
 
     # Accuracy
     if "accuracy" in df.columns:
-        df["accuracy"] = pd.to_numeric(df["accuracy"], errors="coerce")
+        df = df.with_columns(pl.col("accuracy").cast(pl.Float64, strict=False).alias("accuracy"))
     else:
-        df["accuracy"] = None
+        df = df.with_columns(pl.lit(None).cast(pl.Float64).alias("accuracy"))
 
-    return df[["kpm", "dpm", "apm", "kda", "accuracy"]].copy()
+    return df.select(["kpm", "dpm", "apm", "kda", "accuracy"])
 
 
 def compute_relative_performance_score(
-    row: pd.Series,
-    df_history: pd.DataFrame | pl.DataFrame,
+    row: dict[str, Any],
+    df_history: pl.DataFrame | Any,
 ) -> float | None:
     """Calcule le score de performance RELATIF d'un match.
 
     Compare le match à l'historique personnel du joueur.
 
     Args:
-        row: Ligne du match avec kills, deaths, assists, kda, accuracy, time_played_seconds.
-        df_history: DataFrame (Pandas ou Polars) de l'historique complet du joueur.
+        row: Dict du match avec kills, deaths, assists, kda, accuracy, time_played_seconds.
+        df_history: DataFrame (Polars ou Pandas) de l'historique complet du joueur.
 
     Returns:
         Score 0-100 où 50 = performance moyenne, 100 = meilleure perf, 0 = pire perf.
         None si pas assez de données.
     """
-    # Normaliser en Pandas pour compatibilité
+    # Normaliser en Polars
     df_history = _normalize_df(df_history)
 
-    if df_history is None or df_history.empty:
+    if df_history is None or df_history.is_empty():
         return None
 
     if len(df_history) < MIN_MATCHES_FOR_RELATIVE:
-        # Pas assez de matchs, on ne peut pas calculer un score relatif fiable
         return None
 
     # Préparer l'historique
@@ -169,9 +182,10 @@ def compute_relative_performance_score(
         # Durée du match
         duration = None
         for col in ["time_played_seconds", "duration_seconds", "match_duration_seconds"]:
-            if col in row.index and row.get(col) is not None:
+            val = row.get(col)
+            if val is not None:
                 try:
-                    duration = float(row.get(col))
+                    duration = float(val)
                     if duration > 0:
                         break
                 except (ValueError, TypeError):
@@ -214,33 +228,33 @@ def compute_relative_performance_score(
     weights_used = {}
 
     # KPM - plus c'est haut, mieux c'est
-    kpm_series = history_metrics["kpm"].dropna()
-    if not kpm_series.empty:
+    kpm_series = history_metrics.get_column("kpm").drop_nulls()
+    if not kpm_series.is_empty():
         percentiles["kpm"] = _percentile_rank(kpm, kpm_series)
         weights_used["kpm"] = RELATIVE_WEIGHTS["kpm"]
 
     # DPM - moins c'est haut, mieux c'est (inversé)
-    dpm_series = history_metrics["dpm"].dropna()
-    if not dpm_series.empty:
+    dpm_series = history_metrics.get_column("dpm").drop_nulls()
+    if not dpm_series.is_empty():
         percentiles["dpm"] = _percentile_rank_inverse(dpm, dpm_series)
         weights_used["dpm"] = RELATIVE_WEIGHTS["dpm"]
 
     # APM - plus c'est haut, mieux c'est
-    apm_series = history_metrics["apm"].dropna()
-    if not apm_series.empty:
+    apm_series = history_metrics.get_column("apm").drop_nulls()
+    if not apm_series.is_empty():
         percentiles["apm"] = _percentile_rank(apm, apm_series)
         weights_used["apm"] = RELATIVE_WEIGHTS["apm"]
 
     # KDA - plus c'est haut, mieux c'est
-    kda_series = history_metrics["kda"].dropna()
-    if not kda_series.empty:
+    kda_series = history_metrics.get_column("kda").drop_nulls()
+    if not kda_series.is_empty():
         percentiles["kda"] = _percentile_rank(kda, kda_series)
         weights_used["kda"] = RELATIVE_WEIGHTS["kda"]
 
     # Accuracy - plus c'est haut, mieux c'est
     if accuracy is not None:
-        acc_series = history_metrics["accuracy"].dropna()
-        if not acc_series.empty:
+        acc_series = history_metrics.get_column("accuracy").drop_nulls()
+        if not acc_series.is_empty():
             percentiles["accuracy"] = _percentile_rank(accuracy, acc_series)
             weights_used["accuracy"] = RELATIVE_WEIGHTS["accuracy"]
 
@@ -257,63 +271,51 @@ def compute_relative_performance_score(
     return round(score, 1)
 
 
-def compute_match_performance_from_row(
-    row: pd.Series,
-    df_history: pd.DataFrame | None = None,
-) -> float | None:
-    """Calcule le score de performance à partir d'une ligne de DataFrame.
-
-    Si df_history est fourni et suffisant, calcule un score RELATIF.
-    Sinon, retourne None (pas de score absolu fallback).
-
-    Args:
-        row: Ligne avec colonnes kills, deaths, assists, accuracy, kda, time_played_seconds.
-        df_history: DataFrame de l'historique du joueur (optionnel mais recommandé).
-
-    Returns:
-        Score entre 0 et 100, ou None si historique insuffisant.
-    """
-    if df_history is not None and len(df_history) >= MIN_MATCHES_FOR_RELATIVE:
-        return compute_relative_performance_score(row, df_history)
-    return None
-
-
 def compute_performance_series(
-    df: pd.DataFrame | pl.DataFrame,
-    df_history: pd.DataFrame | pl.DataFrame | None = None,
-) -> pd.Series:
+    df: pl.DataFrame | Any,
+    df_history: pl.DataFrame | Any | None = None,
+) -> pl.Series | Any:
     """Calcule le score de performance pour chaque match d'un DataFrame.
 
     Args:
-        df: DataFrame (Pandas ou Polars) des matchs à évaluer.
-        df_history: Historique complet (Pandas ou Polars) pour le calcul relatif.
+        df: DataFrame (Polars ou Pandas) des matchs à évaluer.
+        df_history: Historique complet (Polars ou Pandas) pour le calcul relatif.
                     Si None, utilise df comme historique.
 
     Returns:
-        Series avec les scores de performance.
+        Series avec les scores de performance (Polars si entrée Polars, Pandas sinon).
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
-    if df_history is not None:
-        df_history = _normalize_df(df_history)
+    was_pandas = not isinstance(df, pl.DataFrame)
 
-    if df.empty:
-        return pd.Series(dtype=float)
+    # Normaliser en Polars
+    df_pl = _normalize_df(df)
+    history_pl = _normalize_df(df_history) if df_history is not None else None
+
+    if df_pl.is_empty():
+        result = pl.Series("performance", [], dtype=pl.Float64)
+        if was_pandas:
+            return result.to_pandas()
+        return result
 
     # Si pas d'historique fourni, on utilise le DataFrame lui-même
-    history = df_history if df_history is not None else df
+    history = history_pl if history_pl is not None else df_pl
 
     if len(history) < MIN_MATCHES_FOR_RELATIVE:
-        # Pas assez de matchs
-        return pd.Series([None] * len(df), index=df.index)
+        result = pl.Series("performance", [None] * len(df_pl), dtype=pl.Float64)
+        if was_pandas:
+            return result.to_pandas()
+        return result
 
-    # Calculer le score pour chaque ligne
-    scores = df.apply(
-        lambda row: compute_relative_performance_score(row, history),
-        axis=1,
-    )
+    # Calculer le score pour chaque ligne (dict via iter_rows)
+    scores = [
+        compute_relative_performance_score(row_dict, history)
+        for row_dict in df_pl.iter_rows(named=True)
+    ]
 
-    return scores
+    result = pl.Series("performance", scores, dtype=pl.Float64)
+    if was_pandas:
+        return result.to_pandas()
+    return result
 
 
 # =============================================================================
@@ -321,24 +323,27 @@ def compute_performance_series(
 # =============================================================================
 
 
-def _clamp_internal(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
-    return max(lo, min(hi, value))
-
-
-def _mean_numeric(df: pd.DataFrame, column: str) -> float | None:
+def _mean_numeric(df: pl.DataFrame, column: str) -> float | None:
     if column not in df.columns:
         return None
-    values = pd.to_numeric(df[column], errors="coerce").dropna()
-    if values.empty:
+    values = df.get_column(column).cast(pl.Float64, strict=False).drop_nulls()
+    if values.is_empty():
         return None
     return float(values.mean())
 
 
-def _sum_int(df: pd.DataFrame, column: str) -> int:
+def _sum_int(df: pl.DataFrame, column: str) -> int:
     if column not in df.columns:
         return 0
-    values = pd.to_numeric(df[column], errors="coerce").fillna(0)
+    values = df.get_column(column).cast(pl.Float64, strict=False).fill_null(0)
     return int(values.sum())
+
+
+def _count_wins(df: pl.DataFrame) -> int:
+    """Compte le nombre de victoires (outcome == 2) dans le DataFrame."""
+    if "outcome" not in df.columns:
+        return 0
+    return int(df.get_column("outcome").cast(pl.Float64, strict=False).fill_null(0).eq(2.0).sum())
 
 
 def _saturation_score(x: float, scale: float) -> float:
@@ -369,10 +374,10 @@ class ScoreComponent:
     key: str
     label: str
     weight: float
-    compute: Callable[[pd.DataFrame], tuple[float | None, dict[str, Any]]]
+    compute: Callable[[pl.DataFrame], tuple[float | None, dict[str, Any]]]
 
 
-def _compute_kd_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+def _compute_kd_component(df: pl.DataFrame) -> tuple[float | None, dict[str, Any]]:
     kills = _sum_int(df, "kills")
     deaths = _sum_int(df, "deaths")
     if kills == 0 and deaths == 0:
@@ -383,7 +388,7 @@ def _compute_kd_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any
     return kd_score, {"kd_ratio": round(kd_ratio, 2)}
 
 
-def _compute_win_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+def _compute_win_component(df: pl.DataFrame) -> tuple[float | None, dict[str, Any]]:
     if "outcome" not in df.columns:
         return None, {"win_rate": None}
 
@@ -391,12 +396,12 @@ def _compute_win_component(df: pd.DataFrame) -> tuple[float | None, dict[str, An
     if n <= 0:
         return None, {"win_rate": None}
 
-    wins = int((pd.to_numeric(df["outcome"], errors="coerce") == 2).sum())
+    wins = _count_wins(df)
     win_rate = wins / n
     return _clamp(win_rate * 100.0), {"win_rate": round(win_rate * 100.0, 1)}
 
 
-def _compute_accuracy_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+def _compute_accuracy_component(df: pl.DataFrame) -> tuple[float | None, dict[str, Any]]:
     acc = None
     if "accuracy" in df.columns:
         acc = _mean_numeric(df, "accuracy")
@@ -409,7 +414,7 @@ def _compute_accuracy_component(df: pd.DataFrame) -> tuple[float | None, dict[st
     return _clamp(acc), {"accuracy": round(acc, 1)}
 
 
-def _compute_kpm_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+def _compute_kpm_component(df: pl.DataFrame) -> tuple[float | None, dict[str, Any]]:
     kpm = _mean_numeric(df, "kills_per_min")
     if kpm is None:
         return None, {"kills_per_min": None}
@@ -419,7 +424,7 @@ def _compute_kpm_component(df: pd.DataFrame) -> tuple[float | None, dict[str, An
     return score, {"kills_per_min": round(kpm, 2)}
 
 
-def _compute_life_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+def _compute_life_component(df: pl.DataFrame) -> tuple[float | None, dict[str, Any]]:
     life = _mean_numeric(df, "average_life_seconds")
     if life is None:
         return None, {"avg_life_seconds": None}
@@ -448,15 +453,15 @@ _OBJECTIVE_COLUMN_WEIGHTS: dict[str, float] = {
 }
 
 
-def _compute_objective_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+def _compute_objective_component(df: pl.DataFrame) -> tuple[float | None, dict[str, Any]]:
     used: dict[str, float] = {}
     total_points = 0.0
 
     for col, w in _OBJECTIVE_COLUMN_WEIGHTS.items():
         if col not in df.columns:
             continue
-        values = pd.to_numeric(df[col], errors="coerce").dropna()
-        if values.empty:
+        values = df.get_column(col).cast(pl.Float64, strict=False).drop_nulls()
+        if values.is_empty():
             continue
         mean_val = float(values.mean())
         if mean_val <= 0:
@@ -483,7 +488,7 @@ def _compute_objective_component(df: pd.DataFrame) -> tuple[float | None, dict[s
     )
 
 
-def _compute_mmr_performance_component(df: pd.DataFrame) -> tuple[float | None, dict[str, Any]]:
+def _compute_mmr_performance_component(df: pl.DataFrame) -> tuple[float | None, dict[str, Any]]:
     """Calcule un score basé sur la performance vs l'écart MMR attendu.
 
     Utilise une formule style Elo pour calculer le "Expected Win Rate"
@@ -526,17 +531,13 @@ def _compute_mmr_performance_component(df: pd.DataFrame) -> tuple[float | None, 
             "performance_vs_expected": None,
         }
 
-    wins = int((pd.to_numeric(df["outcome"], errors="coerce") == 2).sum())
+    wins = _count_wins(df)
     actual_win_rate = wins / n
 
     # Performance vs Expected : différence normalisée
-    # +1.0 = 100% surperformance, -1.0 = 100% sous-performance
     performance_diff = actual_win_rate - expected_win_rate
 
-    # Convertir en score 0-100 :
-    # 50 = performance exacte selon l'expected
-    # 100 = surperformance maximale (+50% win rate vs expected)
-    # 0 = sous-performance maximale (-50% win rate vs expected)
+    # Convertir en score 0-100
     score = 50.0 + (performance_diff * 100.0)
     score = _clamp(score, 0.0, 100.0)
 
@@ -548,7 +549,7 @@ def _compute_mmr_performance_component(df: pd.DataFrame) -> tuple[float | None, 
     }
 
 
-def _compute_mmr_aggregates(df: pd.DataFrame) -> dict[str, float | None]:
+def _compute_mmr_aggregates(df: pl.DataFrame) -> dict[str, float | None]:
     team = _mean_numeric(df, "team_mmr")
     enemy = _mean_numeric(df, "enemy_mmr")
     delta = (team - enemy) if (team is not None and enemy is not None) else None
@@ -561,13 +562,7 @@ def _compute_mmr_aggregates(df: pd.DataFrame) -> dict[str, float | None]:
 
 
 def _mmr_difficulty_multiplier(delta_mmr_avg: float | None) -> float:
-    """Applique un ajustement léger selon la difficulté.
-
-    - Si ton équipe est "plus forte" (delta positif), on réduit légèrement le score.
-    - Si ton équipe est "plus faible" (delta négatif), on augmente légèrement le score.
-
-    Ajustement volontairement borné pour éviter de dominer le score.
-    """
+    """Applique un ajustement léger selon la difficulté."""
     if delta_mmr_avg is None:
         return 1.0
 
@@ -576,37 +571,40 @@ def _mmr_difficulty_multiplier(delta_mmr_avg: float | None) -> float:
     return 1.0 + adj
 
 
-def compute_session_performance_score_v1(df_session: pd.DataFrame | pl.DataFrame) -> dict[str, Any]:
+_EMPTY_V1_RESULT: dict[str, Any] = {
+    "score": None,
+    "kd_ratio": None,
+    "kda": None,
+    "win_rate": None,
+    "accuracy": None,
+    "avg_score": None,
+    "avg_life_seconds": None,
+    "matches": 0,
+    "kills": 0,
+    "deaths": 0,
+    "assists": 0,
+    "team_mmr_avg": None,
+    "enemy_mmr_avg": None,
+    "delta_mmr_avg": None,
+}
+
+
+def compute_session_performance_score_v1(df_session: pl.DataFrame | Any) -> dict[str, Any]:
     """Version historique du score (0-100).
 
     Cette fonction est gardée pour rétrocompatibilité.
 
     Args:
-        df_session: DataFrame (Pandas ou Polars) des matchs de la session.
+        df_session: DataFrame (Polars ou Pandas) des matchs de la session.
 
     Returns:
         Dict avec le score et les détails.
     """
-    # Normaliser en Pandas pour compatibilité
+    # Normaliser en Polars
     df_session = _normalize_df(df_session)
 
-    if df_session is None or df_session.empty:
-        return {
-            "score": None,
-            "kd_ratio": None,
-            "kda": None,
-            "win_rate": None,
-            "accuracy": None,
-            "avg_score": None,
-            "avg_life_seconds": None,
-            "matches": 0,
-            "kills": 0,
-            "deaths": 0,
-            "assists": 0,
-            "team_mmr_avg": None,
-            "enemy_mmr_avg": None,
-            "delta_mmr_avg": None,
-        }
+    if df_session is None or df_session.is_empty():
+        return dict(_EMPTY_V1_RESULT)
 
     total_kills = _sum_int(df_session, "kills")
     total_deaths = _sum_int(df_session, "deaths")
@@ -622,11 +620,7 @@ def compute_session_performance_score_v1(df_session: pd.DataFrame | pl.DataFrame
         else float(total_kills + total_assists)
     )
 
-    wins = (
-        int((pd.to_numeric(df_session["outcome"], errors="coerce") == 2).sum())
-        if "outcome" in df_session.columns
-        else 0
-    )
+    wins = _count_wins(df_session) if "outcome" in df_session.columns else 0
     win_rate = wins / n_matches if n_matches > 0 else 0.0
     win_score = win_rate * 100.0
 
@@ -663,19 +657,19 @@ def compute_session_performance_score_v1(df_session: pd.DataFrame | pl.DataFrame
 
 
 def compute_session_performance_score_v2(
-    df_session: pd.DataFrame | pl.DataFrame,
+    df_session: pl.DataFrame | Any,
     *,
     include_mmr_adjustment: bool = True,
 ) -> dict[str, Any]:
     """Calcule un score de performance (0–100) plus robuste et modulaire.
 
     Principes :
-    - On n’utilise que les composantes disponibles.
+    - On n'utilise que les composantes disponibles.
     - On renormalise les poids si une composante manque.
     - On peut ajouter une composante "objectif" quand des colonnes existent.
 
     Args:
-        df_session: DataFrame (Pandas ou Polars) des matchs de la session.
+        df_session: DataFrame (Polars ou Pandas) des matchs de la session.
         include_mmr_adjustment: Inclure l'ajustement MMR.
 
     Returns:
@@ -684,10 +678,10 @@ def compute_session_performance_score_v2(
         - weights_used: pondérations réellement utilisées
         - confidence: (0-1) indicateur simple basé sur le nombre de matchs
     """
-    # Normaliser en Pandas pour compatibilité
+    # Normaliser en Polars
     df_session = _normalize_df(df_session)
 
-    if df_session is None or df_session.empty:
+    if df_session is None or df_session.is_empty():
         base = compute_session_performance_score_v1(df_session)
         base.update(
             {
@@ -766,7 +760,7 @@ def compute_session_performance_score_v2(
 
         final_score = _clamp(final_score)
 
-    # Confiance : simple, basé sur la taille d’échantillon.
+    # Confiance : simple, basé sur la taille d'échantillon.
     confidence = _clamp((n_matches / 10.0) * 100.0, lo=0.0, hi=100.0) / 100.0
     confidence_label = "faible" if n_matches < 4 else ("moyenne" if n_matches < 10 else "élevée")
 
