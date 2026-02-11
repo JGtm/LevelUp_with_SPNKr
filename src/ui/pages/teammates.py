@@ -97,6 +97,50 @@ def _load_teammate_stats_from_own_db(
 
 
 # =============================================================================
+# Enrichissement Perfect Kills (médailles) pour graphes de barres
+# =============================================================================
+
+
+def _enrich_series_with_perfect_kills(
+    series: list[tuple[str, pd.DataFrame]],
+    db_path: str,
+) -> list[tuple[str, pd.DataFrame]]:
+    """Ajoute la colonne perfect_kills à chaque DataFrame de la série.
+
+    Le 1er élément (idx=0) = joueur principal (utilise db_path).
+    Les suivants = coéquipiers (utilise base_dir / gamertag / stats.duckdb).
+    """
+    from pathlib import Path
+
+    from src.data.repositories.duckdb_repo import DuckDBRepository
+
+    if not db_path or not str(db_path).endswith(".duckdb"):
+        return series
+
+    base_dir = Path(db_path).parent.parent
+    enriched = []
+    for idx, (name, df) in enumerate(series):
+        df = df.copy()
+        if "match_id" in df.columns and not df.empty:
+            match_ids = df["match_id"].astype(str).tolist()
+            try:
+                if idx == 0:
+                    use_path = db_path
+                else:
+                    player_db = base_dir / name / "stats.duckdb"
+                    use_path = str(player_db) if player_db.exists() else db_path
+                repo = DuckDBRepository(use_path, "")
+                counts = repo.count_perfect_kills_by_match(match_ids)
+                df["perfect_kills"] = df["match_id"].astype(str).map(counts).fillna(0).astype(int)
+            except Exception:
+                df["perfect_kills"] = 0
+        else:
+            df["perfect_kills"] = 0
+        enriched.append((name, df))
+    return enriched
+
+
+# =============================================================================
 # Radar de complémentarité (profil participation 6 axes)
 # =============================================================================
 
@@ -222,6 +266,121 @@ def _render_synergy_radar(
         return
 
     st.subheader("🤝 Complémentarité")
+    col_radar, col_legend = st.columns([2, 1])
+    with col_radar:
+        fig = create_participation_profile_radar(
+            profiles,
+            title="Profil de participation",
+            height=380,
+        )
+        st.plotly_chart(fig, width="stretch")
+    with col_legend:
+        st.markdown("**Axes**")
+        for line in RADAR_AXIS_LINES:
+            st.markdown(line)
+
+
+# =============================================================================
+# Radar de complémentarité trio (profil participation 6 axes, 3 joueurs)
+# =============================================================================
+
+
+def _render_trio_synergy_radar(
+    me_df: pd.DataFrame,
+    f1_df: pd.DataFrame,
+    f2_df: pd.DataFrame,
+    me_name: str,
+    f1_name: str,
+    f2_name: str,
+    colors_by_name: dict[str, str],
+    *,
+    db_path: str | None = None,
+) -> None:
+    """Radar complémentarité trio (6 axes) : moi + 2 coéquipiers.
+
+    Réutilise compute_participation_profile et create_participation_profile_radar.
+    """
+    if me_df.empty:
+        return
+
+    if db_path is None:
+        db_path = st.session_state.get("db_path", "")
+
+    shared_match_ids = list(
+        set(me_df["match_id"].astype(str))
+        & set(f1_df["match_id"].astype(str))
+        & set(f2_df["match_id"].astype(str))
+    )
+    if not shared_match_ids:
+        return
+
+    from pathlib import Path
+
+    from src.data.repositories import DuckDBRepository
+    from src.ui.components.radar_chart import create_participation_profile_radar
+    from src.visualization.participation_radar import (
+        RADAR_AXIS_LINES,
+        compute_participation_profile,
+        get_radar_thresholds,
+    )
+
+    thresholds = get_radar_thresholds(db_path) if db_path else None
+    base_dir = Path(db_path).parent.parent
+    profiles: list[dict] = []
+
+    players = [
+        (me_name, me_df, db_path, colors_by_name.get(me_name, "#636EFA")),
+        (
+            f1_name,
+            f1_df,
+            str(base_dir / f1_name / "stats.duckdb"),
+            colors_by_name.get(f1_name, "#EF553B"),
+        ),
+        (
+            f2_name,
+            f2_df,
+            str(base_dir / f2_name / "stats.duckdb"),
+            colors_by_name.get(f2_name, "#00CC96"),
+        ),
+    ]
+
+    for name, df_player, player_db, color in players:
+        if df_player.empty or not Path(player_db).exists():
+            continue
+        try:
+            repo = DuckDBRepository(player_db, "")
+            if repo.has_personal_score_awards():
+                ps = repo.load_personal_score_awards_as_polars(match_ids=shared_match_ids)
+                if not ps.is_empty():
+                    match_row = {
+                        "deaths": int(df_player["deaths"].sum())
+                        if "deaths" in df_player.columns
+                        else 0,
+                        "time_played_seconds": float(df_player["time_played_seconds"].sum())
+                        if "time_played_seconds" in df_player.columns
+                        else 600.0 * len(df_player),
+                        "pair_name": df_player["pair_name"].iloc[0]
+                        if "pair_name" in df_player.columns and len(df_player) > 0
+                        else None,
+                    }
+                    profile = compute_participation_profile(
+                        ps,
+                        match_row=match_row,
+                        name=name,
+                        color=color,
+                        pair_name=match_row.get("pair_name"),
+                        thresholds=thresholds,
+                    )
+                    profiles.append(profile)
+        except Exception:
+            pass
+
+    if not profiles:
+        st.subheader("Complémentarité trio")
+        st.info("Données de participation indisponibles (PersonalScores manquants).")
+        return
+
+    st.subheader("Complémentarité trio")
     col_radar, col_legend = st.columns([2, 1])
     with col_radar:
         fig = create_participation_profile_radar(
@@ -483,6 +642,7 @@ def _render_single_teammate_view(
         if not friend_sub.empty:
             series.append((name, friend_sub))
         colors_by_name = assign_player_colors_fn([n for n, _ in series])
+        series = _enrich_series_with_perfect_kills(series, db_path)
 
         render_metric_bar_charts(
             series=series,
@@ -668,6 +828,7 @@ def _render_multi_teammate_view(
         )
 
     if not rendered_bottom_charts:
+        series = _enrich_series_with_perfect_kills(series, db_path)
         render_metric_bar_charts(
             series=series,
             colors_by_name=colors_by_name,
@@ -761,100 +922,55 @@ def _render_trio_view(
     me_stats = compute_aggregated_stats(me_df)
     f1_stats = compute_aggregated_stats(f1_df)
     f2_stats = compute_aggregated_stats(f2_df)
-    trio_per_min = pd.DataFrame(
-        [
-            {
-                "Joueur": me_name,
-                "Frags/min": round(float(me_stats.kills_per_minute), 2)
-                if me_stats.kills_per_minute
-                else None,
-                "Morts/min": round(float(me_stats.deaths_per_minute), 2)
-                if me_stats.deaths_per_minute
-                else None,
-                "Assists/min": round(float(me_stats.assists_per_minute), 2)
-                if me_stats.assists_per_minute
-                else None,
-            },
-            {
-                "Joueur": f1_name,
-                "Frags/min": round(float(f1_stats.kills_per_minute), 2)
-                if f1_stats.kills_per_minute
-                else None,
-                "Morts/min": round(float(f1_stats.deaths_per_minute), 2)
-                if f1_stats.deaths_per_minute
-                else None,
-                "Assists/min": round(float(f1_stats.assists_per_minute), 2)
-                if f1_stats.assists_per_minute
-                else None,
-            },
-            {
-                "Joueur": f2_name,
-                "Frags/min": round(float(f2_stats.kills_per_minute), 2)
-                if f2_stats.kills_per_minute
-                else None,
-                "Morts/min": round(float(f2_stats.deaths_per_minute), 2)
-                if f2_stats.deaths_per_minute
-                else None,
-                "Assists/min": round(float(f2_stats.assists_per_minute), 2)
-                if f2_stats.assists_per_minute
-                else None,
-            },
-        ]
-    )
     st.subheader("Stats par minute")
 
-    # Afficher tableau et graphe radar côte à côte
-    col_table, col_radar = st.columns([1, 1])
+    import plotly.graph_objects as go
 
-    with col_table:
-        st.dataframe(trio_per_min, width="stretch", hide_index=True)
+    from src.visualization.theme import apply_halo_plot_style
 
-    with col_radar:
-        from src.ui.components.radar_chart import create_stats_per_minute_radar
-
-        radar_players = [
-            {
-                "name": me_name,
-                "kills_per_min": float(me_stats.kills_per_minute)
-                if me_stats.kills_per_minute
-                else 0,
-                "deaths_per_min": float(me_stats.deaths_per_minute)
-                if me_stats.deaths_per_minute
-                else 0,
-                "assists_per_min": float(me_stats.assists_per_minute)
-                if me_stats.assists_per_minute
-                else 0,
-                "color": colors_by_name.get(me_name, "#636EFA"),
-            },
-            {
-                "name": f1_name,
-                "kills_per_min": float(f1_stats.kills_per_minute)
-                if f1_stats.kills_per_minute
-                else 0,
-                "deaths_per_min": float(f1_stats.deaths_per_minute)
-                if f1_stats.deaths_per_minute
-                else 0,
-                "assists_per_min": float(f1_stats.assists_per_minute)
-                if f1_stats.assists_per_minute
-                else 0,
-                "color": colors_by_name.get(f1_name, "#EF553B"),
-            },
-            {
-                "name": f2_name,
-                "kills_per_min": float(f2_stats.kills_per_minute)
-                if f2_stats.kills_per_minute
-                else 0,
-                "deaths_per_min": float(f2_stats.deaths_per_minute)
-                if f2_stats.deaths_per_minute
-                else 0,
-                "assists_per_min": float(f2_stats.assists_per_minute)
-                if f2_stats.assists_per_minute
-                else 0,
-                "color": colors_by_name.get(f2_name, "#00CC96"),
-            },
+    _pm_metrics = ["Frags/min", "Morts/min", "Assists/min"]
+    _pm_players = [
+        (me_name, me_stats, colors_by_name.get(me_name, "#636EFA")),
+        (f1_name, f1_stats, colors_by_name.get(f1_name, "#EF553B")),
+        (f2_name, f2_stats, colors_by_name.get(f2_name, "#00CC96")),
+    ]
+    fig_pm = go.Figure()
+    for _pm_name, _pm_st, _pm_color in _pm_players:
+        _pm_vals = [
+            round(float(_pm_st.kills_per_minute), 2) if _pm_st.kills_per_minute else 0,
+            round(float(_pm_st.deaths_per_minute), 2) if _pm_st.deaths_per_minute else 0,
+            round(float(_pm_st.assists_per_minute), 2) if _pm_st.assists_per_minute else 0,
         ]
-        radar_fig = create_stats_per_minute_radar(radar_players, title="", height=300)
-        st.plotly_chart(radar_fig, width="stretch")
+        fig_pm.add_trace(
+            go.Bar(
+                name=_pm_name,
+                x=_pm_metrics,
+                y=_pm_vals,
+                marker_color=_pm_color,
+                text=[f"{v:.2f}" for v in _pm_vals],
+                textposition="auto",
+            )
+        )
+    fig_pm.update_layout(
+        barmode="group",
+        height=350,
+        margin={"l": 40, "r": 20, "t": 30, "b": 40},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0.5, "xanchor": "center"},
+    )
+    fig_pm = apply_halo_plot_style(fig_pm, title=None, height=None)
+    st.plotly_chart(fig_pm, width="stretch")
+
+    # Radar de complémentarité trio (6 axes)
+    _render_trio_synergy_radar(
+        me_df=me_df,
+        f1_df=f1_df,
+        f2_df=f2_df,
+        me_name=me_name,
+        f1_name=f1_name,
+        f2_name=f2_name,
+        colors_by_name=colors_by_name,
+        db_path=db_path,
+    )
 
     f1_df = f1_df[
         ["match_id", "kills", "deaths", "assists", "accuracy", "ratio", "average_life_seconds"]
@@ -949,6 +1065,7 @@ def _render_trio_view(
     render_trio_charts(d_self, d_f1, d_f2, me_name, f1_name, f2_name, f1_xuid, f2_xuid)
 
     # Graphes de barres
+    series = _enrich_series_with_perfect_kills(series, db_path)
     render_metric_bar_charts(
         series=series,
         colors_by_name=colors_by_name,

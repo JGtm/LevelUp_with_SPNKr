@@ -60,15 +60,17 @@ logger = logging.getLogger(__name__)
 
 # Import pour le calcul des scores de performance
 try:
-    import pandas as pd
+    import polars as pl
 
     from src.analysis.performance_config import MIN_MATCHES_FOR_RELATIVE
     from src.analysis.performance_score import compute_relative_performance_score
+
+    _PERF_SCORE_AVAILABLE = True
 except ImportError:
-    # Fallback si les modules ne sont pas disponibles
-    pd = None
+    pl = None
     compute_relative_performance_score = None
     MIN_MATCHES_FOR_RELATIVE = 10
+    _PERF_SCORE_AVAILABLE = False
 
 
 # =============================================================================
@@ -882,7 +884,7 @@ class DuckDBSyncEngine:
             match_id: ID du match
             match_row: Données du match inséré
         """
-        if compute_relative_performance_score is None or pd is None:
+        if not _PERF_SCORE_AVAILABLE:
             logger.debug("Modules de calcul de performance non disponibles, skip")
             return
 
@@ -904,10 +906,8 @@ class DuckDBSyncEngine:
                 return
 
             # Charger l'historique (tous les matchs AVANT celui-ci, triés par date)
-            # Note: match_stats n'a pas de colonne xuid car chaque DB est spécifique à un joueur
             current_start_time = match_row.start_time
             if current_start_time is None:
-                # Si pas de start_time, on ne peut pas déterminer l'ordre chronologique
                 logger.debug(f"Pas de start_time pour {match_id}, skip calcul score")
                 return
 
@@ -917,11 +917,14 @@ class DuckDBSyncEngine:
             else:
                 current_start_time_str = str(current_start_time)
 
+            # v4: inclure personal_score, damage_dealt, rank, team_mmr, enemy_mmr
             history_df = conn.execute(
                 """
                 SELECT
                     match_id, start_time, kills, deaths, assists, kda, accuracy,
-                    time_played_seconds, avg_life_seconds
+                    time_played_seconds, avg_life_seconds,
+                    personal_score, damage_dealt,
+                    rank, team_mmr, enemy_mmr
                 FROM match_stats
                 WHERE match_id != ?
                   AND start_time IS NOT NULL
@@ -929,31 +932,33 @@ class DuckDBSyncEngine:
                 ORDER BY start_time ASC
                 """,
                 (match_id, current_start_time_str),
-            ).df()
+            ).pl()
 
-            if history_df.empty or len(history_df) < MIN_MATCHES_FOR_RELATIVE:
+            if history_df.is_empty() or len(history_df) < MIN_MATCHES_FOR_RELATIVE:
                 logger.debug(
                     f"Pas assez d'historique pour calculer le score ({len(history_df)} matchs)"
                 )
                 return
 
-            # Convertir match_row en Series pour le calcul
-            match_series = pd.Series(
-                {
-                    "kills": match_row.kills or 0,
-                    "deaths": match_row.deaths or 0,
-                    "assists": match_row.assists or 0,
-                    "kda": match_row.kda,
-                    "accuracy": match_row.accuracy,
-                    "time_played_seconds": match_row.time_played_seconds or 600.0,
-                }
-            )
+            # Convertir match_row en dict pour le calcul v4
+            match_dict = {
+                "kills": match_row.kills or 0,
+                "deaths": match_row.deaths or 0,
+                "assists": match_row.assists or 0,
+                "kda": match_row.kda,
+                "accuracy": match_row.accuracy,
+                "time_played_seconds": match_row.time_played_seconds or 600.0,
+                "personal_score": getattr(match_row, "personal_score", None),
+                "damage_dealt": getattr(match_row, "damage_dealt", None),
+                "rank": getattr(match_row, "rank", None),
+                "team_mmr": getattr(match_row, "team_mmr", None),
+                "enemy_mmr": getattr(match_row, "enemy_mmr", None),
+            }
 
             # Calculer le score
-            score = compute_relative_performance_score(match_series, history_df)
+            score = compute_relative_performance_score(match_dict, history_df)
 
             if score is not None:
-                # Mettre à jour la colonne performance_score
                 conn.execute(
                     "UPDATE match_stats SET performance_score = ? WHERE match_id = ?",
                     (score, match_id),

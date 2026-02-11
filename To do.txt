@@ -4,3 +4,14 @@ Priorité architecture :
 
 Correctifs :
 - Modes et playlists à revoir encore (surtout sur la BDD de Madina97294, les traductions ou la catégorisation ne sont pas respectées)
+
+Heatmap d'Impact & Cercle d'Amis :Périmètre : Ne prendre en compte que la liste de mes amis (exclure les joueurs inconnus/aléatoires des calculs de cette section).Graphique : Grille Joueurs (Y) vs Matchs (X) avec des icônes ou couleurs spécifiques :Vert (First Blood) : Le premier frag du match a été fait par cet ami.Or (Clutch Finisher) : Le match s'est fini sur une VICTOIRE et cet ami a fait le dernier frag.Rouge (Last Casualty) : Le match s'est fini sur une DÉFAITE et cet ami a été la dernière victime.Tableau de 'Taquinerie' (Impact Score) :Calcule le score ainsi : $+2$ pour un Clutch Finisher, $+1$ pour un First Blood, et $-1$ pour une Last Casualty.Affiche le classement final : "Le MVP de la soirée" (en haut) vs "Le Maillon Faible" (en bas).
+
+Dernier premier frag ?
+
+Traductions :
+- Clutch Finisher (+2) : "Finisseur".
+- First Blood (+1) : "Premier Sang".
+- Last Casualty (-1) : "Boulet"
+
+Citations qu'on peut ressortir avec les scores obtenus pendant le match ?

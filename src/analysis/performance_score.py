@@ -38,6 +38,16 @@ def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
 # =============================================================================
 
 
+def _safe_float(value: Any) -> float | None:
+    """Convertit une valeur en float, retourne None si impossible."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _compute_per_minute(value: float | None, duration_seconds: float | None) -> float | None:
     """Calcule une valeur par minute."""
     if value is None or duration_seconds is None:
@@ -91,18 +101,23 @@ def _prepare_history_metrics(df_history: pl.DataFrame) -> pl.DataFrame:
         df_history: DataFrame Polars de l'historique des matchs.
 
     Returns:
-        DataFrame Polars avec colonnes kpm, dpm, apm, kda, accuracy.
+        DataFrame Polars avec colonnes:
+        - kpm, dpm_deaths, apm, kda, accuracy (existants, dpm renommé en dpm_deaths)
+        - pspm, dpm_damage, rank_perf_diff (nouveaux v4)
     """
+    output_cols = [
+        "kpm",
+        "dpm_deaths",
+        "apm",
+        "kda",
+        "accuracy",
+        "pspm",
+        "dpm_damage",
+        "rank_perf_diff",
+    ]
+
     if df_history.is_empty():
-        return pl.DataFrame(
-            schema={
-                "kpm": pl.Float64,
-                "dpm": pl.Float64,
-                "apm": pl.Float64,
-                "kda": pl.Float64,
-                "accuracy": pl.Float64,
-            }
-        )
+        return pl.DataFrame(schema={c: pl.Float64 for c in output_cols})
 
     # Durée du match en secondes
     duration_col = None
@@ -126,7 +141,7 @@ def _prepare_history_metrics(df_history: pl.DataFrame) -> pl.DataFrame:
     df = df.with_columns(
         [
             (_safe_col(df, "kills") / minutes_expr).alias("kpm"),
-            (_safe_col(df, "deaths") / minutes_expr).alias("dpm"),
+            (_safe_col(df, "deaths") / minutes_expr).alias("dpm_deaths"),
             (_safe_col(df, "assists") / minutes_expr).alias("apm"),
         ]
     )
@@ -146,19 +161,86 @@ def _prepare_history_metrics(df_history: pl.DataFrame) -> pl.DataFrame:
     else:
         df = df.with_columns(pl.lit(None).cast(pl.Float64).alias("accuracy"))
 
-    return df.select(["kpm", "dpm", "apm", "kda", "accuracy"])
+    # PSPM — Personal Score Per Minute (v4)
+    if "personal_score" in df.columns:
+        df = df.with_columns((_safe_col(df, "personal_score") / minutes_expr).alias("pspm"))
+    else:
+        df = df.with_columns(pl.lit(None).cast(pl.Float64).alias("pspm"))
+
+    # DPM Damage — Damage Per Minute (v4)
+    if "damage_dealt" in df.columns:
+        df = df.with_columns((_safe_col(df, "damage_dealt") / minutes_expr).alias("dpm_damage"))
+    else:
+        df = df.with_columns(pl.lit(None).cast(pl.Float64).alias("dpm_damage"))
+
+    # Rank Performance Diff (v4) — expected_rank - actual_rank
+    has_rank = "rank" in df.columns
+    has_team_mmr = "team_mmr" in df.columns
+    has_enemy_mmr = "enemy_mmr" in df.columns
+    if has_rank and has_team_mmr and has_enemy_mmr:
+        # expected_rank = 4.5 - (delta_mmr / 100) * 0.5
+        # rank_perf_diff = expected_rank - rank (positif = mieux que prévu)
+        delta_mmr = _safe_col(df, "team_mmr") - _safe_col(df, "enemy_mmr")
+        expected_rank = pl.lit(4.5) - (delta_mmr / pl.lit(100.0)) * pl.lit(0.5)
+        actual_rank = _safe_col(df, "rank")
+        df = df.with_columns((expected_rank - actual_rank).alias("rank_perf_diff"))
+    else:
+        df = df.with_columns(pl.lit(None).cast(pl.Float64).alias("rank_perf_diff"))
+
+    return df.select(output_cols)
+
+
+def _compute_rank_performance(
+    rank: int | float,
+    team_mmr: float,
+    enemy_mmr: float,
+    history_metrics: pl.DataFrame,
+) -> float | None:
+    """Calcule le percentile de performance du rang contextualisé par MMR.
+
+    Args:
+        rank: Rang réel dans le match (1 = meilleur).
+        team_mmr: MMR de l'équipe.
+        enemy_mmr: MMR de l'équipe adverse.
+        history_metrics: DataFrame avec colonne rank_perf_diff.
+
+    Returns:
+        Percentile 0-100 ou None si données insuffisantes.
+    """
+    if rank is None or team_mmr is None or enemy_mmr is None:
+        return None
+
+    # Rang attendu basé sur l'écart MMR (formule simplifiée pour 4v4, rang moyen = 4.5)
+    delta_mmr = float(team_mmr) - float(enemy_mmr)
+    expected_rank = 4.5 - (delta_mmr / 100.0) * 0.5
+
+    # Performance = différence entre rang attendu et réel
+    # Positif = mieux que prévu
+    rank_diff = expected_rank - float(rank)
+
+    if "rank_perf_diff" not in history_metrics.columns:
+        return None
+
+    rank_diff_series = history_metrics.get_column("rank_perf_diff").drop_nulls()
+    if rank_diff_series.is_empty():
+        return None
+
+    return _percentile_rank(rank_diff, rank_diff_series)
 
 
 def compute_relative_performance_score(
     row: dict[str, Any],
     df_history: pl.DataFrame | Any,
 ) -> float | None:
-    """Calcule le score de performance RELATIF d'un match.
+    """Calcule le score de performance RELATIF d'un match (v4).
 
     Compare le match à l'historique personnel du joueur.
+    Utilise 8 métriques avec graceful degradation si certaines sont absentes.
 
     Args:
-        row: Dict du match avec kills, deaths, assists, kda, accuracy, time_played_seconds.
+        row: Dict du match avec kills, deaths, assists, kda, accuracy,
+             time_played_seconds, personal_score, damage_dealt, rank,
+             team_mmr, enemy_mmr.
         df_history: DataFrame (Polars ou Pandas) de l'historique complet du joueur.
 
     Returns:
@@ -193,14 +275,16 @@ def compute_relative_performance_score(
         if duration is None or duration <= 0:
             duration = 600.0  # 10 min par défaut
 
+        minutes = duration / 60.0
+
         kills = float(row.get("kills") or 0)
         deaths = float(row.get("deaths") or 0)
         assists = float(row.get("assists") or 0)
 
         # Métriques par minute
-        kpm = kills / (duration / 60.0)
-        dpm = deaths / (duration / 60.0)
-        apm = assists / (duration / 60.0)
+        kpm = kills / minutes
+        dpm_deaths = deaths / minutes
+        apm = assists / minutes
 
         # KDA
         kda = row.get("kda")
@@ -213,12 +297,20 @@ def compute_relative_performance_score(
             kda = (kills + assists) / max(1, deaths)
 
         # Accuracy
-        accuracy = row.get("accuracy")
-        if accuracy is not None:
-            try:
-                accuracy = float(accuracy)
-            except (ValueError, TypeError):
-                accuracy = None
+        accuracy = _safe_float(row.get("accuracy"))
+
+        # v4: Personal Score Per Minute
+        personal_score = _safe_float(row.get("personal_score"))
+        pspm = personal_score / minutes if personal_score is not None else None
+
+        # v4: Damage Per Minute
+        damage_dealt = _safe_float(row.get("damage_dealt"))
+        dpm_damage = damage_dealt / minutes if damage_dealt is not None else None
+
+        # v4: Rank Performance
+        rank = _safe_float(row.get("rank"))
+        team_mmr = _safe_float(row.get("team_mmr"))
+        enemy_mmr = _safe_float(row.get("enemy_mmr"))
 
     except Exception:
         return None
@@ -233,11 +325,11 @@ def compute_relative_performance_score(
         percentiles["kpm"] = _percentile_rank(kpm, kpm_series)
         weights_used["kpm"] = RELATIVE_WEIGHTS["kpm"]
 
-    # DPM - moins c'est haut, mieux c'est (inversé)
-    dpm_series = history_metrics.get_column("dpm").drop_nulls()
-    if not dpm_series.is_empty():
-        percentiles["dpm"] = _percentile_rank_inverse(dpm, dpm_series)
-        weights_used["dpm"] = RELATIVE_WEIGHTS["dpm"]
+    # DPM Deaths - moins c'est haut, mieux c'est (inversé)
+    dpm_deaths_series = history_metrics.get_column("dpm_deaths").drop_nulls()
+    if not dpm_deaths_series.is_empty():
+        percentiles["dpm_deaths"] = _percentile_rank_inverse(dpm_deaths, dpm_deaths_series)
+        weights_used["dpm_deaths"] = RELATIVE_WEIGHTS["dpm_deaths"]
 
     # APM - plus c'est haut, mieux c'est
     apm_series = history_metrics.get_column("apm").drop_nulls()
@@ -257,6 +349,27 @@ def compute_relative_performance_score(
         if not acc_series.is_empty():
             percentiles["accuracy"] = _percentile_rank(accuracy, acc_series)
             weights_used["accuracy"] = RELATIVE_WEIGHTS["accuracy"]
+
+    # v4: PSPM - plus c'est haut, mieux c'est
+    if pspm is not None:
+        pspm_series = history_metrics.get_column("pspm").drop_nulls()
+        if not pspm_series.is_empty():
+            percentiles["pspm"] = _percentile_rank(pspm, pspm_series)
+            weights_used["pspm"] = RELATIVE_WEIGHTS["pspm"]
+
+    # v4: DPM Damage - plus c'est haut, mieux c'est
+    if dpm_damage is not None:
+        dpm_damage_series = history_metrics.get_column("dpm_damage").drop_nulls()
+        if not dpm_damage_series.is_empty():
+            percentiles["dpm_damage"] = _percentile_rank(dpm_damage, dpm_damage_series)
+            weights_used["dpm_damage"] = RELATIVE_WEIGHTS["dpm_damage"]
+
+    # v4: Rank Performance (MMR-adjusted)
+    if rank is not None and team_mmr is not None and enemy_mmr is not None:
+        rank_perf = _compute_rank_performance(rank, team_mmr, enemy_mmr, history_metrics)
+        if rank_perf is not None:
+            percentiles["rank_perf"] = rank_perf
+            weights_used["rank_perf"] = RELATIVE_WEIGHTS["rank_perf"]
 
     if not percentiles:
         return None

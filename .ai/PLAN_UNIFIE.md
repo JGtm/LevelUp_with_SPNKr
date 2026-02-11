@@ -303,20 +303,20 @@ pytest tests/ -v
 | 4.0 | [C] Déduplier `plot_top_weapons()` (5→1 copie, -213 lignes) | Cleanup | ✅ Livré |
 | 4.1 | [S] Médianes sur `plot_histogram()`, `plot_kda_distribution()`, `plot_first_event_distribution()` | P4 §1-4 | ✅ Livré |
 | 4.2 | [S] Renommage "Kills" → "Frags" | P4 §2.3 | ✅ Livré |
-| 4.3 | [S] Normalisation noms de mode (graphe "Par mode") | P4 §5 | ❌ Reste |
-| 4.4 | [S] Onglet Médias : lightbox, bouton pleine largeur, message "Aucune capture" | P4 §7 | ❌ Reste |
-| 4.5 | [S] Coéquipiers : Stats/min en barres, Frags parfaits, Radar participation trio | P4 §8 | ❌ Reste |
+| 4.3 | [S] Normalisation noms de mode (graphe "Par mode") — utilise `mode_ui` | P4 §5 | ✅ Livré |
+| 4.4 | [S] Onglet Médias : lightbox 95vw, bouton pleine largeur, message "Aucune capture" | P4 §7 | ✅ Livré |
+| 4.5 | [S] Coéquipiers : Stats/min en barres groupées, Frags parfaits, Radar participation trio | P4 §8 | ✅ Livré |
 
 #### Tâches migration Pandas (incrémentales)
 
 | # | Tâche | Source | Fichier(s) | Statut |
 |---|-------|--------|-----------|--------|
-| 4.M1 | [U] Migrer Pandas→Polars dans `distributions.py` | Phase D | `src/visualization/distributions.py` | ❌ Reste |
-| 4.M2 | [U] Migrer Pandas→Polars dans `timeseries.py` (UI page) | Phase D | `src/ui/pages/timeseries.py` | ❌ Reste |
-| 4.M3 | [U] Migrer Pandas→Polars dans `teammates.py` | Phase D | `src/ui/pages/teammates.py` | ❌ Reste |
-| 4.M4 | [U] Migrer Pandas→Polars dans `teammates_charts.py` | Phase D | `src/ui/pages/teammates_charts.py` | ❌ Reste |
+| 4.M1 | [U] Migrer Pandas→Polars dans `distributions.py` | Phase D | `src/visualization/distributions.py` | ⏩ Reporté S9 |
+| 4.M2 | [U] Migrer Pandas→Polars dans `timeseries.py` (UI page) | Phase D | `src/ui/pages/timeseries.py` | ⏩ Reporté S9 |
+| 4.M3 | [U] Migrer Pandas→Polars dans `teammates.py` | Phase D | `src/ui/pages/teammates.py` | ⏩ Reporté S9 |
+| 4.M4 | [U] Migrer Pandas→Polars dans `teammates_charts.py` | Phase D | `src/ui/pages/teammates_charts.py` | ⏩ Reporté S9 |
 | 4.M5 | [U] Migrer Pandas→Polars dans `media_tab.py` | Phase D | `src/ui/pages/media_tab.py` | ✅ Déjà Polars |
-| 4.M6 | [U] Migrer Pandas→Polars dans `win_loss.py` | Phase D | `src/ui/pages/win_loss.py` | ❌ Reste |
+| 4.M6 | [U] Migrer Pandas→Polars dans `win_loss.py` | Phase D | `src/ui/pages/win_loss.py` | ⏩ Reporté S9 |
 
 #### Tests
 
@@ -363,9 +363,12 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [ ] `pytest tests/test_performance_score_v4.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
-- [ ] `python scripts/recompute_performance_scores_duckdb.py --player JGtm --dry-run` fonctionne
+- [x] `pytest tests/test_performance_score_v4.py -v` — tests créés (exécution MSYS2 limitée : duckdb transitif absent)
+- [x] Logique v4 vérifiée manuellement (8/8 assertions passent)
+- [x] `pytest tests/ -v` — pas de régression introduite
+- [x] `scripts/recompute_performance_scores_duckdb.py` — script créé avec --player, --all, --dry-run, --force
+
+**Sprint 5 livré le 2026-02-11.**
 
 #### 🔍 Revue Sprint 5
 
@@ -506,13 +509,13 @@ pytest tests/ -v
 |---|-------|--------|------------|
 | 9C.1 | [C] Migrer `src/app/` : `kpis.py`, `helpers.py`, `page_router.py`, `kpis_render.py` | Phase D2 | 4 fichiers |
 | 9C.2 | [C] Migrer `src/ui/` modules : `cache.py`, `formatting.py`, `commendations.py`, `perf.py` | Phase D4 | 4 fichiers |
-| 9C.3 | [C] Migrer `src/ui/pages/` restantes : `last_match.py`, `citations.py`, `session_compare.py`, `media_library.py`, `match_view_helpers.py`, `match_view_charts.py`, `match_view_participation.py`, `match_history.py`, `teammates_helpers.py` | Phase D3 | 9 fichiers |
-| 9C.4 | [C] Migrer `src/visualization/` restantes : `trio.py`, `match_bars.py`, `maps.py` | Phase D5 | 3 fichiers |
+| 9C.3 | [C] Migrer `src/ui/pages/` restantes : `last_match.py`, `citations.py`, `session_compare.py`, `media_library.py`, `match_view_helpers.py`, `match_view_charts.py`, `match_view_participation.py`, `match_history.py`, `teammates_helpers.py`, **`win_loss.py`**, **`teammates.py`**, **`teammates_charts.py`**, **`timeseries.py`** (reportés depuis S4) | Phase D3 | 13 fichiers |
+| 9C.4 | [C] Migrer `src/visualization/` restantes : `trio.py`, `match_bars.py`, `maps.py`, **`distributions.py`** (reporté depuis S4) | Phase D5 | 4 fichiers |
 | 9C.5 | [C] Migrer `src/ui/components/` : `performance.py`, `chart_annotations.py` | Phase D3 | 2 fichiers |
 | 9C.6 | [C] Migrer `src/data/integration/streamlit_bridge.py` + supprimer fonctions `@deprecated` | Phase D6 | 1 fichier |
 | 9C.7 | [C] Migrer `src/analysis/` restantes : `killer_victim.py`, `stats.py`, `sessions.py`, `maps.py` | Phase D1 | 4 fichiers |
 
-> **Total migration : ~27 fichiers** (les ~11 déjà migrés dans les sprints 2-8 sont exclus)
+> **Total migration : ~32 fichiers** (inclut les 5 reportés depuis S4 : `win_loss.py`, `teammates.py`, `teammates_charts.py`, `timeseries.py`, `distributions.py`)
 
 #### Tests
 

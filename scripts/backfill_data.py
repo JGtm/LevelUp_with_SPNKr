@@ -641,11 +641,13 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
             # Score déjà calculé
             return False
 
-        # Récupérer les données du match actuel
+        # Récupérer les données du match actuel (v4: +personal_score, damage_dealt, rank, mmrs)
         match_data = conn.execute(
             """
             SELECT match_id, start_time, kills, deaths, assists, kda, accuracy,
-                   time_played_seconds, avg_life_seconds
+                   time_played_seconds, avg_life_seconds,
+                   personal_score, damage_dealt,
+                   rank, team_mmr, enemy_mmr
             FROM match_stats
             WHERE match_id = ?
             """,
@@ -666,7 +668,9 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
                 """
                 SELECT
                     match_id, start_time, kills, deaths, assists, kda, accuracy,
-                    time_played_seconds, avg_life_seconds
+                    time_played_seconds, avg_life_seconds,
+                    personal_score, damage_dealt,
+                    rank, team_mmr, enemy_mmr
                 FROM match_stats
                 WHERE match_id != ?
                   AND start_time IS NOT NULL
@@ -683,7 +687,7 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
         if history_df.is_empty() or len(history_df) < MIN_MATCHES_FOR_RELATIVE:
             return False
 
-        # Convertir match_data en dict pour compute_relative_performance_score
+        # Convertir match_data en dict pour compute_relative_performance_score (v4)
         match_dict = {
             "kills": match_data[2] or 0,
             "deaths": match_data[3] or 0,
@@ -691,6 +695,11 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
             "kda": match_data[5],
             "accuracy": match_data[6],
             "time_played_seconds": match_data[7] or 600.0,
+            "personal_score": match_data[9],
+            "damage_dealt": match_data[10],
+            "rank": match_data[11],
+            "team_mmr": match_data[12],
+            "enemy_mmr": match_data[13],
         }
 
         # Calculer le score (accepte dict + Polars DataFrame)

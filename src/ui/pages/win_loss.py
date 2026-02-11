@@ -136,7 +136,11 @@ def render_win_loss_page(
         with col_by_mode:
             st.markdown("##### Par mode")
             # Utiliser mode_category si disponible, sinon pair_name
-            mode_col = "mode_category" if "mode_category" in dff.columns else "pair_name"
+            mode_col = (
+                "mode_ui"
+                if "mode_ui" in dff.columns
+                else ("mode_category" if "mode_category" in dff.columns else "pair_name")
+            )
             if mode_col in dff.columns and "outcome" in dff.columns:
                 fig_mode = plot_stacked_outcomes_by_category(
                     dff,

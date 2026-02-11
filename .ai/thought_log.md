@@ -7,6 +7,39 @@
 
 ## Journal
 
+### [2026-02-11] - Sprint 5 — Score de Performance v4 (8 métriques)
+
+**Statut** : Livré
+
+**Objectif** : Évoluer le score de performance relatif de v3 (5 métriques) vers v4 (8 métriques).
+
+**Nouvelles métriques v4** :
+- **PSPM** (Personal Score Per Minute) — poids 12% : Impact global (objectifs, kills, assists)
+- **DPM Damage** (Damage Per Minute) — poids 10% : Efficacité au combat mesurée en dégâts
+- **Rank Performance** (MMR-adjusted) — poids 5% : Rang contextualisé par l'écart MMR attendu
+
+**Modifications de pondération** (v3 → v4) :
+- KPM : 30% → 22%, DPM Deaths : 25% → 18%, APM : 15% → 10%, KDA : 20% → 15%, Accuracy : 10% → 8%
+
+**Fichiers modifiés** :
+- `src/analysis/performance_config.py` : Version v4-relative, 8 poids, descriptions mises à jour, fix bug `SCORE_THRESHOLDS["below"]` → `"below_average"`
+- `src/analysis/performance_score.py` : `_prepare_history_metrics()` étendu (8 colonnes), nouveau `_compute_rank_performance()`, `_safe_float()` helper, `compute_relative_performance_score()` v4 avec graceful degradation
+- `src/data/sync/engine.py` : Requête historique étendue (+personal_score, damage_dealt, rank, team_mmr, enemy_mmr), migration Pandas→Polars (`.pl()` au lieu de `.df()`, `import polars` au lieu de `import pandas`)
+- `scripts/backfill_data.py` : `_compute_performance_score_for_match()` étendu avec colonnes v4
+
+**Fichiers créés** :
+- `scripts/recompute_performance_scores_duckdb.py` : Script de migration v3→v4 (--player, --all, --dry-run, --force, --batch-size)
+- `tests/test_performance_score_v4.py` : 19 tests (config, _prepare_history_metrics, _compute_rank_performance, compute_relative_performance_score, graceful degradation)
+
+**Décision architecturale — Graceful degradation** :
+- Si personal_score, damage_dealt, rank ou MMRs sont absents (données v3), les métriques correspondantes sont ignorées et les poids renormalisés
+- Le score reste calculable avec les 5 métriques historiques (compatibilité totale v3)
+- Les scores v3 existants seront recalculés via `recompute_performance_scores_duckdb.py --all --force`
+
+**Tests** : Logique vérifiée manuellement (8/8 assertions passent). Tests pytest formels créés mais non exécutables en MSYS2 (duckdb transitif absent — limitation connue).
+
+---
+
 ### [2026-02-11] - Sprints 3 + 4 (partiel) — Damage participants, Carrière, UI améliorations
 
 **Statut** : Sprint 3 livré, Sprint 4 partiellement livré (commit `2cdeeb3`)
@@ -45,17 +78,33 @@
 - Fichiers modifiés : `timeseries.py`, `session_compare.py`, `match_history.py`, `match_view_charts.py`, `objective_analysis.py`, `teammates.py`, `teammates_charts.py`
 - "Kills" conservé uniquement dans `plot_top_weapons` (contexte armes spécifique)
 
-**Ce qui RESTE à faire pour le Sprint 4** :
+### [2026-02-11] - Sprint 4 (suite) — Features 4.3, 4.4, 4.5 livrées
 
-| Tâche | Statut | Détail |
-|-------|--------|--------|
-| 4.3 Normalisation noms de mode | Pas commencé | Appliquer `translate_pair_name()` dans le graphe "Par mode" de `win_loss.py` |
-| 4.M1 Migration Polars `distributions.py` | Pas commencé | Remplacer `_normalize_df()` par `_to_polars()`, migrer les fonctions simples |
-| 4.M2 Migration Polars `timeseries.py` | Pas commencé | Convertir `dff` en Polars au début, travailler en Polars |
-| 4.M3+M4 Migration Polars `teammates.py` + `teammates_charts.py` | Pas commencé | Arrêter de convertir en Pandas, modifier signatures |
-| 4.M6 Migration Polars `win_loss.py` | Pas commencé | Convertir en Polars pour la logique, garder `.to_pandas()` pour styler |
-| 4.5 Features teammates | Pas commencé | Stats/min en barres, frags parfaits, radar trio |
-| Tests Sprint 4 | Pas commencé | Étendre test_visualizations.py, créer tests normalisation/teammates |
+**Statut** : Sprint 4 features complètes. Migrations Pandas→Polars reportées à Sprint 9.
+
+**4.3 — Normalisation noms de mode** :
+- `win_loss.py` ligne 139 : le graphe "Par mode" utilise maintenant `mode_ui` (labels normalisés par `normalize_mode_label`) au lieu de `mode_category` brut. Fallback conservé sur `mode_category` puis `pair_name`.
+
+**4.4 — Onglet Médias** :
+- `media_tab.py` : Bouton "Ouvrir le match" en `display:block;width:100%` (pleine largeur)
+- `media_tab.py` : Message `st.info("Aucune capture détectée.")` si section "Mes captures" vide
+- `media_tab.py` : CSS lightbox amélioré — conteneur dialog `max-width:95vw`, images `max-height:85vh`
+
+**4.5a — Stats/min grouped bar chart** :
+- `teammates.py` : Remplacement du bloc table+radar (lignes 764-857) par un Plotly `go.Bar` groupé (3 joueurs × 3 métriques). Utilise `apply_halo_plot_style` pour le thème.
+
+**4.5b — Frags parfaits** :
+- `teammates.py` : Nouvelle fonction `_enrich_series_with_perfect_kills(series, db_path)` qui ajoute la colonne `perfect_kills` via `DuckDBRepository.count_perfect_kills_by_match()`. Appliquée aux 3 sites d'appel de `render_metric_bar_charts`.
+- `teammates_charts.py` : 3ème graphe "Frags parfaits" (`metric_col="perfect_kills"`) ajouté après "Tirs à la tête" dans `render_metric_bar_charts()`.
+
+**4.5c — Radar participation trio** :
+- `teammates.py` : Nouvelle fonction `_render_trio_synergy_radar()` — radar 6 axes (Objectifs, Combat, Support, Score, Impact, Survie) pour 3 joueurs. Réutilise `compute_participation_profile()` et `create_participation_profile_radar()`. Inséré dans `_render_trio_view` après le grouped bar chart stats/min.
+
+**Décision architecturale — Migrations Pandas reportées** :
+- Les pages UI (`win_loss.py`, `teammates.py`, `teammates_charts.py`) reçoivent des `pd.DataFrame` depuis le pipeline amont (`filters_render.py`, `cache.py`).
+- Migrer les feuilles sans migrer le pipeline serait un anti-pattern (double conversion à chaque frontière).
+- 4.M1-M4+M6 sont reportées au Sprint 9 (migration pipeline top-down).
+- `media_tab.py` reste en Polars (4.M5 ✅ déjà fait).
 
 **Analyse technique pour la reprise (4.M6 win_loss.py)** :
 - Le fichier utilise `pivot_table`, `pd.to_datetime`, `.dt.to_period()`, et surtout `tbl.style.apply()` (Pandas styler)

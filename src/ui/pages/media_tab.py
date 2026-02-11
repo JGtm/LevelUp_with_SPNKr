@@ -98,7 +98,7 @@ def _render_media_grid(
                         match_url = "?" + urllib.parse.urlencode({"page": "Match", "match_id": mid})
                         st.markdown(
                             f'<a href="{match_url}" target="_blank" rel="noopener noreferrer" '
-                            'style="display:inline-block;padding:0.35em 0.75em;margin-top:4px;'
+                            'style="display:block;width:100%;text-align:center;padding:0.35em 0.75em;margin-top:4px;'
                             "background:#1a73e8;color:#fff;text-decoration:none;border-radius:4px;"
                             'font-size:0.9em;">Ouvrir le match</a>',
                             unsafe_allow_html=True,
@@ -123,10 +123,14 @@ def render_media_tab(
             # CSS pour maximiser la largeur sans débordement (cible le contenu du modal)
             st.markdown(
                 "<style>"
+                "[data-testid='stModal'] > div, [data-testid='stDialog'] > div {"
+                "  max-width: 95vw !important; width: 95vw !important;"
+                "}"
                 "[data-testid='stModal'] img, [data-testid='stModal'] video, "
                 "[data-testid='stDialog'] img, [data-testid='stDialog'] video, "
                 "[role='dialog'] img, [role='dialog'] video {"
                 "  max-width: 100%; width: 100%; height: auto; object-fit: contain;"
+                "  max-height: 85vh;"
                 "}"
                 "</style>",
                 unsafe_allow_html=True,
@@ -228,12 +232,15 @@ def render_media_tab(
 
     # Section « Mes captures » (ratio 16:9) – du plus récent au plus vieux
     st.markdown("### Mes captures")
-    _render_media_grid(
-        mine,
-        cols_per_row=cols_per_row,
-        thumb_width=MEDIA_THUMB_RATIO_W,
-        thumb_height=MEDIA_THUMB_RATIO_H,
-    )
+    if mine.is_empty():
+        st.info("Aucune capture détectée.")
+    else:
+        _render_media_grid(
+            mine,
+            cols_per_row=cols_per_row,
+            thumb_width=MEDIA_THUMB_RATIO_W,
+            thumb_height=MEDIA_THUMB_RATIO_H,
+        )
 
     # Section « Captures de XXX » par gamertag
     if not teammate.is_empty():
