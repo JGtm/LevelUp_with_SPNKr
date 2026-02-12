@@ -858,7 +858,12 @@ def plot_matches_at_top_by_week(
     rank_col: str = "rank",
     top_n_ranks: int = 1,
 ) -> go.Figure:
-    """Graphique comparant les matchs 'Top' vs Total par semaine.
+    """Graphique comparant les matchs 'Top' vs Total par période.
+
+    La période est adaptée automatiquement à la durée des données :
+    - < 2 jours : par match (index numérique)
+    - < 7 jours : par jour
+    - >= 7 jours : par semaine
 
     Args:
         df: DataFrame avec colonnes `start_time` et `rank` (ou équivalent).
@@ -880,8 +885,25 @@ def plot_matches_at_top_by_week(
     d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
     d = d.dropna(subset=["start_time"])
 
-    # Grouper par semaine
-    d["week"] = d["start_time"].dt.to_period("W-MON").astype(str)
+    # Déterminer la période dynamiquement (Sprint 7.7)
+    tmin = d["start_time"].min()
+    tmax = d["start_time"].max()
+    dt_range = (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
+    days = float(dt_range.total_seconds() / 86400.0) if dt_range is not None else 999.0
+
+    if days < 2:
+        # Période très courte : par match (index numérique)
+        d = d.sort_values("start_time").reset_index(drop=True)
+        d["period"] = d.index.astype(str)
+        period_label = "Match"
+    elif days < 7:
+        # Moins d'une semaine : par jour
+        d["period"] = d["start_time"].dt.strftime("%Y-%m-%d")
+        period_label = "Jour"
+    else:
+        # Par semaine (comportement original)
+        d["period"] = d["start_time"].dt.to_period("W-MON").astype(str)
+        period_label = "Semaine"
 
     # Déterminer si le joueur a fini "Top"
     if rank_col in d.columns:
@@ -892,7 +914,7 @@ def plot_matches_at_top_by_week(
 
     # Agrégation
     agg = (
-        d.groupby("week")
+        d.groupby("period")
         .agg(
             total=("match_id", "count"),
             top_count=("is_top", "sum"),
@@ -906,7 +928,7 @@ def plot_matches_at_top_by_week(
 
     fig.add_trace(
         go.Bar(
-            x=agg["week"],
+            x=agg["period"],
             y=agg["top_count"],
             name=f"Top {top_n_ranks}",
             marker_color=colors["green"],
@@ -920,7 +942,7 @@ def plot_matches_at_top_by_week(
 
     fig.add_trace(
         go.Bar(
-            x=agg["week"],
+            x=agg["period"],
             y=agg["other_count"],
             name="Autres",
             marker_color=colors["slate"],
@@ -934,7 +956,7 @@ def plot_matches_at_top_by_week(
     # Ligne de tendance du taux
     fig.add_trace(
         go.Scatter(
-            x=agg["week"],
+            x=agg["period"],
             y=agg["top_rate"],
             mode="lines+markers",
             name="Taux Top (%)",
@@ -959,7 +981,7 @@ def plot_matches_at_top_by_week(
             "showgrid": False,
         },
     )
-    fig.update_xaxes(tickangle=45, title_text="Semaine")
+    fig.update_xaxes(tickangle=45, title_text=period_label)
     fig.update_yaxes(title_text="Matchs")
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)

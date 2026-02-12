@@ -26,8 +26,11 @@ from src.visualization.performance import (
 from src.visualization.timeseries import (
     plot_assists_timeseries,
     plot_average_life,
+    plot_damage_dealt_taken,
     plot_per_minute_timeseries,
     plot_performance_timeseries,
+    plot_rank_score,
+    plot_shots_accuracy,
     plot_spree_headshots_accuracy,
     plot_timeseries,
 )
@@ -460,7 +463,7 @@ def render_timeseries_page(
         else:
             st.plotly_chart(plot_average_life(dff), width="stretch")
 
-        st.subheader("Folie meurtrière / Tirs à la tête / Précision / Frags parfaits")
+        st.subheader("Folie meurtrière / Tirs à la tête / Frags parfaits")
 
         # Charger les Perfect kills depuis le repository (priorité aux paramètres passés par le routeur)
         perfect_counts: dict[str, int] | None = None
@@ -483,3 +486,38 @@ def render_timeseries_page(
             plot_spree_headshots_accuracy(dff, perfect_counts=perfect_counts),
             width="stretch",
         )
+
+        # === Sprint 7 — Nouvelles sections ===
+
+        # 7.5 — Tirs et précision
+        _has_shots = any(c in dff.columns for c in ("shots_fired", "shots_hit"))
+        if _has_shots:
+            st.divider()
+            st.subheader("Tirs et précision")
+            st.caption(
+                "Tirs tirés vs touchés (barres groupées) et courbe de précision. "
+                "La précision a été retirée du graphe Folie meurtrière pour une lecture plus claire."
+            )
+            st.plotly_chart(plot_shots_accuracy(dff, title=None), width="stretch")
+
+        # 7.4 — Dégâts infligés vs subis
+        _has_damage = any(c in dff.columns for c in ("damage_dealt", "damage_taken"))
+        if _has_damage:
+            st.divider()
+            st.subheader("Dégâts")
+            st.caption(
+                "Compare les dégâts infligés et subis par match. "
+                "Un ratio élevé (infligés > subis) indique une bonne efficacité au combat."
+            )
+            st.plotly_chart(plot_damage_dealt_taken(dff, title=None), width="stretch")
+
+        # 7.3 — Rang et score personnel
+        _has_rank_score = "rank" in dff.columns or "personal_score" in dff.columns
+        if _has_rank_score:
+            st.divider()
+            st.subheader("Rang et score personnel")
+            st.caption(
+                "Le score personnel en barres et le rang en ligne (axe Y inversé : "
+                "rang 1 en haut). Un bon score associé à un rang élevé confirme l'impact."
+            )
+            st.plotly_chart(plot_rank_score(dff, title=None), width="stretch")

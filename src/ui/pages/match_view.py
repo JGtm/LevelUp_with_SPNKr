@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.analysis.performance_config import SCORE_THRESHOLDS
@@ -48,14 +49,14 @@ from src.ui.pages.match_view_players import (
 
 def render_match_view(
     *,
-    row: pd.Series,
+    row: pd.Series | dict[str, Any],
     match_id: str,
     db_path: str,
     xuid: str,
     waypoint_player: str,
     db_key: tuple[int, int] | None,
     settings: AppSettings,
-    df_full: pd.DataFrame | None = None,
+    df_full: pd.DataFrame | pl.DataFrame | None = None,
     # Fonctions injectées
     normalize_mode_label_fn: Callable[[str | None], str],
     format_score_label_fn: Callable[[Any, Any], str],
@@ -72,8 +73,8 @@ def render_match_view(
 
     Parameters
     ----------
-    row : pd.Series
-        Données du match depuis le DataFrame.
+    row : pd.Series | dict[str, Any]
+        Données du match depuis le DataFrame (ou dict Polars).
     match_id : str
         Identifiant du match.
     db_path : str
@@ -86,7 +87,7 @@ def render_match_view(
         Clé de cache pour la base de données.
     settings : AppSettings
         Paramètres de l'application.
-    df_full : pd.DataFrame | None
+    df_full : pd.DataFrame | pl.DataFrame | None
         DataFrame complet pour le calcul du score relatif.
     normalize_mode_label_fn, format_score_label_fn, score_css_color_fn, format_datetime_fn
         Fonctions de formatage injectées.
@@ -96,6 +97,10 @@ def render_match_view(
     paris_tz
         Timezone Paris.
     """
+    # Normaliser df_full Polars → Pandas si nécessaire (compatibilité interne)
+    if isinstance(df_full, pl.DataFrame):
+        df_full = df_full.to_pandas()
+
     match_id = str(match_id or "").strip()
     if not match_id:
         st.info("MatchId manquant.")

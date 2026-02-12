@@ -587,18 +587,6 @@ def plot_spree_headshots_accuracy(
         secondary_y=False,
     )
 
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx,
-            y=d["accuracy"],
-            mode="lines",
-            name="Précision (%)",
-            line={"width": PLOT_CONFIG.line_width, "color": colors["violet"]},
-            hovertemplate="précision=%{y:.2f}%<extra></extra>",
-        ),
-        secondary_y=True,
-    )
-
     labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
     step = max(1, len(labels) // 10) if labels else 1
     fig.update_xaxes(
@@ -619,9 +607,6 @@ def plot_spree_headshots_accuracy(
     )
 
     fig.update_yaxes(title_text="Spree / Tirs à la tête", rangemode="tozero", secondary_y=False)
-    fig.update_yaxes(
-        title_text="Précision (%)", ticksuffix="%", rangemode="tozero", secondary_y=True
-    )
 
     return apply_halo_plot_style(fig, height=420)
 
@@ -725,3 +710,363 @@ def plot_performance_timeseries(
     )
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
+
+
+# =============================================================================
+# Sprint 7 — Nouvelles fonctions de visualisation
+# =============================================================================
+
+
+def plot_streak_chart(
+    df: pd.DataFrame | pl.DataFrame,
+    title: str = "Séries de victoires / défaites",
+) -> go.Figure:
+    """Graphique des séries de victoires et défaites dans le temps.
+
+    Affiche des barres positives (victoires) et négatives (défaites)
+    colorées par le type de résultat.
+
+    Args:
+        df: DataFrame avec colonnes outcome, start_time.
+        title: Titre du graphique.
+
+    Returns:
+        Figure Plotly.
+    """
+    df = _normalize_df(df)
+    colors = HALO_COLORS.as_dict()
+
+    d = df.sort_values("start_time").reset_index(drop=True).copy()
+
+    # Filtrer : ne garder que V/D
+    d = d[d["outcome"].isin([2, 3])].reset_index(drop=True)
+    if d.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Aucune donnée de victoires/défaites",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font={"size": 16},
+        )
+        return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.short_height)
+
+    x_idx = list(range(len(d)))
+
+    # Calculer la série : cumul dans chaque streak
+    is_win = (d["outcome"] == 2).astype(int)
+    new_streak = (d["outcome"] != d["outcome"].shift(1)).fillna(True)
+    streak_group = new_streak.cumsum()
+
+    streak_counter: list[int] = []
+    prev_group = -1
+    count = 0
+    for g in streak_group:
+        if g != prev_group:
+            count = 1
+            prev_group = g
+        else:
+            count += 1
+        streak_counter.append(count)
+
+    streak_values = [c if w == 1 else -c for c, w in zip(streak_counter, is_win, strict=False)]
+
+    bar_colors = [colors["green"] if v > 0 else colors["red"] for v in streak_values]
+
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    step = max(1, len(labels) // 10) if labels else 1
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=x_idx,
+            y=streak_values,
+            marker_color=bar_colors,
+            opacity=0.85,
+            hovertemplate="série=%{y}<br>date=%{customdata}<extra></extra>",
+            customdata=labels,
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        title=title,
+        margin={"l": 40, "r": 20, "t": 40, "b": 90},
+        hovermode="x unified",
+    )
+    fig.update_yaxes(title_text="Série (+ victoires / − défaites)", zeroline=True)
+    fig.update_xaxes(
+        title_text="Match (chronologique)",
+        tickmode="array",
+        tickvals=x_idx[::step],
+        ticktext=labels[::step],
+        type="category",
+    )
+
+    return apply_halo_plot_style(fig, height=PLOT_CONFIG.short_height)
+
+
+def plot_damage_dealt_taken(
+    df: pd.DataFrame | pl.DataFrame,
+    title: str = "Dégâts infligés vs subis",
+) -> go.Figure:
+    """Graphique des dégâts infligés et subis par match.
+
+    Barres groupées pour damage_dealt et damage_taken.
+
+    Args:
+        df: DataFrame avec colonnes damage_dealt, damage_taken, start_time.
+        title: Titre du graphique.
+
+    Returns:
+        Figure Plotly.
+    """
+    df = _normalize_df(df)
+    colors = HALO_COLORS.as_dict()
+
+    d = df.sort_values("start_time").reset_index(drop=True).copy()
+    x_idx = list(range(len(d)))
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    step = max(1, len(labels) // 10) if labels else 1
+
+    fig = go.Figure()
+
+    if "damage_dealt" in d.columns:
+        dealt = pd.to_numeric(d["damage_dealt"], errors="coerce").fillna(0)
+        fig.add_trace(
+            go.Bar(
+                x=x_idx,
+                y=dealt,
+                name="Dégâts infligés",
+                marker_color=colors["cyan"],
+                opacity=0.80,
+                hovertemplate="infligés=%{y:.0f}<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx,
+                y=_rolling_mean(dealt, window=10),
+                mode="lines",
+                name="Moy. infligés",
+                line={"width": PLOT_CONFIG.line_width, "color": colors["cyan"]},
+                hovertemplate="moy=%{y:.0f}<extra></extra>",
+            )
+        )
+
+    if "damage_taken" in d.columns:
+        taken = pd.to_numeric(d["damage_taken"], errors="coerce").fillna(0)
+        fig.add_trace(
+            go.Bar(
+                x=x_idx,
+                y=taken,
+                name="Dégâts subis",
+                marker_color=colors["red"],
+                opacity=0.65,
+                hovertemplate="subis=%{y:.0f}<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx,
+                y=_rolling_mean(taken, window=10),
+                mode="lines",
+                name="Moy. subis",
+                line={"width": PLOT_CONFIG.line_width, "color": colors["red"], "dash": "dot"},
+                hovertemplate="moy=%{y:.0f}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        title=title,
+        margin={"l": 40, "r": 20, "t": 40, "b": 90},
+        hovermode="x unified",
+        legend=get_legend_horizontal_bottom(),
+        barmode="group",
+        bargap=0.15,
+        bargroupgap=0.06,
+    )
+    fig.update_yaxes(title_text="Dégâts", rangemode="tozero")
+    fig.update_xaxes(
+        title_text="Match (chronologique)",
+        tickmode="array",
+        tickvals=x_idx[::step],
+        ticktext=labels[::step],
+        type="category",
+    )
+
+    return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height)
+
+
+def plot_shots_accuracy(
+    df: pd.DataFrame | pl.DataFrame,
+    title: str = "Tirs et précision",
+) -> go.Figure:
+    """Graphique des tirs (tirés/touchés) en barres groupées avec courbe de précision.
+
+    Args:
+        df: DataFrame avec colonnes shots_fired, shots_hit, accuracy, start_time.
+        title: Titre du graphique.
+
+    Returns:
+        Figure Plotly avec axe Y secondaire pour la précision.
+    """
+    df = _normalize_df(df)
+    colors = HALO_COLORS.as_dict()
+
+    d = df.sort_values("start_time").reset_index(drop=True).copy()
+    x_idx = list(range(len(d)))
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    step = max(1, len(labels) // 10) if labels else 1
+
+    fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+
+    if "shots_fired" in d.columns:
+        fired = pd.to_numeric(d["shots_fired"], errors="coerce").fillna(0)
+        fig.add_trace(
+            go.Bar(
+                x=x_idx,
+                y=fired,
+                name="Tirs tirés",
+                marker_color=colors["amber"],
+                opacity=0.70,
+                alignmentgroup="shots",
+                offsetgroup="fired",
+                width=0.42,
+                hovertemplate="tirés=%{y:.0f}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+
+    if "shots_hit" in d.columns:
+        hit = pd.to_numeric(d["shots_hit"], errors="coerce").fillna(0)
+        fig.add_trace(
+            go.Bar(
+                x=x_idx,
+                y=hit,
+                name="Tirs touchés",
+                marker_color=colors["green"],
+                opacity=0.70,
+                alignmentgroup="shots",
+                offsetgroup="hit",
+                width=0.42,
+                hovertemplate="touchés=%{y:.0f}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+
+    if "accuracy" in d.columns:
+        accuracy = pd.to_numeric(d["accuracy"], errors="coerce")
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx,
+                y=accuracy,
+                mode="lines",
+                name="Précision (%)",
+                line={"width": PLOT_CONFIG.line_width, "color": colors["violet"]},
+                hovertemplate="précision=%{y:.2f}%<extra></extra>",
+            ),
+            secondary_y=True,
+        )
+
+    fig.update_xaxes(
+        title_text="Match (chronologique)",
+        tickmode="array",
+        tickvals=x_idx[::step],
+        ticktext=labels[::step],
+    )
+
+    fig.update_layout(
+        title=title,
+        height=420,
+        margin={"l": 40, "r": 50, "t": 40, "b": 90},
+        legend=get_legend_horizontal_bottom(),
+        hovermode="x unified",
+        barmode="group",
+        bargap=0.15,
+        bargroupgap=0.06,
+    )
+
+    fig.update_yaxes(title_text="Tirs", rangemode="tozero", secondary_y=False)
+    fig.update_yaxes(
+        title_text="Précision (%)", ticksuffix="%", rangemode="tozero", secondary_y=True
+    )
+
+    return apply_halo_plot_style(fig, height=420)
+
+
+def plot_rank_score(
+    df: pd.DataFrame | pl.DataFrame,
+    title: str = "Rang et score personnel",
+) -> go.Figure:
+    """Graphique du rang et du score personnel par match.
+
+    Barres pour le score personnel, ligne pour le rang.
+
+    Args:
+        df: DataFrame avec colonnes rank, personal_score, start_time.
+        title: Titre du graphique.
+
+    Returns:
+        Figure Plotly avec axe Y secondaire pour le rang.
+    """
+    df = _normalize_df(df)
+    colors = HALO_COLORS.as_dict()
+
+    d = df.sort_values("start_time").reset_index(drop=True).copy()
+    x_idx = list(range(len(d)))
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    step = max(1, len(labels) // 10) if labels else 1
+
+    fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+
+    if "personal_score" in d.columns:
+        score = pd.to_numeric(d["personal_score"], errors="coerce").fillna(0)
+        fig.add_trace(
+            go.Bar(
+                x=x_idx,
+                y=score,
+                name="Score personnel",
+                marker_color=colors["amber"],
+                opacity=0.75,
+                hovertemplate="score=%{y:.0f}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+
+    if "rank" in d.columns:
+        rank = pd.to_numeric(d["rank"], errors="coerce")
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx,
+                y=rank,
+                mode="lines+markers",
+                name="Rang",
+                line={"width": PLOT_CONFIG.line_width, "color": colors["cyan"]},
+                marker={"size": 4},
+                hovertemplate="rang=%{y}<extra></extra>",
+            ),
+            secondary_y=True,
+        )
+
+    fig.update_xaxes(
+        title_text="Match (chronologique)",
+        tickmode="array",
+        tickvals=x_idx[::step],
+        ticktext=labels[::step],
+    )
+
+    fig.update_layout(
+        title=title,
+        height=400,
+        margin={"l": 40, "r": 50, "t": 40, "b": 90},
+        legend=get_legend_horizontal_bottom(),
+        hovermode="x unified",
+    )
+
+    fig.update_yaxes(title_text="Score personnel", rangemode="tozero", secondary_y=False)
+    fig.update_yaxes(title_text="Rang", autorange="reversed", rangemode="tozero", secondary_y=True)
+
+    return apply_halo_plot_style(fig, height=400)

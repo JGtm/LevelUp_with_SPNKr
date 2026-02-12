@@ -15,8 +15,10 @@ from src.visualization import (
     plot_map_comparison,
     plot_map_ratio_with_winloss,
     plot_matches_at_top_by_week,
+    plot_metric_bars_by_match,
     plot_outcomes_over_time,
     plot_stacked_outcomes_by_category,
+    plot_streak_chart,
     plot_win_ratio_heatmap,
 )
 
@@ -200,6 +202,44 @@ def render_win_loss_page(
             st.plotly_chart(fig_top, width="stretch")
         else:
             st.info("Données temporelles manquantes.")
+
+        # === Séries de victoires / défaites (Sprint 7.2) ===
+        st.divider()
+        st.subheader("Séries de victoires / défaites")
+        st.caption(
+            "Visualise les séries consécutives de victoires (barres positives) "
+            "et de défaites (barres négatives). Les séries longues indiquent "
+            "les phases de momentum positif ou négatif."
+        )
+        if "outcome" in dff.columns and "start_time" in dff.columns:
+            fig_streak = plot_streak_chart(dff, title=None)
+            st.plotly_chart(fig_streak, width="stretch")
+        else:
+            st.info("Données de résultat manquantes.")
+
+        # === Score personnel par match (Sprint 7.1) ===
+        if "personal_score" in dff.columns:
+            st.divider()
+            st.subheader("Score personnel par match")
+            st.caption(
+                "Barres colorées du score personnel pour chaque match, "
+                "avec courbe de moyenne lissée."
+            )
+            colors = HALO_COLORS.as_dict()
+            fig_ps = plot_metric_bars_by_match(
+                dff,
+                metric_col="personal_score",
+                title=None,
+                y_axis_title="Score personnel",
+                hover_label="Score",
+                bar_color=colors["amber"],
+                smooth_color=colors["violet"],
+                smooth_window=10,
+            )
+            if fig_ps is not None:
+                st.plotly_chart(fig_ps, width="stretch")
+            else:
+                st.info("Données de score personnel insuffisantes.")
 
         st.divider()
         st.subheader("Par période")

@@ -8,6 +8,7 @@ import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -41,7 +42,7 @@ def safe_dt(v, paris_tz) -> datetime | None:
 
 
 def match_time_window(
-    row: pd.Series, *, tolerance_minutes: int, paris_tz
+    row: pd.Series | dict[str, Any], *, tolerance_minutes: int, paris_tz
 ) -> tuple[datetime | None, datetime | None, bool]:
     """Calcule la fenêtre temporelle d'un match avec tolérance.
 
@@ -136,7 +137,7 @@ def index_media_dir(dir_path: str, exts: tuple[str, ...]) -> pd.DataFrame:
 
 def render_media_section(
     *,
-    row: pd.Series,
+    row: pd.Series | dict[str, Any],
     settings: AppSettings,
     format_datetime_fn: Callable[[datetime | None], str],
     paris_tz,
@@ -256,7 +257,7 @@ def os_card(
     )
 
 
-def map_thumb_path(row: pd.Series, map_id: str | None) -> str | None:
+def map_thumb_path(row: pd.Series | dict[str, Any], map_id: str | None) -> str | None:
     """Trouve le chemin vers la miniature de la carte."""
 
     def _safe_stem_from_name(name: str | None) -> str:

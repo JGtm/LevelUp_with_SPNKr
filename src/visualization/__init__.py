@@ -70,9 +70,13 @@ from src.visualization.timeseries import (
     plot_accuracy_last_n,
     plot_assists_timeseries,
     plot_average_life,
+    plot_damage_dealt_taken,
     plot_per_minute_timeseries,
     plot_performance_timeseries,
+    plot_rank_score,
+    plot_shots_accuracy,
     plot_spree_headshots_accuracy,
+    plot_streak_chart,
     plot_timeseries,
 )
 from src.visualization.trio import plot_trio_metric
@@ -86,6 +90,11 @@ __all__ = [
     "plot_average_life",
     "plot_spree_headshots_accuracy",
     "plot_performance_timeseries",
+    # Sprint 7: Nouvelles visualisations V/D + Stats
+    "plot_streak_chart",
+    "plot_damage_dealt_taken",
+    "plot_shots_accuracy",
+    "plot_rank_score",
     "plot_kda_distribution",
     "plot_outcomes_over_time",
     "plot_stacked_outcomes_by_category",

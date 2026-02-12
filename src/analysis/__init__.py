@@ -75,6 +75,16 @@ from src.analysis.stats import (
     compute_outcome_rates,
     extract_mode_category,
 )
+from src.analysis.win_streaks import (
+    RollingStreakResult,
+    StreakRecord,
+    StreakSummary,
+    compute_rolling_win_rate_polars,
+    compute_streak_series_polars,
+    compute_streak_summary_polars,
+    compute_streaks_polars,
+    streak_series_to_dicts,
+)
 
 __all__ = [
     "compute_aggregated_stats",
@@ -143,4 +153,13 @@ __all__ = [
     "compute_rolling_kd_polars",
     "compute_session_trend_polars",
     "cumulative_series_to_dicts",
+    # Sprint 7: Séries de victoires/défaites
+    "StreakRecord",
+    "StreakSummary",
+    "RollingStreakResult",
+    "compute_streaks_polars",
+    "compute_streak_summary_polars",
+    "compute_streak_series_polars",
+    "compute_rolling_win_rate_polars",
+    "streak_series_to_dicts",
 ]
