@@ -14,11 +14,9 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from scripts.backfill_data import (
-    _compute_performance_score_for_match,
-    _ensure_performance_score_column,
-    _find_matches_missing_data,
-)
+from scripts.backfill.detection import find_matches_missing_data
+from scripts.backfill.strategies import compute_performance_score_for_match
+from src.db.migrations import ensure_performance_score_column
 
 
 @pytest.fixture
@@ -108,12 +106,12 @@ class TestFindMatchesMissingPerformanceScore:
     """Tests pour la détection des matchs sans score de performance."""
 
     def test_finds_matches_without_score(self, temp_duckdb_with_matches: tuple[Path, str]):
-        """Test que _find_matches_missing_data trouve les matchs sans score."""
+        """Test que find_matches_missing_data trouve les matchs sans score."""
         db_path, xuid = temp_duckdb_with_matches
 
         conn = duckdb.connect(str(db_path))
 
-        match_ids = _find_matches_missing_data(
+        match_ids = find_matches_missing_data(
             conn,
             xuid,
             performance_scores=True,
@@ -151,7 +149,7 @@ class TestFindMatchesMissingPerformanceScore:
             )
         conn.commit()
 
-        match_ids = _find_matches_missing_data(
+        match_ids = find_matches_missing_data(
             conn,
             "123",
             performance_scores=True,
@@ -175,7 +173,7 @@ class TestComputePerformanceScoreForMatch:
         conn = duckdb.connect(str(db_path))
 
         # Calculer le score pour un match sans score
-        result = _compute_performance_score_for_match(conn, "match-010")
+        result = compute_performance_score_for_match(conn, "match-010")
 
         conn.close()
 
@@ -199,7 +197,7 @@ class TestComputePerformanceScoreForMatch:
         conn = duckdb.connect(str(db_path))
 
         # Essayer de calculer pour un match qui a déjà un score
-        result = _compute_performance_score_for_match(conn, "match-020")
+        result = compute_performance_score_for_match(conn, "match-020")
 
         conn.close()
 
@@ -271,7 +269,7 @@ class TestComputePerformanceScoreForMatch:
         )
         conn.commit()
 
-        result = _compute_performance_score_for_match(conn, "target-match")
+        result = compute_performance_score_for_match(conn, "target-match")
 
         conn.close()
 
@@ -304,7 +302,7 @@ class TestComputePerformanceScoreForMatch:
         )
         conn.commit()
 
-        result = _compute_performance_score_for_match(conn, "match-no-time")
+        result = compute_performance_score_for_match(conn, "match-no-time")
 
         conn.close()
 
@@ -313,7 +311,7 @@ class TestComputePerformanceScoreForMatch:
 
 
 class TestEnsurePerformanceScoreColumn:
-    """Tests pour _ensure_performance_score_column."""
+    """Tests pour ensure_performance_score_column."""
 
     def test_creates_column_if_missing(self, tmp_path: Path):
         """Test que la colonne est créée si elle n'existe pas."""
@@ -330,7 +328,7 @@ class TestEnsurePerformanceScoreColumn:
             """
         )
 
-        _ensure_performance_score_column(conn)
+        ensure_performance_score_column(conn)
 
         # Vérifier que la colonne existe
         result = conn.execute(
@@ -363,8 +361,8 @@ class TestEnsurePerformanceScoreColumn:
         )
 
         # Appeler deux fois
-        _ensure_performance_score_column(conn)
-        _ensure_performance_score_column(conn)
+        ensure_performance_score_column(conn)
+        ensure_performance_score_column(conn)
 
         # Vérifier qu'il n'y a qu'une seule colonne
         result = conn.execute(

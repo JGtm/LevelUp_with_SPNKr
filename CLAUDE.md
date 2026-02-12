@@ -41,57 +41,47 @@
 
 ## Environnement Python
 
-Le projet tourne sur **MSYS2/MinGW** (Git Bash sous Windows). Le Python système est `/c/msys64/ucrt64/bin/python3.exe`.
+**IMPORTANT : Utiliser le `.venv` à la racine du repo (Python 3.12.10 Windows natif)**
 
-### Contraintes importantes
+### Configuration officielle
 
-- **Pas de Python Windows natif** (python.org) sur cette machine — uniquement MSYS2.
-- Les wheels pré-compilés Windows (`win_amd64`) ne sont **pas compatibles**. Le tag pip est `mingw_x86_64_ucrt_gnu`.
-- Les packages C (numpy, pandas, polars, duckdb) doivent être installés **via pacman** (pré-compilés MSYS2) et non via pip (compilation depuis les sources = très long ou impossible).
-- **DuckDB n'a pas de package MSYS2** : il ne peut pas s'installer dans cet environnement. Les tests qui importent `duckdb` (transitif via `src.data.repositories.duckdb_repo`) échouent en `ModuleNotFoundError`. Ce n'est **pas une régression** mais une limitation connue.
+- **Interpreter** : `.venv` à la racine du repo
+- **Python** : 3.12.10
+- **Commande canonique** : toujours préférer `python -m ...` (ex: `python -m pytest`)
 
-### Setup du venv (une seule fois)
+### Packages vérifiés
 
-```bash
-# 1. Installer les packages C via pacman (si pas déjà fait)
-pacman -S --noconfirm \
-  mingw-w64-ucrt-x86_64-python \
-  mingw-w64-ucrt-x86_64-python-numpy \
-  mingw-w64-ucrt-x86_64-python-pandas \
-  mingw-w64-ucrt-x86_64-python-polars \
-  mingw-w64-ucrt-x86_64-python-tornado
+- `pytest==9.0.2`
+- `duckdb==1.4.4`
+- `polars==1.38.1`
+- `pyarrow==23.0.0`
+- `pandas==2.3.3` (uniquement pour compatibilité Streamlit/Plotly, interdit dans le code métier)
+- `numpy==2.4.2`
 
-# 2. Créer le venv avec --system-site-packages (hérite numpy/pandas/polars)
-/c/msys64/ucrt64/bin/python3.exe -m venv .venv --system-site-packages
+### Activation selon shell
 
-# 3. Installer les packages pure-Python via pip
-.venv/bin/pip.exe install pytest streamlit pydantic plotly altair \
-  blinker toml tenacity cachetools pydeck protobuf click rich \
-  typing-extensions gitpython pluggy iniconfig pygments colorama
-```
+- **PowerShell** : `./.venv/Scripts/Activate.ps1`
+- **cmd.exe** : `.venv\\Scripts\\activate.bat`
+- **Git Bash** : `source .venv/Scripts/activate`
 
-### Exécution
+### Commandes tests
 
 ```bash
-# Activer le venv (le Python est dans .venv/bin/, PAS .venv/Scripts/)
-source .venv/bin/activate
+# Suite stable hors intégration
+python -m pytest -q --ignore=tests/integration
 
-# Tests
-.venv/bin/python.exe -m pytest tests/ -v
+# Suite complète
+python -m pytest
 
-# Lancer l'app Streamlit
-.venv/bin/python.exe -m streamlit run streamlit_app.py
+# Healthcheck environnement
+python scripts/check_env.py
 ```
 
-### Pièges courants pour les agents IA
+### Règles strictes
 
-| Piège | Solution |
-|-------|----------|
-| `pip install numpy` compile depuis les sources (>30 min) | Utiliser `pacman -S mingw-w64-ucrt-x86_64-python-numpy` |
-| `.venv/Scripts/python.exe` n'existe pas | Sur MSYS2 c'est `.venv/bin/python.exe` |
-| `pacman` : "unable to lock database" | `rm -f /c/msys64/var/lib/pacman/db.lck` puis réessayer |
-| `ModuleNotFoundError: duckdb` dans les tests | Limitation connue, pas de package MSYS2 pour duckdb. Les tests qui en dépendent sont ignorés |
-| Le venv n'a pas numpy/polars | Le venv doit être créé avec `--system-site-packages` |
+1. **Ne pas installer/mettre à jour** des packages sans motivation documentée
+2. **Ne pas utiliser le Python MSYS2/MinGW** — source de conflits DLL
+3. **Ne pas modifier le `PATH`** — utiliser `.venv` + `python -m pytest`
 
 ## Commandes Utiles
 
@@ -166,14 +156,16 @@ Chaque joueur a sa propre DB : `data/players/{gamertag}/stats.duckdb`
 | **Streamlit** | Interface utilisateur |
 | **SPNKr** | API Halo Infinite |
 
-## Code Déprécié
+## Modules Supprimés (v4.1)
 
-Les modules suivants sont DÉPRÉCIÉS :
-- `src/db/loaders.py` → Utiliser `DuckDBRepository`
-- `src/db/loaders_cached.py` → Utiliser `DuckDBRepository`
-- `src/data/repositories/legacy.py` → Supprimé
-- `src/data/repositories/shadow.py` → Supprimé
-- `src/data/repositories/hybrid.py` → Supprimé
+Les anciens modules legacy ont été supprimés lors de la migration v4.1 :
+- `src/db/loaders.py` — supprimé, remplacé par `DuckDBRepository`
+- `src/db/loaders_cached.py` — supprimé
+- `src/data/repositories/legacy.py` — supprimé
+- `src/data/repositories/shadow.py` — supprimé
+- `src/data/repositories/hybrid.py` — supprimé
+
+**Tout le code doit utiliser `DuckDBRepository`** (`src/data/repositories/duckdb_repo.py`).
 
 ## Serveurs MCP Disponibles
 

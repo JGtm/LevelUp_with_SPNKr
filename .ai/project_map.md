@@ -190,7 +190,7 @@ data/
 
 ## Sprint en Cours
 
-**Sprints 3-4 du PLAN_UNIFIE** (2026-02-11)
+**Sprint Final** : Tous les sprints S0-S12 sont **livrés** ✅
 📄 `.ai/PLAN_UNIFIE.md`
 
 ### Sprints livrés
@@ -198,19 +198,22 @@ data/
 - **S1** ✅ Nettoyage scripts (113→16 actifs) + archivage .ai/
 - **S2** ✅ Migration Pandas→Polars core (performance_score, backfill, sessions, killer_victim)
 - **S3** ✅ Damage participants + Page Carrière
-- **S4 (partiel)** ✅ 4.0 Déduplic plot_top_weapons, 4.1 Médianes, 4.2 Kills→Frags
+- **S4** ✅ Médianes, Frags, Modes, Médias, Coéquipiers refonte
+- **S5** ✅ Score de Performance v4
+- **S6** ✅ Nouvelles stats Phase 1 (Timeseries + Corrélations)
+- **S7** ✅ Nouvelles stats Phase 2-3 (V/D + Dernier match)
+- **S8** ✅ Nouvelles stats Phase 4 (Coéquipiers comparaisons)
+- **S9** ✅ Suppression code legacy + Migration Pandas complète
+- **S10** ✅ Nettoyage données + Refactoring backfill
+- **S11** ✅ Finalisation, tests d'intégration, documentation
+- **S12** ✅ Heatmap d'Impact & Cercle d'Amis
 
-### Sprint 4 — Reste à faire
-- 4.3 Normalisation noms de mode (`win_loss.py`)
-- 4.M1-M6 Migration Polars (distributions, timeseries, teammates, teammates_charts, win_loss)
-- 4.5 Features teammates (stats/min barres, frags parfaits, radar trio)
-- Tests Sprint 4
-
-### Prochains sprints
-- **S5** Score de Performance v4
-- **S6-S8** Nouvelles stats (Timeseries, V/D, Coéquipiers)
-- **S9** Suppression code legacy + Migration Pandas complète
-- **S10-S11** Nettoyage données + Finalisation
+### État technique final
+- **1065+ tests** passent (hors intégration)
+- **Architecture DuckDB v4** unifiée
+- **Polars** comme moteur DataFrame (migration Pandas complète)
+- **Backfill modulaire** (scripts/backfill/)
+- **15 tests d'intégration** nouvelles stats
 
 ## Exploration Complète du Projet
 
@@ -232,6 +235,7 @@ Consulter ce fichier pour une cartographie exhaustive ; le présent `project_map
 
 ## Dernière Mise à Jour
 
+**2026-02-12** : **v4.1 Release** — Sprints 11-12 livrés (tests intégration, documentation, heatmap impact)
 **2026-02-11** : Sprints 3A+3B livrés (damage participants + page Carrière) + Sprint 4 partiel (4.0-4.2)
 **2026-02-10** : Sprints 0-2 livrés (bugs, nettoyage, migration Polars core)
 **2026-02-05** : Sprint Gamertag & Roster Fix + Documentation killer_victim

@@ -117,6 +117,7 @@ select = [
     "UP",   # pyupgrade
     "ARG",  # flake8-unused-arguments
     "SIM",  # flake8-simplify
+    # "TID",  # flake8-tidy-imports - DÉSACTIVÉ pour tolérance Pandas transitoire
 ]
 ignore = [
     "E501",   # line too long (handled by black)
@@ -125,6 +126,14 @@ ignore = [
     "C901",   # too complex
     "ARG001", # unused function argument
 ]
+
+# NOTE: Règle anti-Pandas (TID251 banned-api) préparée mais non activée
+# Politique actuelle = "tolérance contrôlée transitoire" :
+# - Pas de NOUVEAU import pandas dans le code métier (analysis, data, sync)
+# - Imports existants tolérés à la frontière UI/Viz (Streamlit/Plotly)
+# - Migration complète vers Polars planifiée pour la prochaine major version
+# [tool.ruff.lint.flake8-tidy-imports.banned-api]
+# "pandas".msg = "Pandas est interdit. Utilisez Polars."
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

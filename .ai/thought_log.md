@@ -7,6 +7,53 @@
 
 ## Journal
 
+### [2026-02-12] - Sprint 11 — Finalisation v4.1 (Tests, Documentation, Release)
+
+**Statut** : Livré ✅
+
+**Objectif** : Finaliser la version 4.1 avec tests d'intégration, documentation complète et release notes.
+
+**Réalisations** :
+
+**11.1 — Tests d'intégration créés** :
+- `tests/integration/test_stats_nouvelles.py` : 15 tests couvrant :
+  - Score de Performance (présence, plage valide)
+  - Timeseries (sessions quotidiennes, métriques temporelles)
+  - Coéquipiers (données disponibles, win rate)
+  - Médailles et Événements (liens avec matchs)
+  - Repository DuckDB (chargement, filtrage)
+  - Tests de charge (1000-2000 matchs, agrégations < 0.5s)
+  - Cohérence données (pas d'orphelins, KDA correct)
+
+**11.2 — Tests de charge validés** :
+- Lecture 1000 matchs : < 1s
+- Agrégations complexes 2000 matchs : < 0.5s
+
+**11.3 — Couverture vérifiée** :
+- 1065+ tests passants (hors intégration)
+- Couverture `src/analysis` : ~21% (objectif 95% reporté)
+
+**11.5 — Documentation mise à jour** :
+- `project_map.md` : Sprints S0-S12 marqués livrés, état technique final
+- `CLAUDE.md` : Environnement Python corrigé (.venv officiel), section "Code Déprécié" → "Modules Supprimés"
+
+**11.7-11.9 — Documentation** :
+- `RELEASE_NOTES_2026_Q1.md` : Notes de version complètes v4.1
+- Synthèse `thought_log.md` mise à jour
+
+**Correction en cours** :
+- Import obsolète dans `test_backfill_performance_score.py` corrigé (migration vers `scripts/backfill/`)
+
+**Validation** :
+- `pytest tests/ --ignore=tests/integration -q` : **1065 passed, 48 skipped**
+- `pytest tests/integration/test_stats_nouvelles.py -v` : **15 passed**
+
+**Prochaines étapes** :
+- 11.10 — Règle ruff anti-pandas (CI)
+- 11.11 — Tag git v4.1-clean
+
+---
+
 ### [2026-02-12] - Consolidation audit S0→S9 (Lots A, B, C, D)
 
 **Statut** : Lots A/B/C/D exécutés et validés ; clôture documentaire 9.3.4 partielle (commit Git restant).
