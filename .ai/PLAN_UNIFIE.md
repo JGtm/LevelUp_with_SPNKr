@@ -688,6 +688,101 @@ pytest tests/ -v
 
 > **Note** : Grâce au Sprint 1 (archivage scripts redondants), ce refactoring est plus simple car il n'y a plus de confusion avec les anciens scripts backfill.
 
+#### 10C — Spartan ID complet + Adornment + Déduplication cache rang (1.5-2 jours)
+
+**Objectif** :
+1. Fiabiliser la récupération de l'identité visuelle Halo (Spartan ID card) via APIs officielles.
+2. Remplacer l'icône de rang carrière par l'adornment quand disponible.
+3. Éliminer le stockage en double des images de rang (`player_assets/` vs `career_ranks/`).
+
+**Référence API (cadrage)** : issue Den/Blog comments — [commentaire 2030905428](https://github.com/dend/blog-comments/issues/5#issuecomment-2030905428).
+
+##### 10C.1 — Contrat de données "Spartan ID complet"
+
+Définir le contrat minimal attendu par joueur (avec DB) :
+
+- `xuid` (numérique, source `db_profiles.json` / alias)
+- `service_tag`
+- `emblem_image_url`
+- `nameplate_image_url`
+- `backdrop_image_url`
+- `rank_label`, `rank_subtitle`
+- `adornment_image_url` (prioritaire pour le rendu rang)
+
+> **Note** : `spartan_id` au sens métier = agrégat de ces champs, pas seulement un champ texte unique.
+
+##### 10C.2 — Flux API à standardiser (aligné avec le lien)
+
+| # | Étape API | Endpoint / source | Résultat attendu |
+|---|-----------|-------------------|------------------|
+| 10C.2.1 | Récupérer apparence joueur | `GET /hi/players/{xuid}/customization/appearance` (economy) | `EmblemPath`, `ConfigurationId`, `ServiceTag`, `BackdropImagePath`, `PlayerTitlePath` |
+| 10C.2.2 | Construire emblem/nameplate colorés | mapping `EmblemPath + ConfigurationId` (pattern documenté dans le commentaire + fallback `mapping.json`) | URL PNG finales Waypoint |
+| 10C.2.3 | Récupérer progression carrière | `GET /hi/players/xuid({xuid})/rewardtracks/careerranks/careerrank1` (economy) + fallback `POST /hi/rewardtracks/careerRank1` | rang courant + progression |
+| 10C.2.4 | Récupérer métadonnées rang | `gamecms_hacs.get_career_reward_track()` (`careerRank1.json`) | `rank_large_icon`, `rank_adornment_icon` |
+| 10C.2.5 | Construire URL adornment | `https://gamecms-hacs.svc.halowaypoint.com/hi/images/file/{rank_adornment_icon}` | `adornment_image_url` exploitable |
+
+##### 10C.3 — Correctifs code obligatoires
+
+| # | Tâche | Fichier(s) | Détail |
+|---|-------|-----------|--------|
+| 10C.3.1 | Corriger persistance cache appearance | `src/ui/profile_api.py` | inclure `adornment_image_url` dans le JSON cache (actuellement perdu dans un des chemins d'écriture) |
+| 10C.3.2 | Harmoniser schéma cache | `src/ui/profile_api_cache.py` | vérifier lecture/écriture de tous les champs du contrat 10C.1 |
+| 10C.3.3 | Prioriser adornment au rendu hero | `src/app/main_helpers.py`, `src/ui/styles.py` | afficher adornment à la place de l'icône rank si présent; fallback sur rank icon si absent |
+| 10C.3.4 | Prioriser adornment en page Carrière | `src/ui/pages/career.py` | remplacer `get_rank_icon_path(rank)` par adornment si dispo en DB; fallback local conservé |
+| 10C.3.5 | Vérifier stockage DB carrière | `src/data/sync/api_client.py`, `src/data/sync/engine.py` | garantir que `adornment_path` reste bien récupéré/sauvegardé à chaque sync |
+
+##### 10C.4 — Déduplication cache images de rang
+
+| # | Tâche | Fichier(s) | Détail |
+|---|-------|-----------|--------|
+| 10C.4.1 | Interdire nouveaux `rank_*` dans `player_assets` | `src/ui/player_assets.py` | les rank icons doivent provenir de `data/cache/career_ranks/` |
+| 10C.4.2 | Conserver `player_assets` pour dynamiques | `src/ui/player_assets.py` | garder seulement `emblem`, `nameplate`, `backdrop`, `adornment` |
+| 10C.4.3 | Adapter prefetch | `scripts/prefetch_profile_assets.py` | ne plus préfetch les rank icons dans `player_assets` |
+| 10C.4.4 | Nettoyage one-shot existant | script/commande Sprint 10 | supprimer fichiers `rank_*` déjà présents dans `data/cache/player_assets/` |
+
+##### 10C.5 — Vérification "chaque joueur avec DB"
+
+| # | Tâche | Source | Détail |
+|---|-------|--------|--------|
+| 10C.5.1 | Lister joueurs cibles | `db_profiles.json` + `data/players/*/stats.duckdb` | population de référence |
+| 10C.5.2 | Vérifier présence Spartan ID complet | cache profile_api + carrière DB | rapport `OK / PARTIEL / MISSING` par joueur |
+| 10C.5.3 | Réessayer fetch ciblé si incomplet | API opt-in | refresh uniquement pour joueurs incomplets |
+| 10C.5.4 | Export rapport Sprint | `.ai/` (rapport sprint) | tableau final de couverture |
+
+##### 10C.6 — Tests
+
+- Étendre `tests/test_phase6_refactoring.py` : présence de `adornment_image_url` end-to-end cache.
+- Créer `tests/test_profile_appearance_cache_fields.py` : non-régression écriture/lecture complète.
+- Créer `tests/test_hero_rank_adornment_priority.py` : priorité adornment > rank icon.
+- Étendre `tests/test_career_page.py` : fallback adornment puis icône locale.
+- Créer `tests/test_player_assets_rank_dedup.py` : aucun nouveau `rank_*` dans `player_assets`.
+
+##### 10C.7 — Gate de livraison 10C
+
+- [ ] `adornment_image_url` persisté dans tous les chemins de cache profile API.
+- [ ] Hero + page Carrière affichent l'adornment en priorité.
+- [ ] `player_assets/` ne reçoit plus de nouveaux `rank_*`.
+- [ ] Rapport "Spartan ID complet" généré pour 100% des joueurs ayant une DB.
+- [ ] `pytest` ciblés 10C passent.
+
+##### 10C.8 — Commandes de validation (indicatives)
+
+```bash
+python -m pytest tests/test_profile_appearance_cache_fields.py tests/test_hero_rank_adornment_priority.py tests/test_player_assets_rank_dedup.py -v
+python -m pytest tests/test_career_page.py tests/test_phase6_refactoring.py -v
+grep -r "adornment_image_url" src/ui/profile_api.py src/ui/profile_api_cache.py
+find data/cache/player_assets -maxdepth 1 -type f | grep -E "rank_" || true
+```
+
+##### 10C.9 — Risques et mitigations
+
+| Risque | Impact | Mitigation |
+|--------|--------|------------|
+| Endpoint economy indisponible ponctuellement | Spartan ID partiel | cache TTL + fallback local + statut PARTIEL explicite |
+| Divergence formats (`direct` vs `wrapped`) career rank | adornment manquant | conserver double stratégie GET/POST déjà en place |
+| Régression visuelle header | UX dégradée | test snapshot HTML + fallback rank icon |
+| Suppression trop agressive cache rank | perte offline | ne supprimer que `rank_*` de `player_assets`, jamais `career_ranks/` |
+
 #### Gate de livraison
 
 - [ ] Backup vérifié avant suppression de données
