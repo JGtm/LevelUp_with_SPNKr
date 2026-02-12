@@ -567,6 +567,169 @@ src/visualization/trio.py:3
 
 ---
 
+## 8. Sprint 12 — Heatmap d'Impact & Cercle d'Amis
+
+### 8.1 Contexte et objectifs
+
+Ajouter une visualisation interactive dans l'onglet **Coéquipiers** montrant les **moments clés par coéquipier** sur une heatmap (Joueurs × Matchs) avec trois événements mutuellement exclusifs :
+- **First Blood** (🟢 +1 point) : Premier kill du match
+- **Finisseur** (🟡 +2 points) : Dernier kill du match en victoire (`outcome=2`)
+- **Boulet** (🔴 -1 point) : Dernière mort du match en défaite (`outcome=3`)
+
++ Tableau de ranking Amis/Boulets avec badges MVP/Boulet.
+
+### 8.2 Données et sources
+
+#### Disponibilité requise
+
+| Donnée | Source | Statut | Disponibilité |
+|--------|--------|--------|---------------|
+| `highlight_events` | DuckDB `match_events` | Existant | ✅ `(xuid, gamertag, match_id, event_type, time_ms)` |
+| `match_stats.outcome` | DuckDB `match_stats` | Existant | ✅ `(match_id, outcome: 2=WIN, 3=LOSS)` |
+| Friends list | Via `teammates.py` filtrage | Existant | ✅ Coéquipiers sélectionnés |
+| Match IDs filtrés | Via filtres actifs | Existant | ✅ (date, playlist, mode, map) |
+
+#### Colonnes impliquées
+
+| Colonne | Table | Type | Utilisation |
+|---------|-------|------|-------------|
+| `match_id` | `highlight_events`, `match_stats` | TEXT | Join et grouping |
+| `xuid` | `highlight_events` | INT64 | Filter friends |
+| `gamertag` | `highlight_events` | TEXT | Heatmap labels |
+| `event_type` | `highlight_events` | INT | Kill=1, Death=2 (si présent) |
+| `time_ms` | `highlight_events` | INT | Déterminer min/max |
+| `outcome` | `match_stats` | INT | Valider conditions (outcome=2 pour Finisseur, outcome=3 pour Boulet) |
+
+### 8.3 Incompatibilités logiques et conditions
+
+#### Matrice de compatibilité
+
+| Combinaison | Logique | Possible ? | Note |
+|-------------|---------|-----------|------|
+| First Blood + Finisseur | `outcome=2`: Min kill + Max kill mêmes = rare mais POSSIBLE | ✅ OUI | Match court, 1v1 victoire |
+| First Blood + Boulet | `outcome=3`: Min kill + Max death mêmes = POSSIBLE | ✅ OUI | Match court, mort défaite après unique kill |
+| Finisseur + Boulet | `outcome=2 AND outcome=3` = **IMPOSSIBLE** | ❌ NON | **Match ne peut avoir 2 outcomes** |
+| 2+ First Bloods | `DISTINCT matches`: Un seul min(time_ms) | ❌ NON | Un seul First Blood par match |
+| 2+ Finisseurs | `outcome=2`: Un seul max(time_ms) | ❌ NON | Un seul dernier kill par match/outcome |
+| 2+ Boulets | `outcome=3`: Un seul max(time_ms) | ❌ NON | Une seule dernière mort par match/outcome |
+
+#### Conditions strictes dans l'analyse
+
+```python
+# Finisseur — OBLIGATOIRE outcome=2
+@match.outcome == 2
+def identify_clutch_finisher(match_events: dict) -> dict:
+    # Retourne: {match_id: (xuid, time_ms)} pour le Max kill_timestamp
+
+# Boulet — OBLIGATOIRE outcome=3
+@match.outcome == 3
+def identify_last_casualty(match_events: dict) -> dict:
+    # Retourne: {match_id: (xuid, time_ms)} pour le Max death_timestamp
+
+# First Blood — INDÉPENDANT du outcome
+def identify_first_blood(match_events: dict) -> dict:
+    # Retourne: {match_id: (xuid, time_ms)} pour le Min kill_timestamp
+```
+
+#### Validation garantie en tests
+
+- ✅ `test_finisseur_and_boulet_never_together` — Assertion : Pas de match avec BOTH Finisseur et Boulet
+- ✅ `test_first_blood_always_earliest` — Assertion : First Blood toujours min(time_ms)
+- ✅ `test_multiple_events_per_friend` — Assertion : Un ami peut être FB + Finisseur (POSSIBLE)
+- ✅ `test_outcome_filtering` — Assertion : Finisseur/Boulet rejetés si outcome ne correspond
+
+### 8.4 Fichiers concernés
+
+| Fichier | Type | Lignes | Action |
+|---------|------|--------|--------|
+| `src/analysis/friends_impact.py` | **Nouveau** | ~350 | Analyse : `identify_first_blood()`, `identify_clutch_finisher()`, `identify_last_casualty()`, `compute_impact_scores()` |
+| `src/visualization/friends_impact_heatmap.py` | **Nouveau** | ~300 | Viz : `plot_friends_impact_heatmap()`, `build_impact_ranking_df()` |
+| `src/ui/pages/teammates.py` | Modifié | +70 | Intégration : expander "⚡ Impact & Taquinerie", appel fonctions, filtrage |
+| `src/data/repositories/duckdb_repository.py` | Modifié | +40 | Getter : `load_friends_impact_data()` (query highlight_events + match_stats) |
+| `src/ui/translations.py` | Modifié | +15 | i18n : S12-IMPACT-* keys (FR/EN) |
+| `tests/test_friends_impact.py` | **Nouveau** | ~250 | Tests unitaires : identification events, scoring, incompatibilités |
+| `tests/test_friends_impact_viz.py` | **Nouveau** | ~150 | Tests : heatmap rendering, ranking_df construction |
+
+### 8.5 Dépendances et prérequis
+
+#### Modules existants réutilisés
+
+| Module | Fonction | Raison |
+|--------|----------|--------|
+| `DuckDBRepository` | `load_highlight_events()`, `load_match_stats()` | Source données |
+| `Plotly (go.Figure, go.Heatmap)` | Heatmap scaffolding | Visualisation matricielle |
+| `Polars` | DataFrame construction, groupby, filter | Calculs + ranking |
+| `streamlit` | `st.expander()`, `st.dataframe()`, `st.columns()` | Layout UI |
+| `src/ui/translations.py` | Clés i18n existantes | Traduction cohérente |
+
+#### Pas de nouvelles dépendances externes
+
+✅ Utilisés : Plotly, Polars, Streamlit, DuckDB (déjà présents) — **Zéro dépendance neuve**.
+
+### 8.6 Estimation effort
+
+| Tâche | Durée | Détail |
+|-------|-------|--------|
+| **12.1** Analyse `friends_impact.py` | 4-5h | 3 fonctions ID + 1 fonction scoring + tests unitaires |
+| **12.2** Visualisation heatmap | 3-4h | Plotly Figure, ranking DF, integration Streamlit |
+| **12.3** UI `teammates.py` + Repository | 2-3h | Expander, filtrage, appels fonctions, caching |
+| **12.4** Traductions + Docs | 1h | 12+ clés i18n, doc dans PLAN_UNIFIE.md |
+| **Total impact** | **10-13h (1.25-1.6j)** | Peut déborder sur 2j si tests exhaustifs |
+
+### 8.7 Ordonnancement recommandé
+
+**Jour 0** (4-5h)
+1. Créer `friends_impact.py` (3 ID funcs + 1 scoring func)
+2. Écrire `test_friends_impact.py` (TDD pour conditions outcome)
+3. Valider incompatibilités logiques
+
+**Jour 1** (5-6h)
+1. Créer `friends_impact_heatmap.py` (Plotly + Polars DF)
+2. Modifier `duckdb_repository.py` (getter)
+3. Intégrer `teammates.py` (expander + appels)
+
+**Jour 2** (2-3h)
+1. Tester UI (filtres, multi-sélection friends)
+2. Ajouter traductions
+3. Validation finale + perf check (1000+ events)
+
+### 8.8 Checklist de livraison S12
+
+- [ ] `friends_impact.py` créé + tests passent (`pytest tests/test_friends_impact.py`)
+- [ ] `friends_impact_heatmap.py` créé + tests passent (`pytest tests/test_friends_impact_viz.py`)
+- [ ] `teammates.py` intégré avec expander "⚡ Impact & Taquinerie"
+- [ ] `duckdb_repository.py` : méthode `load_friends_impact_data()` accessible
+- [ ] Heatmap s'affiche correctement et colorée (FB 🟢, Finisseur 🟡, Boulet 🔴)
+- [ ] Filtres (date, playlist, mode, map) appliqués (≥2 amis pour afficher)
+- [ ] Ranking table s'affiche (MVP + Boulet badges)
+- [ ] Traductions FR/EN complètes (`translations.py` mis à jour)
+- [ ] Tests unitaires valident **absence** de Finisseur+Boulet (impossible ensemble)
+- [ ] Tests unitaires valident **présence possible** de First Blood + Finisseur (même match court)
+- [ ] Perf acceptable (<2s load pour 1000 matches)
+- [ ] Docs (docstrings + PLAN_UNIFIE.md S12 section) à jour
+- [ ] Commit message : `feat(coéquipiers): ajouter heatmap d'impact & taquinerie (S12)`
+
+### 8.9 Points d'attention
+
+- **Multi-bases DuckDB** : Charger données depuis base du joueur actif via `DuckDBRepository` (pas d'accès multi-files sinon)
+- **Missing data** : Si `highlight_events` vide pour un match → aucun event affichable (OK logiquement)
+- **Gamertag NULL** : Traiter avec `.coalesce("Unknown")` ou fallback
+- **Perf heatmap cellules** : Limiter à top 10 amis pour lisibilité
+- **Color cohérence** : Aligner avec palette existante `plot_win_ratio_heatmap()` si possible (GREEN #2ecc71, ORANGE #f39c12, RED #e74c3c)
+- **Case-sensitivity xuid** : Coéquipiers peuvent être stockés en INT64 ou STRING — normaliser en INT64 avant join
+
+### 8.10 Blockers / Risques
+
+| Risque | Impact | Mitigation |
+|--------|--------|-----------|
+| **highlight_events incomplète** | FB/Finisseur/Boulet non trouvables | Vérifier présence avec query testée en Dev |
+| **outcome=NULL** | Boulet/Finisseur classification échoue | Filtrer `outcome IS NOT NULL` en analysis |
+| **Performance 1000+ events** | UI freeze sur load | Implémenter lazy-loading si dépassement |
+| **Multi-friends sélection** | UI trop chargée si >20 amis | Limiter heatmap à top 10 (configurable) |
+| **Pandas residual** | Code referencing old DF patterns | Polars-only, pas de .to_pandas() hormis frontière Streamlit |
+
+---
+
 ## Résumé — Effort par sprint
 
 | Sprint | Effort estimé | Risque | Prêt ? |
@@ -577,3 +740,4 @@ src/visualization/trio.py:3
 | **S9** | 4-5j | **ÉLEVÉ** | **CONDITIONNEL** — 35 fichiers Pandas, cache.py critique |
 | **S10** | 2-3j | Moyen | **OUI** — backup, suppression, refactoring |
 | **S11** | 3j | Faible | **OUI** — infrastructure CI/ruff/docs en place |
+| **S12** | 10-13h (1.25-1.6j) | Faible | **OUI** — données disponibles, incompatibilités clarifiées |
