@@ -374,114 +374,19 @@ class DuckDBSyncEngine:
                 )
             """)
         else:
-            # Vérifier si la colonne accuracy existe
-            columns = conn.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'match_stats' AND column_name = 'accuracy'
-                """
-            ).fetchall()
+            # Migrations centralisées (src.db.migrations)
+            from src.db.migrations import ensure_match_stats_columns
 
-            if not columns:
-                # Ajouter la colonne accuracy si elle manque
-                logger.info("Ajout de la colonne accuracy à match_stats")
-                try:
-                    conn.execute("ALTER TABLE match_stats ADD COLUMN accuracy FLOAT")
-                except Exception as e:
-                    logger.warning(f"Impossible d'ajouter la colonne accuracy: {e}")
-
-            # Colonne end_time (heure de fin = start_time + time_played_seconds)
-            end_time_cols = conn.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'match_stats' AND column_name = 'end_time'
-                """
-            ).fetchall()
-            if not end_time_cols:
-                logger.info("Ajout de la colonne end_time à match_stats")
-                try:
-                    conn.execute("ALTER TABLE match_stats ADD COLUMN end_time TIMESTAMP")
-                except Exception as e:
-                    logger.warning(f"Impossible d'ajouter la colonne end_time: {e}")
-
-            # Colonnes session_id, session_label (stockage sessions figées, NULL = calcul à la volée)
-            session_id_cols = conn.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'match_stats' AND column_name = 'session_id'
-                """
-            ).fetchall()
-            if not session_id_cols:
-                logger.info("Ajout de la colonne session_id à match_stats")
-                try:
-                    conn.execute("ALTER TABLE match_stats ADD COLUMN session_id INTEGER")
-                except Exception as e:
-                    logger.warning(f"Impossible d'ajouter session_id: {e}")
-            session_label_cols = conn.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'match_stats' AND column_name = 'session_label'
-                """
-            ).fetchall()
-            if not session_label_cols:
-                logger.info("Ajout de la colonne session_label à match_stats")
-                try:
-                    conn.execute("ALTER TABLE match_stats ADD COLUMN session_label VARCHAR")
-                except Exception as e:
-                    logger.warning(f"Impossible d'ajouter session_label: {e}")
-
-            # Colonnes requises pour le calcul du score de performance (v4)
-            # Certaines bases de tests créent match_stats sans ces colonnes.
-            try:
-                cols = conn.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_schema = 'main' AND table_name = 'match_stats'"
-                ).fetchall()
-                col_names = {r[0] for r in cols} if cols else set()
-
-                if "rank" not in col_names:
-                    logger.info("Ajout de la colonne rank à match_stats")
-                    conn.execute("ALTER TABLE match_stats ADD COLUMN rank SMALLINT")
-                if "damage_dealt" not in col_names:
-                    logger.info("Ajout de la colonne damage_dealt à match_stats")
-                    conn.execute("ALTER TABLE match_stats ADD COLUMN damage_dealt FLOAT")
-                if "personal_score" not in col_names:
-                    logger.info("Ajout de la colonne personal_score à match_stats")
-                    conn.execute("ALTER TABLE match_stats ADD COLUMN personal_score INTEGER")
-            except Exception as e:
-                logger.debug(f"match_stats columns migration (perf score v4): {e}")
+            ensure_match_stats_columns(conn)
 
     def _ensure_match_participants_rank_score(self) -> None:
         """Ajoute les colonnes rank, score et k/d/a à match_participants si absentes (migration)."""
         conn = self._connection
         if conn is None:
             return
-        try:
-            cols = conn.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = 'main' AND table_name = 'match_participants'"
-            ).fetchall()
-            col_names = {r[0] for r in cols} if cols else set()
-            if "rank" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN rank SMALLINT")
-            if "score" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN score INTEGER")
-            if "kills" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN kills SMALLINT")
-            if "deaths" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN deaths SMALLINT")
-            if "assists" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN assists SMALLINT")
-            if "shots_fired" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN shots_fired INTEGER")
-            if "shots_hit" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN shots_hit INTEGER")
-            if "damage_dealt" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN damage_dealt FLOAT")
-            if "damage_taken" not in col_names:
-                conn.execute("ALTER TABLE match_participants ADD COLUMN damage_taken FLOAT")
-        except Exception as e:
-            logger.debug(f"match_participants columns migration: {e}")
+        from src.db.migrations import ensure_match_participants_columns
+
+        ensure_match_participants_columns(conn)
 
     def _ensure_highlight_events_sequence(self) -> None:
         """S'assure que la séquence pour highlight_events.id existe (migration)."""
@@ -873,26 +778,10 @@ class DuckDBSyncEngine:
 
     def _ensure_performance_score_column(self) -> None:
         """S'assure que la colonne performance_score existe dans match_stats."""
-        conn = self._get_connection()
-        try:
-            # Vérifier si la colonne existe
-            result = conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM information_schema.columns
-                WHERE table_name = 'match_stats'
-                  AND column_name = 'performance_score'
-                """
-            ).fetchone()
+        from src.db.migrations import ensure_performance_score_column
 
-            if result and result[0] == 0:
-                # Colonne n'existe pas, l'ajouter
-                logger.debug("Ajout de la colonne performance_score à match_stats")
-                conn.execute("ALTER TABLE match_stats ADD COLUMN performance_score FLOAT")
-                conn.commit()
-        except Exception as e:
-            # Si la table n'existe pas encore ou autre erreur, on continue
-            logger.debug(f"Note lors de la vérification de performance_score: {e}")
+        conn = self._get_connection()
+        ensure_performance_score_column(conn)
 
     def _compute_and_update_performance_score(
         self, match_id: str, match_row: MatchStatsRow
