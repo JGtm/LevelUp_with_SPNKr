@@ -27,8 +27,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-          python -m pip install playwright junitparser
+          python -m pip install -r requirements.txt
+          python -m pip install pytest playwright junitparser
 
       - name: Install Chromium for Playwright
         run: |
