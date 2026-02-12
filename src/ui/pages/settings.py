@@ -131,7 +131,7 @@ def render_settings_page(
             value=str(getattr(settings, "aliases_path", "") or ""),
             key="settings_aliases_path",
             exts=(".json",),
-            help="Override de OPENSPARTAN_ALIASES_PATH. Laisse vide pour utiliser xuid_aliases.json à la racine.",
+            help="Override de OPENSPARTAN_ALIASES_PATH. Laisse vide pour utiliser data/xuid_aliases.json.",
             placeholder="Ex: C:\\...\\xuid_aliases.json",
         )
         profiles_path = file_input(

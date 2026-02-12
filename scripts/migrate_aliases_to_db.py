@@ -129,7 +129,7 @@ def main() -> int:
     parser.add_argument(
         "--json",
         default=None,
-        help="Chemin vers le fichier JSON d'aliases (défaut: xuid_aliases.json à la racine)",
+        help="Chemin vers le fichier JSON d'aliases (défaut: data/xuid_aliases.json)",
     )
     parser.add_argument(
         "--overwrite",
@@ -144,7 +144,7 @@ def main() -> int:
         json_path = args.json
     else:
         repo_root = Path(__file__).resolve().parent.parent
-        json_path = str(repo_root / "xuid_aliases.json")
+        json_path = str(repo_root / "data" / "xuid_aliases.json")
     
     print(f"[INFO] Migration des aliases:")
     print(f"  - JSON: {json_path}")

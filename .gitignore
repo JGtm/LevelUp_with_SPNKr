@@ -13,18 +13,14 @@ build/
 dist/
 *.spec
 app_settings.json
-xuid_aliases.json
+data/xuid_aliases.json
 GT-XUID.txt
 data/wiki/*.html
-data/spnkr.db
-data/spnkr.db-journal
-data/spnkr_gt_JGtm.db
-data/spnkr_gt_Madina97294.db
-data/spnkr_gt_Chocoboflor.db
-data/spnkr_gt_Chocoboflor.db-journal
-data/spnkr_JGtm.db
+data/*.db
+data/*.db-journal
 data/investigation/
 data/cache/*
+data/backup_legacy/
 
 # Fichiers temporaires d'import SPNKr
 *.tmp.*.db

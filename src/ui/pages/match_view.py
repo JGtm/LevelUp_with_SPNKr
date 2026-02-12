@@ -252,7 +252,7 @@ def _map_thumb_path(row: pd.Series, map_id: str | None) -> str | None:
         return s
 
     repo = Path(get_repo_root(__file__))
-    base_dirs = [repo / "static" / "maps" / "thumbs", repo / "thumbs"]
+    base_dirs = [repo / "static" / "maps"]
 
     candidates: list[str] = []
     mid = str(map_id or "").strip()

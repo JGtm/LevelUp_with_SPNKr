@@ -83,7 +83,7 @@ def get_aliases_file_path() -> str:
     override = os.environ.get("OPENSPARTAN_ALIASES_PATH")
     if override:
         return override
-    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "xuid_aliases.json")
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "xuid_aliases.json")
 
 
 # =============================================================================

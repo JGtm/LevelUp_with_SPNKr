@@ -27,7 +27,7 @@ def _load_mode_categories() -> dict[str, str]:
     if _MODE_CATEGORIES_CACHE is not None:
         return _MODE_CATEGORIES_CACHE
     
-    json_path = Path(__file__).parent.parent.parent.parent / "Playlist_modes_translations.json"
+    json_path = Path(__file__).parent.parent.parent.parent / "data" / "Playlist_modes_translations.json"
     if not json_path.exists():
         _MODE_CATEGORIES_CACHE = {}
         return _MODE_CATEGORIES_CACHE

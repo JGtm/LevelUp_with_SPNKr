@@ -4,7 +4,7 @@ Ici on centralise les mappings de libellés (playlist, mode/pair) afin de:
 - réduire la liste de valeurs distinctes dans l'UI
 - afficher des labels en français quand on les connaît
 
-Ce fichier est généré automatiquement depuis Playlist_modes_translations.json
+Ce fichier est généré automatiquement depuis data/Playlist_modes_translations.json
 puis peut être ajusté manuellement si besoin.
 """
 

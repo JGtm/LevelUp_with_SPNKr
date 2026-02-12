@@ -165,8 +165,8 @@ def main() -> int:
     ap.add_argument("--match-id", default=None)
     ap.add_argument("--players", default=None, help="CSV gamertags")
     ap.add_argument("--roster", default=None, help="Alias de --players (CSV gamertags)")
-    ap.add_argument("--write-aliases", action="store_true", help="Écrit/merge les alias dans xuid_aliases.json")
-    ap.add_argument("--aliases-path", default="xuid_aliases.json")
+    ap.add_argument("--write-aliases", action="store_true", help="Écrit/merge les alias dans data/xuid_aliases.json")
+    ap.add_argument("--aliases-path", default="data/xuid_aliases.json")
     ap.add_argument("--limit", type=int, default=500)
     args = ap.parse_args()
 
