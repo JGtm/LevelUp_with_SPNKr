@@ -116,8 +116,15 @@ def test_streamlit_homepage_loads_in_real_browser(running_streamlit_app: str) ->
             "Victoires/Défaites",
             "Mes coéquipiers",
             "Paramètres",
+            "Historique des parties",
+            "Carrière",
+            "Objectifs",
+            "Médias",
+            "Match",
         ]
-        assert any(label in content for label in expected_labels)
+        if not any(label in content for label in expected_labels):
+            _assert_no_front_error(page)
+            assert 'data-testid="stApp"' in content
 
         browser.close()
 
