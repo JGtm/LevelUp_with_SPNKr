@@ -216,10 +216,10 @@ Sprint 9  : TOUS les fichiers restants (~24)                         → migrati
 
 #### Gate de livraison
 
-- [ ] `pytest tests/test_session_last_button.py -v` passe
-- [ ] `pytest tests/test_filter_state.py -v` passe
+- [x] `pytest tests/test_session_last_button.py -v` passe
+- [x] `pytest tests/test_filter_state.py -v` passe
 - [ ] `pytest tests/ -v` passe sans régression
-- [ ] `.venv_windows/` supprimé
+- [x] `.venv_windows/` supprimé
 - [ ] `levelup_halo.egg-info/` supprimé
 - [ ] Test manuel : bouton "Dernière session" + switch joueur A→B→A
 
@@ -258,8 +258,8 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [ ] `scripts/` contient ~22 scripts actifs + `migration/` + `_archive/`
-- [ ] `scripts/_obsolete/` n'existe plus
+- [x] `scripts/` contient ~22 scripts actifs + `migration/` + `_archive/`
+- [x] `scripts/_obsolete/` n'existe plus
 - [ ] `.ai/` nettoyé : documents vivants + `archive/` datée
 - [ ] `pytest tests/ -v` passe (aucun test ne dépendait des scripts supprimés)
 
@@ -306,9 +306,9 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [ ] `grep -r "import pandas" src/analysis/performance_score.py` → aucun résultat
-- [ ] `grep -r "import pandas" scripts/backfill_data.py` → aucun résultat
-- [ ] `pytest tests/test_performance_score.py tests/test_sync_performance_score.py tests/test_backfill_performance_score.py -v` passe
+- [x] `grep -r "import pandas" src/analysis/performance_score.py` → aucun résultat
+- [x] `grep -r "import pandas" scripts/backfill_data.py` → aucun résultat
+- [x] `pytest tests/test_performance_score.py tests/test_sync_performance_score.py tests/test_backfill_performance_score.py -v` passe
 - [ ] `pytest tests/ -v` passe sans régression
 
 #### Commandes de validation
@@ -572,7 +572,7 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [ ] `pytest tests/test_teammates_new_comparisons.py -v` passe
+- [x] `pytest tests/test_teammates_new_comparisons.py -v` passe
 - [ ] `pytest tests/ -v` passe sans régression
 
 #### 🔍 Revue Sprint 8
@@ -635,9 +635,9 @@ pytest tests/ -v
 
 - [x] `src/db/` n'existe plus
 - [ ] `src/models.py` n'existe plus
-- [x] `grep -r "import pandas" src/` → uniquement `.to_pandas()` à la frontière Plotly/Streamlit
+- [ ] `grep -r "import pandas" src/` → uniquement `.to_pandas()` à la frontière Plotly/Streamlit
 - [x] `grep -r "import sqlite3" src/` → aucun résultat
-- [x] `grep -r "sqlite_master" src/` → aucun résultat
+- [ ] `grep -r "sqlite_master" src/` → aucun résultat
 - [ ] `RepositoryMode` ne contient que `DUCKDB`
 - [ ] `pytest tests/ -v` passe à 100%
 
@@ -1111,6 +1111,106 @@ git status
 # Commencer Sprint 0
 # → Bug "Dernière session" + Persistance filtres + Nettoyage zéro risque
 ```
+
+### 9.3 Plan détaillé post-audit S0→S9 (2026-02-12)
+
+> **But** : figer l'état réel des Sprints 0 à 9 et préparer l'exécution des écarts restants, sans ambiguïté.
+
+#### 9.3.1 Résultat audit factuel
+
+Sources de preuve utilisées :
+- `/.ai/_audit_s0.txt` (tests S0 ciblés)
+- `/.ai/_audit_s2.txt` (tests S2 ciblés)
+- `/.ai/_audit_s4.txt` (vérification tests S4)
+- `/.ai/_audit_s8.txt` (tests S8 ciblés)
+- `/.ai/_grep_pandas_src.txt` (état imports pandas dans `src/`)
+- `/.ai/_grep_s2_pandas.txt` (pandas dans fichiers S2)
+- `/.ai/_grep_s4_pandas.txt` (pandas dans périmètre S4)
+- `/.ai/_grep_sqlite3_src.txt` / `/.ai/_grep_sqlitemaster_src.txt`
+- `/.ai/_audit_lint.txt` (ruff F401/F841)
+
+| Sprint | Statut audit | Points validés | Écarts restants |
+|--------|--------------|----------------|-----------------|
+| **S0** | ⚠️ Partiel validé | tests ciblés OK (32 pass), `.venv_windows/` supprimé | `levelup_halo.egg-info/` présent, test manuel non rejoué, gate suite complète non validée |
+| **S1** | ⚠️ Partiel validé | `scripts/_obsolete/` supprimé, structure scripts conforme (~20 actifs + migration) | nettoyage `.ai/` vivant/archive à finaliser, gate suite complète non validée |
+| **S2** | ✅ Validé techniquement | pandas supprimé des 2 fichiers cibles, tests ciblés OK (18 pass) | gate suite complète non validée |
+| **S3** | ✅ Conforme au plan | gates déjà cochées et cohérentes avec livrables | revalidation full suite non faite |
+| **S4** | ⚠️ Reporté puis absorbé en S9 | fonctionnalités livrées, migration annoncée reportée vers S9 | tests nommés dans gate introuvables (`test_mode_normalization_winloss.py`, `test_teammates_refonte.py`, `test_media_improvements.py`) |
+| **S5** | ✅ Conforme au plan | gates cochées cohérentes, script v4 présent | full suite à 100% non prouvée |
+| **S6** | ✅ Conforme au plan | section marquée livrée, tests spécifiques présents | full suite propre environnement-dépendante |
+| **S7** | ✅ Conforme au plan | livrables et tests spécifiques présents | dépendances viz/duckdb selon environnement |
+| **S8** | ⚠️ Partiel validé | test dédié OK (12 pass) | gate suite complète non validée |
+| **S9** | ⚠️ Partiel validé | `src/db/` supprimé, `sqlite3` import absent | `src/models.py` présent, `RepositoryMode` pas DUCKDB-only, grep pandas gate strict non satisfait, `sqlite_master` présent en commentaires |
+
+#### 9.3.2 Écarts de code review identifiés (S0→S9)
+
+1. **Architecture S9 incomplète**
+  - `src/models.py` existe encore.
+  - `RepositoryMode` conserve `LEGACY/HYBRID/SHADOW/SHADOW_COMPARE` dans `src/data/repositories/factory.py`.
+
+2. **Conformité Pandas à clarifier**
+  - Le gate Sprint 9 exige `grep -r "import pandas" src/` sans résultat (hors frontière), mais `/.ai/_grep_pandas_src.txt` remonte encore des imports `pandas` (souvent sous `try/except` pour compatibilité).
+  - Décision attendue : **tolérance contrôlée** (`try/except + DataFrameType`) ou **éradication stricte**.
+
+3. **Conformité sqlite_master (texte/commentaires)**
+  - Occurrences résiduelles dans des commentaires explicatifs (`src/ui/cache.py`, `src/data/repositories/duckdb_repo.py`).
+  - Le gate actuel ne filtre pas les commentaires → faux négatif de conformité.
+
+4. **Qualité de code (ruff F401/F841)**
+  - Imports/variables inutilisés détectés (voir `/.ai/_audit_lint.txt`) :
+  - `src/data/domain/models/match.py`
+  - `src/data/query/analytics.py`
+  - `src/ui/commendations.py`
+  - `src/visualization/theme.py`
+
+#### 9.3.3 Plan d'action exécutable (prochaines étapes)
+
+##### Lot A — Mise en conformité architecture S9 (priorité haute)
+
+- [ ] **A1** Supprimer `src/models.py` si aucun import actif, sinon migrer ses usages vers `src/data/domain/models/match.py`.
+- [ ] **A2** Réduire `RepositoryMode` à `DUCKDB` uniquement (enum + parsing + fallback env + messages d'erreur).
+- [ ] **A3** Vérifier absence de régressions d'import (`grep -r "RepositoryMode\\.|get_default_mode" src/ tests/`).
+
+**Gate A**
+- [ ] `src/models.py` n'existe plus
+- [ ] `RepositoryMode` ne contient que `DUCKDB`
+
+##### Lot B — Décision et exécution politique Pandas (priorité haute)
+
+- [ ] **B1** Décider la règle cible (strict 0 import pandas dans `src/` VS tolérance frontière).
+- [ ] **B2** Si strict : remplacer les imports `try/except pandas` restants par typage Polars pur + conversions localisées.
+- [ ] **B3** Harmoniser la formulation des gates S4/S9 avec la règle retenue.
+
+**Gate B**
+- [ ] `grep -r "import pandas" src/ --include="*.py"` conforme à la politique retenue
+
+##### Lot C — Nettoyage qualité et faux négatifs de conformité (priorité moyenne)
+
+- [ ] **C1** Corriger les F401/F841 listés dans `/.ai/_audit_lint.txt`.
+- [ ] **C2** Retirer la chaîne littérale `sqlite_master` des commentaires (ou adapter gate pour ignorer commentaires).
+- [ ] **C3** Vérifier `ruff check src --select F401,F841` sans erreur.
+
+**Gate C**
+- [ ] `grep -r "sqlite_master" src/ --include="*.py"` conforme
+- [ ] `ruff check src --select F401,F841` passe
+
+##### Lot D — Stabilisation tests des sprints 0→9 (priorité moyenne)
+
+- [ ] **D1** Rejouer tests ciblés S0/S2/S8 (déjà passants en audit) dans un run consolidé.
+- [ ] **D2** Réconcilier Sprint 4 : créer/renommer les tests attendus par le plan ou ajuster le plan aux noms réels.
+- [ ] **D3** Exécuter `python -m pytest -q --ignore=tests/integration` et reporter précisément pass/skip/fail.
+
+**Gate D**
+- [ ] Tous les tests nommés dans les gates S0→S9 existent et sont exécutables
+- [ ] Suite stable hors intégration passe
+
+#### 9.3.4 Critère de clôture de cette phase audit
+
+La phase audit S0→S9 est considérée close quand :
+
+- [ ] Tous les écarts A/B/C/D sont traités ou explicitement acceptés comme dette
+- [ ] Les gates du document sont alignées avec la politique réellement décidée
+- [ ] Un commit de consolidation documentaire + un commit technique de correction sont réalisés
 
 ---
 
