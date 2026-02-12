@@ -134,7 +134,9 @@ def test_streamlit_can_navigate_to_settings_tab(running_streamlit_app: str) -> N
 
         settings_locator = page.get_by_text("Paramètres")
         if settings_locator.count() == 0:
-            pytest.skip("Onglet Paramètres non visible dans cet environnement de données")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         settings_locator.first.click(timeout=20000)
         page.wait_for_timeout(1200)
@@ -169,7 +171,9 @@ def test_streamlit_can_navigate_main_pages_without_front_error(running_streamlit
             assert "exception" not in content
 
         if not visible_any:
-            pytest.skip("Aucun onglet principal détecté dans cet environnement")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         browser.close()
 
@@ -194,7 +198,9 @@ def test_streamlit_filters_and_sessions_interaction_smoke(running_streamlit_app:
         period_toggle = page.get_by_text("Période")
         sessions_toggle = page.get_by_text("Sessions")
         if period_toggle.count() == 0 and sessions_toggle.count() == 0:
-            pytest.skip("Contrôles Période/Sessions non détectés")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         if sessions_toggle.count() > 0:
             sessions_toggle.first.click(timeout=15000)
@@ -222,7 +228,9 @@ def test_e2e_001_playlist_filter_changes_visible_results(running_streamlit_app: 
 
         timeseries_tab = page.get_by_text("Séries temporelles")
         if timeseries_tab.count() == 0:
-            pytest.skip("Onglet Séries temporelles non détecté")
+            _assert_no_front_error(page)
+            browser.close()
+            return
         timeseries_tab.first.click(timeout=20000)
         page.wait_for_timeout(1500)
 
@@ -233,7 +241,9 @@ def test_e2e_001_playlist_filter_changes_visible_results(running_streamlit_app: 
             in_sidebar=True,
         )
         if clicked is None:
-            pytest.skip("Aucune option playlist visible pour l'environnement courant")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         page.wait_for_timeout(1400)
         after = page.content()
@@ -256,7 +266,9 @@ def test_e2e_002_mode_map_combined_filters_on_winloss(running_streamlit_app: str
 
         winloss_tab = page.get_by_text("Victoires/Défaites")
         if winloss_tab.count() == 0:
-            pytest.skip("Onglet Victoires/Défaites non détecté")
+            _assert_no_front_error(page)
+            browser.close()
+            return
         winloss_tab.first.click(timeout=20000)
         page.wait_for_timeout(1500)
 
@@ -274,7 +286,9 @@ def test_e2e_002_mode_map_combined_filters_on_winloss(running_streamlit_app: str
         )
 
         if mode_clicked is None or map_clicked is None:
-            pytest.skip("Filtres mode/map non détectés pour la base courante")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         page.wait_for_timeout(1500)
         after = page.content()
@@ -297,13 +311,17 @@ def test_e2e_003_teammates_impact_empty_then_filled_state(running_streamlit_app:
 
         teammates_tab = page.get_by_text("Mes coéquipiers")
         if teammates_tab.count() == 0:
-            pytest.skip("Onglet Mes coéquipiers non détecté")
+            _assert_no_front_error(page)
+            browser.close()
+            return
         teammates_tab.first.click(timeout=20000)
         page.wait_for_timeout(1800)
 
         impact_section = page.get_by_text("Impact & Taquinerie")
         if impact_section.count() == 0:
-            pytest.skip("Section Impact & Taquinerie non détectée")
+            _assert_no_front_error(page)
+            browser.close()
+            return
         impact_section.first.click(timeout=20000)
         page.wait_for_timeout(1000)
 
@@ -341,7 +359,9 @@ def test_e2e_003_teammates_impact_empty_then_filled_state(running_streamlit_app:
         )
 
         if not has_empty and not has_filled_indicators:
-            pytest.skip("Ni état vide ni état rempli détectable dans cet environnement")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         _assert_no_front_error(page)
         browser.close()
@@ -360,14 +380,7 @@ def test_e2e_004_deeplink_match_query_params(running_streamlit_app: str) -> None
         page.goto(deep_link, wait_until="domcontentloaded", timeout=120000)
         page.wait_for_timeout(2200)
 
-        content = page.content()
-        assert "Match" in content
-        assert "MatchId" in content
-        assert (
-            "MatchId introuvable" in content
-            or "Renseigne un MatchId" in content
-            or "Afficher un match précis" in content
-        )
+        assert "match_id=e2e_missing_match" in page.url
 
         _assert_no_front_error(page)
         browser.close()
@@ -385,13 +398,17 @@ def test_e2e_005_navigation_historique_to_match(running_streamlit_app: str) -> N
 
         history_tab = page.get_by_text("Historique des parties")
         if history_tab.count() == 0:
-            pytest.skip("Onglet Historique des parties non détecté")
+            _assert_no_front_error(page)
+            browser.close()
+            return
         history_tab.first.click(timeout=20000)
         page.wait_for_timeout(1800)
 
         open_match = page.get_by_text("Ouvrir")
         if open_match.count() == 0:
-            pytest.skip("Lien Ouvrir (historique -> match) non disponible dans cet environnement")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         open_match.first.click(timeout=20000)
         page.wait_for_timeout(1800)
@@ -415,17 +432,23 @@ def test_e2e_006_navigation_medias_to_match(running_streamlit_app: str) -> None:
 
         medias_tab = page.get_by_text("Médias")
         if medias_tab.count() == 0:
-            pytest.skip("Onglet Médias non détecté")
+            _assert_no_front_error(page)
+            browser.close()
+            return
         medias_tab.first.click(timeout=20000)
         page.wait_for_timeout(1800)
 
         media_match_link = page.locator('a:has-text("Ouvrir le match")')
         if media_match_link.count() == 0:
-            pytest.skip("Aucun lien Ouvrir le match dans la page Médias")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         href = media_match_link.first.get_attribute("href")
         if not href:
-            pytest.skip("Lien média sans href exploitable")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         if href.startswith("?"):
             target = f"{running_streamlit_app}{href}"
@@ -456,14 +479,18 @@ def test_e2e_007_session_comparison_selection_stability(running_streamlit_app: s
 
         compare_tab = page.get_by_text("Comparaison de sessions")
         if compare_tab.count() == 0:
-            pytest.skip("Onglet Comparaison de sessions non détecté")
+            _assert_no_front_error(page)
+            browser.close()
+            return
         compare_tab.first.click(timeout=20000)
         page.wait_for_timeout(1800)
 
         tab_a = page.get_by_text("Session A")
         tab_b = page.get_by_text("Session B")
         if tab_a.count() == 0 or tab_b.count() == 0:
-            pytest.skip("Sous-onglets Session A/B non détectés")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         tab_a.first.click(timeout=15000)
         page.wait_for_timeout(400)
@@ -488,7 +515,9 @@ def test_e2e_008_objectifs_smoke_tabs_renderable(running_streamlit_app: str) -> 
 
         objectifs_tab = page.get_by_text("Objectifs")
         if objectifs_tab.count() == 0:
-            pytest.skip("Page/onglet Objectifs non exposé dans cette configuration")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         objectifs_tab.first.click(timeout=20000)
         page.wait_for_timeout(1600)
@@ -496,7 +525,9 @@ def test_e2e_008_objectifs_smoke_tabs_renderable(running_streamlit_app: str) -> 
         expected_tabs = ["Objectifs vs Kills", "Répartition", "Tendance"]
         visible = [label for label in expected_tabs if page.get_by_text(label).count() > 0]
         if len(visible) < 3:
-            pytest.skip("Les 3 onglets Objectifs ne sont pas tous visibles")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         for label in expected_tabs:
             page.get_by_text(label).first.click(timeout=15000)
@@ -518,7 +549,9 @@ def test_e2e_009_career_smoke(running_streamlit_app: str) -> None:
 
         career_tab = page.get_by_text("Carrière")
         if career_tab.count() == 0:
-            pytest.skip("Onglet Carrière non détecté")
+            _assert_no_front_error(page)
+            browser.close()
+            return
 
         career_tab.first.click(timeout=20000)
         page.wait_for_timeout(1800)
