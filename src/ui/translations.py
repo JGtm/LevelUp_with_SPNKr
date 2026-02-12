@@ -4,12 +4,11 @@ Ici on centralise les mappings de libellés (playlist, mode/pair) afin de:
 - réduire la liste de valeurs distinctes dans l'UI
 - afficher des labels en français quand on les connaît
 
-Ce fichier est généré automatiquement depuis Playlist_modes_translations.json
+Ce fichier est généré automatiquement depuis data/Playlist_modes_translations.json
 puis peut être ajusté manuellement si besoin.
 """
 
 from __future__ import annotations
-
 
 PLAYLIST_FR: dict[str, str] = {
     "Big Team Battle": "Grande bataille en équipe",
@@ -84,7 +83,6 @@ PAIR_FR: dict[str, str] = {
     "Super Husky Raid:CTF": "Super Husky Raid : CDD",
     "Assault:Neutral Bomb": "Arène : Bombe neutre",
     "Assault:Neutral Bomb Squad": "Arène : Escouade bombe neutre",
-
     # -------------------------------------------------------------------------
     # Arena
     # -------------------------------------------------------------------------
@@ -232,7 +230,6 @@ PAIR_FR: dict[str, str] = {
     "Arena:Team Snipers on Isolation": "Arène : Snipers en équipe",
     "Arena:Team Snipers on Takamanohara": "Arène : Snipers en équipe",
     "Arena:VIP on Catalyst": "Arène : VIP",
-
     # -------------------------------------------------------------------------
     # Assault
     # -------------------------------------------------------------------------
@@ -240,7 +237,6 @@ PAIR_FR: dict[str, str] = {
     "Assault:Neutral Bomb on Absolution": "Arène : Bombe neutre",
     "Assault:Neutral Bomb on Origin": "Arène : Bombe neutre",
     "Assault:One Bomb on Curfew": "Arène : Bombe neutre",
-
     # -------------------------------------------------------------------------
     # BTB (Big Team Battle)
     # -------------------------------------------------------------------------
@@ -312,7 +308,6 @@ PAIR_FR: dict[str, str] = {
     "BTB:Total Control on Obituary": "BTB : Contrôle total",
     "BTB:Total Control on Scarr": "BTB : Contrôle total",
     "BTB:Total Control on Thunderhead": "BTB : Contrôle total",
-
     # -------------------------------------------------------------------------
     # BTB Heavies
     # -------------------------------------------------------------------------
@@ -336,7 +331,6 @@ PAIR_FR: dict[str, str] = {
     "BTB Heavies:Total Control on Fragmentation Heavies": "BTB Heavies : Contrôle total",
     "BTB Heavies:Total Control on Highpower Heavies": "BTB Heavies : Contrôle total",
     "BTB Heavies:Total Control on Oasis Heavies": "BTB Heavies : Contrôle total",
-
     # -------------------------------------------------------------------------
     # Community
     # -------------------------------------------------------------------------
@@ -384,21 +378,18 @@ PAIR_FR: dict[str, str] = {
     "Community:Team Slayer on Takamanohara": "Communauté : Assassin en équipe",
     "Community:Team Slayer on The Pit": "Communauté : Assassin en équipe",
     "Community:Team Slayer on Vagabond": "Communauté : Assassin en équipe",
-
     # -------------------------------------------------------------------------
     # Event
     # -------------------------------------------------------------------------
     "Event:Escalation Slayer on Chasm": "Événement : Escalade",
     "Event:Escalation Slayer on Cliffhanger": "Événement : Escalade",
     "Event:Escalation Slayer on Streets": "Événement : Escalade",
-
     # -------------------------------------------------------------------------
     # Fiesta
     # -------------------------------------------------------------------------
     "Fiesta:FFA Slayer on Forest": "Fiesta : Assassin FFA",
     "Fiesta:Slayer on Behemoth - Forge": "Fiesta",
     "Fiesta:Slayer on Catalyst - Forge": "Fiesta",
-
     # -------------------------------------------------------------------------
     # Firefight / Gruntpocalypse
     # -------------------------------------------------------------------------
@@ -406,7 +397,6 @@ PAIR_FR: dict[str, str] = {
     "Firefight:Legendary King of the Hill on Oasis": "Baptême du feu : Roi de la colline légendaire",
     "Gruntpocalypse:Heroic KOTH on Vallaheim Firefight": "Gruntpocalypse : Roi de la colline héroïque",
     "ght:Heroic King of the Hill on Vallaheim Firefight": "Baptême du feu : Roi de la colline héroïque",
-
     # -------------------------------------------------------------------------
     # Husky Raid / Super Husky Raid
     # -------------------------------------------------------------------------
@@ -421,7 +411,6 @@ PAIR_FR: dict[str, str] = {
     "Super Husky Raid:CTF on Pharaoh": "Super Husky Raid : CDD",
     "Super Husky Raid:CTF on Ronin": "Super Husky Raid : CDD",
     "Super Husky Raid:CTF on Warehouse": "Super Husky Raid : CDD",
-
     # -------------------------------------------------------------------------
     # Ranked
     # -------------------------------------------------------------------------
@@ -444,7 +433,6 @@ PAIR_FR: dict[str, str] = {
     "Ranked:Slayer on Streets - Ranked": "Classé : Assassin",
     "Ranked:Strongholds on Live Fire": "Classé : Bases",
     "Ranked:Strongholds on Streets": "Classé : Bases",
-
     # -------------------------------------------------------------------------
     # Super Fiesta
     # -------------------------------------------------------------------------
@@ -467,7 +455,6 @@ PAIR_FR: dict[str, str] = {
     "Super Fiesta:Slayer on Shiro": "Super Fiesta : Assassin",
     "Super Fiesta:Slayer on Shogun": "Super Fiesta : Assassin",
     "Super Fiesta:Slayer on Streets - Forge": "Super Fiesta : Assassin",
-
     # -------------------------------------------------------------------------
     # Tactical
     # -------------------------------------------------------------------------
@@ -484,7 +471,6 @@ PAIR_FR: dict[str, str] = {
     "Tactical:Slayer on Starboard": "Tactique : Assassin",
     "Tactical:Slayer on Takamanohara": "Tactique : Assassin",
     "Tactical:Slayer on The Pit": "Tactique : Assassin",
-
     # -------------------------------------------------------------------------
     # Autres / Events spéciaux
     # -------------------------------------------------------------------------
@@ -495,8 +481,9 @@ PAIR_FR: dict[str, str] = {
 def _is_uuid_like(s: str) -> bool:
     """Vérifie si une chaîne ressemble à un UUID (ex: a446725e-b281-414c-a21e)."""
     import re
+
     # UUID complet ou partiel (au moins 8 caractères hex avec tirets)
-    return bool(re.match(r'^[a-f0-9]{8}(-[a-f0-9]{4}){0,3}(-[a-f0-9]{1,12})?$', s.lower()))
+    return bool(re.match(r"^[a-f0-9]{8}(-[a-f0-9]{4}){0,3}(-[a-f0-9]{1,12})?$", s.lower()))
 
 
 def translate_playlist_name(name: str | None) -> str | None:
@@ -527,7 +514,7 @@ def translate_pair_name(name: str | None) -> str | None:
     s = str(name).strip()
     if not s:
         return None
-    
+
     # Détection précoce des UUIDs non résolus
     if _is_uuid_like(s):
         return "Mode inconnu"
@@ -570,7 +557,7 @@ def translate_pair_name(name: str | None) -> str | None:
     mode_without_map = base
     if " on " in base:
         mode_without_map = base.split(" on ", 1)[0].strip()
-    
+
     # Chercher le mode sans carte dans les fallbacks génériques
     if mode_without_map in PAIR_FR:
         return PAIR_FR[mode_without_map]
@@ -597,7 +584,7 @@ def translate_pair_name(name: str | None) -> str | None:
         "Land Grab": "Bases",
         "VIP": "VIP",
     }
-    
+
     prefix_translations = {
         "Arena": "Arène",
         "BTB": "Grande bataille en équipe",
@@ -614,15 +601,15 @@ def translate_pair_name(name: str | None) -> str | None:
         "Super Husky Raid": "Super Husky Raid",
         "Assault": "Assaut",
     }
-    
+
     if ":" in mode_without_map:
         prefix, mode_part = mode_without_map.split(":", 1)
         prefix = prefix.strip()
         mode_part = mode_part.strip()
-        
+
         prefix_fr = prefix_translations.get(prefix, prefix)
         mode_fr = generic_mode_translations.get(mode_part, mode_part)
-        
+
         return f"{prefix_fr} : {mode_fr}"
 
     return s

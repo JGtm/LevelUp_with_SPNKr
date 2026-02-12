@@ -733,11 +733,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="OAuth refresh token (défaut: SPNKR_OAUTH_REFRESH_TOKEN)",
     )
-    ap.add_argument("--write-aliases", action="store_true", help="Merge dans xuid_aliases.json")
+    ap.add_argument(
+        "--write-aliases", action="store_true", help="Merge dans data/xuid_aliases.json"
+    )
     ap.add_argument(
         "--aliases",
-        default=str(Path(__file__).resolve().parent.parent / "xuid_aliases.json"),
-        help="Chemin vers xuid_aliases.json",
+        default=str(Path(__file__).resolve().parent.parent / "data" / "xuid_aliases.json"),
+        help="Chemin vers data/xuid_aliases.json",
     )
     ap.add_argument("--db", default=None, help="Chemin vers la DB SQLite (optionnel)")
     ap.add_argument(

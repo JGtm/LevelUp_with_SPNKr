@@ -66,7 +66,7 @@ def migrate_aliases_json_to_db(
         print(f"[WARN] Fichier JSON non trouvé: {json_path}")
         return 0, 0
 
-    with open(json_path, encoding="utf-8") as f:
+    with open(json_path, "r", encoding="utf-8") as f:
         aliases = json.load(f)
 
     if not isinstance(aliases, dict):
@@ -129,7 +129,7 @@ def main() -> int:
     parser.add_argument(
         "--json",
         default=None,
-        help="Chemin vers le fichier JSON d'aliases (défaut: xuid_aliases.json à la racine)",
+        help="Chemin vers le fichier JSON d'aliases (défaut: data/xuid_aliases.json)",
     )
     parser.add_argument(
         "--overwrite",
@@ -144,9 +144,9 @@ def main() -> int:
         json_path = args.json
     else:
         repo_root = Path(__file__).resolve().parent.parent
-        json_path = str(repo_root / "xuid_aliases.json")
+        json_path = str(repo_root / "data" / "xuid_aliases.json")
 
-    print("[INFO] Migration des aliases:")
+    print(f"[INFO] Migration des aliases:")
     print(f"  - JSON: {json_path}")
     print(f"  - DB: {args.db}")
     print(f"  - Mode: {'OVERWRITE' if args.overwrite else 'IGNORE si existe'}")

@@ -268,7 +268,7 @@ CREATE TABLE IF NOT EXISTS HighlightEvents (
     )
 
     # Table XuidAliases — stocke les correspondances XUID → Gamertag
-    # Remplace progressivement le fichier xuid_aliases.json
+    # Remplace progressivement le fichier data/xuid_aliases.json
     cur.execute(
         """
 CREATE TABLE IF NOT EXISTS XuidAliases (

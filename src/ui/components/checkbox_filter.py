@@ -11,29 +11,6 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.analysis.mode_categories import infer_mode_super_category
-
-
-def _set_filter_all(session_key: str, options: list[str]) -> None:
-    """Callback pour sélectionner toutes les options."""
-    st.session_state[session_key] = set(options)
-    # Supprimer les clés individuelles des checkboxes pour forcer leur reset
-    prefixes = (f"{session_key}_cb_", f"{session_key}_cat_", f"{session_key}_mode_")
-    keys_to_delete = [k for k in list(st.session_state.keys()) if k.startswith(prefixes)]
-    for k in keys_to_delete:
-        del st.session_state[k]
-
-
-def _set_filter_none(session_key: str) -> None:
-    """Callback pour désélectionner toutes les options."""
-    st.session_state[session_key] = set()
-    # Supprimer les clés individuelles des checkboxes pour forcer leur reset
-    prefixes = (f"{session_key}_cb_", f"{session_key}_cat_", f"{session_key}_mode_")
-    keys_to_delete = [k for k in list(st.session_state.keys()) if k.startswith(prefixes)]
-    for k in keys_to_delete:
-        del st.session_state[k]
-
-
 # Cache pour les catégories de modes
 _MODE_CATEGORIES_CACHE: dict[str, str] | None = None
 
@@ -48,7 +25,9 @@ def _load_mode_categories() -> dict[str, str]:
     if _MODE_CATEGORIES_CACHE is not None:
         return _MODE_CATEGORIES_CACHE
 
-    json_path = Path(__file__).parent.parent.parent.parent / "Playlist_modes_translations.json"
+    json_path = (
+        Path(__file__).parent.parent.parent.parent / "data" / "Playlist_modes_translations.json"
+    )
     if not json_path.exists():
         _MODE_CATEGORIES_CACHE = {}
         return _MODE_CATEGORIES_CACHE
@@ -111,7 +90,28 @@ def _infer_category(mode_name: str) -> str:
         "Super Fiesta : Assassin" -> "Fiesta"
         "Communauté : Fiesta Assassin" -> "Fiesta" (contient Fiesta)
     """
-    return infer_mode_super_category(mode_name)
+    # Détecter les modes Fiesta par leur contenu (pas seulement le préfixe)
+    mode_lower = mode_name.lower()
+    if "fiesta" in mode_lower or "husky raid" in mode_lower or "castle wars" in mode_lower:
+        return "Fiesta"
+
+    # Extraire le préfixe (avant ":" ou " : ")
+    prefix = None
+    if " : " in mode_name:
+        prefix = mode_name.split(" : ", 1)[0].strip()
+    elif ":" in mode_name:
+        prefix = mode_name.split(":", 1)[0].strip()
+
+    if prefix:
+        # Vérifier si le préfixe correspond à une catégorie connue
+        if prefix in PREFIX_TO_CATEGORY:
+            return PREFIX_TO_CATEGORY[prefix]
+        # Essayer en ignorant la casse
+        for p, cat in PREFIX_TO_CATEGORY.items():
+            if prefix.lower() == p.lower():
+                return cat
+
+    return "Other"
 
 
 # Traduction des catégories en français
@@ -141,12 +141,6 @@ def render_checkbox_filter(
 ) -> set[str]:
     """Affiche un expander avec checkboxes pour filtrer une liste de valeurs.
 
-    Utilise un système de "version" pour les boutons Tout/Aucun :
-    - Chaque clic incrémente une version
-    - Les checkboxes ont une clé qui inclut la version
-    - Ainsi, après Tout/Aucun, de nouvelles checkboxes sont créées
-      avec le bon état initial, sans rerun ni conflit de state.
-
     Args:
         label: Titre de l'expander (ex: "Playlists").
         options: Liste des valeurs disponibles à cocher.
@@ -162,17 +156,12 @@ def render_checkbox_filter(
     if not options:
         return set()
 
-    version_key = f"{session_key}_version"
-
     # Initialisation session_state si nécessaire
     if session_key not in st.session_state:
         if default_unchecked:
             st.session_state[session_key] = set(options) - default_unchecked
         else:
             st.session_state[session_key] = set(options)
-
-    if version_key not in st.session_state:
-        st.session_state[version_key] = 0
 
     # Nettoyer les valeurs obsolètes (plus dans options)
     current_selection: set[str] = st.session_state[session_key]
@@ -181,7 +170,6 @@ def render_checkbox_filter(
 
     selected_count = len(current_selection)
     total_count = len(options)
-    version = st.session_state[version_key]
 
     # Titre avec compteur
     if selected_count == total_count:
@@ -195,33 +183,21 @@ def render_checkbox_filter(
         # Boutons Tout / Aucun
         if show_select_buttons and len(options) > 1:
             cols = st.columns(2)
-            if cols[0].button(
-                "✓ Tout",
-                key=f"{session_key}_all_v{version}",
-                width="stretch",
-            ):
+            if cols[0].button("✓ Tout", key=f"{session_key}_all", width="stretch"):
                 st.session_state[session_key] = set(options)
-                st.session_state[version_key] = version + 1
                 st.rerun()
-            if cols[1].button(
-                "✗ Aucun",
-                key=f"{session_key}_none_v{version}",
-                width="stretch",
-            ):
+            if cols[1].button("✗ Aucun", key=f"{session_key}_none", width="stretch"):
                 st.session_state[session_key] = set()
-                st.session_state[version_key] = version + 1
                 st.rerun()
 
-        # Checkboxes avec version dans la clé
+        # Checkboxes
         for opt in options:
             checked = opt in st.session_state[session_key]
-            cb_key = f"{session_key}_cb_{opt}_v{version}"
             new_val = st.checkbox(
                 opt,
                 value=checked,
-                key=cb_key,
+                key=f"{session_key}_cb_{opt}",
             )
-            # Synchroniser avec le set si l'utilisateur a cliqué
             if new_val and opt not in st.session_state[session_key]:
                 st.session_state[session_key] = st.session_state[session_key] | {opt}
             elif not new_val and opt in st.session_state[session_key]:
@@ -255,10 +231,6 @@ def render_hierarchical_checkbox_filter(
 
     Les modes sont fusionnés par nom (ex: "Arène : Assassin" et "Communauté : Assassin"
     deviennent une seule checkbox "Assassin" dans la catégorie correspondante).
-
-    Utilise un système de version pour forcer le reset des checkboxes.
-    Les boutons Tout/Aucun incrémentent la version, ce qui crée de nouvelles clés
-    et donc de nouvelles checkboxes avec les bonnes valeurs initiales.
 
     Args:
         label: Titre de l'expander principal (ex: "Modes").
@@ -295,10 +267,6 @@ def render_hierarchical_checkbox_filter(
         if cat not in sorted_cats:
             sorted_cats.append(cat)
 
-    # Système de version pour les boutons Tout/Aucun
-    version_key = f"{session_key}_version"
-    version = st.session_state.get(version_key, 0)
-
     # Initialisation session_state
     if session_key not in st.session_state:
         if default_unchecked:
@@ -325,28 +293,14 @@ def render_hierarchical_checkbox_filter(
     with st.expander(title, expanded=expanded):
         # Boutons globaux Tout / Aucun
         cols = st.columns(2)
-        if cols[0].button(
-            "✓ Tout",
-            key=f"{session_key}_all",
-            width="stretch",
-        ):
+        if cols[0].button("✓ Tout", key=f"{session_key}_all", width="stretch"):
             st.session_state[session_key] = set(options)
-            st.session_state[version_key] = version + 1
             st.rerun()
-        if cols[1].button(
-            "✗ Aucun",
-            key=f"{session_key}_none",
-            width="stretch",
-        ):
+        if cols[1].button("✗ Aucun", key=f"{session_key}_none", width="stretch"):
             st.session_state[session_key] = set()
-            st.session_state[version_key] = version + 1
             st.rerun()
 
         st.markdown("---")
-
-        # Collecter les changements sans rerun immédiat
-        changes_to_add: set[str] = set()
-        changes_to_remove: set[str] = set()
 
         # Afficher chaque catégorie
         for cat in sorted_cats:
@@ -375,18 +329,20 @@ def render_hierarchical_checkbox_filter(
                 new_val = st.checkbox(
                     f"{cat_fr}",
                     value=checked,
-                    key=f"{session_key}_cat_{cat}_v{version}",
+                    key=f"{session_key}_cat_{cat}",
                 )
                 if new_val and not checked:
-                    changes_to_add.update(full_modes)
+                    st.session_state[session_key] = st.session_state[session_key] | set(full_modes)
+                    st.rerun()
                 elif not new_val and checked:
-                    changes_to_remove.update(full_modes)
+                    st.session_state[session_key] = st.session_state[session_key] - set(full_modes)
+                    st.rerun()
             else:
                 # Plusieurs modes dans la catégorie
                 # Compter les modes uniques sélectionnés
                 modes_selected_count = sum(
                     1
-                    for mn, full_modes in cat_modes.items()
+                    for mode_name, full_modes in cat_modes.items()
                     if all(fm in st.session_state[session_key] for fm in full_modes)
                 )
 
@@ -396,14 +352,20 @@ def render_hierarchical_checkbox_filter(
                 cat_checkbox_val = st.checkbox(
                     cat_label,
                     value=all_selected,
-                    key=f"{session_key}_cat_{cat}_v{version}",
+                    key=f"{session_key}_cat_{cat}",
                 )
 
                 # Si l'utilisateur a cliqué sur la checkbox catégorie
                 if cat_checkbox_val and not all_selected:
-                    changes_to_add.update(all_cat_options)
+                    st.session_state[session_key] = st.session_state[session_key] | set(
+                        all_cat_options
+                    )
+                    st.rerun()
                 elif not cat_checkbox_val and not none_selected:
-                    changes_to_remove.update(all_cat_options)
+                    st.session_state[session_key] = st.session_state[session_key] - set(
+                        all_cat_options
+                    )
+                    st.rerun()
 
                 # Sous-expander pour les modes individuels
                 with st.expander("", expanded=False):
@@ -415,17 +377,18 @@ def render_hierarchical_checkbox_filter(
                         new_val = st.checkbox(
                             mode_name,
                             value=checked,
-                            key=f"{session_key}_mode_{cat}_{mode_name}_v{version}",
+                            key=f"{session_key}_mode_{cat}_{mode_name}",
                         )
                         if new_val and not checked:
-                            changes_to_add.update(full_modes)
+                            st.session_state[session_key] = st.session_state[session_key] | set(
+                                full_modes
+                            )
+                            st.rerun()
                         elif not new_val and checked:
-                            changes_to_remove.update(full_modes)
-
-        # Appliquer tous les changements en une fois (sans rerun)
-        if changes_to_add or changes_to_remove:
-            updated = (st.session_state[session_key] | changes_to_add) - changes_to_remove
-            st.session_state[session_key] = updated
+                            st.session_state[session_key] = st.session_state[session_key] - set(
+                                full_modes
+                            )
+                            st.rerun()
 
     return st.session_state[session_key]
 

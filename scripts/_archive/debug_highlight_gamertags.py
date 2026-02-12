@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sqlite3
 import sys
+import re
 from collections import defaultdict
 
 
@@ -109,9 +109,7 @@ def _extract_players(payload: dict) -> list[tuple[str, str]]:
     return out
 
 
-def find_match_id(
-    db_path: str, expected_players: list[str], limit: int
-) -> tuple[str, dict, list[tuple[str, str]]] | None:
+def find_match_id(db_path: str, expected_players: list[str], limit: int) -> tuple[str, dict, list[tuple[str, str]]] | None:
     expected_norm = {_norm_name(p) for p in expected_players if _norm_name(p)}
     if not expected_norm:
         return None
@@ -167,10 +165,8 @@ def main() -> int:
     ap.add_argument("--match-id", default=None)
     ap.add_argument("--players", default=None, help="CSV gamertags")
     ap.add_argument("--roster", default=None, help="Alias de --players (CSV gamertags)")
-    ap.add_argument(
-        "--write-aliases", action="store_true", help="Écrit/merge les alias dans xuid_aliases.json"
-    )
-    ap.add_argument("--aliases-path", default="xuid_aliases.json")
+    ap.add_argument("--write-aliases", action="store_true", help="Écrit/merge les alias dans data/xuid_aliases.json")
+    ap.add_argument("--aliases-path", default="data/xuid_aliases.json")
     ap.add_argument("--limit", type=int, default=500)
     args = ap.parse_args()
 
@@ -183,10 +179,7 @@ def main() -> int:
         con = sqlite3.connect(args.db)
         try:
             cur = con.cursor()
-            cur.execute(
-                "SELECT ResponseBody FROM MatchStats WHERE json_extract(ResponseBody,'$.MatchId')=? LIMIT 1",
-                (match_id,),
-            )
+            cur.execute("SELECT ResponseBody FROM MatchStats WHERE json_extract(ResponseBody,'$.MatchId')=? LIMIT 1", (match_id,))
             row = cur.fetchone()
             if not row or not isinstance(row[0], str):
                 payload = {}
@@ -204,9 +197,7 @@ def main() -> int:
         expected = [p.strip() for p in roster_csv.split(",") if p.strip()]
         found = find_match_id(args.db, expected, limit=args.limit)
         if not found:
-            print(
-                "Match non trouvé dans les derniers MatchStats. Augmente --limit ou vérifie les noms."
-            )
+            print("Match non trouvé dans les derniers MatchStats. Augmente --limit ou vérifie les noms.")
             return 2
 
         match_id, payload, plist = found
@@ -218,9 +209,7 @@ def main() -> int:
     # HighlightEvents
     events = load_highlight_events(args.db, match_id)
     if not events:
-        print(
-            "Aucun HighlightEvent pour ce match (table vide ou pas importée avec --with-highlight-events)."
-        )
+        print("Aucun HighlightEvent pour ce match (table vide ou pas importée avec --with-highlight-events).")
         return 3
 
     by_xuid: dict[str, set[str]] = defaultdict(set)
@@ -300,18 +289,14 @@ def main() -> int:
 
         if args.write_aliases:
             try:
-                with open(args.aliases_path, encoding="utf-8") as f:
+                with open(args.aliases_path, "r", encoding="utf-8") as f:
                     existing = json.load(f)
                 if not isinstance(existing, dict):
                     existing = {}
             except Exception:
                 existing = {}
 
-            merged = {
-                str(k).strip(): str(v).strip()
-                for k, v in existing.items()
-                if str(k).strip() and str(v).strip()
-            }
+            merged = {str(k).strip(): str(v).strip() for k, v in existing.items() if str(k).strip() and str(v).strip()}
             merged.update({k: v for k, v in mapping.items() if k and v})
             with open(args.aliases_path, "w", encoding="utf-8") as f:
                 json.dump(dict(sorted(merged.items())), f, ensure_ascii=False, indent=2)
