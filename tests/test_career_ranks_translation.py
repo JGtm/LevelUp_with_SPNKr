@@ -7,24 +7,24 @@ class TestCareerRanksTranslation:
     """Tests pour la traduction FR des rangs Career."""
 
     def test_translates_private_silver(self):
-        """Traduction d'un rang classique: Silver Private 2 -> Soldat - Argent II."""
+        """Traduction d'un rang classique: Silver Private 2 -> Argent Soldat II."""
         assert (
             format_career_rank_label_fr(tier="Silver", title="Private", grade="2")
-            == "Soldat - Argent II"
+            == "Argent Soldat II"
         )
 
     def test_translates_lance_corporal_bronze(self):
-        """Traduction avec titre composé: Bronze Lance Corporal 3 -> Caporal suppléant - Bronze III."""
+        """Traduction avec titre composé: Bronze Lance Corporal 3 -> Bronze Caporal suppléant III."""
         assert (
             format_career_rank_label_fr(tier="Bronze", title="Lance Corporal", grade="3")
-            == "Caporal suppléant - Bronze III"
+            == "Bronze Caporal suppléant III"
         )
 
     def test_translates_lt_colonel(self):
         """Lt Colonel doit être traduit en Lieutenant-colonel."""
         assert (
             format_career_rank_label_fr(tier="Gold", title="Lt Colonel", grade="1")
-            == "Lieutenant-colonel - Or I"
+            == "Or Lieutenant-colonel I"
         )
 
     def test_translates_recruit_without_tier(self):
