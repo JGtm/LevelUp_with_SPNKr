@@ -23,11 +23,11 @@ from src.ui.career_ranks import format_career_rank_label_fr
 # Re-export des modules décomposés pour compatibilité
 from src.ui.profile_api_cache import (
     ProfileAppearance,
-    _cache_path,
     _safe_write_json,
     _xuid_cache_path,
     load_cached_appearance,
     load_cached_xuid_for_gamertag,
+    save_cached_appearance,
 )
 from src.ui.profile_api_tokens import (
     _is_probable_auth_error,
@@ -544,18 +544,6 @@ def get_profile_appearance(
         )
 
     with contextlib.suppress(Exception):
-        _safe_write_json(
-            _cache_path(xu),
-            {
-                "fetched_at": time.time(),
-                "service_tag": appearance.service_tag,
-                "emblem_image_url": appearance.emblem_image_url,
-                "backdrop_image_url": appearance.backdrop_image_url,
-                "nameplate_image_url": appearance.nameplate_image_url,
-                "rank_label": appearance.rank_label,
-                "rank_subtitle": appearance.rank_subtitle,
-                "rank_image_url": appearance.rank_image_url,
-            },
-        )
+        save_cached_appearance(xu, appearance)
 
     return appearance, None

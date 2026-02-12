@@ -132,18 +132,18 @@ def get_hero_html(
     )
 
     # Career Rank (icône + label, à gauche du Spartan ID)
+    # Priorité: adornment > rank_icon (10C.3.3)
     rank_html = ""
-    if rank_icon_data or rank_label:
+    if adornment_data or rank_icon_data or rank_label:
         safe_rank_label = html.escape(rank_label or "") if rank_label else ""
         safe_rank_subtitle = html.escape(rank_subtitle or "") if rank_subtitle else ""
 
-        # Adornement en arrière-plan (centré derrière la moitié basse de l'icône de rang)
+        # Adornment prioritaire: si disponible, remplace l'icône de rang
         adornment_html = ""
-        if adornment_data:
-            adornment_html = f"<img src='{adornment_data}' alt='' class='career-rank__adornment' />"
-
         rank_icon_html = ""
-        if rank_icon_data:
+        if adornment_data:
+            adornment_html = f"<img src='{adornment_data}' alt='rank' class='career-rank__adornment career-rank__adornment--primary' />"
+        elif rank_icon_data:
             rank_icon_html = f"<img src='{rank_icon_data}' alt='rank' class='career-rank__icon' />"
 
         rank_label_html = ""

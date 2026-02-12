@@ -7,18 +7,17 @@ Contraintes:
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import concurrent.futures
 import hashlib
+import json
 import mimetypes
 import os
 import time
 import urllib.parse
 import urllib.request
-import json
-import asyncio
-import concurrent.futures
 from pathlib import Path
-from typing import Optional
 
 
 def get_player_assets_cache_dir() -> str:
@@ -80,7 +79,9 @@ def resolve_local_image_path(value: str | None) -> str | None:
     return None
 
 
-def download_image_to_cache(url: str, *, prefix: str, timeout_seconds: int = 12) -> tuple[bool, str, str | None]:
+def download_image_to_cache(
+    url: str, *, prefix: str, timeout_seconds: int = 12
+) -> tuple[bool, str, str | None]:
     """Télécharge une image depuis une URL dans le cache local.
 
     Retourne (ok, message, local_path).
@@ -124,9 +125,14 @@ def download_image_to_cache(url: str, *, prefix: str, timeout_seconds: int = 12)
         """Best-effort: télécharge via SPNKr (auth) pour contourner 401/403.
 
         `target` peut être:
-        - une URL /hi/images/file/<relative>
-        - une URL /hi/Waypoint/file/images/<relative>
+        - une URL complète https://gamecms-hacs.../hi/images/file/<relative>
+        - une URL complète https://gamecms-hacs.../hi/Waypoint/file/images/<relative>
         - un chemin relatif Inventory/... (ou /Inventory/...)
+
+        Stratégie:
+        1. URL complète → GET direct avec headers auth (préserve le path exact)
+        2. Chemin /hi/images/file/ → extrait le rel et utilise get_image()
+        3. Chemin relatif (Inventory/...) → utilise get_image()
         """
 
         st = str(os.environ.get("SPNKR_SPARTAN_TOKEN") or "").strip()
@@ -134,37 +140,57 @@ def download_image_to_cache(url: str, *, prefix: str, timeout_seconds: int = 12)
         if not (st and ct):
             return None, None
 
-        rel = str(target or "").strip()
-        if not rel:
+        raw = str(target or "").strip()
+        if not raw:
             return None, None
 
-        # URL -> relative path
-        try:
-            if rel.startswith("http://") or rel.startswith("https://"):
-                p = urllib.parse.urlparse(rel)
+        is_full_url = raw.startswith("http://") or raw.startswith("https://")
+
+        # Déterminer si on peut utiliser un GET direct (URL complète)
+        # ou si on doit passer par get_image() (chemin relatif)
+        use_direct_get = False
+        direct_url = ""
+        rel = raw
+
+        if is_full_url:
+            try:
+                p = urllib.parse.urlparse(raw)
                 path_lower = (p.path or "").lower()
-                
-                # Pattern 1: /hi/images/file/<rel>
-                marker1 = "/hi/images/file/"
-                if marker1 in path_lower:
-                    rel = (p.path or "")[path_lower.index(marker1) + len(marker1) :]
-                # Pattern 2: /hi/Waypoint/file/images/<rel>
-                marker2 = "/hi/waypoint/file/images/"
-                if marker2 in path_lower:
-                    rel = (p.path or "")[path_lower.index(marker2) + len("/hi/Waypoint/file/images/") :]
-        except Exception:
-            pass
 
-        rel = rel.lstrip("/")
-        if not rel:
-            return None, None
+                # URLs /hi/Waypoint/file/images/... : GET direct obligatoire
+                # car get_image() réécrit en /hi/images/file/ (mauvais endpoint)
+                if "/hi/waypoint/file/images/" in path_lower:
+                    use_direct_get = True
+                    direct_url = raw
+                # URLs /hi/images/file/... : get_image() fonctionne, mais
+                # GET direct est aussi valide. On utilise get_image() pour
+                # conserver la compatibilité.
+                elif "/hi/images/file/" in path_lower:
+                    marker = "/hi/images/file/"
+                    rel = (p.path or "")[path_lower.index(marker) + len(marker) :]
+                else:
+                    # URL inconnue → GET direct en best-effort
+                    use_direct_get = True
+                    direct_url = raw
+            except Exception:
+                use_direct_get = True
+                direct_url = raw
+        else:
+            # Chemin relatif (Inventory/...) → get_image()
+            rel = raw.lstrip("/")
 
-        async def _run() -> bytes:
+        if not use_direct_get:
+            rel = rel.lstrip("/")
+            if not rel:
+                return None, None
+
+        async def _run_get_image() -> bytes:
+            """Télécharge via gamecms_hacs.get_image() (chemin /hi/images/file/)."""
             import aiohttp
             from spnkr.client import HaloInfiniteClient
 
-            timeout = aiohttp.ClientTimeout(total=float(timeout_seconds))
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            timeout_obj = aiohttp.ClientTimeout(total=float(timeout_seconds))
+            async with aiohttp.ClientSession(timeout=timeout_obj) as session:
                 client = HaloInfiniteClient(
                     session,
                     spartan_token=st,
@@ -174,11 +200,35 @@ def download_image_to_cache(url: str, *, prefix: str, timeout_seconds: int = 12)
                 img_resp = await client.gamecms_hacs.get_image(rel)
                 return await img_resp.read()
 
+        async def _run_direct_get() -> bytes:
+            """Télécharge via GET direct avec headers auth (URL complète)."""
+            import aiohttp
+
+            headers = {
+                "Accept": "image/png, image/*;q=0.9, */*;q=0.8",
+                "User-Agent": "OpenSpartan-Graphs",
+            }
+            if st:
+                headers["x-343-authorization-spartan"] = st
+            if ct:
+                headers["343-clearance"] = ct
+                headers["Cookie"] = f"343-clearance={ct}"
+
+            timeout_obj = aiohttp.ClientTimeout(total=float(timeout_seconds))
+            async with (
+                aiohttp.ClientSession(timeout=timeout_obj) as session,
+                session.get(direct_url, headers=headers) as resp,
+            ):
+                resp.raise_for_status()
+                return await resp.read()
+
         try:
-            data = _run_sync(_run())
-            return (data if isinstance(data, (bytes, bytearray)) else None), None
+            coro = _run_direct_get() if use_direct_get else _run_get_image()
+            data = _run_sync(coro)
+            return (data if isinstance(data, bytes | bytearray) else None), None
         except Exception as e:
-            return None, f"SPNKr get_image KO: {e}"
+            method = "direct GET" if use_direct_get else "get_image"
+            return None, f"SPNKr {method} KO: {e}"
 
     def _extract_image_url_from_json(obj: object) -> str | None:
         candidates: list[str] = []
@@ -203,7 +253,9 @@ def download_image_to_cache(url: str, *, prefix: str, timeout_seconds: int = 12)
         image_exts = (".png", ".jpg", ".jpeg", ".webp")
         # Priorité: URL explicite d'image
         for s in candidates:
-            if (s.startswith("http://") or s.startswith("https://")) and s.lower().endswith(image_exts):
+            if (s.startswith("http://") or s.startswith("https://")) and s.lower().endswith(
+                image_exts
+            ):
                 return s
 
         # Sinon: chemin vers /hi/Waypoint/file/images/ (souvent public)
@@ -235,22 +287,24 @@ def download_image_to_cache(url: str, *, prefix: str, timeout_seconds: int = 12)
             content_type = ""
 
             # Certains endpoints renvoient 401/403 en accès direct; on tente SPNKr en fallback.
-            # Inclut: /hi/images/file/, /hi/Waypoint/file/images/nameplates/, et chemins Inventory/
+            # Inclut: /hi/images/file/, /hi/Waypoint/file/images/ (ALL sous-chemins), et Inventory/
             url_lower = str(target_url).lower()
             needs_auth = (
                 ("/hi/images/file/" in url_lower)
-                or ("/hi/waypoint/file/images/nameplates/" in url_lower)
+                or ("/hi/waypoint/file/images/" in url_lower)
                 or url_lower.strip().startswith("inventory/")
                 or str(target_url).strip().startswith("/Inventory/")
             )
-            
+
             if needs_auth:
                 data_spnkr, spnkr_err = _try_spnkr_fetch_bytes(target_url)
                 if data_spnkr:
                     data = bytes(data_spnkr)
                 else:
                     # Fallback urllib (ex: si SPNKr non installé / tokens absents)
-                    req = urllib.request.Request(target_url, headers=_auth_headers_for_url(target_url))
+                    req = urllib.request.Request(
+                        target_url, headers=_auth_headers_for_url(target_url)
+                    )
                     with urllib.request.urlopen(req, timeout=float(timeout_seconds)) as resp:
                         data = resp.read()
                         content_type = str(resp.headers.get("content-type") or "").lower()
@@ -378,7 +432,7 @@ def ensure_local_image_path(
     return resolve_local_image_path(s)
 
 
-def file_to_data_url(path: str | None, *, max_bytes: int = 3 * 1024 * 1024) -> Optional[str]:
+def file_to_data_url(path: str | None, *, max_bytes: int = 3 * 1024 * 1024) -> str | None:
     """Encode un fichier image local en data URL pour intégration HTML.
 
     Limite la taille pour éviter des payloads énormes.

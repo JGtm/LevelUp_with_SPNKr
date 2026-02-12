@@ -674,7 +674,11 @@ class TestCareerRankApiParsing:
         assert info_legend["name"] == "Hero Legend"
 
     def test_parse_career_rank(self):
-        """Vérifie le parsing des données brutes Career Rank."""
+        """Vérifie le parsing des données brutes Career Rank.
+
+        Note 10C.3.5: adornment_path n'est plus extrait de la réponse JSON
+        (il est résolu séparément via gamecms). _parse_career_rank retourne None.
+        """
         from src.data.sync.api_client import SPNKrAPIClient
 
         client = SPNKrAPIClient.__new__(SPNKrAPIClient)
@@ -695,7 +699,8 @@ class TestCareerRankApiParsing:
         assert data.xuid == "2535423456789"
         assert data.current_rank == 50
         assert data.current_xp == 5000
-        assert data.adornment_path == "test/path/adornment.png"
+        # adornment_path est résolu via gamecms, pas depuis la réponse economy
+        assert data.adornment_path is None
         assert data.is_max_rank is False
 
     def test_parse_career_rank_max(self):

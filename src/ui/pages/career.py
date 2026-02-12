@@ -17,6 +17,7 @@ from src.ui.career_ranks import (
     get_rank_icon_path,
 )
 from src.ui.components.career_progress_circle import create_career_progress_gauge
+from src.ui.player_assets import ensure_local_image_path
 from src.visualization.theme import apply_halo_plot_style
 
 logger = logging.getLogger(__name__)
@@ -202,17 +203,33 @@ def render_career_page(
     col_icon, col_info, col_gauge = st.columns([1, 2, 2])
 
     with col_icon:
-        # Icone du rang (si disponible)
-        icon_path = get_rank_icon_path(rank_number) if rank_number else None
-        if icon_path and icon_path.exists():
-            st.image(str(icon_path), width=120)
-        else:
-            # Fallback : afficher le numéro de rang
-            st.markdown(
-                f"<div style='text-align:center;font-size:48px;color:{THEME_COLORS.accent}'>"
-                f"{rank_number}</div>",
-                unsafe_allow_html=True,
+        # Priorité: adornment (DB) > icône locale du rang (10C.3.4)
+        adornment_db_path = career_data.get("adornment_path") or ""
+        displayed_icon = False
+
+        if adornment_db_path:
+            # L'adornment_path peut être une URL ou un chemin CMSlocal
+            local_adornment = ensure_local_image_path(
+                adornment_db_path,
+                prefix="adornment",
+                download_enabled=True,
+                auto_refresh_hours=0,
             )
+            if local_adornment:
+                st.image(local_adornment, width=140)
+                displayed_icon = True
+
+        if not displayed_icon:
+            # Fallback: icône locale standard
+            icon_path = get_rank_icon_path(rank_number) if rank_number else None
+            if icon_path and icon_path.exists():
+                st.image(str(icon_path), width=120)
+            else:
+                st.markdown(
+                    f"<div style='text-align:center;font-size:48px;color:{THEME_COLORS.accent}'>"
+                    f"{rank_number}</div>",
+                    unsafe_allow_html=True,
+                )
 
     with col_info:
         st.subheader(rank_label_fr)

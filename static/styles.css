@@ -547,6 +547,21 @@ section.main:after {
     pointer-events: none;
 }
 
+/* Adornment utilisé comme icône principale (sans rank_icon derrière) */
+.career-rank__adornment--primary {
+    position: relative;
+    width: 220px;
+    height: 220px;
+    object-fit: contain;
+    top: auto;
+    left: auto;
+    transform: none;
+    z-index: 1;
+    opacity: 1;
+    filter: drop-shadow(0 4px 12px rgba(51, 214, 255, 0.3));
+    pointer-events: auto;
+}
+
 .career-rank__icon {
     width: 192px;
     height: 192px;

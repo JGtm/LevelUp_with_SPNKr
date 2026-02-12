@@ -592,7 +592,27 @@ class SPNKrAPIClient:
             if json_data is None:
                 return None
 
-            return self._parse_career_rank(xuid_clean, json_data)
+            career_data = self._parse_career_rank(xuid_clean, json_data)
+
+            # Résoudre l'URL adornment via gamecms si pas déjà présente
+            if career_data and not career_data.adornment_path:
+                adornment_url = await self._resolve_adornment_url(career_data.current_rank)
+                if adornment_url:
+                    career_data = CareerRankData(
+                        xuid=career_data.xuid,
+                        current_rank=career_data.current_rank,
+                        current_rank_name=career_data.current_rank_name,
+                        current_rank_tier=career_data.current_rank_tier,
+                        current_xp=career_data.current_xp,
+                        xp_for_next_rank=career_data.xp_for_next_rank,
+                        xp_total=career_data.xp_total,
+                        is_max_rank=career_data.is_max_rank,
+                        adornment_path=adornment_url,
+                        spartan_id=career_data.spartan_id,
+                        raw_json=career_data.raw_json,
+                    )
+
+            return career_data
 
         except Exception as e:
             logger.warning(f"Erreur get_career_rank_progression({xuid}): {e}")
@@ -627,9 +647,63 @@ class SPNKrAPIClient:
             xp_for_next_rank=rank_info.get("xp_required", 0),
             xp_total=self._compute_total_xp(rank, partial_xp),
             is_max_rank=is_max,
-            adornment_path=data.get("Result", {}).get("AdornmentPath"),
+            adornment_path=None,  # Résolu séparément via gamecms
             raw_json=data,
         )
+
+    async def _resolve_adornment_url(self, rank: int) -> str | None:
+        """Résout l'URL d'adornment via les métadonnées gamecms.
+
+        Appelle gamecms_hacs.get_career_reward_track() pour obtenir
+        le rank_adornment_icon correspondant au rang donné.
+
+        Args:
+            rank: Numéro de rang carrière (0-272).
+
+        Returns:
+            URL complète de l'adornment ou None.
+        """
+        try:
+            if self._client is None:
+                return None
+
+            gamecms = getattr(self._client, "gamecms_hacs", None)
+            if gamecms is None:
+                return None
+
+            career_track_resp = await gamecms.get_career_reward_track()
+            # Compat: SPNKr peut exposer .data ou .parse()
+            if hasattr(career_track_resp, "data"):
+                career_track = career_track_resp.data
+            elif hasattr(career_track_resp, "parse"):
+                career_track = await career_track_resp.parse()
+            else:
+                career_track = career_track_resp
+
+            if career_track is None:
+                return None
+
+            ranks_list = getattr(career_track, "ranks", None)
+            if not ranks_list:
+                return None
+
+            # Le display_rank est rank+1 sauf pour 272 (Hero max)
+            display_rank = rank if rank == 272 else rank + 1
+
+            for rank_obj in ranks_list:
+                r = getattr(rank_obj, "rank", None)
+                if r == display_rank:
+                    adornment_icon = getattr(rank_obj, "rank_adornment_icon", None)
+                    if adornment_icon:
+                        host = "https://gamecms-hacs.svc.halowaypoint.com"
+                        adorn_path = str(adornment_icon).lstrip("/")
+                        return f"{host}/hi/images/file/{adorn_path}"
+                    break
+
+            return None
+        except Exception as e:
+            logger.debug(f"Résolution adornment gamecms échouée: {e}")
+            return None
 
     def _get_rank_info(self, rank: int) -> dict[str, Any]:
         """Retourne les infos d'un rang carrière.

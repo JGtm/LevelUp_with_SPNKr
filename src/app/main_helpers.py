@@ -239,7 +239,7 @@ def _needs_halo_auth(url: str) -> bool:
         return False
     return (
         ("/hi/images/file/" in u)
-        or ("/hi/waypoint/file/images/nameplates/" in u)
+        or ("/hi/waypoint/file/images/" in u)
         or u.startswith("inventory/")
         or u.startswith("/inventory/")
         or ("gamecms-hacs.svc.halowaypoint.com/hi/images/file/" in u)

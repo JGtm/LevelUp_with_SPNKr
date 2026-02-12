@@ -1,7 +1,3 @@
-Priorité architecture :
-- Corriger la récupération du spartan ID et du rang de carrière pour tous les joueurs avec Grunt API
-- Ajouter la récupération de l'adornment au spartan ID -> Remplacer l'image du rang de carrière par l'adornment et vérifier si on parvient à récupérer ça et le spartan ID au complet pour chaque joueur qui a une DB (plus dinfos ici si nécéssaire : https://github.com/dend/blog-comments/issues/5#issuecomment-2030905428)
-
 Correctifs :
 - Modes et playlists à revoir encore (surtout sur la BDD de Madina97294, les traductions ou la catégorisation ne sont pas respectées)
 
@@ -15,5 +11,3 @@ Traductions :
 - Last Casualty (-1) : "Boulet"
 
 Citations qu'on peut ressortir avec les scores obtenus pendant le match ?
-
-Pourquoi on a les images des rangs dans C:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\data\cache\player_assets ? On les as déjà dans C:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\data\cache\career_ranks ça sert à rien de les stocker deux fois

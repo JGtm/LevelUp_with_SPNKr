@@ -21,10 +21,10 @@ Notes:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import sys
 from pathlib import Path
-import importlib.util
 from types import ModuleType
 
 
@@ -71,11 +71,17 @@ def _load_dotenv_if_present() -> None:
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv_if_present()
 
-    ap = argparse.ArgumentParser(description="Précharge le profil (appearance + images) pour un gamertag")
+    ap = argparse.ArgumentParser(
+        description="Précharge le profil (appearance + images) pour un gamertag"
+    )
     ap.add_argument("gamertag", nargs="+", help="Un ou plusieurs gamertags")
 
-    ap.add_argument("--offline", action="store_true", help="N'utilise pas le réseau (cache uniquement)")
-    ap.add_argument("--no-download", action="store_true", help="Ne télécharge pas les images (API only)")
+    ap.add_argument(
+        "--offline", action="store_true", help="N'utilise pas le réseau (cache uniquement)"
+    )
+    ap.add_argument(
+        "--no-download", action="store_true", help="Ne télécharge pas les images (API only)"
+    )
 
     ap.add_argument(
         "--strict",
@@ -83,7 +89,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Échoue (exit code 1) si un asset ne peut pas être téléchargé.",
     )
 
-    ap.add_argument("--force", action="store_true", help="Ignore les caches (API + re-download images)")
+    ap.add_argument(
+        "--force", action="store_true", help="Ignore les caches (API + re-download images)"
+    )
 
     ap.add_argument(
         "--api-refresh-hours",
@@ -98,7 +106,9 @@ def main(argv: list[str] | None = None) -> int:
         help="TTL du cache images (heures). 0 = ne jamais re-download si cache présent.",
     )
 
-    ap.add_argument("--requests-per-second", type=int, default=3, help="Rate limit SPNKr (par service)")
+    ap.add_argument(
+        "--requests-per-second", type=int, default=3, help="Rate limit SPNKr (par service)"
+    )
     ap.add_argument("--timeout-seconds", type=int, default=12, help="Timeout HTTP")
 
     args = ap.parse_args(argv)
@@ -142,7 +152,6 @@ def main(argv: list[str] | None = None) -> int:
     download_enabled = (not bool(args.no_download)) and enabled
 
     had_error = False
-    had_warning = False
 
     print(f"Cache API: {get_profile_api_cache_dir()}")
     print(f"Cache images: {get_player_assets_cache_dir()}")
@@ -198,15 +207,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Rank label: {appearance.rank_label or ''}")
         print(f"Rank subtitle: {appearance.rank_subtitle or ''}")
         print(f"Rank icon URL: {getattr(appearance, 'rank_image_url', '') or ''}")
+        print(f"Adornment URL: {getattr(appearance, 'adornment_image_url', '') or ''}")
 
         if not download_enabled:
             continue
 
+        # 10C.4: Ne plus préfetch rank dans player_assets (source: career_ranks/).
+        # Garder: emblem, backdrop, nameplate, adornment.
         for prefix, url in (
             ("emblem", appearance.emblem_image_url),
             ("backdrop", appearance.backdrop_image_url),
             ("nameplate", appearance.nameplate_image_url),
-            ("rank", getattr(appearance, "rank_image_url", None)),
+            ("adornment", getattr(appearance, "adornment_image_url", None)),
         ):
             if not url:
                 continue
@@ -218,7 +230,6 @@ def main(argv: list[str] | None = None) -> int:
                     timeout_seconds=int(args.timeout_seconds),
                 )
                 if not ok:
-                    had_warning = True
                     print(f"[WARN] Download {prefix}: {err}")
                     if bool(args.strict):
                         had_error = True
@@ -234,7 +245,6 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=int(args.timeout_seconds),
             )
             if not local_path:
-                had_warning = True
                 print(f"[WARN] Cache {prefix}: impossible de récupérer {url}")
                 if bool(args.strict):
                     had_error = True
