@@ -189,6 +189,7 @@ def matches_to_dataframe(matches: list[MatchRow]) -> pd.DataFrame:
             "ratio": [m.ratio for m in matches],
             "team_mmr": [m.team_mmr for m in matches],
             "enemy_mmr": [m.enemy_mmr for m in matches],
+            "personal_score": [m.personal_score for m in matches],
         }
     )
 

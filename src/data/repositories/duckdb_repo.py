@@ -318,7 +318,8 @@ class DuckDBRepository:
                 match_stats.my_team_score,
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
-                {enemy_mmr_expr} as enemy_mmr
+                {enemy_mmr_expr} as enemy_mmr,
+                match_stats.personal_score
             FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time ASC
@@ -368,7 +369,8 @@ class DuckDBRepository:
                     match_stats.my_team_score,
                     match_stats.enemy_team_score,
                     {team_mmr_expr} as team_mmr,
-                    {enemy_mmr_expr} as enemy_mmr
+                    {enemy_mmr_expr} as enemy_mmr,
+                    match_stats.personal_score
                 FROM match_stats{pms_join}
                 WHERE {where_sql}
                 ORDER BY match_stats.start_time ASC
@@ -405,6 +407,9 @@ class DuckDBRepository:
                 enemy_team_score=row[columns.index("enemy_team_score")],
                 team_mmr=row[columns.index("team_mmr")],
                 enemy_mmr=row[columns.index("enemy_mmr")],
+                personal_score=row[columns.index("personal_score")]
+                if "personal_score" in columns
+                else None,
             )
             for row in rows
         ]
@@ -451,7 +456,8 @@ class DuckDBRepository:
                 match_stats.my_team_score,
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
-                {enemy_mmr_expr} as enemy_mmr
+                {enemy_mmr_expr} as enemy_mmr,
+                match_stats.personal_score
             FROM match_stats{metadata_joins}{pms_join}
             WHERE match_stats.start_time >= ? AND match_stats.start_time <= ?
             ORDER BY match_stats.start_time ASC
@@ -488,6 +494,9 @@ class DuckDBRepository:
                 enemy_team_score=row[columns.index("enemy_team_score")],
                 team_mmr=row[columns.index("team_mmr")],
                 enemy_mmr=row[columns.index("enemy_mmr")],
+                personal_score=row[columns.index("personal_score")]
+                if "personal_score" in columns
+                else None,
             )
             for row in rows
         ]
@@ -562,7 +571,8 @@ class DuckDBRepository:
                 match_stats.my_team_score,
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
-                {enemy_mmr_expr} as enemy_mmr
+                {enemy_mmr_expr} as enemy_mmr,
+                match_stats.personal_score
             FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time DESC
@@ -600,6 +610,9 @@ class DuckDBRepository:
                 enemy_team_score=row[columns.index("enemy_team_score")],
                 team_mmr=row[columns.index("team_mmr")],
                 enemy_mmr=row[columns.index("enemy_mmr")],
+                personal_score=row[columns.index("personal_score")]
+                if "personal_score" in columns
+                else None,
             )
             for row in rows
         ]
@@ -674,7 +687,8 @@ class DuckDBRepository:
                 match_stats.my_team_score,
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
-                {enemy_mmr_expr} as enemy_mmr
+                {enemy_mmr_expr} as enemy_mmr,
+                match_stats.personal_score
             FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time {order_dir}
@@ -712,6 +726,9 @@ class DuckDBRepository:
                 enemy_team_score=row[columns.index("enemy_team_score")],
                 team_mmr=row[columns.index("team_mmr")],
                 enemy_mmr=row[columns.index("enemy_mmr")],
+                personal_score=row[columns.index("personal_score")]
+                if "personal_score" in columns
+                else None,
             )
             for row in rows
         ]
@@ -2228,6 +2245,9 @@ class DuckDBRepository:
                     enemy_team_score=row[columns.index("enemy_team_score")],
                     team_mmr=row[columns.index("team_mmr")],
                     enemy_mmr=row[columns.index("enemy_mmr")],
+                    personal_score=row[columns.index("personal_score")]
+                    if "personal_score" in columns
+                    else None,
                 )
                 for row in rows
             ]

@@ -46,6 +46,69 @@ PERFORMANCE_COLORS = {
 
 
 # =============================================================================
+# Helpers internes
+# =============================================================================
+
+
+def _add_duration_markers(
+    fig: go.Figure,
+    x_values: list,
+    time_played_seconds: list[int | float] | None,
+    marker_interval_minutes: float,
+) -> None:
+    """Ajoute des lignes verticales marquant les intervalles de durée cumulée.
+
+    Par exemple, si marker_interval_minutes=8, des lignes verticales sont
+    tracées tous les ~8 min de jeu cumulé.
+
+    Args:
+        fig: Figure Plotly à modifier en place.
+        x_values: Valeurs de l'axe X (start_time des matchs).
+        time_played_seconds: Durée de chaque match en secondes.
+        marker_interval_minutes: Intervalle entre marqueurs (en minutes).
+    """
+    if not time_played_seconds or not x_values:
+        return
+
+    if len(time_played_seconds) != len(x_values):
+        return
+
+    interval_seconds = marker_interval_minutes * 60
+    cumul_time = 0.0
+    next_marker = interval_seconds
+
+    for i, tps in enumerate(time_played_seconds):
+        if tps is None:
+            continue
+        cumul_time += float(tps)
+        while cumul_time >= next_marker:
+            total_min = int(next_marker / 60)
+            x_val = x_values[i]
+            # Utiliser add_shape + add_annotation au lieu de add_vline
+            # pour éviter les erreurs avec les axes datetime/string
+            fig.add_shape(
+                type="line",
+                x0=x_val,
+                x1=x_val,
+                y0=0,
+                y1=1,
+                yref="paper",
+                line={"color": PERFORMANCE_COLORS["baseline"], "width": 1, "dash": "dot"},
+                opacity=0.5,
+            )
+            fig.add_annotation(
+                x=x_val,
+                y=1.0,
+                yref="paper",
+                text=f"{total_min} min",
+                showarrow=False,
+                font={"size": 9, "color": PERFORMANCE_COLORS["baseline"]},
+                yanchor="bottom",
+            )
+            next_marker += interval_seconds
+
+
+# =============================================================================
 # Graphiques de performance cumulée
 # =============================================================================
 
@@ -56,6 +119,8 @@ def plot_cumulative_net_score(
     title: str = "Net Score Cumulé",
     height: int = 400,
     show_zero_line: bool = True,
+    time_played_seconds: list[int | float] | None = None,
+    duration_marker_minutes: float = 8.0,
 ) -> go.Figure:
     """Crée un graphique du net score cumulé au fil des matchs.
 
@@ -67,6 +132,8 @@ def plot_cumulative_net_score(
         title: Titre du graphique.
         height: Hauteur en pixels.
         show_zero_line: Afficher la ligne de référence à zéro.
+        time_played_seconds: Durée de chaque match (secondes) pour marqueurs de durée.
+        duration_marker_minutes: Intervalle en minutes entre les marqueurs de durée.
 
     Returns:
         Figure Plotly avec le graphique.
@@ -151,6 +218,9 @@ def plot_cumulative_net_score(
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5},
     )
 
+    # Marqueurs de durée cumulée (Sprint 6 - 6.4)
+    _add_duration_markers(fig, x_values, time_played_seconds, duration_marker_minutes)
+
     return apply_halo_plot_style(fig, title=title, height=height)
 
 
@@ -160,6 +230,8 @@ def plot_cumulative_kd(
     title: str = "K/D Cumulé",
     height: int = 400,
     show_target: float | None = 1.0,
+    time_played_seconds: list[int | float] | None = None,
+    duration_marker_minutes: float = 8.0,
 ) -> go.Figure:
     """Crée un graphique du K/D cumulé au fil des matchs.
 
@@ -168,6 +240,8 @@ def plot_cumulative_kd(
         title: Titre du graphique.
         height: Hauteur en pixels.
         show_target: Afficher une ligne cible (ex: 1.0 pour K/D équilibré).
+        time_played_seconds: Durée de chaque match (secondes) pour marqueurs de durée.
+        duration_marker_minutes: Intervalle en minutes entre les marqueurs de durée.
 
     Returns:
         Figure Plotly avec le graphique.
@@ -240,6 +314,9 @@ def plot_cumulative_kd(
         showlegend=True,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5},
     )
+
+    # Marqueurs de durée cumulée (Sprint 6 - 6.4)
+    _add_duration_markers(fig, x_values, time_played_seconds, duration_marker_minutes)
 
     return apply_halo_plot_style(fig, title=title, height=height)
 

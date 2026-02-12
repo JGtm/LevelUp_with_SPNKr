@@ -82,7 +82,14 @@ def render_timeseries_page(
         _required_cumul = ["start_time", "kills", "deaths"]
         if all(c in dff.columns for c in _required_cumul):
             try:
-                pl_df = pl.from_pandas(dff.sort_values("start_time")[_required_cumul].copy())
+                # Inclure time_played_seconds si disponible (pour marqueurs durée Sprint 6.4)
+                _cumul_cols = list(_required_cumul)
+                _has_tps = "time_played_seconds" in dff.columns
+                if _has_tps:
+                    _cumul_cols.append("time_played_seconds")
+
+                _sorted_dff = dff.sort_values("start_time")
+                pl_df = pl.from_pandas(_sorted_dff[_cumul_cols].copy())
                 from src.analysis.cumulative import (
                     compute_cumulative_kd_series_polars,
                     compute_cumulative_net_score_series_polars,
@@ -90,14 +97,19 @@ def render_timeseries_page(
                 )
 
                 if not pl_df.is_empty():
+                    # Extraire time_played_seconds pour les marqueurs de durée
+                    _tps_list: list[int | float] | None = None
+                    if _has_tps:
+                        _tps_list = _sorted_dff["time_played_seconds"].fillna(0).tolist()
+
                     cumul_net = compute_cumulative_net_score_series_polars(pl_df)
                     st.plotly_chart(
-                        plot_cumulative_net_score(cumul_net),
+                        plot_cumulative_net_score(cumul_net, time_played_seconds=_tps_list),
                         width="stretch",
                     )
                     cumul_kd = compute_cumulative_kd_series_polars(pl_df)
                     st.plotly_chart(
-                        plot_cumulative_kd(cumul_kd),
+                        plot_cumulative_kd(cumul_kd, time_played_seconds=_tps_list),
                         width="stretch",
                     )
                     rolling_df = compute_rolling_kd_polars(pl_df, window_size=5)
@@ -222,6 +234,58 @@ def render_timeseries_page(
             else:
                 st.info("Score de performance non disponible.")
 
+        # === Nouvelles distributions Sprint 6 (6.2, 6.3) ===
+        col_dist5, col_dist6 = st.columns(2)
+
+        with col_dist5:
+            # Distribution du score personnel par minute (6.2)
+            if "personal_score" in dff.columns and "time_played_seconds" in dff.columns:
+                _ps = dff[["personal_score", "time_played_seconds"]].dropna()
+                _ps = _ps[_ps["time_played_seconds"] > 0]
+                if len(_ps) > 5:
+                    score_per_min = _ps["personal_score"] / (_ps["time_played_seconds"] / 60)
+                    fig_spm = plot_histogram(
+                        score_per_min,
+                        title="Distribution Score Personnel / min",
+                        x_label="Score / min",
+                        y_label="Matchs",
+                        show_kde=True,
+                        color=colors["amber"],
+                    )
+                    st.plotly_chart(fig_spm, width="stretch")
+                else:
+                    st.info("Pas assez de données pour la distribution du score par minute.")
+            else:
+                st.info("Colonnes score personnel ou time_played non disponibles.")
+
+        with col_dist6:
+            # Distribution du taux de victoire glissant (6.3)
+            if "outcome" in dff.columns and len(dff) >= 10:
+                _wr_df = dff.sort_values("start_time") if "start_time" in dff.columns else dff
+                _wins = (_wr_df["outcome"] == 1).astype(float)
+                win_rate_rolling = _wins.rolling(window=10, min_periods=10).mean() * 100
+                win_rate_clean = win_rate_rolling.dropna()
+                if len(win_rate_clean) > 5:
+                    fig_wr = plot_histogram(
+                        win_rate_clean,
+                        title="Distribution Win Rate Glissant (10 matchs)",
+                        x_label="Taux de victoire (%)",
+                        y_label="Fréquence",
+                        show_kde=True,
+                        color=colors["green"],
+                    )
+                    st.plotly_chart(fig_wr, width="stretch")
+                else:
+                    st.info(
+                        "Pas assez de données pour la distribution du win rate glissant "
+                        "(10 matchs minimum par fenêtre)."
+                    )
+            else:
+                if "outcome" not in dff.columns:
+                    st.info("Colonne outcome non disponible.")
+                else:
+                    st.info("Au moins 10 matchs requis pour le win rate glissant.")
+
         # === Corrélations Sprint 5.4.5 ===
         st.divider()
         st.subheader("Corrélations")
@@ -273,6 +337,72 @@ def render_timeseries_page(
                     )
             else:
                 st.info("Colonnes précision ou FDA non disponibles.")
+
+        # === Nouvelles corrélations Sprint 6 (6.1) ===
+        col_corr3, col_corr4 = st.columns(2)
+
+        with col_corr3:
+            # Durée de vie vs Morts (6.1 §2.1)
+            life_col = (
+                "avg_life_seconds" if "avg_life_seconds" in dff.columns else "average_life_seconds"
+            )
+            if life_col in dff.columns and "deaths" in dff.columns:
+                valid_life_deaths = dff.dropna(subset=[life_col, "deaths"])
+                if len(valid_life_deaths) > 5:
+                    fig_corr3 = plot_correlation_scatter(
+                        dff,
+                        life_col,
+                        "deaths",
+                        color_col="outcome",
+                        title="Durée de vie vs morts",
+                        x_label="Durée de vie (s)",
+                        y_label="Morts",
+                        show_trendline=True,
+                    )
+                    st.plotly_chart(fig_corr3, width="stretch")
+                else:
+                    st.info("Pas assez de données pour la corrélation durée de vie/morts.")
+            else:
+                st.info("Données insuffisantes pour cette corrélation.")
+
+        with col_corr4:
+            # Kills vs Deaths (6.1 §2.2)
+            if "kills" in dff.columns and "deaths" in dff.columns:
+                valid_kd = dff.dropna(subset=["kills", "deaths"])
+                if len(valid_kd) > 5:
+                    fig_corr4 = plot_correlation_scatter(
+                        dff,
+                        "kills",
+                        "deaths",
+                        color_col="outcome",
+                        title="Frags vs morts",
+                        x_label="Frags",
+                        y_label="Morts",
+                        show_trendline=True,
+                    )
+                    st.plotly_chart(fig_corr4, width="stretch")
+                else:
+                    st.info("Pas assez de données pour la corrélation frags/morts.")
+            else:
+                st.info("Colonnes frags ou morts non disponibles.")
+
+        # Team MMR vs Enemy MMR (6.1 §2.3)
+        if "team_mmr" in dff.columns and "enemy_mmr" in dff.columns:
+            valid_mmr = dff.dropna(subset=["team_mmr", "enemy_mmr"])
+            if len(valid_mmr) > 5:
+                fig_mmr = plot_correlation_scatter(
+                    dff,
+                    "team_mmr",
+                    "enemy_mmr",
+                    color_col="outcome",
+                    title="MMR Équipe vs MMR Adversaire",
+                    x_label="MMR Équipe",
+                    y_label="MMR Adversaire",
+                    show_trendline=True,
+                )
+                st.plotly_chart(fig_mmr, width="stretch")
+            else:
+                st.info("Pas assez de données MMR pour cette corrélation.")
 
         # === Distribution Premier Kill/Death (Sprint 5.4.4) ===
         st.divider()

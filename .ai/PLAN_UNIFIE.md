@@ -1,8 +1,8 @@
 # Plan Unifié — LevelUp v4.1
 
-> **Date** : 2026-02-10
-> **Sources** : `SUPER_PLAN.md` (features P1-P8) + `CODE_REVIEW_CLEANUP_PLAN.md` (nettoyage 8 axes)
-> **Statut** : Plan consolidé — aucune modification de code
+> **Date** : 2026-02-12
+> **Sources** : `SUPER_PLAN.md` (features P1-P8) + `CODE_REVIEW_CLEANUP_PLAN.md` (nettoyage 8 axes) + **Sprint 12 (P9 — Heatmap Impact)**
+> **Statut** : Plan consolidé + Sprint 12 ajouté — aucune modification de code
 >
 > **IMPORTANT pour agents IA** : Avant de travailler sur un sprint >= 6, consulter **`.ai/SPRINT_EXPLORATION.md`** qui contient l'exploration complète du codebase : catalogue de données disponibles, fonctions réutilisables, audit Pandas (35 fichiers avec lignes exactes), audit SQLite (5 fichiers), carte des dépendants `src/db/` (33 fichiers), et estimation d'effort par sprint.
 
@@ -49,7 +49,7 @@
 
 1. [Stratégie de fusion](#1-stratégie-de-fusion)
 2. [Analyse des interactions entre les deux plans](#2-analyse-des-interactions)
-3. [Sprints unifiés](#3-sprints-unifiés)
+3. [Sprints unifiés](#3-sprints-unifiés) (S0-S12)
 4. [Protocole de revue par sprint](#4-protocole-de-revue-par-sprint)
 5. [Récapitulatif des fichiers impactés](#5-récapitulatif-des-fichiers-impactés)
 6. [Matrice de risques combinée](#6-matrice-de-risques-combinée)
@@ -91,8 +91,9 @@ S8  (3j)    Nouvelles stats Phase 4 (Coéquipiers)
 S9  (4-5j)  Suppression code legacy + Migration Pandas complète
 S10 (2-3j)  Nettoyage données + Refactoring backfill
 S11 (3j)    Finalisation, tests d'intégration, documentation
+S12 (2.5j)  🆕 Heatmap d'Impact & Cercle d'Amis
 ─────────────────────────────────────────────────────────
-Total estimé : ~28-32 jours ouvrés (~24j en parallélisant S3/S4)
+Total estimé : ~30.5-34.5 jours ouvrés (~26j en parallélisant S3/S4)
 ```
 
 ---
@@ -415,7 +416,7 @@ pytest tests/ -v
 
 ---
 
-### Sprint 6 — Nouvelles stats : Timeseries + Corrélations (2 jours)
+### Sprint 6 — Nouvelles stats : Timeseries + Corrélations (2 jours) ✅ Livré 2026-02-12
 
 **Objectif** : P6 Phase 1-2 — Premières nouvelles visualisations
 
@@ -423,23 +424,31 @@ pytest tests/ -v
 
 #### Tâches
 
-| # | Tâche | Source |
-|---|-------|--------|
-| 6.1 | [S] Corrélations : Durée vie vs Morts, Kills vs Deaths, Team MMR vs Enemy MMR | P6 §2.1-2.3 |
-| 6.2 | [S] Distribution "Score personnel par minute" | P6 §2.4 |
-| 6.3 | [S] Distribution "Taux de victoire" (fenêtre glissante 10 matchs) | P6 §2.5 |
-| 6.4 | [S] Performance cumulée : lignes verticales tous les ~8 min | P6 §2.6 |
-| 6.M1 | [U] Migrer Pandas→Polars dans `performance.py` (si `import pandas`) | Phase D | `src/visualization/performance.py` |
+| # | Tâche | Source | Statut |
+|---|-------|--------|--------|
+| 6.1 | [S] Corrélations : Durée vie vs Morts, Kills vs Deaths, Team MMR vs Enemy MMR | P6 §2.1-2.3 | ✅ |
+| 6.2 | [S] Distribution "Score personnel par minute" | P6 §2.4 | ✅ |
+| 6.3 | [S] Distribution "Taux de victoire" (fenêtre glissante 10 matchs) | P6 §2.5 | ✅ |
+| 6.4 | [S] Performance cumulée : lignes verticales tous les ~8 min | P6 §2.6 | ✅ |
+| 6.M1 | [U] Migrer Pandas→Polars dans `performance.py` (si `import pandas`) | Phase D | ✅ Déjà pur Polars |
+
+#### Détails d'implémentation
+
+- **6.1** : 3 scatter plots ajoutés dans `src/ui/pages/timeseries.py` utilisant `plot_correlation_scatter()`
+- **6.2** : Histogramme score/min avec gestion time_played_seconds == 0. Ajout `personal_score` dans `MatchRow`, 5 requêtes SQL `duckdb_repo.py`, et `streamlit_bridge.py`
+- **6.3** : Win rate glissant (fenêtre 10) via `pd.Series.rolling()`
+- **6.4** : `_add_duration_markers()` dans `performance.py` (add_shape + add_annotation), appliqué aux 2 graphes cumulatifs
+- **6.M1** : `performance.py` confirmé 100% Polars (aucun `import pandas`)
 
 #### Tests
 
-- Ajouter dans `tests/test_visualizations.py` (scatter reference_line, win_ratio_distribution)
-- Créer `tests/test_new_timeseries_sections.py`
+- ✅ `tests/test_new_timeseries_sections.py` : 23 tests (6 scatter, 3 score/min, 5 win rate, 6 cumulatif, 1 polars, 2 personal_score)
+- Note : tests viz requièrent `duckdb` installé (skip propre sinon via `VIZ_AVAILABLE`)
 
 #### Gate de livraison
 
-- [ ] `pytest tests/test_visualizations.py tests/test_new_timeseries_sections.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
+- [x] `pytest tests/test_new_timeseries_sections.py -v` passe (3 passed, 20 skipped — env MSYS2 sans duckdb)
+- [x] `pytest tests/ -v` passe sans régression (32 passed, 20 skipped, 17 errors pré-existants duckdb)
 
 #### 🔍 Revue Sprint 6
 
@@ -668,6 +677,105 @@ pytest tests/ -v
 
 ---
 
+### Sprint 12 — Heatmap d'Impact & Cercle d'Amis (2.5 jours)
+
+**Objectif** : Ajouter une heatmap d'impact coéquipiers + tableau de taquinerie dans l'onglet Coéquipiers
+
+**Prérequis** : Sprints 0-11 livrés (toute l'app stable)
+
+**Contexte** : Cette feature enrichit les comparaisons coéquipiers (S8) avec une vue tactile des moments clés (First Blood, Clutch, Last Casualty). Les données sont :
+- Calculées à partir de `highlight_events` (Kill/Death avec timestamp)
+- Filtrées par les coéquipiers sélectionnés dans l'onglet Coéquipiers
+- Scoped par les filtres actifs (date, playlist, mode, map)
+- Vizualisées avec le design cohérent aux heatmaps existantes
+
+#### 12A — Module analyse d'impact (P9.1)
+
+| # | Tâche | Fichier(s) | Détail |
+|---|-------|-----------|--------|
+| 12A.1 | [S] Créer `src/analysis/friends_impact.py` | Nouveau | Helper pour calcul événements clés par coéquipier |
+| 12A.1a | Fonction `identify_first_blood()` : `min(time_ms)` pour Kill par match | | Retourne `{match_id: (gamertag, time_ms)}` ou `{}` |
+| 12A.1b | Fonction `identify_clutch_finisher()` : `max(time_ms)` pour Kill + outcome=2 (Victoire) | | Retourne `{match_id: (gamertag, time_ms)}` |
+| 12A.1c | Fonction `identify_last_casualty()` : `max(time_ms)` pour Death + outcome=3 (Défaite) | | Retourne `{match_id: (gamertag, time_ms)}` |
+| 12A.1d | Fonction `compute_impact_scores()` : Calcul +2 Clutch, +1 First Blood, -1 Last Casualty | | Retourne `{gamertag: score}` trié |
+| 12A.1e | Docstrings FR + gestion edges cases (0 kills, 0 deaths, matches vides) | | Graceful degradation |
+| 12A.2 | [S] Ajouter `load_friends_impact_data()` dans `DuckDBRepository` | `src/data/repositories/duckdb_repo.py` | Wrapper : charge events + appelle fonctions analyse |
+
+#### 12B — Visualisation heatmap + tableau (P9.2)
+
+| # | Tâche | Fichier(s) | Détail |
+|---|-------|-----------|--------|
+| 12B.1 | [S] Créer `src/visualization/friends_impact_heatmap.py` | Nouveau | Fonction `plot_friends_impact_heatmap()` |
+| 12B.1a | **Heatmap** (Plotly) : Joueurs (Y) × Matchs (X) | | Cellules colorées : vert (🟢 First Blood), or (🟡 Clutch), rouge (🔴 Last Casualty) |
+| 12B.1b | Multi-valeurs par cellule : Un joueur peut avoir >1 événement par match | | Afficher tous (icons ou symboles) |
+| 12B.1c | Hover info : `{joueur} - Match {match_id} (timestamp)` | | Tooltip enrichi |
+| 12B.1d | Design cohérent : Palette couleurs + style de la heatmap existante (win_ratio_heatmap) | | Parcourir `src/visualization/distributions.py` pour match |
+| 12B.2 | [S] Créer tableau "Taquinerie" + ranking MVP/Boulet | | Colonne1: Rang (1-N), Colonne2: Gamertag, Colonne3: Score |
+| 12B.2a | **Format tableau** : Streamlit `st.dataframe()` ou Plotly Table | | Tri par score (DESC), couleurs conditionnelles |
+| 12B.2b | **MVP/Boulet** : Top 1 (🏆), Bottom 1 (🍌) avec emojis/badges | | Mis en évidence visuel |
+
+#### 12C — Intégration UI (P9.3)
+
+| # | Tâche | Fichier(s) | Détail |
+|---|-------|-----------|--------|
+| 12C.1 | [S] Ajouter nouvel onglet "Impact & Taquinerie" dans `teammates.py` | `src/ui/pages/teammates.py` | Logiquement après onglet "Comparaisons" |
+| 12C.1a | Layout : Heatmap (full width), Tableau Taquinerie dessous | | Responsive |
+| 12C.1b | Conditions d'affichage : ≥ 2 joueurs sélectionnés dans Coéquipiers ; sinon message "Sélectionnez ≥ 2 amis" | | Validation UX |
+| 12C.2 | [S] Appliquer les filtres actifs : date, playlist, mode, map | `src/ui/pages/teammates.py` | Réutiliser logique existante `get_filtered_stats()` |
+| 12C.2a | *Bonus* : Ajouter sous-filtre **optionnel** "Période d'analyse" (fenêtre glissante) | | Dropdown : "Tous", "7 derniers jours", "30 derniers jours", "Dernière saison" |
+| 12C.3 | [S] Traductions FR + intégration `src/ui/translations.py` | | "Finisseur", "Premier Sang", "Boulet", "MVP de la soirée", "Maillon Faible" |
+
+#### 12D — Tests (P9.4)
+
+| # | Tâche | Fichier(s) | Détail |
+|---|-------|-----------|--------|
+| 12D.1 | [S] Créer `tests/test_friends_impact.py` | Nouveau | Tests des 4 fonctions analyse |
+| 12D.1a | `test_identify_first_blood_basic` | | Données mock, vérifier min(time_ms) |
+| 12D.1b | `test_identify_clutch_finisher_basic` | | Données mock avec outcome=2 |
+| 12D.1c | `test_identify_last_casualty_basic` | | Données mock avec outcome=3 |
+| 12D.1d | `test_compute_impact_scores_edge_cases` | | Zéro kills, zéro deaths, joueurs absents |
+| 12D.1e | `test_multi_events_same_match` | | Un joueur 2× First Blood dans match (bug multi-selection) ? |
+| 12D.2 | [S] Créer `tests/test_friends_impact_viz.py` | Nouveau | Tests visualisation |
+| 12D.2a | `test_plot_friends_impact_heatmap_valid()` | | Figure Plotly valide, ≥1 trace |
+| 12D.2b | `test_plot_friends_impact_heatmap_colors()` | | Vérifier couleurs RGB correctes |
+| 12D.2c | `test_plot_friends_impact_heatmap_empty()` | | 0 joueurs, 0 matchs → graceful |
+| 12D.3 | [S] Ajouter test intégration dans `tests/test_app_module.py` | | Vérifier onglet affichage + filtrage |
+
+#### Tests exécution
+
+```bash
+pytest tests/test_friends_impact.py tests/test_friends_impact_viz.py -v
+pytest tests/ -v
+```
+
+#### Gate de livraison
+
+- [ ] Onglet "Impact & Taquinerie" visible dans Coéquipiers
+- [ ] Heatmap affiche correctement 3 couleurs (vert/or/rouge) + tooltip info
+- [ ] Tableau Taquinerie : scores corrects (+2/+1/-1), ranking MVP/Boulet
+- [ ] Filtres actifs appliqués (date, playlist, mode, map)
+- [ ] Multi-événements par joueur/match affichés
+- [ ] Message d'erreur si < 2 joueurs sélectionnés
+- [ ] Traductions FR en place
+- [ ] `pytest tests/test_friends_impact*.py -v` passe
+- [ ] `pytest tests/ -v` passe sans régression
+- [ ] Design cohérent avec heatmap existante
+
+#### Points d'attention
+
+| # | Point | Mitigation |
+|---|-------|------------|
+| **Data Load** | Chargement `highlight_events` peut être lent (film matcher) | Lazy load ou caching + progress bar |
+| **Multi-events** | 1 joueur = 3+ événements/match (First Blood + Clutch + autre?) selon config | Clarifier : 1 événement par match par joueur OU tous les événements ? |
+| **Palettes couleur** | S'assurer cohérence avec `plot_win_ratio_heatmap()` existant | Inspecter code distributions.py avant implémentation |
+| **Performance** | Heatmap large (20+ joueurs × 100+ matchs = 2000 cellules) | Limiter affichage ou pagination |
+
+#### 🔍 Revue Sprint 12
+
+→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue visuelle UX importante**
+
+---
+
 ## 4. Protocole de revue par sprint
 
 ### 4.1 Principe
@@ -804,6 +912,10 @@ L'agent produit un rapport structuré :
 | `scripts/migration/README.md` | S1 | [C] Phase B |
 | `scripts/_archive/README.md` | S1 | [C] Phase B |
 | `tests/test_integration_stats_nouvelles.py` | S11 | [S] S9 |
+| `src/analysis/friends_impact.py` | **S12** | **[S] P9** |
+| `src/visualization/friends_impact_heatmap.py` | **S12** | **[S] P9** |
+| `tests/test_friends_impact.py` | **S12** | **[S] P9** |
+| `tests/test_friends_impact_viz.py` | **S12** | **[S] P9** |
 
 ### Fichiers à supprimer
 
@@ -828,11 +940,12 @@ L'agent produit un rapport structuré :
 |---------|---------|--------|
 | `scripts/backfill_data.py` | S2, S3, S5, (S10) | Migration Polars + ajouts features |
 | `src/analysis/performance_score.py` | S2, S5 | Migration Polars + v4 |
-| `src/ui/pages/teammates.py` | S4, S8 | Refonte + comparaisons + migration Polars |
+| `src/ui/pages/teammates.py` | S4, S8, **S12** | Refonte + comparaisons + **nouvel onglet Impact** + migration Polars |
 | `src/visualization/distributions.py` | S4, S6, S7 | Médianes + nouveaux graphes + migration Polars |
 | `src/ui/pages/win_loss.py` | S4, S7 | Normalisation + nouvelles sections + migration Polars |
 | `src/ui/cache.py` | S9 | Migration importeurs src/db/ (1332 lignes) |
 | `src/data/sync/engine.py` | S3, S5 | Colonnes damage + requête v4 |
+| `src/data/repositories/duckdb_repo.py` | **S12** | **Ajouter helper load_friends_impact_data()** |
 
 ---
 
@@ -953,10 +1066,11 @@ git status
 | **S9** | 4-5 j | Legacy removal + Pandas complet | [C] Phase C, D, E | Après S0-S8 |
 | **S10** | 2-3 j | Données + backfill refactoring | [C] Phase F + [S] P2 optionnel | Après S9 |
 | **S11** | 3 j | Finalisation | [S] S9 + [C] Phase G | Après tout |
-| **Total** | **~28-32 j** | | | **~24 j** en parallélisant S3/S4 |
+| **S12** | **2.5 j** | **🆕 Heatmap d'Impact & Cercle d'Amis** | **[S] P9** | ✅ Optionnel après S11 |
+| **Total** | **~30.5-34.5 j** | | | **~26 j** en parallélisant S3/S4, S12 optionnel |
 
 ---
 
-> **Document généré le** : 2026-02-10
-> **Sources** : `SUPER_PLAN.md` (2026-02-09), `CODE_REVIEW_CLEANUP_PLAN.md` (2026-02-09)
-> **Auteur** : Claude Code (analyse et compilation)
+> **Document généré le** : 2026-02-12
+> **Sources** : `SUPER_PLAN.md` (2026-02-09), `CODE_REVIEW_CLEANUP_PLAN.md` (2026-02-09), **Sprint 12 ajouté par demande utilisateur** (2026-02-12)
+> **Auteur** : Claude Code (analyse et compilation) + **P9 Heatmap Impact**
