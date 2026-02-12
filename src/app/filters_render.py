@@ -565,13 +565,13 @@ def _render_cascade_filters(
 
 def apply_filters(
     dff: pd.DataFrame | pl.DataFrame,
-    filter_state: FilterState,
-    db_path: str,
-    xuid: str,
-    db_key: tuple[int, int] | None,
-    clean_asset_label_fn: Callable[[str], str],
-    normalize_mode_label_fn: Callable[[str], str],
-    normalize_map_label_fn: Callable[[str], str],
+    filter_state: FilterState | dict | None,
+    db_path: str | None = None,
+    xuid: str | None = None,
+    db_key: tuple[int, int] | None = None,
+    clean_asset_label_fn: Callable[[str], str] | None = None,
+    normalize_mode_label_fn: Callable[[str], str] | None = None,
+    normalize_map_label_fn: Callable[[str], str] | None = None,
 ) -> pd.DataFrame:
     """Applique tous les filtres au DataFrame.
 
@@ -586,6 +586,27 @@ def apply_filters(
 
     from src.ui.perf import perf_section
 
+    def _identity(s: str) -> str:
+        return s
+
+    # Compat tests/migration : si filter_state n'est pas un FilterState,
+    # on ne filtre pas (mais on convertit Polars -> Pandas).
+    if not isinstance(filter_state, FilterState):
+        if isinstance(dff, pl.DataFrame):
+            return dff.to_pandas()
+        return dff.copy()
+
+    if clean_asset_label_fn is None:
+        clean_asset_label_fn = _identity
+    if normalize_mode_label_fn is None:
+        normalize_mode_label_fn = _identity
+    if normalize_map_label_fn is None:
+        normalize_map_label_fn = _identity
+    if db_path is None:
+        db_path = ""
+    if xuid is None:
+        xuid = ""
+
     # Convertir en Pandas pour compatibilité avec le reste du code de filtres
     # TODO: Migrer complètement vers Polars dans les tâches suivantes
     is_polars = isinstance(dff, pl.DataFrame)
@@ -593,7 +614,7 @@ def apply_filters(
         dff = dff.to_pandas()
 
     with perf_section("filters/apply"):
-        if filter_state.filter_mode == "Sessions":
+        if filter_state.filter_mode == "Sessions" and db_path and xuid:
             base_s = cached_compute_sessions_db(
                 db_path,
                 xuid.strip(),

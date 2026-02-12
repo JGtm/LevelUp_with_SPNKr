@@ -414,7 +414,52 @@ def compute_performance_series(
     history = history_pl if history_pl is not None else df_pl
 
     if len(history) < MIN_MATCHES_FOR_RELATIVE:
-        result = pl.Series("performance", [None] * len(df_pl), dtype=pl.Float64)
+        # Fallback (timeseries/UI): si l'historique est trop court pour un score
+        # relatif robuste, on renvoie un score simple basé sur le percentile de KDA
+        # au sein de l'historique disponible.
+        if len(df_pl) == 0:
+            result = pl.Series("performance", [], dtype=pl.Float64)
+            if was_pandas:
+                return result.to_pandas()
+            return result
+
+        # KDA: utiliser la colonne si présente, sinon la dériver.
+        kills = (
+            df_pl.get_column("kills").cast(pl.Float64, strict=False)
+            if "kills" in df_pl.columns
+            else pl.Series([0.0] * len(df_pl), dtype=pl.Float64)
+        ).fill_null(0.0)
+        deaths = (
+            df_pl.get_column("deaths").cast(pl.Float64, strict=False)
+            if "deaths" in df_pl.columns
+            else pl.Series([0.0] * len(df_pl), dtype=pl.Float64)
+        ).fill_null(0.0)
+        assists = (
+            df_pl.get_column("assists").cast(pl.Float64, strict=False)
+            if "assists" in df_pl.columns
+            else pl.Series([0.0] * len(df_pl), dtype=pl.Float64)
+        ).fill_null(0.0)
+
+        deaths_safe = deaths.clip(lower_bound=1.0)
+        derived_kda = (kills + assists) / deaths_safe
+
+        if "kda" in df_pl.columns:
+            kda_series = df_pl.get_column("kda").cast(pl.Float64, strict=False)
+            kda_series = kda_series.fill_null(derived_kda)
+        else:
+            kda_series = derived_kda
+
+        kda_series = kda_series.fill_null(0.0)
+
+        n = len(kda_series)
+        if n <= 1:
+            scores = pl.Series("performance", [50.0] * len(df_pl), dtype=pl.Float64)
+        else:
+            ranks = kda_series.rank(method="average")
+            scores = (ranks - 1.0) / float(n - 1) * 100.0
+            scores = scores.alias("performance")
+
+        result = scores
         if was_pandas:
             return result.to_pandas()
         return result

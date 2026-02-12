@@ -212,10 +212,7 @@ class TestSidebarBackfillIntegration:
         """Test que render_sync_button appelle backfill_all_players avec les bonnes options."""
 
         test_settings = AppSettings()
-        test_settings.spnkr_refresh_backfill_medals = True
-        test_settings.spnkr_refresh_backfill_performance_scores = True
-
-        # Vérifier que les options peuvent être extraites
+        # Vérifier les valeurs par défaut
         medals = bool(getattr(test_settings, "spnkr_refresh_backfill_medals", False))
         performance_scores = bool(
             getattr(test_settings, "spnkr_refresh_backfill_performance_scores", True)
@@ -226,6 +223,7 @@ class TestSidebarBackfillIntegration:
 
         # Avec les valeurs modifiées
         test_settings.spnkr_refresh_backfill_medals = True
+        test_settings.spnkr_refresh_backfill_performance_scores = True
         medals = bool(getattr(test_settings, "spnkr_refresh_backfill_medals", False))
         assert medals is True
 

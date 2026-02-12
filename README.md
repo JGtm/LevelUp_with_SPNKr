@@ -36,6 +36,8 @@
 
 ## Installation Rapide
 
+Note Windows: pour une installation stable de DuckDB/Polars/Numpy, utilisez de préférence Python 3.11 ou 3.12 (évitez Python 3.14 si vous constatez des crashes natifs pendant `pytest`).
+
 ```bash
 # Cloner le projet
 git clone https://github.com/JGtm/LevelUp_with_SPNKr.git
@@ -174,13 +176,13 @@ data/
 
 ```bash
 # Lancer tous les tests
-pytest
+python -m pytest
 
 # Avec couverture
 pytest --cov=src --cov-report=html
 
 # Tests spécifiques
-pytest tests/test_duckdb_repository.py -v
+python -m pytest tests/test_duckdb_repository.py -v
 ```
 
 ---

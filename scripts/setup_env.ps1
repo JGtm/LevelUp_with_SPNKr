@@ -21,6 +21,18 @@ if (Get-Command py -ErrorAction SilentlyContinue) {
             }
         } catch {}
     }
+
+    if (-not $py) {
+        try {
+            $detected = & py -3 -c "import sys; print(sys.version)" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $detected -match "^3\.(1[4-9]|[2-9]\d)\.") {
+                Write-Host "ERREUR: Python 3.14+ detecte via 'py -3' ($detected)."
+                Write-Host "DuckDB est instable sous Python 3.14 sur Windows dans ce projet (crash natif pendant pytest)."
+                Write-Host "Installez plutot Python 3.12 (recommande) ou 3.11: https://www.python.org/downloads/"
+                exit 1
+            }
+        } catch {}
+    }
 }
 
 if (-not $py) {
@@ -35,8 +47,8 @@ if (-not $py) {
     exit 1
 }
 
-$venvDir = ".venv_windows"
-$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$venvDir = ".venv"
+$repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
 if (Test-Path $venvDir) {
@@ -51,13 +63,13 @@ $pip = Join-Path $venvDir "Scripts\pip.exe"
 $pythonExe = Join-Path $venvDir "Scripts\python.exe"
 
 Write-Host "Mise a jour de pip..."
-& $pip install --upgrade pip -q
+& $pythonExe -m pip install --upgrade pip -q
 
 Write-Host "Installation des dependances..."
-& $pip install -e ".[dev,spnkr]" -q
+& $pythonExe -m pip install -e ".[dev,spnkr]" -q
 
 Write-Host ""
 Write-Host "OK. Environnement pret."
-Write-Host "Pour activer: .\.venv_windows\Scripts\Activate.ps1"
+Write-Host "Pour activer: .\.venv\Scripts\Activate.ps1"
 Write-Host "Ou (Git Bash): source activate_env.sh"
 Write-Host "Python: $pythonExe"

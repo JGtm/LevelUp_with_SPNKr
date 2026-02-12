@@ -77,6 +77,26 @@ streamlit --version
 
 # Vérifier DuckDB
 python -c "import duckdb; print(duckdb.__version__)"
+
+# Vérifier Pytest (évite les soucis de PATH)
+python -m pytest --version
+
+# Healthcheck environnement (recommandé)
+python scripts/check_env.py
+```
+
+---
+
+## Tests
+
+Pour lancer la suite de tests, privilégiez `python -m pytest` (ça utilise toujours le pytest installé dans *cet* environnement virtuel).
+
+```bash
+# Tous les tests
+python -m pytest
+
+# Un fichier spécifique
+python -m pytest tests/test_duckdb_repository.py -v
 ```
 
 ---

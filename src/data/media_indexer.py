@@ -623,118 +623,113 @@ class MediaIndexer:
         return current_first + others
 
     def associate_with_matches(self, tolerance_minutes: int = 20) -> int:
-        """Associe les médias actifs avec les matchs (mono-DB).
+        """Associe les médias actifs avec les matchs (multi-joueurs).
 
-        Pour chaque média sans association : on cherche le match le plus proche
-        temporellement **uniquement dans cette DB**. Une seule association par média :
-        (media_path, match_id, xuid) avec xuid = propriétaire de la DB.
-        Le partage par match_id se fait à l'affichage (load_media_for_ui cross-DB).
+        Pour chaque média actif, on cherche le match le plus proche (dans la tolérance)
+        pour **chaque DB joueur** (xuid). On peut donc avoir plusieurs associations
+        pour un même média (une par joueur), via la clé primaire
+        (media_path, match_id, xuid).
+
+        Returns:
+            Nombre de nouvelles associations insérées.
         """
         self.ensure_schema()
         conn_read = duckdb.connect(str(self.db_path), read_only=True)
         try:
-            unassociated = conn_read.execute(
+            media_rows = conn_read.execute(
                 """
                 SELECT mf.file_path, COALESCE(epoch(mf.capture_end_utc), mf.mtime_paris_epoch, mf.mtime)
                 FROM media_files mf
                 WHERE mf.status = 'active'
-                AND NOT EXISTS (
-                    SELECT 1 FROM media_match_associations mma
-                    WHERE mma.media_path = mf.file_path
-                )
                 ORDER BY mf.mtime DESC
                 """
             ).fetchall()
         finally:
             conn_read.close()
 
-        if not unassociated:
+        if not media_rows:
             return 0
 
-        # xuid du propriétaire de cette DB (sync_meta ou gamertag)
-        owner_xuid = None
-        matches = []
-        with duckdb.connect(str(self.db_path), read_only=True) as c:
+        player_dbs = self._get_all_player_dbs_current_first()
+        if not player_dbs:
+            player_dbs = [(self.db_path, get_gamertag_from_db_path(self.db_path) or "")]
+
+        matches_by_xuid: dict[str, list[tuple[Any, ...]]] = {}
+        for db_path, xuid in player_dbs:
             try:
-                r = c.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
-                if r:
-                    owner_xuid = r[0]
+                with duckdb.connect(str(db_path), read_only=True) as c:
+                    try:
+                        rows = c.execute(
+                            """
+                            SELECT match_id, start_time, time_played_seconds,
+                                   COALESCE(map_id, ''), COALESCE(map_name, '')
+                            FROM match_stats WHERE start_time IS NOT NULL
+                            """
+                        ).fetchall()
+                    except Exception:
+                        rows = c.execute(
+                            """
+                            SELECT match_id, start_time, time_played_seconds, '', ''
+                            FROM match_stats WHERE start_time IS NOT NULL
+                            """
+                        ).fetchall()
+                    matches_by_xuid[str(xuid)] = rows
             except Exception:
-                pass
-            if not owner_xuid:
-                owner_xuid = get_gamertag_from_db_path(self.db_path) or ""
-            try:
-                matches = c.execute(
-                    """
-                    SELECT match_id, start_time, time_played_seconds,
-                           COALESCE(map_id, ''), COALESCE(map_name, '')
-                    FROM match_stats WHERE start_time IS NOT NULL
-                    """
-                ).fetchall()
-            except Exception:
-                matches = c.execute(
-                    """
-                    SELECT match_id, start_time, time_played_seconds, '', ''
-                    FROM match_stats WHERE start_time IS NOT NULL
-                    """
-                ).fetchall()
+                matches_by_xuid[str(xuid)] = []
 
         tol_seconds = tolerance_minutes * 60
-        total = 0
         conn_write = duckdb.connect(str(self.db_path), read_only=False)
         try:
-            for media_path, mtime_epoch in unassociated:
-                candidates: list[tuple[str, Any, Any, str, str, float]] = []
-                for row in matches:
-                    match_id, st, dur = row[0], row[1], row[2]
-                    map_id = row[3] if len(row) > 3 else ""
-                    map_name = row[4] if len(row) > 4 else ""
-                    start_epoch = _match_start_to_epoch(st)
-                    if start_epoch is None:
-                        continue
-                    d = float(dur or 0) if dur else 12 * 60
-                    end_epoch = start_epoch + d
-                    if start_epoch - tol_seconds <= mtime_epoch <= end_epoch + tol_seconds:
-                        dist = abs(mtime_epoch - start_epoch)
-                        candidates.append(
-                            (
-                                str(owner_xuid),
-                                match_id,
-                                st,
-                                map_id,
-                                map_name,
-                                dist,
-                            )
-                        )
+            before = conn_write.execute("SELECT COUNT(*) FROM media_match_associations").fetchone()[
+                0
+            ]
 
-                if not candidates:
-                    continue
-                candidates.sort(key=lambda x: (x[5], x[1]))
-                best = candidates[0]
-                try:
-                    conn_write.execute(
-                        """
-                        INSERT INTO media_match_associations
-                        (media_path, match_id, xuid, match_start_time, map_id, map_name, association_confidence)
-                        VALUES (?, ?, ?, ?, ?, ?, 1.0)
-                        ON CONFLICT (media_path, match_id, xuid) DO NOTHING
-                        """,
-                        [
-                            media_path,
-                            best[1],
-                            best[0],
-                            best[2],
-                            best[3],
-                            best[4],
-                        ],
-                    )
-                    total += 1
-                except Exception as e:
-                    logger.warning("Association %s: %s", media_path, e)
+            for media_path, mtime_epoch in media_rows:
+                for xuid, matches in matches_by_xuid.items():
+                    candidates: list[tuple[str, Any, Any, str, str, float]] = []
+                    for row in matches:
+                        match_id, st, dur = row[0], row[1], row[2]
+                        map_id = row[3] if len(row) > 3 else ""
+                        map_name = row[4] if len(row) > 4 else ""
+                        start_epoch = _match_start_to_epoch(st)
+                        if start_epoch is None:
+                            continue
+                        d = float(dur or 0) if dur else 12 * 60
+                        end_epoch = start_epoch + d
+                        if start_epoch - tol_seconds <= mtime_epoch <= end_epoch + tol_seconds:
+                            dist = abs(mtime_epoch - start_epoch)
+                            candidates.append((xuid, match_id, st, map_id, map_name, dist))
+
+                    if not candidates:
+                        continue
+                    candidates.sort(key=lambda x: (x[5], x[1]))
+                    best = candidates[0]
+                    try:
+                        conn_write.execute(
+                            """
+                            INSERT INTO media_match_associations
+                            (media_path, match_id, xuid, match_start_time, map_id, map_name, association_confidence)
+                            VALUES (?, ?, ?, ?, ?, ?, 1.0)
+                            ON CONFLICT (media_path, match_id, xuid) DO NOTHING
+                            """,
+                            [
+                                media_path,
+                                best[1],
+                                best[0],
+                                best[2],
+                                best[3],
+                                best[4],
+                            ],
+                        )
+                    except Exception as e:
+                        logger.warning("Association %s/%s: %s", media_path, xuid, e)
             conn_write.commit()
+            after = conn_write.execute("SELECT COUNT(*) FROM media_match_associations").fetchone()[
+                0
+            ]
         finally:
             conn_write.close()
-        return total
+        return int(after - before)
 
     @staticmethod
     def load_media_for_ui(db_path: Path | str, current_xuid: str | None) -> pl.DataFrame:

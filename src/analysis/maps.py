@@ -74,7 +74,10 @@ def compute_map_breakdown(
     for map_name, g in d.groupby("map_name", dropna=True):
         rates = compute_outcome_rates(g)
         total_out = max(1, rates.total)
-        acc = g["accuracy"].dropna().mean()
+        acc: float | None = None
+        if "accuracy" in g.columns:
+            acc_val = pd.to_numeric(g["accuracy"], errors="coerce").dropna().mean()
+            acc = float(acc_val) if pd.notna(acc_val) else None
 
         # Calcul de la performance moyenne RELATIVE pour cette carte
         perf_scores = compute_performance_series(g, history).dropna()
@@ -84,7 +87,7 @@ def compute_map_breakdown(
             {
                 "map_name": map_name,
                 "matches": int(len(g)),
-                "accuracy_avg": float(acc) if acc == acc else None,
+                "accuracy_avg": acc,
                 "win_rate": rates.wins / total_out if rates.total else None,
                 "loss_rate": rates.losses / total_out if rates.total else None,
                 "ratio_global": compute_global_ratio(g),

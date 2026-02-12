@@ -32,7 +32,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
+try:
+    import httpx
+
+    HTTPX_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    HTTPX_AVAILABLE = False
+    httpx = None  # type: ignore
 
 try:
     import lancedb
@@ -259,6 +265,11 @@ class GitHubIndexer:
 
     def fetch_tree(self, branch: str = "master") -> list[dict]:
         """Récupère l'arbre des fichiers du repo."""
+        if not HTTPX_AVAILABLE:
+            raise ModuleNotFoundError(
+                "Le module 'httpx' est requis pour indexer un repo GitHub. "
+                "Installez-le avec: pip install httpx"
+            )
         url = f"{self.api_base}/git/trees/{branch}?recursive=1"
 
         with httpx.Client() as client:
@@ -284,6 +295,8 @@ class GitHubIndexer:
 
     def fetch_file_content(self, path: str, branch: str = "master") -> str | None:
         """Récupère le contenu d'un fichier."""
+        if not HTTPX_AVAILABLE:
+            return None
         url = f"https://raw.githubusercontent.com/{self.owner}/{self.repo}/{branch}/{path}"
 
         try:
@@ -291,7 +304,7 @@ class GitHubIndexer:
                 resp = client.get(url)
                 resp.raise_for_status()
                 return resp.text
-        except httpx.HTTPError:
+        except Exception:
             return None
 
     def fetch_all_documents(self, branch: str = "master") -> list[Document]:

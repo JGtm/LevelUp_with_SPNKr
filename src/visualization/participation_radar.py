@@ -358,8 +358,8 @@ def compute_participation_profile(
 
     # Impact et Survie depuis match_stats
     deaths, duration_min, avg_life_sec = _get_match_stats_values(row_dict)
-    score_positif = max(0, kill_score + assist_score + objective_score + vehicle_score)
-    impact_raw = score_positif / duration_min if duration_min > 0 else 0.0
+    impact_points = max(0, float(score_raw))
+    impact_raw = impact_points / duration_min if duration_min > 0 else 0.0
     deaths_per_min = deaths / duration_min if duration_min > 0 else 0.0
 
     # Survie = mélange (50/50) : moins de morts + durée de vie moyenne plus longue

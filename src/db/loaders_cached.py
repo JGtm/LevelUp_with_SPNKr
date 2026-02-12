@@ -40,11 +40,28 @@ warnings.warn(
 )
 
 import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from src.db.connection import get_connection
 from src.db.parsers import parse_iso_utc
 from src.models import MatchRow
+
+
+@contextmanager
+def _get_sqlite_connection(db_path: str) -> Generator[sqlite3.Connection, None, None]:
+    """Ouvre une connexion SQLite (cache legacy `.db`).
+
+    Ce module est dédié au cache SQLite historique. Ne pas utiliser
+    `src.db.connection.get_connection` ici: ce dernier refuse les chemins `.db`
+    (DuckDB-only) par design.
+    """
+
+    con = sqlite3.connect(db_path)
+    try:
+        yield con
+    finally:
+        con.close()
 
 
 def _has_match_cache(con: sqlite3.Connection) -> bool:
@@ -89,7 +106,7 @@ def load_matches_cached(
     Returns:
         Liste de MatchRow triée par date croissante.
     """
-    with get_connection(db_path) as con:
+    with _get_sqlite_connection(db_path) as con:
         if not _has_match_cache(con):
             return []
 
@@ -215,7 +232,7 @@ def load_matches_cached(
 def has_cache_tables(db_path: str) -> bool:
     """Vérifie si les tables de cache existent et sont peuplées."""
     try:
-        with get_connection(db_path) as con:
+        with _get_sqlite_connection(db_path) as con:
             return _has_match_cache(con)
     except Exception:
         return False
@@ -223,7 +240,7 @@ def has_cache_tables(db_path: str) -> bool:
 
 def get_cache_stats(db_path: str, xuid: str) -> dict:
     """Retourne des statistiques sur le cache pour un joueur."""
-    with get_connection(db_path) as con:
+    with _get_sqlite_connection(db_path) as con:
         if not _has_match_cache(con):
             return {"has_cache": False}
 
@@ -277,7 +294,7 @@ def load_sessions_cached(
     Returns:
         Liste de dicts avec session_id, session_label, match_count, etc.
     """
-    with get_connection(db_path) as con:
+    with _get_sqlite_connection(db_path) as con:
         if not _has_match_cache(con):
             return []
 
@@ -349,7 +366,7 @@ def load_session_matches_cached(
     session_id: int,
 ) -> list[MatchRow]:
     """Charge les matchs d'une session spécifique."""
-    with get_connection(db_path) as con:
+    with _get_sqlite_connection(db_path) as con:
         if not _has_match_cache(con):
             return []
 
@@ -459,7 +476,7 @@ def load_top_teammates_cached(
     Returns:
         Liste de tuples (teammate_xuid, gamertag, matches_together, wins, losses)
     """
-    with get_connection(db_path) as con:
+    with _get_sqlite_connection(db_path) as con:
         try:
             cur = con.cursor()
             cur.execute(
@@ -483,7 +500,7 @@ def load_friends(db_path: str, owner_xuid: str) -> list[dict]:
     Returns:
         Liste de dicts avec friend_xuid, friend_gamertag, nickname.
     """
-    with get_connection(db_path) as con:
+    with _get_sqlite_connection(db_path) as con:
         try:
             cur = con.cursor()
             cur.execute(
@@ -510,7 +527,7 @@ def load_friends(db_path: str, owner_xuid: str) -> list[dict]:
 
 def get_match_session_info(db_path: str, match_id: str) -> dict | None:
     """Retourne les infos de session pour un match spécifique."""
-    with get_connection(db_path) as con:
+    with _get_sqlite_connection(db_path) as con:
         try:
             cur = con.cursor()
             cur.execute(

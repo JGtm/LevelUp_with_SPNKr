@@ -89,10 +89,12 @@ def compute_global_ratio(df: pd.DataFrame | pl.DataFrame) -> float | None:
 
     if df.empty:
         return None
-    deaths = float(df["deaths"].sum())
+    kills = float(df["kills"].sum()) if "kills" in df.columns else 0.0
+    assists = float(df["assists"].sum()) if "assists" in df.columns else 0.0
+    deaths = float(df["deaths"].sum()) if "deaths" in df.columns else 0.0
     if deaths <= 0:
         return None
-    return (float(df["kills"].sum()) + (float(df["assists"].sum()) / 2.0)) / deaths
+    return (kills + (assists / 2.0)) / deaths
 
 
 def extract_mode_category(pair_name: str | None) -> str:

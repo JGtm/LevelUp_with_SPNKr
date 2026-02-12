@@ -45,6 +45,49 @@
 
 ---
 
+## 🧪 Environnement Python de référence (Windows) — NE PAS ALTÉRER
+
+Objectif : éviter les confusions multi-shell (PowerShell vs Git Bash/MSYS2) et les "pytest/duckdb introuvables".
+
+### ✅ Environnement officiel
+
+- **Interpreter** : `.venv` à la racine du repo
+- **Python** : 3.12.10
+- **Commande canonique** : toujours préférer `python -m ...` (ex: `python -m pytest`) plutôt qu'un binaire résolu via le `PATH`.
+
+### Packages vérifiés (dans `.venv`)
+
+- `pytest==9.0.2`
+- `duckdb==1.4.4`
+- `polars==1.38.1`
+- `pyarrow==23.0.0`
+- `pandas==2.3.3`
+- `numpy==2.4.2`
+- Plugins tests : `pytest-xdist==3.8.0`, `pytest-asyncio==1.3.0`, `pytest-cov==7.0.0`
+
+### Activation (selon shell)
+
+- **PowerShell** : `./.venv/Scripts/Activate.ps1`
+- **cmd.exe** : `.venv\\Scripts\\activate.bat`
+- **Git Bash** : `source .venv/Scripts/activate`
+
+### Commandes tests (stables)
+
+- **Suite stable hors intégration** : `python -m pytest -q --ignore=tests/integration`
+- **Suite complète** : `python -m pytest` (attention : les tests d'intégration peuvent déclencher un crash natif sous Windows selon la config)
+
+### Healthcheck (1 commande)
+
+- `python scripts/check_env.py`
+
+### Règles strictes pour les agents
+
+1. **Ne pas installer/mettre à jour** des packages "pour essayer". Toute modif d'environnement doit être motivée et documentée.
+2. **Ne pas utiliser le Python MSYS2/MinGW** (`pacman ... python/pip`). C'est une source de DLL conflicts et de modules "introuvables".
+3. **Ne pas modifier le `PATH`** pour "rendre pytest global". On utilise `.venv` + `python -m pytest`.
+4. Si un module optionnel manque (ex: RAG), documenter et l'installer explicitement via `python -m pip install ...` (dans `.venv`).
+
+
 ## Table des matières
 
 1. [Stratégie de fusion](#1-stratégie-de-fusion)

@@ -430,6 +430,27 @@ class DuckDBSyncEngine:
                 except Exception as e:
                     logger.warning(f"Impossible d'ajouter session_label: {e}")
 
+            # Colonnes requises pour le calcul du score de performance (v4)
+            # Certaines bases de tests créent match_stats sans ces colonnes.
+            try:
+                cols = conn.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'main' AND table_name = 'match_stats'"
+                ).fetchall()
+                col_names = {r[0] for r in cols} if cols else set()
+
+                if "rank" not in col_names:
+                    logger.info("Ajout de la colonne rank à match_stats")
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN rank SMALLINT")
+                if "damage_dealt" not in col_names:
+                    logger.info("Ajout de la colonne damage_dealt à match_stats")
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN damage_dealt FLOAT")
+                if "personal_score" not in col_names:
+                    logger.info("Ajout de la colonne personal_score à match_stats")
+                    conn.execute("ALTER TABLE match_stats ADD COLUMN personal_score INTEGER")
+            except Exception as e:
+                logger.debug(f"match_stats columns migration (perf score v4): {e}")
+
     def _ensure_match_participants_rank_score(self) -> None:
         """Ajoute les colonnes rank, score et k/d/a à match_participants si absentes (migration)."""
         conn = self._connection

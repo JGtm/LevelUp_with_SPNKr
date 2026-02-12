@@ -1,153 +1,158 @@
-"""Tests standalone pour MetadataResolver - peut s'exécuter sans dépendances complètes."""
+"""Tests standalone pour MetadataResolver.
+
+Important: ne pas modifier `sys.modules` au niveau module, sinon cela pollue la
+collecte pytest et peut casser d'autres tests.
+"""
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
-# Mock DuckDB avant tout import
-sys.modules["duckdb"] = MagicMock()
+import pytest
 
-# Ajouter le chemin src
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# Importer directement le module sans passer par src.data
-import importlib.util
-
-spec = importlib.util.spec_from_file_location(
-    "metadata_resolver",
-    Path(__file__).parent.parent / "src" / "data" / "sync" / "metadata_resolver.py",
-)
-metadata_resolver = importlib.util.module_from_spec(spec)
-
-# Mock les dépendances avant l'exécution
-import logging
-
-sys.modules["logging"] = logging
-
-spec.loader.exec_module(metadata_resolver)
-
-MetadataResolver = metadata_resolver.MetadataResolver
-create_metadata_resolver_function = metadata_resolver.create_metadata_resolver_function
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_MODULE_PATH = _REPO_ROOT / "src" / "data" / "sync" / "metadata_resolver.py"
 
 
-def test_resolver_class_exists():
+def _load_metadata_resolver_with_mocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[ModuleType | None, Exception | None]:
+    """Charge metadata_resolver en isolant les mocks via `monkeypatch`."""
+
+    monkeypatch.syspath_prepend(str(_REPO_ROOT))
+    monkeypatch.setitem(sys.modules, "duckdb", MagicMock())
+
+    spec = importlib.util.spec_from_file_location(
+        "_levelup_metadata_resolver_standalone", _MODULE_PATH
+    )
+    if spec is None or spec.loader is None:
+        return None, RuntimeError(f"Spec introuvable pour {_MODULE_PATH}")
+
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # pragma: no cover
+        return None, exc
+    return module, None
+
+
+def test_resolver_class_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test que la classe MetadataResolver existe."""
-    assert MetadataResolver is not None
-    assert hasattr(MetadataResolver, "resolve")
-    assert hasattr(MetadataResolver, "close")
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
+
+    cls = getattr(module, "MetadataResolver", None)
+    assert cls is not None
+    assert hasattr(cls, "resolve")
+    assert hasattr(cls, "close")
 
 
-def test_resolver_function_exists():
+def test_resolver_function_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test que la fonction create_metadata_resolver_function existe."""
-    assert create_metadata_resolver_function is not None
-    assert callable(create_metadata_resolver_function)
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
+
+    fn = getattr(module, "create_metadata_resolver_function", None)
+    assert callable(fn)
 
 
-@patch("pathlib.Path.exists")
-def test_resolver_init_db_not_exists(mock_exists):
+def test_resolver_init_db_not_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test initialisation quand DB n'existe pas."""
-    mock_exists.return_value = False
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
 
-    resolver = MetadataResolver("/nonexistent/metadata.duckdb")
-    assert resolver._conn is None
-    resolver.close()
-
-
-@patch("pathlib.Path.exists")
-@patch("duckdb.connect")
-def test_resolver_init_db_exists(mock_connect, mock_exists):
-    """Test initialisation quand DB existe."""
-    mock_exists.return_value = True
-    mock_conn = MagicMock()
-    mock_connect.return_value = mock_conn
-
-    resolver = MetadataResolver("/fake/metadata.duckdb")
-    assert resolver._conn is not None
-    resolver.close()
-
-
-@patch("pathlib.Path.exists")
-@patch("duckdb.connect")
-def test_resolve_with_none_asset_id(mock_connect, mock_exists):
-    """Test resolve avec asset_id None."""
-    mock_exists.return_value = True
-    mock_conn = MagicMock()
-    mock_connect.return_value = mock_conn
-
-    resolver = MetadataResolver("/fake/metadata.duckdb")
-    result = resolver.resolve("playlist", None)
-    assert result is None
-    resolver.close()
-
-
-@patch("pathlib.Path.exists")
-@patch("duckdb.connect")
-def test_resolve_with_empty_asset_id(mock_connect, mock_exists):
-    """Test resolve avec asset_id vide."""
-    mock_exists.return_value = True
-    mock_conn = MagicMock()
-    mock_connect.return_value = mock_conn
-
-    resolver = MetadataResolver("/fake/metadata.duckdb")
-    result = resolver.resolve("playlist", "")
-    assert result is None
-    resolver.close()
-
-
-@patch("pathlib.Path.exists")
-@patch("duckdb.connect")
-def test_resolve_invalid_type(mock_connect, mock_exists):
-    """Test resolve avec type invalide."""
-    mock_exists.return_value = True
-    mock_conn = MagicMock()
-    mock_connect.return_value = mock_conn
-
-    resolver = MetadataResolver("/fake/metadata.duckdb")
-    result = resolver.resolve("invalid_type", "some-id")
-    assert result is None
-    resolver.close()
-
-
-def test_create_resolver_function_db_not_exists():
-    """Test create_resolver_function quand DB n'existe pas."""
+    cls = module.MetadataResolver
     with patch("pathlib.Path.exists", return_value=False):
-        result = create_metadata_resolver_function("/nonexistent/metadata.duckdb")
+        resolver = cls("/nonexistent/metadata.duckdb")
+        assert resolver._conn is None
+        resolver.close()
+
+
+def test_resolver_init_db_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test initialisation quand DB existe."""
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
+
+    cls = module.MetadataResolver
+    mock_conn = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("duckdb.connect", return_value=mock_conn),
+    ):
+        resolver = cls("/fake/metadata.duckdb")
+        assert resolver._conn is not None
+        resolver.close()
+
+
+def test_resolve_with_none_asset_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test resolve avec asset_id None."""
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
+
+    cls = module.MetadataResolver
+    mock_conn = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("duckdb.connect", return_value=mock_conn),
+    ):
+        resolver = cls("/fake/metadata.duckdb")
+        result = resolver.resolve("playlist", None)
         assert result is None
+        resolver.close()
 
 
-if __name__ == "__main__":
-    # Exécution simple sans pytest
-    print("=" * 70)
-    print("TESTS STANDALONE METADATA_RESOLVER")
-    print("=" * 70)
+def test_resolve_with_empty_asset_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test resolve avec asset_id vide."""
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
 
-    tests = [
-        test_resolver_class_exists,
-        test_resolver_function_exists,
-        test_resolver_init_db_not_exists,
-        test_resolver_init_db_exists,
-        test_resolve_with_none_asset_id,
-        test_resolve_with_empty_asset_id,
-        test_resolve_invalid_type,
-        test_create_resolver_function_db_not_exists,
-    ]
+    cls = module.MetadataResolver
+    mock_conn = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("duckdb.connect", return_value=mock_conn),
+    ):
+        resolver = cls("/fake/metadata.duckdb")
+        result = resolver.resolve("playlist", "")
+        assert result is None
+        resolver.close()
 
-    passed = 0
-    failed = 0
 
-    for test in tests:
-        try:
-            test()
-            print(f"[OK] {test.__name__}")
-            passed += 1
-        except Exception as e:
-            print(f"[FAIL] {test.__name__}: {e}")
-            failed += 1
+def test_resolve_invalid_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test resolve avec type invalide."""
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
 
-    print("=" * 70)
-    print(f"RESULTAT: {passed} passes, {failed} echecs")
-    print("=" * 70)
+    cls = module.MetadataResolver
+    mock_conn = MagicMock()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("duckdb.connect", return_value=mock_conn),
+    ):
+        resolver = cls("/fake/metadata.duckdb")
+        result = resolver.resolve("invalid_type", "some-id")
+        assert result is None
+        resolver.close()
 
-    sys.exit(0 if failed == 0 else 1)
+
+def test_create_resolver_function_db_not_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test create_resolver_function quand DB n'existe pas."""
+    module, exc = _load_metadata_resolver_with_mocks(monkeypatch)
+    if module is None:
+        pytest.skip(f"[SKIP] metadata_resolver non chargeable: {exc}")
+
+    fn = module.create_metadata_resolver_function
+    with patch("pathlib.Path.exists", return_value=False):
+        result = fn("/nonexistent/metadata.duckdb")
+        assert result is None

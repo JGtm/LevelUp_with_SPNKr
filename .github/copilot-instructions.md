@@ -14,6 +14,27 @@ Ce fichier définit les conventions et règles à suivre lors de modifications s
 
 ---
 
+## Environnement de référence (Windows)
+
+Objectif : éviter les confusions d'interpréteur (PowerShell vs Git Bash/MSYS2) et les erreurs "module introuvable".
+
+- **Python officiel** : `.venv` à la racine du repo (Python 3.12.10)
+- **Interdit** : utiliser le Python MSYS2/MinGW (`pacman ... python/pip`) pour exécuter le projet
+- **Règle d'or** : toujours lancer les outils via `python -m ...` (ne pas dépendre du `PATH`)
+
+Packages critiques vérifiés dans `.venv` :
+- `pytest==9.0.2`
+- `duckdb==1.4.4`
+- `polars==1.38.1`
+- `pyarrow==23.0.0`
+- `pandas==2.3.3`
+- `numpy==2.4.2`
+
+Healthcheck (à lancer avant de diagnostiquer un souci d'environnement) :
+- `python scripts/check_env.py`
+
+---
+
 ## Architecture des Données (v4)
 
 | Données | Stockage | Chemin |
@@ -128,14 +149,17 @@ python scripts/sync.py --full --gamertag MonGamertag --max-matches 500
 ## Tests
 
 ```bash
-# Tous les tests
-pytest
+# Tous les tests (recommandé)
+python -m pytest
 
 # Avec couverture
-pytest --cov=src
+python -m pytest --cov=src
 
 # Tests spécifiques
-pytest tests/test_duckdb_repository.py -v
+python -m pytest tests/test_duckdb_repository.py -v
+
+# Suite stable hors intégration (Windows)
+python -m pytest --ignore=tests/integration
 ```
 
 ---

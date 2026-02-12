@@ -110,6 +110,31 @@ class AggregatedStats:
     total_matches: int = 0
     total_time_seconds: float = 0.0
 
+    def to_dict(self) -> dict[str, int | float]:
+        """Expose une représentation dict pour compatibilité.
+
+        Certains appels historiques (et tests) traitent AggregatedStats comme un mapping.
+        """
+
+        return {
+            "total_kills": self.total_kills,
+            "total_deaths": self.total_deaths,
+            "total_assists": self.total_assists,
+            "total_matches": self.total_matches,
+            "total_time_seconds": self.total_time_seconds,
+        }
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        return key in self.to_dict()
+
+    def __getitem__(self, key: str) -> int | float:
+        return self.to_dict()[key]
+
+    def __iter__(self):
+        return iter(self.to_dict())
+
     @property
     def global_ratio(self) -> float | None:
         """Calcule le ratio global (K + A/2) / D."""

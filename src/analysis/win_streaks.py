@@ -333,7 +333,7 @@ def compute_streak_series_polars(
 
     # Calculer le compteur cumulatif au sein de chaque groupe
     sorted_df = sorted_df.with_columns(
-        pl.lit(1).cum_sum().over("_streak_group").alias("_streak_count")
+        pl.col("outcome").cum_count().over("_streak_group").cast(pl.Int64).alias("_streak_count")
     )
 
     # Valeur de la série : positif pour victoires, négatif pour défaites

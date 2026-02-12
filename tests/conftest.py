@@ -6,6 +6,44 @@ des fixtures Polars pour la migration Pandas → Polars.
 
 from __future__ import annotations
 
+import os
+import sys
+from contextlib import suppress
+
+
+def _sanitize_windows_path_for_python_wheels() -> None:
+    """Nettoie PATH sous Windows pour éviter les conflits de DLL.
+
+    Sur certaines machines, la présence de répertoires MSYS2/MinGW dans PATH peut
+    provoquer des crashes natifs non déterministes dans des extensions Python
+    (DuckDB, Polars, etc.).
+
+    On supprime donc, pour la durée du run pytest, les entrées clairement liées à
+    MSYS2/MinGW (tout en conservant le reste de PATH).
+    """
+
+    if not sys.platform.startswith("win"):
+        return
+
+    path_value = os.environ.get("PATH")
+    if not path_value:
+        return
+
+    parts = [p for p in path_value.split(";") if p]
+    filtered: list[str] = []
+    for part in parts:
+        lower = part.lower()
+        if "\\msys64\\" in lower:
+            continue
+        if "\\mingw" in lower and lower.endswith("\\bin"):
+            continue
+        filtered.append(part)
+
+    os.environ["PATH"] = ";".join(filtered)
+
+
+_sanitize_windows_path_for_python_wheels()
+
 import numpy as np
 import polars as pl
 import pytest
@@ -17,6 +55,38 @@ except ImportError:
     pd = None
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Configuration globale pytest.
+
+    Sur Windows, DuckDB peut crasher de manière non déterministe (access violation)
+    pendant des suites de tests longues. On force un mode mono-thread au moment de
+    la connexion pour réduire ces crashes.
+    """
+
+    if not sys.platform.startswith("win"):
+        return
+
+    try:
+        import duckdb  # noqa: F401
+    except Exception:
+        return
+
+    original_connect = duckdb.connect
+
+    def connect_patched(database=":memory:", read_only: bool = False, config=None, **kwargs):
+        merged = {}
+        if isinstance(config, dict):
+            merged.update(config)
+        merged.setdefault("threads", "1")
+
+        conn = original_connect(database, read_only=read_only, config=merged, **kwargs)
+        with suppress(Exception):
+            conn.execute("SET threads=1")
+        return conn
+
+    duckdb.connect = connect_patched
+
+
 # =============================================================================
 # FIXTURES POLARS
 # =============================================================================
@@ -25,17 +95,21 @@ except ImportError:
 @pytest.fixture
 def sample_match_df_polars() -> pl.DataFrame:
     """DataFrame Polars type avec colonnes de match standard."""
+    from datetime import datetime, timedelta
+
     np.random.seed(42)  # Reproductibilité
     n = 20
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    end = start + timedelta(hours=n - 1)
     return pl.DataFrame(
         {
             "match_id": [f"match_{i}" for i in range(n)],
-            "start_time": pl.date_range(
-                start=pl.date(2025, 1, 1),
-                end=pl.date(2025, 1, 1),
+            "start_time": pl.datetime_range(
+                start=start,
+                end=end,
                 interval="1h",
                 eager=True,
-            )[:n],
+            ),
             "kills": np.random.randint(5, 25, n).tolist(),
             "deaths": np.random.randint(3, 15, n).tolist(),
             "assists": np.random.randint(2, 12, n).tolist(),

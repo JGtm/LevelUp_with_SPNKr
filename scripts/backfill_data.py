@@ -628,6 +628,24 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
         return False
 
     try:
+        # Colonnes v4 optionnelles (peuvent manquer selon le schéma)
+        try:
+            existing_cols = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'match_stats'"
+                ).fetchall()
+            }
+        except Exception:
+            existing_cols = set()
+
+        optional_cols = ["personal_score", "damage_dealt", "rank", "team_mmr", "enemy_mmr"]
+
+        def _col_or_null(col: str) -> str:
+            return col if col in existing_cols else f"NULL AS {col}"
+
+        optional_select = ",\n                   ".join(_col_or_null(c) for c in optional_cols)
+
         # S'assurer que la colonne existe
         _ensure_performance_score_column(conn)
 
@@ -641,13 +659,12 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
             # Score déjà calculé
             return False
 
-        # Récupérer les données du match actuel (v4: +personal_score, damage_dealt, rank, mmrs)
+        # Récupérer les données du match actuel (schéma tolérant)
         match_data = conn.execute(
-            """
+            f"""
             SELECT match_id, start_time, kills, deaths, assists, kda, accuracy,
                    time_played_seconds, avg_life_seconds,
-                   personal_score, damage_dealt,
-                   rank, team_mmr, enemy_mmr
+                   {optional_select}
             FROM match_stats
             WHERE match_id = ?
             """,
@@ -665,12 +682,11 @@ def _compute_performance_score_for_match(conn, match_id: str) -> bool:
         # Utiliser .pl() pour obtenir directement un DataFrame Polars
         try:
             history_df = conn.execute(
-                """
+                f"""
                 SELECT
                     match_id, start_time, kills, deaths, assists, kda, accuracy,
                     time_played_seconds, avg_life_seconds,
-                    personal_score, damage_dealt,
-                    rank, team_mmr, enemy_mmr
+                    {optional_select}
                 FROM match_stats
                 WHERE match_id != ?
                   AND start_time IS NOT NULL

@@ -190,13 +190,22 @@ def add_ui_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = _normalize_df(df)
 
     if "playlist_ui" not in df.columns:
-        df["playlist_ui"] = (
-            df["playlist_name"].apply(clean_asset_label).apply(translate_playlist_name)
-        )
+        if "playlist_name" in df.columns:
+            df["playlist_ui"] = (
+                df["playlist_name"].apply(clean_asset_label).apply(translate_playlist_name)
+            )
+        else:
+            df["playlist_ui"] = ""
     if "mode_ui" not in df.columns:
-        df["mode_ui"] = df["pair_name"].apply(normalize_mode_label)
+        if "pair_name" in df.columns:
+            df["mode_ui"] = df["pair_name"].apply(normalize_mode_label)
+        else:
+            df["mode_ui"] = ""
     if "map_ui" not in df.columns:
-        df["map_ui"] = df["map_name"].apply(normalize_map_label)
+        if "map_name" in df.columns:
+            df["map_ui"] = df["map_name"].apply(normalize_map_label)
+        else:
+            df["map_ui"] = ""
     return df
 
 

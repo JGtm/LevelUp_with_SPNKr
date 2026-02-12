@@ -22,7 +22,18 @@ for v in 3.12 3.11 3.10; do
         break
     fi
 done
-[ -z "$PY_EXE" ] && PY_EXE=$(cmd //c "py -3 -c \"import sys; print(sys.executable)\"" 2>/dev/null | tr -d '\r\n')
+
+if [ -z "$PY_EXE" ]; then
+    det=$(cmd //c "py -3 -c \"import sys; print(sys.version)\"" 2>/dev/null | tr -d '\r\n')
+    if echo "$det" | grep -Eq '^3\.(1[4-9]|[2-9][0-9])\.'; then
+        echo "ERREUR: seul Python 3.14+ semble disponible via 'py -3' ($det)."
+        echo "DuckDB est instable sous Python 3.14 sur Windows dans ce projet (crash natif pendant pytest)."
+        echo "Installez plutot Python 3.12 (recommande) ou 3.11: https://www.python.org/downloads/"
+        exit 1
+    fi
+
+    PY_EXE=$(cmd //c "py -3 -c \"import sys; print(sys.executable)\"" 2>/dev/null | tr -d '\r\n')
+fi
 
 # Fallback: chemins Windows typiques (Git Bash)
 if [ -z "$PY_EXE" ]; then
@@ -39,13 +50,13 @@ fi
 if [ -z "$PY_EXE" ]; then
     echo "ERREUR: Python Windows non trouvé."
     echo "Assurez-vous que Python (python.org) est installé et dans le PATH."
-    echo "Ou créez .venv_windows manuellement avec le Python de votre choix."
+    echo "Ou créez .venv manuellement avec une version supportée (3.10-3.12)."
     exit 1
 fi
 
 echo "Python: $PY_EXE"
 
-VENV_DIR=".venv_windows"
+VENV_DIR=".venv"
 [ -d "$VENV_DIR" ] && rm -rf "$VENV_DIR"
 
 echo "Création du venv..."

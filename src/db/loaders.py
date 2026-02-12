@@ -269,7 +269,12 @@ def load_match_player_gamertags(db_path: str, match_id: str) -> dict[str, str]:
     if not match_id:
         return {}
 
-    with get_connection(db_path) as con:
+    # Module legacy SQLite : ne pas tenter d'ouvrir une DB DuckDB v4 ici.
+    if isinstance(db_path, str) and db_path.strip().lower().endswith(".duckdb"):
+        return {}
+
+    con = sqlite3.connect(db_path)
+    try:
         cur = con.cursor()
         cur.execute(queries.LOAD_MATCH_STATS_BY_MATCH_ID, (match_id,))
         row = cur.fetchone()
@@ -280,6 +285,8 @@ def load_match_player_gamertags(db_path: str, match_id: str) -> dict[str, str]:
             payload = json.loads(row[0])
         except Exception:
             return {}
+    finally:
+        con.close()
 
     players = payload.get("Players")
     if not isinstance(players, list) or not players:

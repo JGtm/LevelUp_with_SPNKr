@@ -135,6 +135,41 @@ class DuckDBRepository:
 
         return self._connection
 
+    def _has_column(
+        self, conn: duckdb.DuckDBPyConnection, table_name: str, column_name: str
+    ) -> bool:
+        """Retourne True si une colonne existe dans une table.
+
+        Utile pour supporter des schémas historiques (colonnes ajoutées en v4).
+        """
+
+        try:
+            return (
+                conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = ? AND column_name = ?",
+                    (table_name, column_name),
+                ).fetchone()[0]
+                > 0
+            )
+        except Exception:
+            return False
+
+    def _select_optional_column(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        *,
+        table_name: str,
+        table_alias: str,
+        column_name: str,
+        output_name: str | None = None,
+    ) -> str:
+        """Construit une expression SELECT tolérante si la colonne manque."""
+
+        out = output_name or column_name
+        if self._has_column(conn, table_name, column_name):
+            return f"{table_alias}.{column_name} AS {out}"
+        return f"NULL AS {out}"
+
     def _build_metadata_resolution(
         self, conn: duckdb.DuckDBPyConnection
     ) -> tuple[str, str, str, str]:
@@ -292,6 +327,13 @@ class DuckDBRepository:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
+        personal_score_select = self._select_optional_column(
+            conn,
+            table_name="match_stats",
+            table_alias="match_stats",
+            column_name="personal_score",
+        )
+
         sql = f"""
             SELECT
                 match_stats.match_id,
@@ -319,7 +361,7 @@ class DuckDBRepository:
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
-                match_stats.personal_score
+                {personal_score_select}
             FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time ASC
@@ -370,7 +412,7 @@ class DuckDBRepository:
                     match_stats.enemy_team_score,
                     {team_mmr_expr} as team_mmr,
                     {enemy_mmr_expr} as enemy_mmr,
-                    match_stats.personal_score
+                    {personal_score_select}
                 FROM match_stats{pms_join}
                 WHERE {where_sql}
                 ORDER BY match_stats.start_time ASC
@@ -430,6 +472,13 @@ class DuckDBRepository:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
+        personal_score_select = self._select_optional_column(
+            conn,
+            table_name="match_stats",
+            table_alias="match_stats",
+            column_name="personal_score",
+        )
+
         sql = f"""
             SELECT
                 match_stats.match_id,
@@ -457,7 +506,7 @@ class DuckDBRepository:
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
-                match_stats.personal_score
+                {personal_score_select}
             FROM match_stats{metadata_joins}{pms_join}
             WHERE match_stats.start_time >= ? AND match_stats.start_time <= ?
             ORDER BY match_stats.start_time ASC
@@ -539,6 +588,13 @@ class DuckDBRepository:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
+        personal_score_select = self._select_optional_column(
+            conn,
+            table_name="match_stats",
+            table_alias="match_stats",
+            column_name="personal_score",
+        )
+
         where_clauses = []
         if not include_firefight:
             where_clauses.append("match_stats.is_firefight = FALSE")
@@ -572,7 +628,7 @@ class DuckDBRepository:
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
-                match_stats.personal_score
+                {personal_score_select}
             FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time DESC
@@ -654,6 +710,13 @@ class DuckDBRepository:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
+        personal_score_select = self._select_optional_column(
+            conn,
+            table_name="match_stats",
+            table_alias="match_stats",
+            column_name="personal_score",
+        )
+
         where_clauses = []
         if not include_firefight:
             where_clauses.append("match_stats.is_firefight = FALSE")
@@ -688,7 +751,7 @@ class DuckDBRepository:
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
-                match_stats.personal_score
+                {personal_score_select}
             FROM match_stats{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time {order_dir}
@@ -2069,8 +2132,29 @@ class DuckDBRepository:
     # =========================================================================
 
     def _get_archive_dir(self) -> Path:
-        """Retourne le chemin vers le dossier archive du joueur."""
-        return self._player_db_path.parent / "archive"
+        """Retourne le chemin vers le dossier archive du joueur.
+
+        Dans le layout standard, les archives sont stockées dans un dossier
+        `archive/` à côté de `stats.duckdb`.
+
+        Pour certains scénarios (notamment des fixtures de tests), le dossier
+        joueur peut être suffixé par un identifiant (ex: `TestPlayer_ab12cd34`).
+        Dans ce cas, on tente aussi de résoudre `players/<base>/archive`.
+        """
+
+        archive_dir = self._player_db_path.parent / "archive"
+        if archive_dir.exists():
+            return archive_dir
+
+        player_dir_name = self._player_db_path.parent.name
+        m = re.match(r"^(?P<base>.+)_[0-9a-f]{8}$", player_dir_name)
+        if m:
+            base_dir = m.group("base")
+            alternative = self._player_db_path.parent.parent / base_dir / "archive"
+            if alternative.exists():
+                return alternative
+
+        return archive_dir
 
     def get_archive_info(self) -> dict[str, Any]:
         """Retourne les informations sur les archives existantes.
