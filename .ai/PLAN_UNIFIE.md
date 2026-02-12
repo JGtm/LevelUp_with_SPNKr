@@ -691,8 +691,8 @@ pytest tests/ -v
 #### Gate de livraison
 
 - [ ] Backup vérifié avant suppression de données
-- [ ] `data/` ne contient plus de `.db` (uniquement `.duckdb`)
-- [ ] `thumbs/` relocalisé, code adapté
+- [x] `data/` ne contient plus de `.db` (uniquement `.duckdb`)
+- [x] `thumbs/` relocalisé, code adapté
 - [ ] (si 10B fait) `wc -l scripts/backfill_data.py` < 300 lignes
 - [ ] `pytest tests/ -v` passe
 
@@ -1053,8 +1053,8 @@ Chaque sprint est considéré livré quand :
 - [ ] `grep -r "import sqlite3" src/` → aucun résultat
 - [ ] `grep -r "sqlite_master" src/` → aucun résultat
 - [ ] `scripts/` contient ~22 scripts actifs + `migration/` + `_archive/`
-- [ ] `data/` ne contient plus de `.db`
-- [ ] `thumbs/` relocalisé dans `static/maps/`
+- [x] `data/` ne contient plus de `.db`
+- [x] `thumbs/` relocalisé dans `static/maps/`
 - [ ] `pytest tests/ -v --cov=src --cov-report=html` → > 95%
 - [ ] Score de performance v4 fonctionnel
 - [ ] Toutes les nouvelles visualisations visibles
@@ -1391,7 +1391,7 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 
 - PR rapide (`test_data_contract_medals`, `test_data_contract_performance_metrics`, `test_data_contract_shots_accuracy`) : **9 passed**.
 - Intégration app (`test_app_data_to_chart_flow`, `test_app_partial_data_to_chart_flow`, `test_app_partial_participants_flow`) : **3 passed**.
-- Stable hors intégration (`python -m pytest -q --ignore=tests/integration`) : **1058 passed, 38 skipped**.
+- Stable hors intégration (`python -m pytest -q --ignore=tests/integration`) : **1048 passed, 48 skipped** (revalidation locale après correction).
 - E2E navigateur (`python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser`) : **13 skipped**.
 
 **Reste à faire pour clôturer la partie 9.4**
