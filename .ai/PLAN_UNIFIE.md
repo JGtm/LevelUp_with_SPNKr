@@ -1305,21 +1305,21 @@ La phase audit S0→S9 est considérée close quand :
 
 #### 9.4.5 Critères d'acceptation de la campagne
 
-- [ ] Chaque domaine fonctionnel UI a au moins **1 test contrat data** en BDD
-- [ ] Chaque domaine a au moins **1 test représentation graphe** (traces + fallback)
-- [ ] Les filtres modifient effectivement les données affichées sur au moins 3 pages clés
-- [ ] Les datasets partiels/vides n'entraînent aucune exception UI
-- [ ] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven
-- [ ] La CI standard reste rapide (E2E navigateur hors pipeline bloquant)
+- [ ] Chaque domaine fonctionnel UI a au moins **1 test contrat data** en BDD *(partiel : 5 fichiers `test_data_contract_*.py` créés)*
+- [ ] Chaque domaine a au moins **1 test représentation graphe** (traces + fallback) *(partiel : coverage présente sur plusieurs pages, pas encore exhaustive)*
+- [ ] Les filtres modifient effectivement les données affichées sur au moins 3 pages clés *(partiel : non-régressions présentes, couverture à durcir)*
+- [x] Les datasets partiels/vides n'entraînent aucune exception UI *(INT-002 + INT-003 implémentés et validés en local)*
+- [ ] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven *(scénarios implémentés, exécution browser encore skip en local)*
+- [ ] La CI standard reste rapide (E2E navigateur hors pipeline bloquant) *(à confirmer par exécution CI)*
 
 #### 9.4.6 Backlog concret des nouveaux fichiers de tests
 
-- `tests/test_data_contract_medals.py`
-- `tests/test_data_contract_performance_metrics.py`
-- `tests/test_data_contract_shots_accuracy.py`
-- `tests/test_data_contract_participants.py`
-- `tests/test_data_contract_assets_aliases.py`
-- `tests/integration/test_app_data_to_chart_flow.py`
+- ✅ `tests/test_data_contract_medals.py`
+- ✅ `tests/test_data_contract_performance_metrics.py`
+- ✅ `tests/test_data_contract_shots_accuracy.py`
+- ✅ `tests/test_data_contract_participants.py`
+- ✅ `tests/test_data_contract_assets_aliases.py`
+- ✅ `tests/integration/test_app_data_to_chart_flow.py`
 
 > Note : Les tests sur `scripts/backfill_data.py` peuvent rester en complément, mais la campagne 9.4 est pilotée par des assertions "BDD présente -> app affiche".
 
@@ -1331,35 +1331,35 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 
 **Priorité P0 (immédiat)**
 
-- `E2E-001` : filtre playlist qui modifie réellement les résultats visibles (`Séries temporelles`).
-- `E2E-002` : filtres combinés mode + map sur `Victoires/Défaites`.
-- `E2E-003` : `Mes coéquipiers` état vide (<2 amis) puis état rempli (heatmap + ranking).
-- `E2E-004` : deep-link `?page=Match&match_id=...`.
-- `INT-002` : test d'intégration dataset partiel/fallback (pas d'exception UI).
+- ✅ `E2E-001` : filtre playlist qui modifie réellement les résultats visibles (`Séries temporelles`).
+- ✅ `E2E-002` : filtres combinés mode + map sur `Victoires/Défaites`.
+- ✅ `E2E-003` : `Mes coéquipiers` état vide (<2 amis) puis état rempli (heatmap + ranking).
+- ✅ `E2E-004` : deep-link `?page=Match&match_id=...`.
+- ✅ `INT-002` : test d'intégration dataset partiel/fallback (pas d'exception UI).
 
 **Priorité P1 (important)**
 
-- `E2E-005` : navigation `Historique des parties` -> `Match`.
-- `E2E-006` : navigation `Médias` -> `Match` via query params internes.
-- `E2E-007` : stabilité sélection A/B dans `Comparaison de sessions`.
-- `NR-001` : non-régression `_pending_page` / `consume_pending_page`.
-- `NR-002` : non-régression gestion `query_params` (set/clear).
-- `DATA-006` : contrat data `session_id/session_label`.
+- ✅ `E2E-005` : navigation `Historique des parties` -> `Match`.
+- ✅ `E2E-006` : navigation `Médias` -> `Match` via query params internes.
+- ✅ `E2E-007` : stabilité sélection A/B dans `Comparaison de sessions`.
+- ✅ `NR-001` : non-régression `_pending_page` / `consume_pending_page`.
+- ✅ `NR-002` : non-régression gestion `query_params` (set/clear).
+- ✅ `DATA-006` : contrat data `session_id/session_label`.
 
 **Priorité P2 (nightly / durcissement)**
 
-- `E2E-008` : smoke dédié `Objectifs` (3 onglets rendables).
-- `E2E-009` : smoke dédié `Carrière` (gauge + historique).
-- `INT-003` : intégration participants partiels (graceful degradation).
-- `NR-003` : persistance filtres cross-pages (`Séries temporelles` / `Victoires-Défaites` / `Coéquipiers`).
+- ✅ `E2E-008` : smoke dédié `Objectifs` (3 onglets rendables).
+- ✅ `E2E-009` : smoke dédié `Carrière` (gauge + historique).
+- ✅ `INT-003` : intégration participants partiels (graceful degradation).
+- ✅ `NR-003` : persistance filtres cross-pages (`Séries temporelles` / `Victoires-Défaites` / `Coéquipiers`).
 
 **Fichiers complémentaires proposés**
 
-- `tests/integration/test_app_partial_data_to_chart_flow.py`
-- `tests/test_data_contract_sessions.py`
-- `tests/test_pending_page_navigation_regressions.py`
-- `tests/test_query_params_routing_regressions.py`
-- `tests/test_cross_page_filter_persistence.py`
+- ✅ `tests/integration/test_app_partial_data_to_chart_flow.py`
+- ✅ `tests/test_data_contract_sessions.py`
+- ✅ `tests/test_pending_page_navigation_regressions.py`
+- ✅ `tests/test_query_params_routing_regressions.py`
+- ✅ `tests/test_cross_page_filter_persistence.py`
 
 **Ordonnancement recommandé**
 
@@ -1373,6 +1373,77 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 - chaque domaine data critique couvert par au moins 1 contrat table/colonnes/invariants,
 - chaque navigation inter-page critique (`historique->match`, `médias->match`, deep-link) testée,
 - chaque feature conditionnelle (ex: coéquipiers >= 2) testée en état vide + rempli.
+
+#### 9.4.8 État d'avancement opérationnel (2026-02-12)
+
+**Déjà fait (constaté en repo)**
+
+- Contrats data DuckDB (Lot T1) : **5/5 fichiers créés**.
+- Intégration app data->chart (Lot T4) : `tests/integration/test_app_data_to_chart_flow.py` présent.
+- Base non-régression navigation/filtres (Lot T3) : tests de régression présents (`page_router`, `navigation_state`, `filters_and_visualization_contracts`).
+- Base E2E navigateur (Lot T5) : fichier `tests/e2e/test_streamlit_browser_e2e.py` présent (smokes).
+- Backlog 9.4.7 complété : **5/5 fichiers complémentaires créés et validés** (`16 passed` en exécution ciblée).
+- Vague P0 E2E implémentée (`E2E-001..004`) dans `tests/e2e/test_streamlit_browser_e2e.py`.
+- Exécution E2E locale (avec `--run-e2e-browser`) : `13 skipped` (Playwright/browser runtime non disponible), aucun échec.
+- Vagues P1/P2 implémentées (`E2E-005..009`, `INT-003`, `NR-003`) avec validation locale : `6 passed` (hors E2E) et `13 skipped` (E2E sans Playwright).
+
+**Preuves d'exécution locale (2026-02-12)**
+
+- PR rapide (`test_data_contract_medals`, `test_data_contract_performance_metrics`, `test_data_contract_shots_accuracy`) : **9 passed**.
+- Intégration app (`test_app_data_to_chart_flow`, `test_app_partial_data_to_chart_flow`, `test_app_partial_participants_flow`) : **3 passed**.
+- Stable hors intégration (`python -m pytest -q --ignore=tests/integration`) : **1058 passed, 38 skipped**.
+- E2E navigateur (`python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser`) : **13 skipped**.
+
+**Reste à faire pour clôturer la partie 9.4**
+
+1. ✅ Créer les 5 fichiers complémentaires listés en 9.4.7.
+2. ✅ Implémenter les scénarios E2E `E2E-005..009` + `INT-003` (vagues P1/P2).
+3. ✅ Exécuter et consigner les résultats 9.4.4 en local (PR / stable / intégration / E2E).
+4. Exécuter la passe E2E sur runner Playwright opérationnel (zéro skip attendu) puis finaliser le recochage 9.4.5 avec preuves CI.
+
+**Procédure CI recommandée (finalisation 9.4.5)**
+
+- Lancer le workflow GitHub Actions `.github/workflows/e2e-browser-optional.yml` via `workflow_dispatch`.
+- Exécuter un premier run avec `enforce_no_skip=false` pour valider l'infra Playwright et récupérer le rapport.
+- Exécuter un second run avec `enforce_no_skip=true` pour imposer le critère final (zéro `skipped`).
+- Archiver l'artifact `e2e-browser-junit` et reporter le résumé (`tests/skipped/failures/errors`) dans cette section.
+
+**Template de compte-rendu CI (copier-coller)**
+
+```markdown
+### Rapport CI 9.4.5 — YYYY-MM-DD
+
+- Workflow: `.github/workflows/e2e-browser-optional.yml`
+- Run #1 (`enforce_no_skip=false`) : ✅/❌
+- Run #2 (`enforce_no_skip=true`) : ✅/❌
+- Artifact JUnit: `e2e-browser-junit` (lien/run id)
+
+#### Résumé E2E (run strict)
+
+- tests = X
+- skipped = Y
+- failures = Z
+- errors = W
+
+#### Décision recochage 9.4.5
+
+- [ ] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven
+  - Critère de preuve: `tests >= 4` et `failures = 0` et `errors = 0`
+- [ ] La CI standard reste rapide (E2E navigateur hors pipeline bloquant)
+  - Critère de preuve: workflow E2E reste `workflow_dispatch` (non bloquant PR)
+
+#### Notes
+
+- Observations:
+- Actions correctives (si besoin):
+```
+
+**Checklist de finalisation express (9.4.5)**
+
+1. Lancer `workflow_dispatch` avec `enforce_no_skip=false`.
+2. Lancer `workflow_dispatch` avec `enforce_no_skip=true`.
+3. Copier le résumé JUnit dans le template ci-dessus.
+4. Recocher les cases 9.4.5 concernées avec la preuve associée.
 
 ---
 

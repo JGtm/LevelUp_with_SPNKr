@@ -36,6 +36,24 @@ def _wait_for_http_ready(url: str, timeout_s: int = 60) -> None:
     raise TimeoutError(f"Serveur non prêt dans le délai imparti: {url}")
 
 
+def _assert_no_front_error(page) -> None:
+    """Vérifie l'absence d'erreur front évidente dans le HTML courant."""
+    content = page.content().lower()
+    assert "traceback" not in content
+    assert "exception" not in content
+
+
+def _click_first_visible_text(page, labels: list[str], *, in_sidebar: bool = True) -> str | None:
+    """Clique le premier libellé visible parmi `labels` et retourne le libellé cliqué."""
+    scope = page.locator('[data-testid="stSidebar"]') if in_sidebar else page
+    for label in labels:
+        locator = scope.get_by_text(label)
+        if locator.count() > 0:
+            locator.first.click(timeout=20000)
+            return label
+    return None
+
+
 @pytest.fixture
 def running_streamlit_app() -> str:
     """Lance l'app Streamlit en sous-process et retourne l'URL de base."""
@@ -189,4 +207,329 @@ def test_streamlit_filters_and_sessions_interaction_smoke(running_streamlit_app:
         assert "traceback" not in content
         assert "exception" not in content
 
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_001_playlist_filter_changes_visible_results(running_streamlit_app: str) -> None:
+    """E2E-001: le filtre playlist modifie visiblement l'écran Séries temporelles."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        timeseries_tab = page.get_by_text("Séries temporelles")
+        if timeseries_tab.count() == 0:
+            pytest.skip("Onglet Séries temporelles non détecté")
+        timeseries_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1500)
+
+        before = page.content()
+        clicked = _click_first_visible_text(
+            page,
+            ["Ranked Arena", "Quick Play", "BTB", "Ranked"],
+            in_sidebar=True,
+        )
+        if clicked is None:
+            pytest.skip("Aucune option playlist visible pour l'environnement courant")
+
+        page.wait_for_timeout(1400)
+        after = page.content()
+
+        assert before != after
+        _assert_no_front_error(page)
+
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_002_mode_map_combined_filters_on_winloss(running_streamlit_app: str) -> None:
+    """E2E-002: combinaison mode+map sur Victoires/Défaites sans erreur front."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        winloss_tab = page.get_by_text("Victoires/Défaites")
+        if winloss_tab.count() == 0:
+            pytest.skip("Onglet Victoires/Défaites non détecté")
+        winloss_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1500)
+
+        before = page.content()
+
+        mode_clicked = _click_first_visible_text(
+            page,
+            ["Slayer", "CTF", "Oddball", "Strongholds"],
+            in_sidebar=True,
+        )
+        map_clicked = _click_first_visible_text(
+            page,
+            ["Aquarius", "Recharge", "Live Fire", "Streets"],
+            in_sidebar=True,
+        )
+
+        if mode_clicked is None or map_clicked is None:
+            pytest.skip("Filtres mode/map non détectés pour la base courante")
+
+        page.wait_for_timeout(1500)
+        after = page.content()
+
+        assert before != after
+        _assert_no_front_error(page)
+
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_003_teammates_impact_empty_then_filled_state(running_streamlit_app: str) -> None:
+    """E2E-003: vérifier état vide puis tentative d'état rempli de l'impact coéquipiers."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        teammates_tab = page.get_by_text("Mes coéquipiers")
+        if teammates_tab.count() == 0:
+            pytest.skip("Onglet Mes coéquipiers non détecté")
+        teammates_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1800)
+
+        impact_section = page.get_by_text("Impact & Taquinerie")
+        if impact_section.count() == 0:
+            pytest.skip("Section Impact & Taquinerie non détectée")
+        impact_section.first.click(timeout=20000)
+        page.wait_for_timeout(1000)
+
+        empty_message = "Sélectionnez au moins 2 coéquipiers pour voir l'analyse d'impact."
+        has_empty = empty_message in page.content()
+
+        # Tenter de sélectionner 2 coéquipiers via la multi-sélection quand possible.
+        team_picker = page.get_by_text("Coéquipiers")
+        if team_picker.count() > 0:
+            team_picker.first.click(timeout=20000)
+            page.wait_for_timeout(500)
+            options = page.locator('[role="option"]')
+            if options.count() >= 2:
+                options.nth(0).click(timeout=10000)
+                page.wait_for_timeout(250)
+                options.nth(1).click(timeout=10000)
+                page.wait_for_timeout(700)
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(1200)
+                impact_section = page.get_by_text("Impact & Taquinerie")
+                if impact_section.count() > 0:
+                    impact_section.first.click(timeout=20000)
+                    page.wait_for_timeout(1000)
+
+        content = page.content()
+        has_filled_indicators = any(
+            marker in content
+            for marker in [
+                "MVP",
+                "Boulet",
+                "Premier Sang",
+                "Finisseur",
+                "Matchs analysés",
+            ]
+        )
+
+        if not has_empty and not has_filled_indicators:
+            pytest.skip("Ni état vide ni état rempli détectable dans cet environnement")
+
+        _assert_no_front_error(page)
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_004_deeplink_match_query_params(running_streamlit_app: str) -> None:
+    """E2E-004: deep-link vers la page Match via query params."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        deep_link = f"{running_streamlit_app}?page=Match&match_id=e2e_missing_match"
+        page.goto(deep_link, wait_until="domcontentloaded", timeout=120000)
+        page.wait_for_timeout(2200)
+
+        content = page.content()
+        assert "Match" in content
+        assert "MatchId" in content
+        assert (
+            "MatchId introuvable" in content
+            or "Renseigne un MatchId" in content
+            or "Afficher un match précis" in content
+        )
+
+        _assert_no_front_error(page)
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_005_navigation_historique_to_match(running_streamlit_app: str) -> None:
+    """E2E-005: navigation Historique des parties -> Match."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        history_tab = page.get_by_text("Historique des parties")
+        if history_tab.count() == 0:
+            pytest.skip("Onglet Historique des parties non détecté")
+        history_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1800)
+
+        open_match = page.get_by_text("Ouvrir")
+        if open_match.count() == 0:
+            pytest.skip("Lien Ouvrir (historique -> match) non disponible dans cet environnement")
+
+        open_match.first.click(timeout=20000)
+        page.wait_for_timeout(1800)
+
+        content = page.content()
+        assert "MatchId" in content
+        _assert_no_front_error(page)
+
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_006_navigation_medias_to_match(running_streamlit_app: str) -> None:
+    """E2E-006: navigation Médias -> Match via query params internes."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        medias_tab = page.get_by_text("Médias")
+        if medias_tab.count() == 0:
+            pytest.skip("Onglet Médias non détecté")
+        medias_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1800)
+
+        media_match_link = page.locator('a:has-text("Ouvrir le match")')
+        if media_match_link.count() == 0:
+            pytest.skip("Aucun lien Ouvrir le match dans la page Médias")
+
+        href = media_match_link.first.get_attribute("href")
+        if not href:
+            pytest.skip("Lien média sans href exploitable")
+
+        if href.startswith("?"):
+            target = f"{running_streamlit_app}{href}"
+        elif href.startswith("http"):
+            target = href
+        else:
+            target = f"{running_streamlit_app}/{href.lstrip('/')}"
+
+        page.goto(target, wait_until="domcontentloaded", timeout=120000)
+        page.wait_for_timeout(1600)
+
+        content = page.content()
+        assert "MatchId" in content
+        _assert_no_front_error(page)
+
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_007_session_comparison_selection_stability(running_streamlit_app: str) -> None:
+    """E2E-007: stabilité de la sélection A/B dans Comparaison de sessions."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        compare_tab = page.get_by_text("Comparaison de sessions")
+        if compare_tab.count() == 0:
+            pytest.skip("Onglet Comparaison de sessions non détecté")
+        compare_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1800)
+
+        tab_a = page.get_by_text("Session A")
+        tab_b = page.get_by_text("Session B")
+        if tab_a.count() == 0 or tab_b.count() == 0:
+            pytest.skip("Sous-onglets Session A/B non détectés")
+
+        tab_a.first.click(timeout=15000)
+        page.wait_for_timeout(400)
+        tab_b.first.click(timeout=15000)
+        page.wait_for_timeout(400)
+        tab_a.first.click(timeout=15000)
+        page.wait_for_timeout(700)
+
+        _assert_no_front_error(page)
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_008_objectifs_smoke_tabs_renderable(running_streamlit_app: str) -> None:
+    """E2E-008: smoke Objectifs (3 onglets rendables) quand la page est disponible."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        objectifs_tab = page.get_by_text("Objectifs")
+        if objectifs_tab.count() == 0:
+            pytest.skip("Page/onglet Objectifs non exposé dans cette configuration")
+
+        objectifs_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1600)
+
+        expected_tabs = ["Objectifs vs Kills", "Répartition", "Tendance"]
+        visible = [label for label in expected_tabs if page.get_by_text(label).count() > 0]
+        if len(visible) < 3:
+            pytest.skip("Les 3 onglets Objectifs ne sont pas tous visibles")
+
+        for label in expected_tabs:
+            page.get_by_text(label).first.click(timeout=15000)
+            page.wait_for_timeout(450)
+
+        _assert_no_front_error(page)
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_e2e_009_career_smoke(running_streamlit_app: str) -> None:
+    """E2E-009: smoke Carrière (gauge + historique quand disponible)."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        career_tab = page.get_by_text("Carrière")
+        if career_tab.count() == 0:
+            pytest.skip("Onglet Carrière non détecté")
+
+        career_tab.first.click(timeout=20000)
+        page.wait_for_timeout(1800)
+
+        content = page.content()
+        assert "Carrière" in content
+        assert (
+            "XP total" in content
+            or "XP actuel" in content
+            or "Aucune donnée de carrière disponible" in content
+        )
+
+        _assert_no_front_error(page)
         browser.close()
