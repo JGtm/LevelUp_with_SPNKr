@@ -8,17 +8,33 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pandas as pd
 import plotly.graph_objects as go
+import polars as pl
 
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
 
 if TYPE_CHECKING:
     pass
 
 
+def _normalize_df(df: DataFrameType) -> pd.DataFrame:
+    """Convertit un DataFrame Polars en Pandas (Plotly fonctionne mieux avec pandas)."""
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
+
+
 def plot_metric_bars_by_match(
-    df_: pd.DataFrame,
+    df_: DataFrameType,
     *,
     metric_col: str,
     title: str,
@@ -43,12 +59,13 @@ def plot_metric_bars_by_match(
     Returns:
         Figure Plotly ou None si données insuffisantes.
     """
-    if df_ is None or df_.empty:
+    df_pd = _normalize_df(df_) if df_ is not None else None
+    if df_pd is None or df_pd.empty:
         return None
-    if metric_col not in df_.columns or "start_time" not in df_.columns:
+    if metric_col not in df_pd.columns or "start_time" not in df_pd.columns:
         return None
 
-    d = df_[["start_time", metric_col]].copy()
+    d = df_pd[["start_time", metric_col]].copy()
     d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
     d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
     if d.empty:

@@ -8,9 +8,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import pandas as pd
 import polars as pl
 import streamlit as st
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
 
 from src.analysis.performance_config import SCORE_LABELS, SCORE_THRESHOLDS
 from src.analysis.performance_score import (
@@ -19,7 +27,7 @@ from src.analysis.performance_score import (
 )
 
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+def _normalize_df(df: DataFrameType) -> pd.DataFrame:
     """Convertit un DataFrame Polars en Pandas si nécessaire."""
     if isinstance(df, pl.DataFrame):
         return df.to_pandas()

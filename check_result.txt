@@ -1,0 +1,44 @@
+2026-02-12 17:14:03.344 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.567 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.568 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.569 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.570 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.572 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.572 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.573 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.574 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.574 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.575 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.575 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.576 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.576 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.577 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.577 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.578 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.579 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.579 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.580 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.581 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.581 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.582 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.583 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.583 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.583 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.584 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.585 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.605 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.607 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.607 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+2026-02-12 17:14:03.607 WARNING streamlit.runtime.caching.cache_data_api: No runtime found, using MemoryCacheStorageManager
+[OK] src.ui.cache.load_df_optimized
+[OK] src.ui.cache._to_polars
+[OK] src.ui.formatting.format_date_fr
+[OK] src.ui.formatting.to_paris_naive
+[OK] src.ui.formatting._parse_datetime
+[OK] src.ui.commendations.render_h5g_commendations_section
+[OK] src.ui.commendations._to_polars
+[OK] src.ui.perf.perf_dataframe
+[OK] src.ui.perf.render_perf_panel
+[OK] src.ui.perf._to_polars
+
+=== Tous les imports sont OK ===

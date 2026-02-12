@@ -7,14 +7,26 @@ Ce module contient les fonctions de rendu pour :
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime, time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING
 
-import pandas as pd
+import polars as pl
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
 import streamlit as st
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
+
     from src.ui.settings import AppSettings
 
 
@@ -24,7 +36,7 @@ def render_last_match_page(
     xuid: str,
     waypoint_player: str,
     db_key: tuple[int, int] | None,
-    settings: "AppSettings",
+    settings: AppSettings,
     df_full: pd.DataFrame | None,
     render_match_view_fn: Callable,
     normalize_mode_label_fn: Callable[[str | None], str | None],
@@ -36,12 +48,12 @@ def render_last_match_page(
     load_highlight_events_fn: Callable,
     load_match_gamertags_fn: Callable,
     load_match_rosters_fn: Callable,
-    paris_tz: "ZoneInfo",
+    paris_tz: ZoneInfo,
 ) -> None:
     """Rend la page Dernier match.
-    
+
     Affiche la dernière partie selon la sélection/filtres actuels.
-    
+
     Args:
         dff: DataFrame filtré des matchs.
         db_path: Chemin vers la base de données.
@@ -63,14 +75,14 @@ def render_last_match_page(
         paris_tz: Timezone Paris.
     """
     st.caption("Dernière partie selon la sélection/filtres actuels.")
-    
+
     if dff.empty:
         st.info("Aucun match disponible avec les filtres actuels.")
         return
-    
+
     last_row = dff.sort_values("start_time").iloc[-1]
     last_match_id = str(last_row.get("match_id", "")).strip()
-    
+
     render_match_view_fn(
         row=last_row,
         match_id=last_match_id,
@@ -100,7 +112,7 @@ def render_match_search_page(
     xuid: str,
     waypoint_player: str,
     db_key: tuple[int, int] | None,
-    settings: "AppSettings",
+    settings: AppSettings,
     df_full: pd.DataFrame | None,
     render_match_view_fn: Callable,
     normalize_mode_label_fn: Callable[[str | None], str | None],
@@ -112,12 +124,12 @@ def render_match_search_page(
     load_highlight_events_fn: Callable,
     load_match_gamertags_fn: Callable,
     load_match_rosters_fn: Callable,
-    paris_tz: "ZoneInfo",
+    paris_tz: ZoneInfo,
 ) -> None:
     """Rend la page Match (recherche).
-    
+
     Permet de rechercher un match par MatchId, date/heure ou sélection rapide.
-    
+
     Args:
         df: DataFrame complet des matchs (non filtré).
         dff: DataFrame filtré des matchs.
@@ -192,7 +204,9 @@ def render_match_search_page(
             if diff_min <= float(tol_min):
                 st.session_state["match_id_input"] = str(best.get("match_id") or "").strip()
             else:
-                st.warning(f"Aucun match trouvé dans ±{tol_min} min (le plus proche est à {diff_min:.1f} min).")
+                st.warning(
+                    f"Aucun match trouvé dans ±{tol_min} min (le plus proche est à {diff_min:.1f} min)."
+                )
 
         st.button("Rechercher", width="stretch", on_click=_on_search_by_datetime)
 

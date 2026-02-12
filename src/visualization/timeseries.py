@@ -1,6 +1,5 @@
 """Graphiques de séries temporelles."""
 
-import pandas as pd
 import plotly.graph_objects as go
 import polars as pl
 from plotly.subplots import make_subplots
@@ -10,19 +9,28 @@ from src.config import HALO_COLORS, PLOT_CONFIG
 from src.ui.components.chart_annotations import add_extreme_annotations
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _normalize_df(df: DataFrameType) -> "pd.DataFrame":
     """Convertit un DataFrame Polars en Pandas si nécessaire.
 
     Les fonctions de visualisation utilisent encore certaines opérations Pandas
-    spécifiques. Cette fonction normalise l'entrée pour compatibilité.
+    spécifiques (Plotly fonctionne mieux avec pandas).
     """
     if isinstance(df, pl.DataFrame):
         return df.to_pandas()
     return df
 
 
-def _rolling_mean(series: pd.Series | pl.Series, window: int = 10) -> pd.Series:
+def _rolling_mean(series: "pd.Series | pl.Series", window: int = 10) -> "pd.Series":
     """Calcule la moyenne mobile.
 
     Args:

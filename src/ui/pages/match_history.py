@@ -12,7 +12,17 @@ from __future__ import annotations
 
 import html as html_lib
 
-import pandas as pd
+import polars as pl
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
 import streamlit as st
 
 from src.analysis.performance_score import compute_performance_series

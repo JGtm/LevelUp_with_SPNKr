@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-import pandas as pd
 import polars as pl
 import streamlit as st
 
@@ -19,16 +18,25 @@ from src.analysis.stats import format_mmss
 from src.ui.components import render_kpi_cards, render_top_summary
 from src.ui.formatting import format_duration_dhm, format_duration_hms
 
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
 # =============================================================================
 # Helpers
 # =============================================================================
 
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+def _to_polars(df: DataFrameType) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
     if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
+        return df
+    return pl.from_pandas(df)
 
 
 # =============================================================================
@@ -36,7 +44,7 @@ def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
 # =============================================================================
 
 
-def avg_match_duration_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
+def avg_match_duration_seconds(df_: DataFrameType) -> float | None:
     """Calcule la durée moyenne d'un match.
 
     Args:
@@ -45,18 +53,15 @@ def avg_match_duration_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None
     Returns:
         Durée moyenne en secondes ou None.
     """
-    # Normaliser en Pandas pour compatibilité
-    df_ = _normalize_df(df_)
+    df_pl = _to_polars(df_)
 
-    if df_ is None or df_.empty or "time_played_seconds" not in df_.columns:
+    if df_pl.is_empty() or "time_played_seconds" not in df_pl.columns:
         return None
-    s = pd.to_numeric(df_["time_played_seconds"], errors="coerce").dropna()
-    if s.empty:
-        return None
-    return float(s.mean())
+    val = df_pl.select(pl.col("time_played_seconds").cast(pl.Float64, strict=False).mean()).item()
+    return float(val) if val is not None else None
 
 
-def compute_total_play_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
+def compute_total_play_seconds(df_: DataFrameType) -> float | None:
     """Calcule le temps de jeu total (somme des durées de matchs).
 
     Args:
@@ -65,15 +70,12 @@ def compute_total_play_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None
     Returns:
         Durée totale en secondes ou None.
     """
-    # Normaliser en Pandas pour compatibilité
-    df_ = _normalize_df(df_)
+    df_pl = _to_polars(df_)
 
-    if df_ is None or df_.empty or "time_played_seconds" not in df_.columns:
+    if df_pl.is_empty() or "time_played_seconds" not in df_pl.columns:
         return None
-    s = pd.to_numeric(df_["time_played_seconds"], errors="coerce").dropna()
-    if s.empty:
-        return None
-    return float(s.sum())
+    val = df_pl.select(pl.col("time_played_seconds").cast(pl.Float64, strict=False).sum()).item()
+    return float(val) if val is not None else None
 
 
 # =============================================================================
@@ -112,7 +114,7 @@ class KPIStats(NamedTuple):
     total_play_seconds: float | None
 
 
-def compute_kpi_stats(df: pd.DataFrame | pl.DataFrame) -> KPIStats:
+def compute_kpi_stats(df: DataFrameType) -> KPIStats:
     """Calcule toutes les statistiques KPI.
 
     Args:
@@ -121,31 +123,34 @@ def compute_kpi_stats(df: pd.DataFrame | pl.DataFrame) -> KPIStats:
     Returns:
         KPIStats avec toutes les statistiques calculées.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df_pl = _to_polars(df)
 
     # Outcomes
-    rates = compute_outcome_rates(df)
+    rates = compute_outcome_rates(df_pl)
     total_outcomes = max(1, rates.total)
     win_rate = rates.wins / total_outcomes
     loss_rate = rates.losses / total_outcomes
 
     # Performance
-    avg_acc = df["accuracy"].dropna().mean() if not df.empty else None
-    global_ratio = compute_global_ratio(df)
-    avg_life = df["average_life_seconds"].dropna().mean() if not df.empty else None
+    avg_acc = None
+    if not df_pl.is_empty() and "accuracy" in df_pl.columns:
+        avg_acc = df_pl.select(pl.col("accuracy").drop_nulls().mean()).item()
+    global_ratio = compute_global_ratio(df_pl)
+    avg_life = None
+    if not df_pl.is_empty() and "average_life_seconds" in df_pl.columns:
+        avg_life = df_pl.select(pl.col("average_life_seconds").drop_nulls().mean()).item()
 
     # Per-game averages
-    kpg = df["kills"].mean() if not df.empty else None
-    dpg = df["deaths"].mean() if not df.empty else None
-    apg = df["assists"].mean() if not df.empty else None
+    kpg = df_pl.select(pl.col("kills").mean()).item() if not df_pl.is_empty() else None
+    dpg = df_pl.select(pl.col("deaths").mean()).item() if not df_pl.is_empty() else None
+    apg = df_pl.select(pl.col("assists").mean()).item() if not df_pl.is_empty() else None
 
     # Per-minute rates
-    stats = compute_aggregated_stats(df)
+    stats = compute_aggregated_stats(df_pl)
 
     # Time
-    avg_match_s = avg_match_duration_seconds(df)
-    total_play_s = compute_total_play_seconds(df)
+    avg_match_s = avg_match_duration_seconds(df_pl)
+    total_play_s = compute_total_play_seconds(df_pl)
 
     return KPIStats(
         win_rate=win_rate,
@@ -173,20 +178,21 @@ def compute_kpi_stats(df: pd.DataFrame | pl.DataFrame) -> KPIStats:
 # =============================================================================
 
 
-def render_matches_summary(df: pd.DataFrame | pl.DataFrame, kpis: KPIStats) -> None:
+def render_matches_summary(df: DataFrameType, kpis: KPIStats) -> None:
     """Rend le résumé des parties (bandeau supérieur).
 
     Args:
         df: DataFrame des matchs filtrés.
         kpis: Statistiques KPI calculées.
     """
-    rates = compute_outcome_rates(df)
+    df_pl = _to_polars(df)
+    rates = compute_outcome_rates(df_pl)
 
     avg_match_txt = format_duration_hms(kpis.avg_match_seconds)
     total_play_txt = format_duration_dhm(kpis.total_play_seconds)
 
     st.subheader("Parties")
-    render_top_summary(len(df), rates)
+    render_top_summary(len(df_pl), rates)
     render_kpi_cards(
         [
             ("Durée moyenne / match", avg_match_txt),
@@ -209,21 +215,15 @@ def render_career_kpis(kpis: KPIStats) -> None:
             ("Durée moyenne / match", avg_match_txt),
             (
                 "Frags par partie",
-                f"{kpis.kills_per_game:.2f}"
-                if (kpis.kills_per_game is not None and pd.notna(kpis.kills_per_game))
-                else "-",
+                f"{kpis.kills_per_game:.2f}" if kpis.kills_per_game is not None else "-",
             ),
             (
                 "Morts par partie",
-                f"{kpis.deaths_per_game:.2f}"
-                if (kpis.deaths_per_game is not None and pd.notna(kpis.deaths_per_game))
-                else "-",
+                f"{kpis.deaths_per_game:.2f}" if kpis.deaths_per_game is not None else "-",
             ),
             (
                 "Assistances par partie",
-                f"{kpis.assists_per_game:.2f}"
-                if (kpis.assists_per_game is not None and pd.notna(kpis.assists_per_game))
-                else "-",
+                f"{kpis.assists_per_game:.2f}" if kpis.assists_per_game is not None else "-",
             ),
         ],
         dense=False,
@@ -249,7 +249,7 @@ def render_career_kpis(kpis: KPIStats) -> None:
     )
 
 
-def render_all_kpis(df: pd.DataFrame | pl.DataFrame) -> KPIStats:
+def render_all_kpis(df: DataFrameType) -> KPIStats:
     """Rend tous les KPIs (parties + carrière) et retourne les stats.
 
     Args:

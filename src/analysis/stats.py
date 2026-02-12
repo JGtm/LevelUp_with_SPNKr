@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
-import pandas as pd
 import polars as pl
 
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.models import AggregatedStats, OutcomeRates
 from src.ui.formatting import format_mmss
 
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _to_polars(df: DataFrameType) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
     if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
+        return df
+    # Pandas DataFrame
+    return pl.from_pandas(df)
 
 
-def compute_aggregated_stats(df: pd.DataFrame | pl.DataFrame) -> AggregatedStats:
+def compute_aggregated_stats(df: DataFrameType) -> AggregatedStats:
     """Agrège les statistiques d'un DataFrame de matchs.
 
     Args:
@@ -26,28 +34,26 @@ def compute_aggregated_stats(df: pd.DataFrame | pl.DataFrame) -> AggregatedStats
     Returns:
         AggregatedStats contenant les totaux.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df_pl = _to_polars(df)
 
-    if df.empty:
+    if df_pl.is_empty():
         return AggregatedStats()
 
-    total_time = (
-        pd.to_numeric(df["time_played_seconds"], errors="coerce").dropna().sum()
-        if "time_played_seconds" in df.columns
-        else 0.0
-    )
+    total_time = 0.0
+    if "time_played_seconds" in df_pl.columns:
+        time_col = df_pl.select(pl.col("time_played_seconds").cast(pl.Float64, strict=False))
+        total_time = float(time_col.sum().item() or 0.0)
 
     return AggregatedStats(
-        total_kills=int(df["kills"].sum()),
-        total_deaths=int(df["deaths"].sum()),
-        total_assists=int(df["assists"].sum()),
-        total_matches=len(df),
-        total_time_seconds=float(total_time),
+        total_kills=int(df_pl.select(pl.col("kills").sum()).item() or 0),
+        total_deaths=int(df_pl.select(pl.col("deaths").sum()).item() or 0),
+        total_assists=int(df_pl.select(pl.col("assists").sum()).item() or 0),
+        total_matches=len(df_pl),
+        total_time_seconds=total_time,
     )
 
 
-def compute_outcome_rates(df: pd.DataFrame | pl.DataFrame) -> OutcomeRates:
+def compute_outcome_rates(df: DataFrameType) -> OutcomeRates:
     """Calcule les taux de victoire/défaite.
 
     Args:
@@ -59,23 +65,27 @@ def compute_outcome_rates(df: pd.DataFrame | pl.DataFrame) -> OutcomeRates:
     Note:
         Codes outcome: 2=Wins, 3=Losses, 1=Ties, 4=NoFinishes
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df_pl = _to_polars(df)
 
-    d = df.dropna(subset=["outcome"]).copy()
+    d = df_pl.drop_nulls(subset=["outcome"])
     total = len(d)
-    counts = d["outcome"].value_counts().to_dict() if total else {}
+
+    if total == 0:
+        return OutcomeRates(wins=0, losses=0, ties=0, no_finish=0, total=0)
+
+    counts = d.group_by("outcome").agg(pl.len().alias("count"))
+    counts_dict = {row["outcome"]: row["count"] for row in counts.iter_rows(named=True)}
 
     return OutcomeRates(
-        wins=int(counts.get(2, 0)),
-        losses=int(counts.get(3, 0)),
-        ties=int(counts.get(1, 0)),
-        no_finish=int(counts.get(4, 0)),
+        wins=int(counts_dict.get(2, 0)),
+        losses=int(counts_dict.get(3, 0)),
+        ties=int(counts_dict.get(1, 0)),
+        no_finish=int(counts_dict.get(4, 0)),
         total=total,
     )
 
 
-def compute_global_ratio(df: pd.DataFrame | pl.DataFrame) -> float | None:
+def compute_global_ratio(df: DataFrameType) -> float | None:
     """Calcule le ratio global (K + A/2) / D sur un DataFrame.
 
     Args:
@@ -84,14 +94,23 @@ def compute_global_ratio(df: pd.DataFrame | pl.DataFrame) -> float | None:
     Returns:
         Le ratio global, ou None si pas de deaths.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df_pl = _to_polars(df)
 
-    if df.empty:
+    if df_pl.is_empty():
         return None
-    kills = float(df["kills"].sum()) if "kills" in df.columns else 0.0
-    assists = float(df["assists"].sum()) if "assists" in df.columns else 0.0
-    deaths = float(df["deaths"].sum()) if "deaths" in df.columns else 0.0
+    kills = (
+        float(df_pl.select(pl.col("kills").sum()).item() or 0) if "kills" in df_pl.columns else 0.0
+    )
+    assists = (
+        float(df_pl.select(pl.col("assists").sum()).item() or 0)
+        if "assists" in df_pl.columns
+        else 0.0
+    )
+    deaths = (
+        float(df_pl.select(pl.col("deaths").sum()).item() or 0)
+        if "deaths" in df_pl.columns
+        else 0.0
+    )
     if deaths <= 0:
         return None
     return (kills + (assists / 2.0)) / deaths
@@ -112,7 +131,7 @@ def extract_mode_category(pair_name: str | None) -> str:
 
 
 def compute_mode_category_averages(
-    df: pd.DataFrame | pl.DataFrame,
+    df: DataFrameType,
     category: str,
 ) -> dict[str, float | None]:
     """Calcule les moyennes historiques pour une catégorie de mode.
@@ -124,8 +143,7 @@ def compute_mode_category_averages(
     Returns:
         Dict avec les moyennes: avg_kills, avg_deaths, avg_assists, avg_ratio, match_count.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df_pl = _to_polars(df)
 
     empty_result = {
         "avg_kills": None,
@@ -137,41 +155,46 @@ def compute_mode_category_averages(
         "match_count": 0,
     }
 
-    if df.empty:
+    if df_pl.is_empty():
         return empty_result
 
     # Filtrer par catégorie (alignée sidebar) - vectorisé pour performance
-    mask = df["pair_name"].apply(extract_mode_category) == category
-    filtered = df.loc[mask]
+    filtered = df_pl.filter(
+        pl.col("pair_name").map_elements(extract_mode_category, return_dtype=pl.Utf8) == category
+    )
 
-    if filtered.empty:
+    if filtered.is_empty():
         return empty_result
 
-    avg_kills = filtered["kills"].mean()
-    avg_deaths = filtered["deaths"].mean()
-    avg_assists = filtered["assists"].mean()
+    avg_kills = filtered.select(pl.col("kills").mean()).item()
+    avg_deaths = filtered.select(pl.col("deaths").mean()).item()
+    avg_assists = filtered.select(pl.col("assists").mean()).item()
 
     avg_max_killing_spree = None
     if "max_killing_spree" in filtered.columns:
-        s_spree = pd.to_numeric(filtered["max_killing_spree"], errors="coerce")
-        avg_max_killing_spree = float(s_spree.mean()) if not s_spree.dropna().empty else None
+        val = filtered.select(
+            pl.col("max_killing_spree").cast(pl.Float64, strict=False).mean()
+        ).item()
+        avg_max_killing_spree = float(val) if val is not None else None
 
     avg_headshot_kills = None
     if "headshot_kills" in filtered.columns:
-        s_hs = pd.to_numeric(filtered["headshot_kills"], errors="coerce")
-        avg_headshot_kills = float(s_hs.mean()) if not s_hs.dropna().empty else None
+        val = filtered.select(pl.col("headshot_kills").cast(pl.Float64, strict=False).mean()).item()
+        avg_headshot_kills = float(val) if val is not None else None
 
     # Ratio moyen (somme des frags / somme des morts)
-    total_deaths = filtered["deaths"].sum()
+    total_deaths = filtered.select(pl.col("deaths").sum()).item() or 0
     if total_deaths > 0:
-        avg_ratio = (filtered["kills"].sum() + filtered["assists"].sum() / 2.0) / total_deaths
+        total_kills = filtered.select(pl.col("kills").sum()).item() or 0
+        total_assists = filtered.select(pl.col("assists").sum()).item() or 0
+        avg_ratio = (total_kills + total_assists / 2.0) / total_deaths
     else:
         avg_ratio = None
 
     return {
-        "avg_kills": float(avg_kills) if pd.notna(avg_kills) else None,
-        "avg_deaths": float(avg_deaths) if pd.notna(avg_deaths) else None,
-        "avg_assists": float(avg_assists) if pd.notna(avg_assists) else None,
+        "avg_kills": float(avg_kills) if avg_kills is not None else None,
+        "avg_deaths": float(avg_deaths) if avg_deaths is not None else None,
+        "avg_assists": float(avg_assists) if avg_assists is not None else None,
         "avg_ratio": float(avg_ratio) if avg_ratio is not None else None,
         "avg_max_killing_spree": avg_max_killing_spree,
         "avg_headshot_kills": avg_headshot_kills,

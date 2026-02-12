@@ -5,7 +5,17 @@ Fonctions de visualisation pour comparer les performances avec les coéquipiers.
 
 from __future__ import annotations
 
-import pandas as pd
+import polars as pl
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
 import plotly.graph_objects as go
 import streamlit as st
 

@@ -16,9 +16,27 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-import pandas as pd
 import polars as pl
 import streamlit as st
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _to_polars(df: DataFrameType) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df
+    if pd is not None and isinstance(df, pd.DataFrame):
+        return pl.from_pandas(df)
+    return pl.DataFrame()
+
 
 logger = logging.getLogger(__name__)
 

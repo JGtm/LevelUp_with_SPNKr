@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
 import polars as pl
 
@@ -13,12 +12,21 @@ from src.visualization.theme import (
     get_legend_horizontal_bottom,
 )
 
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _normalize_df(df: DataFrameType) -> pd.DataFrame:
     """Convertit un DataFrame Polars en Pandas si nécessaire.
 
     Les fonctions de visualisation utilisent encore certaines opérations Pandas
-    spécifiques. Cette fonction normalise l'entrée pour compatibilité.
+    spécifiques (Plotly fonctionne mieux avec pandas). Cette fonction normalise l'entrée.
     """
     if isinstance(df, pl.DataFrame):
         return df.to_pandas()

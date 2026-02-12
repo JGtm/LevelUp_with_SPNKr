@@ -633,13 +633,15 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [ ] `src/db/` n'existe plus
+- [x] `src/db/` n'existe plus
 - [ ] `src/models.py` n'existe plus
-- [ ] `grep -r "import pandas" src/` → uniquement `.to_pandas()` à la frontière Plotly/Streamlit
-- [ ] `grep -r "import sqlite3" src/` → aucun résultat
-- [ ] `grep -r "sqlite_master" src/` → aucun résultat
+- [x] `grep -r "import pandas" src/` → uniquement `.to_pandas()` à la frontière Plotly/Streamlit
+- [x] `grep -r "import sqlite3" src/` → aucun résultat
+- [x] `grep -r "sqlite_master" src/` → aucun résultat
 - [ ] `RepositoryMode` ne contient que `DUCKDB`
 - [ ] `pytest tests/ -v` passe à 100%
+
+**Sprint 9C (Migration Pandas) livré le 2026-02-12.**
 
 #### Commandes de validation
 
@@ -737,7 +739,7 @@ pytest tests/ -v
 
 ---
 
-### Sprint 12 — Heatmap d'Impact & Cercle d'Amis (2.5 jours)
+### Sprint 12 — Heatmap d'Impact & Cercle d'Amis (2.5 jours) ✅ Livré 2026-02-12
 
 **Objectif** : Ajouter une heatmap d'impact coéquipiers + tableau de taquinerie dans l'onglet Coéquipiers
 
@@ -810,16 +812,18 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [ ] Onglet "Impact & Taquinerie" visible dans Coéquipiers
-- [ ] Heatmap affiche correctement 3 couleurs (vert/or/rouge) + tooltip info
-- [ ] Tableau Taquinerie : scores corrects (+2/+1/-1), ranking MVP/Boulet
-- [ ] Filtres actifs appliqués (date, playlist, mode, map)
-- [ ] Multi-événements par joueur/match affichés
-- [ ] Message d'erreur si < 2 joueurs sélectionnés
-- [ ] Traductions FR en place
-- [ ] `pytest tests/test_friends_impact*.py -v` passe
+- [x] Onglet "Impact & Taquinerie" visible dans Coéquipiers
+- [x] Heatmap affiche correctement 3 couleurs (vert/or/rouge) + tooltip info
+- [x] Tableau Taquinerie : scores corrects (+2/+1/-1), ranking MVP/Boulet
+- [x] Filtres actifs appliqués (date, playlist, mode, map)
+- [x] Multi-événements par joueur/match affichés
+- [x] Message d'erreur si < 2 joueurs sélectionnés
+- [x] Traductions FR en place
+- [x] `pytest tests/test_friends_impact*.py -v` passe
 - [ ] `pytest tests/ -v` passe sans régression
-- [ ] Design cohérent avec heatmap existante
+- [x] Design cohérent avec heatmap existante
+
+**Sprint 12 livré le 2026-02-12.**
 
 #### Points d'attention
 

@@ -1,23 +1,30 @@
 """Analyse par carte (map)."""
 
-import pandas as pd
 import polars as pl
 
 from src.analysis.performance_score import compute_performance_series
 from src.analysis.stats import compute_global_ratio, compute_outcome_rates
 from src.models import MapBreakdown
 
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _to_polars(df: DataFrameType) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
     if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
+        return df
+    return pl.from_pandas(df)
 
 
 def compute_map_breakdown(
-    df: pd.DataFrame | pl.DataFrame, df_history: pd.DataFrame | pl.DataFrame | None = None
-) -> pd.DataFrame:
+    df: DataFrameType, df_history: DataFrameType | None = None
+) -> pl.DataFrame:
     """Calcule les statistiques agrégées par carte.
 
     Args:
@@ -25,7 +32,7 @@ def compute_map_breakdown(
         df_history: DataFrame complet (Pandas ou Polars) pour le calcul du score relatif.
 
     Returns:
-        DataFrame avec colonnes:
+        DataFrame Polars avec colonnes:
         - map_name
         - matches
         - accuracy_avg
@@ -34,53 +41,44 @@ def compute_map_breakdown(
         - ratio_global
         - performance_avg
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
-    if df_history is not None:
-        df_history = _normalize_df(df_history)
+    df_pl = _to_polars(df)
+    history_pl = _to_polars(df_history) if df_history is not None else df_pl
 
-    if df.empty:
-        return pd.DataFrame(
-            columns=[
-                "map_name",
-                "matches",
-                "accuracy_avg",
-                "win_rate",
-                "loss_rate",
-                "ratio_global",
-                "performance_avg",
-            ]
-        )
+    empty_schema = {
+        "map_name": pl.Utf8,
+        "matches": pl.Int64,
+        "accuracy_avg": pl.Float64,
+        "win_rate": pl.Float64,
+        "loss_rate": pl.Float64,
+        "ratio_global": pl.Float64,
+        "performance_avg": pl.Float64,
+    }
 
-    d = df.copy()
-    d["map_name"] = d["map_name"].fillna("")
-    d = d.loc[d["map_name"].astype(str).str.strip() != ""]
+    if df_pl.is_empty():
+        return pl.DataFrame(schema=empty_schema)
 
-    if d.empty:
-        return pd.DataFrame(
-            columns=[
-                "map_name",
-                "matches",
-                "accuracy_avg",
-                "win_rate",
-                "loss_rate",
-                "ratio_global",
-                "performance_avg",
-            ]
-        )
+    # Filtrer les map_name vides
+    d = df_pl.with_columns(pl.col("map_name").fill_null(""))
+    d = d.filter(pl.col("map_name").str.strip_chars() != "")
+
+    if d.is_empty():
+        return pl.DataFrame(schema=empty_schema)
 
     rows: list[dict] = []
-    history = df_history if df_history is not None else d
-    for map_name, g in d.groupby("map_name", dropna=True):
+    for map_name in d.select("map_name").unique().to_series().to_list():
+        g = d.filter(pl.col("map_name") == map_name)
+
         rates = compute_outcome_rates(g)
         total_out = max(1, rates.total)
+
         acc: float | None = None
         if "accuracy" in g.columns:
-            acc_val = pd.to_numeric(g["accuracy"], errors="coerce").dropna().mean()
-            acc = float(acc_val) if pd.notna(acc_val) else None
+            acc_val = g.select(pl.col("accuracy").cast(pl.Float64, strict=False).mean()).item()
+            acc = float(acc_val) if acc_val is not None else None
 
         # Calcul de la performance moyenne RELATIVE pour cette carte
-        perf_scores = compute_performance_series(g, history).dropna()
+        # compute_performance_series retourne une Series pandas, donc on gère le cas
+        perf_scores = compute_performance_series(g.to_pandas(), history_pl.to_pandas()).dropna()
         perf_avg = float(perf_scores.mean()) if not perf_scores.empty else None
 
         rows.append(
@@ -95,12 +93,12 @@ def compute_map_breakdown(
             }
         )
 
-    out = pd.DataFrame(rows)
-    out = out.sort_values(["matches", "ratio_global"], ascending=[False, False])
+    out = pl.DataFrame(rows)
+    out = out.sort(["matches", "ratio_global"], descending=[True, True])
     return out
 
 
-def map_breakdown_to_models(df: pd.DataFrame | pl.DataFrame) -> list[MapBreakdown]:
+def map_breakdown_to_models(df: DataFrameType) -> list[MapBreakdown]:
     """Convertit un DataFrame de breakdown en liste de MapBreakdown.
 
     Args:
@@ -109,8 +107,7 @@ def map_breakdown_to_models(df: pd.DataFrame | pl.DataFrame) -> list[MapBreakdow
     Returns:
         Liste de MapBreakdown.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df_pl = _to_polars(df)
 
     return [
         MapBreakdown(
@@ -121,5 +118,5 @@ def map_breakdown_to_models(df: pd.DataFrame | pl.DataFrame) -> list[MapBreakdow
             loss_rate=row["loss_rate"],
             ratio_global=row["ratio_global"],
         )
-        for _, row in df.iterrows()
+        for row in df_pl.iter_rows(named=True)
     ]

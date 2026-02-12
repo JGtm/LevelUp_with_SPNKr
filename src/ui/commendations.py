@@ -10,24 +10,48 @@ Fichiers attendus:
 
 from __future__ import annotations
 
+import base64
+import html
 import json
 import os
-import html
 import re
-import base64
 import unicodedata
 from typing import Any
-import pandas as pd
+
+import polars as pl
 import streamlit as st
 
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
 from src.config import get_repo_root
+
+
+def _to_polars(df: DataFrameType | None) -> pl.DataFrame | None:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+    if df is None:
+        return None
+    if isinstance(df, pl.DataFrame):
+        return df
+    if pd is not None and isinstance(df, pd.DataFrame):
+        return pl.from_pandas(df)
+    return pl.DataFrame()
+
 
 DEFAULT_H5G_JSON_PATH = os.path.join("data", "wiki", "halo5_commendations_fr.json")
 DEFAULT_H5G_EXCLUDE_PATH = os.path.join("data", "wiki", "halo5_commendations_exclude.json")
 
 # Référentiel “suivi” (curation manuelle) : définit comment calculer la progression.
 DEFAULT_H5G_TRACKING_ASSUMED_PATH = os.path.join("out", "commendations_mapping_assumed_old.json")
-DEFAULT_H5G_TRACKING_UNMATCHED_PATH = os.path.join("out", "commendations_mapping_unmatched_old.json")
+DEFAULT_H5G_TRACKING_UNMATCHED_PATH = os.path.join(
+    "out", "commendations_mapping_unmatched_old.json"
+)
 
 
 # =============================================================================
@@ -91,115 +115,125 @@ CUSTOM_CITATION_RULES: dict[str, dict[str, Any]] = {
 
 def _compute_custom_citation_value(
     rule: dict[str, Any],
-    df: pd.DataFrame | None,
+    df: DataFrameType | None,
     counts_by_medal: dict[int, int],
     stats_totals: dict[str, int],
 ) -> int:
     """Calcule la valeur d'une citation selon sa règle personnalisée.
-    
+
     Args:
         rule: Règle de calcul (type, paramètres).
         df: DataFrame des matchs (peut être None).
         counts_by_medal: Compteurs de médailles.
         stats_totals: Totaux des stats.
-        
+
     Returns:
         Valeur calculée pour la citation.
     """
     calc_type = rule.get("type", "")
-    
+
     if calc_type == "medal":
         medal_id = rule.get("medal_id")
         if medal_id is not None:
             return counts_by_medal.get(int(medal_id), 0)
         return 0
-    
+
     if calc_type == "stat":
         stat_name = rule.get("stat", "")
         if stat_name:
             return stats_totals.get(stat_name, 0)
         return 0
-    
-    if df is None or df.empty:
+
+    # Convertir en Polars si nécessaire
+    df_pl = _to_polars(df)
+    if df_pl is None or df_pl.is_empty():
         return 0
-    
+
     if calc_type == "wins_mode":
         # Compter les victoires dans un mode spécifique
         mode_pattern = rule.get("mode_pattern", "")
         if not mode_pattern:
             return 0
-        
+
         # outcome == 2 signifie victoire
-        wins_df = df[df["outcome"] == 2].copy()
-        if wins_df.empty:
+        if "outcome" not in df_pl.columns:
             return 0
-        
+        wins_df = df_pl.filter(pl.col("outcome") == 2)
+        if wins_df.is_empty():
+            return 0
+
         # Filtrer par mode (game_variant_name ou pair_name)
         pattern = re.compile(mode_pattern, re.IGNORECASE)
-        
-        def _matches_mode(row: pd.Series) -> bool:
-            gv = str(row.get("game_variant_name") or "")
-            pair = str(row.get("map_mode_pair_name") or row.get("pair_name") or "")
-            return bool(pattern.search(gv) or pattern.search(pair))
-        
-        matching = wins_df.apply(_matches_mode, axis=1)
-        return int(matching.sum())
-    
+
+        # Construire une expression pour filtrer
+        gv_col = "game_variant_name" if "game_variant_name" in wins_df.columns else None
+        pair_col = None
+        for col_name in ["map_mode_pair_name", "pair_name"]:
+            if col_name in wins_df.columns:
+                pair_col = col_name
+                break
+
+        # Appliquer le filtre sur les colonnes disponibles
+        matching_count = 0
+        for row in wins_df.iter_rows(named=True):
+            gv = str(row.get(gv_col) or "") if gv_col else ""
+            pair = str(row.get(pair_col) or "") if pair_col else ""
+            if pattern.search(gv) or pattern.search(pair):
+                matching_count += 1
+        return matching_count
+
     if calc_type == "matches_mode_kd":
         # Compter les parties dans un mode avec KD > seuil
         mode_pattern = rule.get("mode_pattern", "")
         exclude_pattern = rule.get("exclude_playlist_pattern", "")
         kd_threshold = float(rule.get("kd_threshold", 0))
-        
+
         if not mode_pattern:
             return 0
-        
-        work_df = df.copy()
-        
-        # Filtrer par mode
+
         mode_re = re.compile(mode_pattern, re.IGNORECASE)
-        
-        def _matches_mode(row: pd.Series) -> bool:
-            gv = str(row.get("game_variant_name") or "")
-            pair = str(row.get("map_mode_pair_name") or row.get("pair_name") or "")
-            return bool(mode_re.search(gv) or mode_re.search(pair))
-        
-        work_df = work_df[work_df.apply(_matches_mode, axis=1)]
-        
-        if work_df.empty:
-            return 0
-        
-        # Exclure certaines playlists
-        if exclude_pattern:
-            excl_re = re.compile(exclude_pattern, re.IGNORECASE)
-            
-            def _not_excluded(row: pd.Series) -> bool:
-                pl = str(row.get("playlist_name") or "")
-                pair = str(row.get("map_mode_pair_name") or row.get("pair_name") or "")
-                return not (excl_re.search(pl) or excl_re.search(pair))
-            
-            work_df = work_df[work_df.apply(_not_excluded, axis=1)]
-        
-        if work_df.empty:
-            return 0
-        
-        # Calculer FDA (kills / deaths) et filtrer
-        def _kd_above_threshold(row: pd.Series) -> bool:
+        excl_re = re.compile(exclude_pattern, re.IGNORECASE) if exclude_pattern else None
+
+        # Déterminer les colonnes disponibles
+        gv_col = "game_variant_name" if "game_variant_name" in df_pl.columns else None
+        pair_col = None
+        for col_name in ["map_mode_pair_name", "pair_name"]:
+            if col_name in df_pl.columns:
+                pair_col = col_name
+                break
+        playlist_col = "playlist_name" if "playlist_name" in df_pl.columns else None
+
+        matching_count = 0
+        for row in df_pl.iter_rows(named=True):
+            # Vérifier le mode
+            gv = str(row.get(gv_col) or "") if gv_col else ""
+            pair = str(row.get(pair_col) or "") if pair_col else ""
+            if not (mode_re.search(gv) or mode_re.search(pair)):
+                continue
+
+            # Vérifier l'exclusion de playlist
+            if excl_re:
+                pl_name = str(row.get(playlist_col) or "") if playlist_col else ""
+                if excl_re.search(pl_name) or excl_re.search(pair):
+                    continue
+
+            # Vérifier le KD
             kills = row.get("kills", 0)
             deaths = row.get("deaths", 0)
             try:
                 kills = float(kills) if kills is not None else 0
                 deaths = float(deaths) if deaths is not None else 0
             except (TypeError, ValueError):
-                return False
+                continue
+
             if deaths <= 0:
-                # Si 0 morts, on considère que c'est au-dessus du seuil si kills > 0
-                return kills > 0
-            return (kills / deaths) > kd_threshold
-        
-        matching = work_df.apply(_kd_above_threshold, axis=1)
-        return int(matching.sum())
-    
+                if kills > 0:
+                    matching_count += 1
+            elif (kills / deaths) > kd_threshold:
+                matching_count += 1
+
+        return matching_count
+
     return 0
 
 
@@ -220,7 +254,6 @@ _H5G_TITLE_OVERRIDES_FR: dict[str, str] = {
     "Till someone loses an eye": "Jusqu'à ce que quelqu'un perde un œil",
     "Too close to the fire": "Trop près du feu",
     "Too fast for you": "Trop rapide pour toi",
-
     # Traductions "idiom" supplémentaires
     "Helping Hand": "Coup de main",
     "Player vs Everything": "Seul contre tous",
@@ -264,7 +297,9 @@ def _abs_from_repo(path: str) -> str:
 def _normalize_name(s: str) -> str:
     base = " ".join(str(s or "").strip().lower().split())
     # Ignore les accents pour rendre les exclusions robustes (é/è/ê, etc.).
-    return "".join(ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch))
+    return "".join(
+        ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch)
+    )
 
 
 def _looks_english(text: str) -> bool:
@@ -326,11 +361,11 @@ def _display_citation_name(name: str) -> str:
 
 def _display_citation_desc(desc: str, name: str | None = None) -> str:
     """Retourne la description à afficher pour une citation.
-    
+
     Args:
         desc: Description originale de la citation.
         name: Nom de la citation (pour les overrides).
-        
+
     Returns:
         Description traduite/personnalisée.
     """
@@ -343,7 +378,7 @@ def _display_citation_desc(desc: str, name: str | None = None) -> str:
         translated_name = _H5G_TITLE_OVERRIDES_FR.get(n, n)
         if translated_name in _H5G_DESC_OVERRIDES_FR:
             return _H5G_DESC_OVERRIDES_FR[translated_name]
-    
+
     d = str(desc or "").strip()
     if not d:
         return d
@@ -430,7 +465,12 @@ def _medal_ids_from_notes(notes: str) -> list[int]:
         return []
     # On ne considère ces ids que si la note parle explicitement de médaille(s).
     low = s.lower()
-    if ("médaille" not in low) and ("medaille" not in low) and ("médailles" not in low) and ("medailles" not in low):
+    if (
+        ("médaille" not in low)
+        and ("medaille" not in low)
+        and ("médailles" not in low)
+        and ("medailles" not in low)
+    ):
         return []
     out: list[int] = []
     seen: set[int] = set()
@@ -470,7 +510,7 @@ def load_h5g_commendations_exclude(
         return set(), set()
 
     try:
-        with open(abs_path, "r", encoding="utf-8") as f:
+        with open(abs_path, encoding="utf-8") as f:
             raw = json.load(f)
     except Exception:
         return set(), set()
@@ -517,11 +557,13 @@ def load_h5g_commendations_exclude(
 
 
 @st.cache_data(show_spinner=False)
-def load_h5g_commendations_json(path: str = DEFAULT_H5G_JSON_PATH, mtime: float | None = None) -> dict[str, Any]:
+def load_h5g_commendations_json(
+    path: str = DEFAULT_H5G_JSON_PATH, mtime: float | None = None
+) -> dict[str, Any]:
     abs_path = _abs_from_repo(path)
     if not os.path.exists(abs_path):
         return {"items": []}
-    with open(abs_path, "r", encoding="utf-8") as f:
+    with open(abs_path, encoding="utf-8") as f:
         data = json.load(f) or {}
     if not isinstance(data, dict):
         return {"items": []}
@@ -546,7 +588,13 @@ def _img_data_uri(abs_path: str, mtime: float | None = None) -> str | None:
     if not abs_path or not os.path.exists(abs_path):
         return None
     ext = os.path.splitext(abs_path)[1].lower()
-    mime = "image/png" if ext == ".png" else "image/jpeg" if ext in {".jpg", ".jpeg"} else "application/octet-stream"
+    mime = (
+        "image/png"
+        if ext == ".png"
+        else "image/jpeg"
+        if ext in {".jpg", ".jpeg"}
+        else "application/octet-stream"
+    )
     try:
         with open(abs_path, "rb") as f:
             raw = f.read()
@@ -579,7 +627,7 @@ def load_h5g_commendations_tracking_rules(
         if not os.path.exists(abs_path):
             return []
         try:
-            with open(abs_path, "r", encoding="utf-8") as f:
+            with open(abs_path, encoding="utf-8") as f:
                 data = json.load(f) or {}
         except Exception:
             return []
@@ -656,11 +704,11 @@ def render_h5g_commendations_section(
     stats_totals: dict[str, int] | None = None,
     counts_by_medal_full: dict[int, int] | None = None,
     stats_totals_full: dict[str, int] | None = None,
-    df: pd.DataFrame | None = None,
-    df_full: pd.DataFrame | None = None,
+    df: DataFrameType | None = None,
+    df_full: DataFrameType | None = None,
 ) -> None:
     """Affiche la section des commendations Halo 5.
-    
+
     Args:
         counts_by_medal: Compteurs de médailles par ID (filtrés).
         stats_totals: Totaux des stats (kills, deaths, etc.) filtrés.
@@ -710,7 +758,9 @@ def render_h5g_commendations_section(
     data = load_h5g_commendations_json(DEFAULT_H5G_JSON_PATH, json_mtime)
     items: list[dict[str, Any]] = list(data.get("items") or [])
 
-    excluded_images, excluded_names = load_h5g_commendations_exclude(DEFAULT_H5G_EXCLUDE_PATH, excl_mtime)
+    excluded_images, excluded_names = load_h5g_commendations_exclude(
+        DEFAULT_H5G_EXCLUDE_PATH, excl_mtime
+    )
     if items and (excluded_images or excluded_names):
         kept: list[dict[str, Any]] = []
         for it in items:
@@ -727,8 +777,9 @@ def render_h5g_commendations_section(
 
     st.subheader("Citations")
     # Détermine si on est en mode filtré (pour afficher les deltas par citation).
-    is_filtered = (counts_by_medal_full is not None and counts_by_medal != counts_by_medal_full) or \
-                  (stats_totals_full is not None and stats_totals != stats_totals_full)
+    is_filtered = (
+        counts_by_medal_full is not None and counts_by_medal != counts_by_medal_full
+    ) or (stats_totals_full is not None and stats_totals != stats_totals_full)
     if not items:
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -757,11 +808,17 @@ def render_h5g_commendations_section(
     def _has_tracking_rule(it: dict[str, Any]) -> bool:
         norm_name = _normalize_name(str(it.get("name") or "").strip())
         return norm_name in tracking or norm_name in CUSTOM_CITATION_RULES
-    
+
     items = [it for it in items if _has_tracking_rule(it)]
 
     # Filtres
-    cats = sorted({str(x.get("category") or "").strip() for x in items if str(x.get("category") or "").strip()})
+    cats = sorted(
+        {
+            str(x.get("category") or "").strip()
+            for x in items
+            if str(x.get("category") or "").strip()
+        }
+    )
     c1, c2 = st.columns([1, 2])
     with c1:
         picked_cat = st.selectbox("Catégorie", options=["(toutes)"] + cats, index=0)
@@ -800,7 +857,7 @@ def render_h5g_commendations_section(
         norm_name = _normalize_name(name_raw)
         current = 0
         current_full = 0  # Valeur sur tous les matchs (pour le delta)
-        
+
         # Priorité aux règles personnalisées (CUSTOM_CITATION_RULES)
         if norm_name in CUSTOM_CITATION_RULES:
             custom_rule = CUSTOM_CITATION_RULES[norm_name]
@@ -808,9 +865,7 @@ def render_h5g_commendations_section(
             # Calculer aussi la valeur full pour le delta
             if is_filtered and df_full is not None:
                 current_full = _compute_custom_citation_value(
-                    custom_rule, df_full, 
-                    counts_by_medal_full or {}, 
-                    stats_totals_full or {}
+                    custom_rule, df_full, counts_by_medal_full or {}, stats_totals_full or {}
                 )
         elif isinstance(rule.get("medal_ids"), list):
             total = 0
@@ -843,7 +898,9 @@ def render_h5g_commendations_section(
         # Calcul du delta pour cette citation
         delta_citation = current if (is_filtered and current > 0) else 0
 
-        level_label, counter_label, is_master, progress_ratio = _compute_mastery_display(current_full if is_filtered else current, tiers)
+        level_label, counter_label, is_master, progress_ratio = _compute_mastery_display(
+            current_full if is_filtered else current, tiers
+        )
 
         with col:
             st.markdown("<div class='os-citation-top-gap'></div>", unsafe_allow_html=True)
@@ -859,21 +916,38 @@ def render_h5g_commendations_section(
             tip = html.escape(desc) if desc else html.escape(name)
 
             if data_uri:
-                ring_class = "os-citation-ring os-citation-ring--master" if is_master else "os-citation-ring"
+                ring_class = (
+                    "os-citation-ring os-citation-ring--master" if is_master else "os-citation-ring"
+                )
                 ring_color = "#d6b35a" if is_master else "#41d6ff"
                 st.markdown(
-                    "<div class='" + ring_class + "' title='" + tip + "' "
-                    + "style=\"--p:" + str(float(progress_ratio)) + ";--ring-color:" + ring_color + ";--img:url('" + data_uri + "')\"></div>",
+                    "<div class='"
+                    + ring_class
+                    + "' title='"
+                    + tip
+                    + "' "
+                    + 'style="--p:'
+                    + str(float(progress_ratio))
+                    + ";--ring-color:"
+                    + ring_color
+                    + ";--img:url('"
+                    + data_uri
+                    + "')\"></div>",
                     unsafe_allow_html=True,
                 )
             else:
-                st.markdown("<div class='os-medal-missing' title='" + tip + "'>?</div>", unsafe_allow_html=True)
+                st.markdown(
+                    "<div class='os-medal-missing' title='" + tip + "'>?</div>",
+                    unsafe_allow_html=True,
+                )
 
             st.markdown(
                 "<div class='os-citation-name' title='" + tip + "'>" + html.escape(name) + "</div>",
                 unsafe_allow_html=True,
             )
-            level_class = "os-citation-level os-citation-level--master" if is_master else "os-citation-level"
+            level_class = (
+                "os-citation-level os-citation-level--master" if is_master else "os-citation-level"
+            )
             st.markdown(
                 f"<div class='{level_class}'>{html.escape(level_label)}</div>",
                 unsafe_allow_html=True,
@@ -881,8 +955,13 @@ def render_h5g_commendations_section(
             # Afficher le compteur avec le delta si filtré
             delta_html = ""
             if is_filtered and delta_citation > 0:
-                delta_html = f" <span style='color: #4CAF50; font-weight: bold;'>+{delta_citation}</span>"
+                delta_html = (
+                    f" <span style='color: #4CAF50; font-weight: bold;'>+{delta_citation}</span>"
+                )
             st.markdown(
-                "<div class='os-citation-counter'>" + html.escape(counter_label) + delta_html + "</div>",
+                "<div class='os-citation-counter'>"
+                + html.escape(counter_label)
+                + delta_html
+                + "</div>",
                 unsafe_allow_html=True,
             )

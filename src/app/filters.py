@@ -12,13 +12,17 @@ import json
 from datetime import date
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 import streamlit as st
 
+# Type alias pour compatibilité DataFrame
 try:
-    import polars as pl
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
 except ImportError:
-    pl = None
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
 
 from src.analysis import build_xuid_option_map
 from src.app.helpers import (
@@ -40,9 +44,9 @@ from src.ui.components import (
 )
 
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
+def _normalize_df(df: DataFrameType) -> pd.DataFrame:
     """Convertit un DataFrame Polars en Pandas si nécessaire."""
-    if pl is not None and isinstance(df, pl.DataFrame):
+    if isinstance(df, pl.DataFrame):
         return df.to_pandas()
     return df
 

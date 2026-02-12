@@ -18,7 +18,16 @@ import os
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import polars as pl
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
 
 # Import direct depuis factory pour éviter l'import circulaire avec src.data
 from src.data.repositories.factory import (

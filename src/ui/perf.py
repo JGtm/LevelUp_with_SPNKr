@@ -7,12 +7,30 @@ charts) sans dépendance externe.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import time
-from typing import Iterator
+from collections.abc import Iterator
+from contextlib import contextmanager
 
-import pandas as pd
+import polars as pl
 import streamlit as st
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _to_polars(df: DataFrameType) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df
+    if pd is not None and isinstance(df, pd.DataFrame):
+        return pl.from_pandas(df)
+    return pl.DataFrame()
 
 
 _PERF_ENABLED_KEY = "perf_enabled"
@@ -43,11 +61,12 @@ def perf_section(name: str) -> Iterator[None]:
         rows.append({"section": str(name), "ms": float(dt_ms)})
 
 
-def perf_dataframe() -> pd.DataFrame:
+def perf_dataframe() -> pl.DataFrame:
+    """Retourne le DataFrame Polars des timings de performance."""
     rows = st.session_state.get(_PERF_TIMINGS_KEY, [])
     if not isinstance(rows, list) or not rows:
-        return pd.DataFrame(columns=["section", "ms"])
-    return pd.DataFrame(rows)
+        return pl.DataFrame(schema={"section": pl.Utf8, "ms": pl.Float64})
+    return pl.DataFrame(rows)
 
 
 def render_perf_panel(*, location: str = "sidebar") -> None:
@@ -66,16 +85,17 @@ def render_perf_panel(*, location: str = "sidebar") -> None:
         st.session_state[_PERF_TIMINGS_KEY] = []
         st.rerun()
 
-    df = perf_dataframe()
-    if df.empty:
+    df_pl = perf_dataframe()
+    if df_pl.is_empty():
         c[1].caption("En attente…")
         return
 
-    total = float(df["ms"].sum())
+    total = df_pl.select(pl.col("ms").sum()).item()
     c[1].caption(f"Total: {total:.0f} ms")
 
+    # Convertir en pandas pour st.dataframe (compatibilité Streamlit)
     container.dataframe(
-        df,
+        df_pl.to_pandas(),
         width="stretch",
         hide_index=True,
         column_config={

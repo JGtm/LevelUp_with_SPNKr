@@ -1,26 +1,42 @@
 """Graphiques par carte (map)."""
 
-import pandas as pd
 import plotly.graph_objects as go
+import polars as pl
 
 from src.config import HALO_COLORS, PLOT_CONFIG
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
 
-def plot_map_comparison(df_breakdown: pd.DataFrame, metric: str, title: str) -> go.Figure:
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _normalize_df(df: DataFrameType) -> "pd.DataFrame":
+    """Convertit un DataFrame Polars en Pandas (Plotly fonctionne mieux avec pandas)."""
+    if isinstance(df, pl.DataFrame):
+        return df.to_pandas()
+    return df
+
+
+def plot_map_comparison(df_breakdown: DataFrameType, metric: str, title: str) -> go.Figure:
     """Graphique de comparaison d'une métrique par carte.
-    
+
     Args:
         df_breakdown: DataFrame issu de compute_map_breakdown.
         metric: Nom de la colonne à afficher (ratio_global, win_rate, accuracy_avg).
         title: Titre du graphique.
-        
+
     Returns:
         Figure Plotly (barres horizontales).
     """
     colors = HALO_COLORS.as_dict()
-    d = df_breakdown.dropna(subset=[metric]).copy()
-    
+    d = _normalize_df(df_breakdown).dropna(subset=[metric]).copy()
+
     if d.empty:
         fig = go.Figure()
         fig.update_layout(height=PLOT_CONFIG.default_height, margin=dict(l=40, r=20, t=30, b=40))
@@ -33,7 +49,7 @@ def plot_map_comparison(df_breakdown: pd.DataFrame, metric: str, title: str) -> 
                 y=d["map_name"],
                 orientation="h",
                 marker_color=colors["cyan"],
-                customdata=list(zip(d["matches"], d.get("accuracy_avg"))),
+                customdata=list(zip(d["matches"], d.get("accuracy_avg"), strict=False)),
                 hovertemplate=(
                     "%{y}<br>value=%{x}<br>matches=%{customdata[0]}"
                     "<br>accuracy=%{customdata[1]:.2f}%<extra></extra>"
@@ -47,30 +63,32 @@ def plot_map_comparison(df_breakdown: pd.DataFrame, metric: str, title: str) -> 
         margin=dict(l=40, r=20, t=60, b=90),
         legend=get_legend_horizontal_bottom(),
     )
-    
+
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
 
 
-def plot_map_ratio_with_winloss(df_breakdown: pd.DataFrame, title: str) -> go.Figure:
+def plot_map_ratio_with_winloss(df_breakdown: DataFrameType, title: str) -> go.Figure:
     """Graphique de ratio par carte avec taux de victoire/défaite.
-    
+
     Args:
         df_breakdown: DataFrame issu de compute_map_breakdown.
         title: Titre du graphique.
-        
+
     Returns:
         Figure Plotly avec barres empilées Win/Loss (+ autres statuts).
     """
     colors = HALO_COLORS.as_dict()
-    d = df_breakdown.dropna(subset=["win_rate", "loss_rate"]).copy()
-    
+    d = _normalize_df(df_breakdown).dropna(subset=["win_rate", "loss_rate"]).copy()
+
     if d.empty:
         fig = go.Figure()
         fig.update_layout(height=PLOT_CONFIG.default_height, margin=dict(l=40, r=20, t=30, b=40))
         return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height)
 
     # Complément: égalités / non terminés / inconnus -> affiché en "Autres".
-    d["other_rate"] = (1.0 - (d["win_rate"].astype(float) + d["loss_rate"].astype(float))).clip(0.0, 1.0)
+    d["other_rate"] = (1.0 - (d["win_rate"].astype(float) + d["loss_rate"].astype(float))).clip(
+        0.0, 1.0
+    )
 
     fig = go.Figure()
 
@@ -121,5 +139,5 @@ def plot_map_ratio_with_winloss(df_breakdown: pd.DataFrame, title: str) -> go.Fi
         legend=get_legend_horizontal_bottom(),
     )
     fig.update_xaxes(title_text="Win / Loss", tickformat=".0%", range=[0, 1])
-    
+
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)

@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
 import plotly.graph_objects as go
 import polars as pl
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
 import streamlit as st
 from plotly.subplots import make_subplots
 

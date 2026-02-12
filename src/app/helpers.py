@@ -7,23 +7,27 @@ from __future__ import annotations
 
 import re
 
-import pandas as pd
+import polars as pl
 import streamlit as st
 
+# Type alias pour compatibilité DataFrame
 try:
-    import polars as pl
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
 except ImportError:
-    pl = None
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
 
 from src.config import HALO_COLORS
 from src.ui import translate_pair_name
 
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
-    if pl is not None and isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
+def _to_polars(df: DataFrameType) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df
+    return pl.from_pandas(df)
 
 
 # =============================================================================
@@ -117,19 +121,12 @@ def normalize_map_label(map_name: str | None) -> str | None:
 # =============================================================================
 
 
-def _normalize_df(df: pd.DataFrame | pl.DataFrame) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
-    if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
-
-
 # =============================================================================
 # Calculs temporels
 # =============================================================================
 
 
-def compute_session_span_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
+def compute_session_span_seconds(df_: DataFrameType) -> float | None:
     """Calcule la durée totale d'une session (premier match → fin dernier match).
 
     Args:
@@ -138,27 +135,40 @@ def compute_session_span_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | No
     Returns:
         Durée en secondes ou None.
     """
-    # Normaliser en Pandas pour compatibilité
-    df_ = _normalize_df(df_)
+    df_pl = _to_polars(df_)
 
-    if df_ is None or df_.empty or "start_time" not in df_.columns:
+    if df_pl.is_empty() or "start_time" not in df_pl.columns:
         return None
-    starts = pd.to_datetime(df_["start_time"], errors="coerce")
-    if starts.dropna().empty:
+
+    # Cast start_time en datetime
+    df_pl = df_pl.with_columns(pl.col("start_time").cast(pl.Datetime, strict=False))
+    valid = df_pl.filter(pl.col("start_time").is_not_null())
+    if valid.is_empty():
         return None
-    t0 = starts.min()
-    if "time_played_seconds" in df_.columns:
-        durations = pd.to_numeric(df_["time_played_seconds"], errors="coerce")
-        ends = starts + pd.to_timedelta(durations.fillna(0), unit="s")
+
+    t0 = valid.select(pl.col("start_time").min()).item()
+    if "time_played_seconds" in valid.columns:
+        # Calculer la fin de chaque match
+        with_end = valid.with_columns(
+            (
+                pl.col("start_time")
+                + pl.duration(
+                    seconds=pl.col("time_played_seconds")
+                    .cast(pl.Float64, strict=False)
+                    .fill_null(0)
+                )
+            ).alias("end_time")
+        )
+        t1 = with_end.select(pl.col("end_time").max()).item()
     else:
-        ends = starts
-    t1 = ends.max()
-    if pd.isna(t0) or pd.isna(t1):
+        t1 = valid.select(pl.col("start_time").max()).item()
+
+    if t0 is None or t1 is None:
         return None
     return float((t1 - t0).total_seconds())
 
 
-def compute_total_play_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
+def compute_total_play_seconds(df_: DataFrameType) -> float | None:
     """Calcule le temps de jeu total (somme des durées de matchs).
 
     Args:
@@ -167,18 +177,15 @@ def compute_total_play_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None
     Returns:
         Durée totale en secondes ou None.
     """
-    # Normaliser en Pandas pour compatibilité
-    df_ = _normalize_df(df_)
+    df_pl = _to_polars(df_)
 
-    if df_ is None or df_.empty or "time_played_seconds" not in df_.columns:
+    if df_pl.is_empty() or "time_played_seconds" not in df_pl.columns:
         return None
-    s = pd.to_numeric(df_["time_played_seconds"], errors="coerce").dropna()
-    if s.empty:
-        return None
-    return float(s.sum())
+    val = df_pl.select(pl.col("time_played_seconds").cast(pl.Float64, strict=False).sum()).item()
+    return float(val) if val is not None else None
 
 
-def avg_match_duration_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None:
+def avg_match_duration_seconds(df_: DataFrameType) -> float | None:
     """Calcule la durée moyenne d'un match.
 
     Args:
@@ -187,15 +194,12 @@ def avg_match_duration_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None
     Returns:
         Durée moyenne en secondes ou None.
     """
-    # Normaliser en Pandas pour compatibilité
-    df_ = _normalize_df(df_)
+    df_pl = _to_polars(df_)
 
-    if df_ is None or df_.empty or "time_played_seconds" not in df_.columns:
+    if df_pl.is_empty() or "time_played_seconds" not in df_pl.columns:
         return None
-    s = pd.to_numeric(df_["time_played_seconds"], errors="coerce").dropna()
-    if s.empty:
-        return None
-    return float(s.mean())
+    val = df_pl.select(pl.col("time_played_seconds").cast(pl.Float64, strict=False).mean()).item()
+    return float(val) if val is not None else None
 
 
 # =============================================================================
@@ -203,7 +207,7 @@ def avg_match_duration_seconds(df_: pd.DataFrame | pl.DataFrame) -> float | None
 # =============================================================================
 
 
-def date_range(df: pd.DataFrame | pl.DataFrame) -> tuple:
+def date_range(df: DataFrameType) -> tuple:
     """Retourne la plage de dates du DataFrame.
 
     Args:
@@ -212,8 +216,9 @@ def date_range(df: pd.DataFrame | pl.DataFrame) -> tuple:
     Returns:
         Tuple (date_min, date_max).
     """
-    dmin = df["date"].min()
-    dmax = df["date"].max()
+    df_pl = _to_polars(df)
+    dmin = df_pl.select(pl.col("date").min()).item()
+    dmax = df_pl.select(pl.col("date").max()).item()
     return dmin, dmax
 
 

@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import pandas as pd
+import polars as pl
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
 import streamlit as st
 
 from src.ui.commendations import render_h5g_commendations_section

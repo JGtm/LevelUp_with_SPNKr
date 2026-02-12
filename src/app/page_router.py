@@ -10,10 +10,26 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.ui.settings import AppSettings
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
+
+
+def _to_polars(df: DataFrameType) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+    if isinstance(df, pl.DataFrame):
+        return df
+    return pl.from_pandas(df)
+
 
 # Liste des pages disponibles
 PAGES: list[str] = [
@@ -37,7 +53,7 @@ def build_match_view_params(
     waypoint_player: str,
     db_key: str | None,
     settings: AppSettings,
-    df_full: pd.DataFrame,
+    df_full: DataFrameType,
     render_match_view_fn: Callable,
     normalize_mode_label_fn: Callable,
     format_score_label_fn: Callable,
@@ -100,9 +116,9 @@ def render_page_selector() -> str:
 
 def dispatch_page(
     page: str,
-    dff: pd.DataFrame,
-    df: pd.DataFrame,
-    base: pd.DataFrame,
+    dff: DataFrameType,
+    df: DataFrameType,
+    base: DataFrameType,
     me_name: str,
     xuid: str,
     db_path: str,
@@ -135,6 +151,9 @@ def dispatch_page(
     clear_caches_fn: Callable,
 ) -> None:
     """Dispatch vers la page appropriée."""
+    # Les fonctions de rendu attendent encore pandas, donc on garde df en l'état
+    # La conversion se fera progressivement au niveau de chaque page
+
     if page == "Dernier match":
         render_last_match_page_fn(dff=dff, **match_view_params)
 

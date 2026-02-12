@@ -12,9 +12,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
-import pandas as pd
 import polars as pl
 import streamlit as st
+
+# Type alias pour compatibilité DataFrame
+try:
+    import pandas as pd
+
+    DataFrameType = pd.DataFrame | pl.DataFrame
+except ImportError:
+    pd = None  # type: ignore[assignment]
+    DataFrameType = pl.DataFrame  # type: ignore[misc]
 
 from src.app.filters import get_friends_xuids_for_sessions
 from src.ui import translate_pair_name, translate_playlist_name
