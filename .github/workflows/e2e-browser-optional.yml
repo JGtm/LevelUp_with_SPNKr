@@ -1,0 +1,29 @@
+name: E2E Browser (optional)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          python -m pip install playwright
+
+      - name: Install Chromium for Playwright
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Run optional browser E2E tests
+        run: |
+          python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --tb=short --run-e2e-browser

@@ -55,6 +55,27 @@ except ImportError:
     pd = None
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Ajoute les options CLI custom pour les tests optionnels."""
+    parser.addoption(
+        "--run-e2e-browser",
+        action="store_true",
+        default=False,
+        help="Exécute les tests E2E navigateur réel (Playwright).",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip des tests E2E navigateur sauf si explicitement demandés."""
+    if config.getoption("--run-e2e-browser"):
+        return
+
+    skip_e2e = pytest.mark.skip(reason="E2E navigateur désactivé (utiliser --run-e2e-browser)")
+    for item in items:
+        if "e2e_browser" in item.keywords:
+            item.add_marker(skip_e2e)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configuration globale pytest.
 

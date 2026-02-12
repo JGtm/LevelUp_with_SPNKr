@@ -175,14 +175,21 @@ data/
 ## Tests
 
 ```bash
-# Lancer tous les tests
+# Suite complète (inclut les tests smoke pages/filtres/visualisations)
 python -m pytest
 
+# Suite stable hors intégration (recommandé au quotidien)
+python -m pytest -q --ignore=tests/integration
+
 # Avec couverture
-pytest --cov=src --cov-report=html
+python -m pytest --cov=src --cov-report=html
 
 # Tests spécifiques
 python -m pytest tests/test_duckdb_repository.py -v
+
+# E2E navigateur réel (optionnel, Playwright)
+# Désactivé par défaut ; activation explicite avec --run-e2e-browser
+python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser
 ```
 
 ---

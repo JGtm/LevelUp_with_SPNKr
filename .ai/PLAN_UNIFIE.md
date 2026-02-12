@@ -1215,6 +1215,114 @@ La phase audit S0→S9 est considérée close quand :
 
 > État au 2026-02-12 : critères 1, 2 et 3 validés (phase audit S0→S9 clôturée).
 
+### 9.4 Plan détaillé de tests unifié (focus app : données BDD + graphes)
+
+> **But** : vérifier que les données attendues existent bien en DuckDB et que les pages/graphes de l'app les consomment correctement.  
+> Le backfill reste un **contexte d'alimentation** des données, pas l'objet principal de la campagne.
+
+#### 9.4.1 Principes
+
+1. **Contrat Data d'abord** : présence, non-nullité, domaine de valeurs dans les tables DuckDB
+2. **Contrat Graphe ensuite** : chaque visualisation consomme explicitement les colonnes attendues
+3. **Non-régression UI** : page rendable même si données absentes/partielles (message guidé, pas d'exception)
+4. **E2E optionnel** : valider les parcours utilisateur en vrai navigateur sans alourdir la CI standard
+
+#### 9.4.2 Matrice de couverture orientée données de l'app
+
+| Domaine fonctionnel app | Données BDD à garantir | Pages/graphes consommateurs | Tests à créer/étendre (app + non-régression) | E2E optionnel navigateur |
+|---|---|---|---|---|
+| **Médailles** | `medals_earned` non vide, clés `match_id/medal_id/count` cohérentes | Distribution médailles | Étendre `tests/test_visualizations.py` + nouveau `tests/test_data_contract_medals.py` (présence table, jointure noms, counts > 0) | Ouvrir section médailles et vérifier rendu non vide |
+| **Impact/Events** | `highlight_events` avec `event_type`, `time_ms`, acteurs valides | Onglet Coéquipiers > Impact & Taquinerie | Étendre `tests/test_friends_impact.py`, `tests/test_teammates_impact_tab.py`, `tests/test_friends_impact_viz.py` | Vérifier heatmap + ranking depuis dataset réel/fixture |
+| **Antagonistes** | paires killer/victim exploitables (`killer_victim_pairs` ou source events) | Page antagonistes (table + matrices) | Étendre `tests/test_killer_victim_polars.py`, `tests/test_antagonists_persistence.py`, `tests/test_sprint1_antagonists.py` | Vérifier sections antagonistes alimentées |
+| **Score perso + perf** | `personal_score`, `performance_score`, `start_time` disponibles | Timeseries score, performance cumulée, tops | Étendre `tests/test_new_timeseries_sections.py`, `tests/test_timeseries_performance_score.py` + nouveau `tests/test_data_contract_performance_metrics.py` | Changer période et vérifier update des graphes |
+| **MMR & skill** | `team_mmr`, `enemy_mmr` présents selon périmètre | Corrélations MMR | Étendre `tests/test_new_timeseries_sections.py` avec assertions de colonnes requises/fallback UX | Vérifier corrélations MMR sans erreur front |
+| **Tirs & précision** | `shots_fired`, `shots_hit`, `accuracy` (joueur + participants si dispo) | Graphes tirs/précision (timeseries + coéquipiers) | Étendre `tests/test_visualizations.py` + nouveau `tests/test_data_contract_shots_accuracy.py` (invariant `shots_hit <= shots_fired`) | Vérifier section "Tirs et précision" après filtres |
+| **Participants coéquipiers** | `match_participants` (rank, score, k/d/a, shots, damage) | Comparaisons coéquipiers, radar/barres/heatmap | Étendre `tests/test_teammates_new_comparisons.py`, `tests/test_teammates_refonte.py` + nouveau `tests/test_data_contract_participants.py` | Parcours coéquipiers multi-onglets sans trou de données |
+| **Sessions & navigation** | `session_id`, `session_label`, `end_time`, `start_time` cohérents | Comparaison sessions, bouton dernière session, routing | Étendre `tests/test_sessions_advanced.py`, `tests/test_session_last_button.py`, `tests/test_page_router_regressions.py`, `tests/test_navigation_state_regressions.py` | Deep-link session/page + retour arrière stable |
+| **Libellés assets/aliases** | labels playlist/map/mode résolus, aliases XUID cohérents | Filtres + titres de graphes + tables | Étendre `tests/test_settings_backfill.py` + nouveau `tests/test_data_contract_assets_aliases.py` | Vérifier que l'UI affiche des libellés et pas des IDs bruts |
+
+#### 9.4.3 Lots de tests à implémenter (ordre recommandé)
+
+##### Lot T1 — Contrats Data DuckDB (priorité 🔴)
+
+- Créer une famille `tests/test_data_contract_*.py` ciblée tables/colonnes critiques :
+  - `tests/test_data_contract_medals.py`
+  - `tests/test_data_contract_performance_metrics.py`
+  - `tests/test_data_contract_shots_accuracy.py`
+  - `tests/test_data_contract_participants.py`
+  - `tests/test_data_contract_assets_aliases.py`
+- Cas clés :
+  - tables présentes
+  - colonnes clés présentes
+  - % de `NULL` acceptable sur colonnes obligatoires = 0
+  - invariants métier (bornes, cohérences inter-colonnes)
+
+##### Lot T2 — Contrats Graphe (priorité 🔴)
+
+- Étendre tests de visualisation/pages pour vérifier explicitement :
+  - la présence des traces attendues
+  - la correspondance colonnes d'entrée → axes/series
+  - le fallback UX en cas de dataset vide
+- Fichiers pivots :
+  - `tests/test_visualizations.py`
+  - `tests/test_new_timeseries_sections.py`
+  - `tests/test_teammates_impact_tab.py`
+  - `tests/test_teammates_new_comparisons.py`
+
+##### Lot T3 — Non-régression navigation + filtres (priorité 🟠)
+
+- Renforcer :
+  - `tests/test_filters_and_visualization_contracts.py`
+  - `tests/test_page_router_regressions.py`
+  - `tests/test_navigation_state_regressions.py`
+- Objectif : prouver que les filtres modifient bien le dataset source utilisé par les graphes.
+
+##### Lot T4 — Intégration app (priorité 🟠)
+
+- Créer `tests/integration/test_app_data_to_chart_flow.py`
+- Scénario type :
+  - injecter fixture DuckDB minimale mais complète
+  - charger via repository
+  - appeler le renderer/page
+  - vérifier qu'au moins un graphe par domaine reçoit des données non vides
+
+##### Lot T5 — E2E navigateur optionnel (priorité 🟡)
+
+- Étendre `tests/e2e/test_streamlit_browser_e2e.py` avec scénarios orientés données :
+  1. ouverture de chaque page principale + absence d'erreur UI
+  2. filtres playlist/map/mode qui changent réellement les résultats visibles
+  3. coéquipiers > impact : état vide (message) puis état rempli (graphe)
+  4. sessions : deep-link et sélection de session stables
+
+#### 9.4.4 Plan d'exécution CI
+
+| Niveau | Commande | Fréquence | Objectif |
+|---|---|---|---|
+| **Rapide (PR)** | `python -m pytest tests/test_data_contract_medals.py tests/test_data_contract_performance_metrics.py tests/test_data_contract_shots_accuracy.py -q` | À chaque PR | Casser tôt si contrat data rompu |
+| **Non-régression stable** | `python -m pytest -q --ignore=tests/integration` | À chaque PR / local | Sécurité applicative globale |
+| **Intégration app** | `python -m pytest tests/integration/test_app_data_to_chart_flow.py -v` | Nightly ou manuel | Vérifier chaîne BDD -> repository -> graphes |
+| **E2E navigateur** | `python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser` | Manuel (`workflow_dispatch`) | Vérifier parcours réel utilisateur |
+
+#### 9.4.5 Critères d'acceptation de la campagne
+
+- [ ] Chaque domaine fonctionnel UI a au moins **1 test contrat data** en BDD
+- [ ] Chaque domaine a au moins **1 test représentation graphe** (traces + fallback)
+- [ ] Les filtres modifient effectivement les données affichées sur au moins 3 pages clés
+- [ ] Les datasets partiels/vides n'entraînent aucune exception UI
+- [ ] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven
+- [ ] La CI standard reste rapide (E2E navigateur hors pipeline bloquant)
+
+#### 9.4.6 Backlog concret des nouveaux fichiers de tests
+
+- `tests/test_data_contract_medals.py`
+- `tests/test_data_contract_performance_metrics.py`
+- `tests/test_data_contract_shots_accuracy.py`
+- `tests/test_data_contract_participants.py`
+- `tests/test_data_contract_assets_aliases.py`
+- `tests/integration/test_app_data_to_chart_flow.py`
+
+> Note : Les tests sur `scripts/backfill_data.py` peuvent rester en complément, mais la campagne 9.4 est pilotée par des assertions "BDD présente -> app affiche".
+
 ---
 
 ## Calendrier récapitulatif

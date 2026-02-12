@@ -175,6 +175,7 @@ markers = [
     "integration: marks tests as integration tests",
     "visualization: marks tests for visualization functions (charts, graphs)",
     "regression: marks tests as regression tests (e.g. media suite)",
+    "e2e_browser: tests E2E navigateur réel (Playwright), désactivés par défaut",
     "asyncio: marks tests as async (use pytest-asyncio)",
 ]
 asyncio_mode = "auto"
