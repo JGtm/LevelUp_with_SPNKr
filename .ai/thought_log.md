@@ -7,6 +7,38 @@
 
 ## Journal
 
+### [2026-02-12] - Consolidation audit S0→S9 (Lots A, B, C, D)
+
+**Statut** : Lots A/B/C/D exécutés et validés ; clôture documentaire 9.3.4 partielle (commit Git restant).
+
+**Contexte** : Finaliser les écarts post-audit S0→S9, sécuriser l'architecture v4 (DUCKDB-only), stabiliser la qualité lint/tests, et aligner le plan unifié avec l'état réel du code.
+
+**Décisions** :
+- Politique Pandas retenue en **tolérance contrôlée transitoire** (pas de nouvel usage métier, compatibilité UI/viz autorisée en frontière).
+- `RepositoryMode` réduit à `DUCKDB` uniquement ; fallback settings/cache aligné.
+- Réconciliation Sprint 4 effectuée via création des tests attendus par le plan.
+
+**Changements principaux** :
+- Suppression de `src/models.py` et migration des dataclasses vers `src/data/domain/models/stats.py`.
+- Migration des imports applicatifs/tests de `src.models` vers `src.data.domain.models.stats`.
+- Nettoyage lint (F401/F841) sur 4 fichiers et suppression des occurrences textuelles `sqlite_master` dans les commentaires.
+- Ajout des tests Sprint 4 attendus :
+   - `tests/test_mode_normalization_winloss.py`
+   - `tests/test_teammates_refonte.py`
+   - `tests/test_media_improvements.py`
+
+**Validation** :
+- `ruff check src --select F401,F841` : OK.
+- `pytest` consolidé S0/S2/S8 : **62 passed**.
+- `pytest` Sprint 4 (incluant nouveaux tests) : **81 passed**.
+- Suite stable hors intégration : **980 passed, 25 skipped, 8 warnings**.
+
+**Suivi** :
+- `PLAN_UNIFIE.md` mis à jour : lots A/B/C/D cochés, Gate D coché, critères 9.3.4 (1/2) cochés.
+- Reste à faire pour clôture 9.3.4 complète : réaliser les commits de consolidation (documentaire + technique).
+
+---
+
 ### [2026-02-11] - Sprint 5 — Score de Performance v4 (8 métriques)
 
 **Statut** : Livré
