@@ -1309,8 +1309,8 @@ La phase audit S0→S9 est considérée close quand :
 - [ ] Chaque domaine a au moins **1 test représentation graphe** (traces + fallback) *(partiel : coverage présente sur plusieurs pages, pas encore exhaustive)*
 - [ ] Les filtres modifient effectivement les données affichées sur au moins 3 pages clés *(partiel : non-régressions présentes, couverture à durcir)*
 - [x] Les datasets partiels/vides n'entraînent aucune exception UI *(INT-002 + INT-003 implémentés et validés en local)*
-- [ ] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven *(scénarios implémentés, exécution browser encore skip en local)*
-- [ ] La CI standard reste rapide (E2E navigateur hors pipeline bloquant) *(à confirmer par exécution CI)*
+- [x] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven *(validé en CI : 13/13 pass, 0 skip)*
+- [x] La CI standard reste rapide (E2E navigateur hors pipeline bloquant) *(validé : workflow `workflow_dispatch` dédié)*
 
 #### 9.4.6 Backlog concret des nouveaux fichiers de tests
 
@@ -1399,7 +1399,7 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 1. ✅ Créer les 5 fichiers complémentaires listés en 9.4.7.
 2. ✅ Implémenter les scénarios E2E `E2E-005..009` + `INT-003` (vagues P1/P2).
 3. ✅ Exécuter et consigner les résultats 9.4.4 en local (PR / stable / intégration / E2E).
-4. Exécuter la passe E2E sur runner Playwright opérationnel (zéro skip attendu) puis finaliser le recochage 9.4.5 avec preuves CI.
+4. ✅ Exécuter la passe E2E sur runner Playwright opérationnel (zéro skip attendu) et finaliser le recochage 9.4.5 avec preuves CI.
 
 **Procédure CI recommandée (finalisation 9.4.5)**
 
@@ -1444,6 +1444,12 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 2. Lancer `workflow_dispatch` avec `enforce_no_skip=true`.
 3. Copier le résumé JUnit dans le template ci-dessus.
 4. Recocher les cases 9.4.5 concernées avec la preuve associée.
+
+**Preuves CI GitHub Actions (2026-02-12)**
+
+- Run non strict (`enforce_no_skip=false`) : ✅ succès — https://github.com/JGtm/LevelUp_with_SPNKr/actions/runs/21960782516
+- Run strict (`enforce_no_skip=true`) : ✅ succès — https://github.com/JGtm/LevelUp_with_SPNKr/actions/runs/21960846686
+- Résumé strict : `tests=13`, `skipped=0`, `failures=0`, `errors=0`
 
 ---
 
