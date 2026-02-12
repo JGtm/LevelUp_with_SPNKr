@@ -1,7 +1,9 @@
-# Data Storage - Architecture Hybride SQLite + Parquet
+# Data Storage - Architecture DuckDB Unifiée (v4)
+
+> **Features implémentées (S0-S5)** : P2 (migration Polars core), P3 (damage_dealt/damage_taken dans match_participants). Architecture v4 DuckDB complète.
 
 ## Résumé
-Architecture de stockage hybride optimisée pour les analytics Halo Infinite. SQLite stocke les métadonnées relationnelles (référentiels, profils), Parquet stocke les faits de match volumineux. DuckDB orchestre les requêtes cross-sources.
+Architecture de stockage DuckDB unifiée (v4) pour les analytics Halo Infinite. Chaque joueur a sa propre DB (`data/players/{gamertag}/stats.duckdb`). Les métadonnées partagées sont dans `data/warehouse/metadata.duckdb`. SQLite est proscrit (sauf scripts de migration legacy).
 
 ## Inputs
 - **JSON de référentiels** :
@@ -14,23 +16,20 @@ Architecture de stockage hybride optimisée pour les analytics Halo Infinite. SQ
   - Rosters et événements highlight
 
 ## Outputs
-- **SQLite** (`data/warehouse/metadata.db`) :
-  - Tables : `players`, `playlists`, `maps`, `game_variants`, `friends`, `sessions`, `sync_meta`, `medal_definitions`
-- **Parquet** (`data/warehouse/match_facts/`) :
-  - Structure : `player={xuid}/year={yyyy}/month={mm}/data.parquet`
-  - Compression : Snappy (équilibre vitesse/taille)
+- **DuckDB** (`data/warehouse/metadata.duckdb`) : Référentiels partagés
+- **DuckDB** (`data/players/{gamertag}/stats.duckdb`) : Stats par joueur
+  - Tables : `match_stats`, `medals_earned`, `teammates_aggregate`, `antagonists`, `highlight_events`, `career_progression`, `mv_*`
+- **Parquet** (`data/players/{gamertag}/archive/`) : Archives saison
 
 ## Dépendances
 - **Packages externes** :
-  - `polars` : DataFrames haute performance (write/read Parquet)
-  - `duckdb` : Moteur SQL OLAP
+  - `polars` : DataFrames haute performance (Pandas proscrit)
+  - `duckdb` : Moteur SQL OLAP (stockage et requêtes)
   - `pydantic` v2 : Validation des modèles
-  - `sqlite3` : Base de données embarquée
 - **Modules internes** :
-  - `src.data.domain.models.*` : Modèles Pydantic (MatchFact, MedalAward, PlayerProfile)
-  - `src.data.infrastructure.database.sqlite_metadata` : Store SQLite
-  - `src.data.infrastructure.parquet.writer` : Écriture Parquet partitionnée
-  - `src.data.query.engine` : QueryEngine DuckDB
+  - `src.data.repositories.duckdb_repo` : DuckDBRepository (accès unifié)
+  - `src.data.sync.engine` : SyncEngine (synchronisation)
+  - `src.data.sync.models` : Modèles Pydantic (MatchRow, MatchParticipantRow, etc.)
 
 ## Logique Métier
 

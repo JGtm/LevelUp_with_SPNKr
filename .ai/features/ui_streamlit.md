@@ -1,5 +1,7 @@
 # UI Streamlit - Interface Utilisateur
 
+> **Features implémentées (S0-S5)** : P1 (bug tri session), P4 (médianes, frags, modes, médias, coéquipiers radar), P7 (page carrière héros), P8 (FilterState centralisé, nettoyage session_state).
+
 ## Résumé
 Application Streamlit multi-pages pour la visualisation des statistiques Halo Infinite. Architecture modulaire avec séparation claire entre rendu (pages), logique métier (helpers), et état (session_state). Supporte le multi-joueurs, la synchronisation SPNKr, et les filtres avancés.
 
@@ -18,7 +20,7 @@ Application Streamlit multi-pages pour la visualisation des statistiques Halo In
 - **Packages externes** :
   - `streamlit` : Framework UI
   - `plotly` : Visualisations interactives
-  - `pandas` : DataFrames
+  - `polars` : DataFrames (Pandas proscrit — conversion `.to_pandas()` à la frontière Plotly/Streamlit uniquement)
 - **Modules internes** :
   - `src.ui.pages.*` : Rendus de pages
   - `src.ui.components.*` : Composants réutilisables

@@ -1,10 +1,12 @@
 # Stats Engine - Moteur de Calculs Statistiques
 
+> **Features implémentées (S0-S5)** : P2 (migration Polars core), P3 (damage participants), P5 (score performance v4 — 8 métriques).
+
 ## Résumé
-Ensemble de modules pour le calcul des statistiques de performance Halo Infinite. Inclut les agrégations (kills, deaths, assists), les taux de victoire, le score de performance relatif (comparaison à l'historique personnel), et les analyses par session/catégorie de mode.
+Ensemble de modules pour le calcul des statistiques de performance Halo Infinite. Inclut les agrégations (kills, deaths, assists), les taux de victoire, le score de performance relatif v4 (comparaison à l'historique personnel sur 8 métriques), et les analyses par session/catégorie de mode.
 
 ## Inputs
-- **DataFrame de matchs** (Pandas) avec colonnes :
+- **DataFrame de matchs** (Polars) avec colonnes :
   - `kills`, `deaths`, `assists` : Stats brutes
   - `outcome` : Résultat (2=Win, 3=Loss, 1=Tie, 4=NoFinish)
   - `kda`, `accuracy` : Ratios calculés
@@ -21,36 +23,43 @@ Ensemble de modules pour le calcul des statistiques de performance Halo Infinite
 
 ## Dépendances
 - **Packages externes** :
-  - `pandas` : DataFrames
+  - `polars` : DataFrames (Pandas proscrit — migré en S2)
   - `math` : Calculs mathématiques
 - **Modules internes** :
   - `src.models` : AggregatedStats, OutcomeRates
-  - `src.analysis.performance_config` : Configuration des poids
+  - `src.analysis.performance_config` : Configuration des poids (v4 depuis S5)
   - `src.analysis.mode_categories` : Inférence de catégories
 
 ## Logique Métier
 
-### Score de Performance RELATIF (0-100)
+### Score de Performance RELATIF v4 (0-100) — Implémenté S5
+
 Compare chaque match à l'historique personnel du joueur :
 - **50** = Match dans la moyenne
 - **100** = Meilleur match de l'historique
 - **0** = Pire match de l'historique
 
 ```python
-# Métriques utilisées (normalisées par minute)
+# Métriques utilisées (8 métriques v4, normalisées par minute)
 KPM = kills / (duration / 60)    # Kills Per Minute
 DPM = deaths / (duration / 60)   # Deaths Per Minute (inversé)
 APM = assists / (duration / 60)  # Assists Per Minute
 KDA = (kills + assists) / max(1, deaths)
 Accuracy = % de tirs touchés
+PSPM = personal_score / (duration / 60)  # Personal Score Per Minute
+DmgPM = damage_dealt / (duration / 60)   # Damage Per Minute
+rank_perf = performance relative au rang  # Rank Performance
 
-# Pondérations (depuis performance_config.py)
+# Pondérations v4 (depuis performance_config.py)
 RELATIVE_WEIGHTS = {
-    "kpm": 0.30,      # Impact principal
-    "dpm": 0.25,      # Survie importante
-    "apm": 0.10,      # Support
-    "kda": 0.25,      # Ratio global
-    "accuracy": 0.10  # Précision
+    "kpm": 0.20,       # Impact principal
+    "dpm": 0.15,       # Survie
+    "apm": 0.10,       # Support
+    "kda": 0.15,       # Ratio global
+    "accuracy": 0.10,  # Précision
+    "pspm": 0.10,      # Score personnel/min
+    "dmgpm": 0.10,     # Dégâts/min
+    "rank_perf": 0.10, # Performance au rang
 }
 
 # Calcul du percentile pour chaque métrique

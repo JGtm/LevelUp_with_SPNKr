@@ -3,6 +3,8 @@
 > **Date** : 2026-02-10
 > **Sources** : `SUPER_PLAN.md` (features P1-P8) + `CODE_REVIEW_CLEANUP_PLAN.md` (nettoyage 8 axes)
 > **Statut** : Plan consolidé — aucune modification de code
+>
+> **IMPORTANT pour agents IA** : Avant de travailler sur un sprint >= 6, consulter **`.ai/SPRINT_EXPLORATION.md`** qui contient l'exploration complète du codebase : catalogue de données disponibles, fonctions réutilisables, audit Pandas (35 fichiers avec lignes exactes), audit SQLite (5 fichiers), carte des dépendants `src/db/` (33 fichiers), et estimation d'effort par sprint.
 
 ---
 

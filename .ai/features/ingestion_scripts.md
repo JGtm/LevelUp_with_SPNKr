@@ -1,7 +1,9 @@
 # Ingestion Scripts - Scripts d'Import et Migration
 
+> **Features implémentées (S0-S5)** : P2 (refactoring backfill_data.py, logging, helpers), P3 (--participants-damage dans backfill), P5 (score v4 dans backfill + recompute script).
+
 ## Résumé
-Collection de scripts CLI pour l'ingestion, la migration, et la maintenance des données Halo Infinite. Couvre l'import des référentiels JSON vers SQLite, la synchronisation des matchs via SPNKr, et les migrations entre formats de stockage.
+Collection de scripts CLI pour l'ingestion, la migration, et la maintenance des données Halo Infinite. Couvre la synchronisation des matchs via SPNKr, le backfill de données, et les migrations entre formats de stockage. Architecture DuckDB v4 (SQLite proscrit sauf scripts de migration legacy).
 
 ## Inputs
 - **Fichiers JSON** : Référentiels (playlists, médailles, commendations)

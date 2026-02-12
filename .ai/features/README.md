@@ -40,9 +40,24 @@ Chaque fiche doit suivre ce template :
 [Bugs connus, limitations, TODOs]
 ```
 
+## Statut des Priorités (SUPER_PLAN P1-P8)
+
+> Mis à jour le 2026-02-12. Sprints S0-S5 livrés.
+
+| # | Priorité | Description | Sprint | Statut |
+|---|----------|-------------|--------|--------|
+| **P1** | Bug "Dernière session" | Correction tri bouton dernière session + logique filtres | S0 | **Implémenté** |
+| **P2** | Refactoring backfill + Migration Polars core | Migration Pandas→Polars (performance_score, backfill) + logging | S2 | **Implémenté** |
+| **P3** | Damage participants | `damage_dealt`, `damage_taken` dans match_participants + backfill | S3A | **Implémenté** |
+| **P4** | Médianes, Frags, Modes, Médias, Coéquipiers | Médianes distributions, renommage Frags, normalisation modes, lightbox médias, radar participation | S4 | **Implémenté** |
+| **P5** | Score de Performance v4 | 8 métriques (PSPM, DPM, rank_perf…), version `v4-relative` | S5 | **Implémenté** |
+| **P6** | Nouvelles visualisations statistiques | Corrélations, distributions, win streaks, comparaisons coéquipiers | S6-S8 | En cours |
+| **P7** | Section Carrière | Gauge progression héros, métriques XP, historique rangs | S3B | **Implémenté** |
+| **P8** | Persistance filtres multi-joueurs | Nettoyage session_state, FilterState centralisé | S0 | **Implémenté** |
+
 ## Usage
 
 Ces fichiers sont lus par la commande `/plan` pour générer un plan d'implémentation structuré.
 
 ---
-*Généré automatiquement - Ne pas modifier manuellement*
+*Dernière mise à jour : 2026-02-12*

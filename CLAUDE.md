@@ -13,6 +13,8 @@
 - `.ai/thought_log.md` : Journal des décisions
 - `.ai/data_lineage.md` : Flux de données
 - `.ai/ARCHITECTURE_ROADMAP.md` : Roadmap des phases
+- `.ai/PLAN_UNIFIE.md` : Plan unifié des sprints (S0-S11)
+- `.ai/SPRINT_EXPLORATION.md` : **Exploration codebase pour Sprints 6-11** — catalogue de données, fonctions réutilisables, audit Pandas/SQLite/src/db, blockers par sprint. **Consulter impérativement avant de travailler sur un sprint >= 6.**
 
 **APRÈS CHAQUE MODIFICATION SIGNIFICATIVE** : Mettre à jour ces fichiers.
 
