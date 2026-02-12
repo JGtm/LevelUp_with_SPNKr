@@ -54,30 +54,20 @@ def pick_latest_spnkr_db_if_any(repo_root: Path | None = None) -> str:
 
 
 def is_spnkr_db_path(db_path: str) -> bool:
-    """Vérifie si un chemin correspond à une base SPNKr ou fusionnée multi-joueurs.
+    """Vérifie si un chemin correspond à une base DuckDB valide.
 
-    Supporte les bases SQLite (.db) et DuckDB (.duckdb).
+    Seul DuckDB (.duckdb) est supporté. SQLite (.db) est refusé.
     """
     try:
         p = Path(db_path)
         suffix = p.suffix.lower()
 
-        # Supporte .db (SQLite legacy) et .duckdb (v4)
-        if suffix not in (".db", ".duckdb"):
+        # SQLite (.db) refusé - DuckDB uniquement
+        if suffix != ".duckdb":
             return False
 
-        name_lower = p.name.lower()
-
-        # DB SPNKr classique (spnkr_*.db)
-        if name_lower.startswith("spnkr"):
-            return True
-        # DB fusionnée (halo_*.db ou autre avec table Players)
-        if name_lower.startswith("halo"):
-            return True
         # DB DuckDB v4 (stats.duckdb dans data/players/{gamertag}/)
-        if suffix == ".duckdb":
-            return True
-        return False
+        return True
     except Exception:
         return False
 
@@ -451,8 +441,7 @@ def sync_all_players(
     """
     # Note: with_highlight_events et with_aliases sont toujours True
     # Les flags --no-* ne sont jamais passés au script d'import
-    from src.db import (
-        get_players_from_db,
+    from src.utils import (
         guess_xuid_from_db_path,
         infer_spnkr_player_from_db_path,
     )
@@ -485,9 +474,7 @@ def sync_all_players(
         except Exception:
             pass
 
-    # SQLite legacy : chercher dans la table Players
-    if not players:
-        players = get_players_from_db(db_path)
+    # SQLite legacy supprimé - plus de get_players_from_db
 
     if not players:
         # Fallback: DB mono-joueur, on déduit depuis le nom du fichier

@@ -5,18 +5,16 @@ from __future__ import annotations
 import contextlib
 import os
 from collections.abc import Callable, Mapping
-from pathlib import Path
 
 import streamlit as st
 
 from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_WAYPOINT_PLAYER
-from src.db import (
+from src.ui.aliases import display_name_from_xuid
+from src.utils import (
     guess_xuid_from_db_path,
-    infer_spnkr_player_from_db_path,
     load_profiles,
     resolve_xuid_from_db,
 )
-from src.ui.aliases import display_name_from_xuid
 
 
 def _default_identity_from_secrets() -> tuple[str, str]:
@@ -74,30 +72,7 @@ def render_source_section(
         _secret_player, secret_wp = _default_identity_from_secrets()
         st.session_state["waypoint_player"] = secret_wp
 
-    # DB SPNKr locale (par défaut: data/spnkr.db à la racine du repo)
-    repo_root = Path(__file__).resolve().parents[3]
-    data_dir = repo_root / "data"
-    spnkr_db_path = str(data_dir / "spnkr.db")
-    try:
-        spnkr_candidates = [p for p in data_dir.glob("spnkr*.db") if p.is_file()]
-    except Exception:
-        spnkr_candidates = []
-
-    spnkr_candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
-    # latest_spnkr_db_path préparé pour usage futur (multi-profils)
-    _ = str(spnkr_candidates[0]) if spnkr_candidates else spnkr_db_path
-
-    current_db_path = str(st.session_state.get("db_path", "") or "")
-    try:
-        cur_parent = Path(current_db_path).resolve().parent
-    except Exception:
-        cur_parent = Path(current_db_path).parent
-    # is_spnkr préparé pour usage futur (conditionnels multi-profils)
-    _ = (
-        os.path.normcase(str(cur_parent)) == os.path.normcase(str(data_dir))
-        and Path(current_db_path).suffix.lower() == ".db"
-        and Path(current_db_path).name.lower().startswith("spnkr")
-    )
+    # DuckDB v4 uniquement (SQLite legacy supprimé)
 
     c_top = st.columns(2)
     if c_top[0].button("Vider caches", width="stretch"):
@@ -110,14 +85,7 @@ def render_source_section(
             get_local_dbs.clear()  # st.cache_data wrapper
         st.rerun()
 
-    # Section DB détectées masquée - sélection automatique depuis session_state
-    # (La DB est sélectionnée via openspartan_launcher ou directement dans session_state)
-    if spnkr_candidates and not current_db_path:
-        # Auto-sélection de la première DB si aucune n'est définie
-        st.session_state["db_path"] = str(spnkr_candidates[0])
-        inferred = infer_spnkr_player_from_db_path(str(spnkr_candidates[0])) or ""
-        if inferred:
-            st.session_state["xuid_input"] = inferred
+    # DuckDB v4 : la DB est sélectionnée via openspartan_launcher ou session_state
 
     # Récupérer le db_path depuis session_state (pas d'UI manuelle)
     db_path = str(st.session_state.get("db_path", "") or "").strip()

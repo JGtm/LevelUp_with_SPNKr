@@ -3,19 +3,58 @@
 from __future__ import annotations
 
 import html
+import logging
 import os
 import re
 from collections.abc import Callable
+from typing import Any
 
 import streamlit as st
 
 from src.analysis import compute_personal_antagonists
 from src.config import BOT_MAP, TEAM_MAP
-from src.db import has_table
-from src.db.loaders import load_match_players_stats
-from src.db.parsers import parse_xuid_input
 from src.ui import display_name_from_xuid
 from src.ui.pages.match_view_helpers import os_card
+from src.utils import parse_xuid_input
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Helper DuckDB v4
+# =============================================================================
+
+
+def _is_duckdb_v4_path(db_path: str) -> bool:
+    """Détecte si le chemin est une DB joueur DuckDB v4."""
+    return db_path.endswith(".duckdb") if db_path else False
+
+
+def _has_table_duckdb(db_path: str, table_name: str) -> bool:
+    """Vérifie si une table existe dans une DB DuckDB."""
+    if not _is_duckdb_v4_path(db_path):
+        return False
+    try:
+        from src.data.repositories.duckdb_repo import DuckDBRepository
+
+        repo = DuckDBRepository(db_path, xuid="", read_only=True)
+        return repo.has_table(table_name)
+    except Exception:
+        return False
+
+
+def _load_match_players_stats(db_path: str, match_id: str) -> list[dict[str, Any]]:
+    """Charge les stats des joueurs d'un match."""
+    if not _is_duckdb_v4_path(db_path):
+        return []
+    try:
+        from src.data.repositories.duckdb_repo import DuckDBRepository
+
+        repo = DuckDBRepository(db_path, xuid="", read_only=True)
+        return repo.load_match_players_stats(match_id)
+    except Exception:
+        return []
+
 
 # =============================================================================
 # Section Némésis / Souffre-douleur
@@ -34,7 +73,7 @@ def render_nemesis_section(
 ) -> None:
     """Rend la section Némésis / Souffre-douleur."""
     st.subheader("Antagonistes du match")
-    if not (match_id and match_id.strip() and has_table(db_path, "HighlightEvents")):
+    if not (match_id and match_id.strip() and _has_table_duckdb(db_path, "highlight_events")):
         st.caption(
             "Indisponible: la DB ne contient pas les highlight events. "
             "Si tu utilises une DB SPNKr, relance l'import avec `--with-highlight-events`."
@@ -49,7 +88,7 @@ def render_nemesis_section(
     me_xuid = str(parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()).strip()
 
     # Sprint 3.3: Charger les stats officielles pour validation des antagonistes
-    official_stats = load_match_players_stats(db_path, match_id.strip())
+    official_stats = _load_match_players_stats(db_path, match_id.strip())
 
     res = compute_personal_antagonists(
         he, me_xuid=me_xuid, tolerance_ms=5, official_stats=official_stats
@@ -332,8 +371,10 @@ def _render_antagonist_chart(
             )
 
             # Rangs pour tri des lignes (match_participants après backfill)
-            official_stats = load_match_players_stats(db_path, match_id.strip())
-            rank_by_xuid = {s.xuid: s.rank for s in official_stats} if official_stats else None
+            official_stats = _load_match_players_stats(db_path, match_id.strip())
+            rank_by_xuid = (
+                {s["xuid"]: s["rank"] for s in official_stats} if official_stats else None
+            )
 
             me_xuid = str(
                 parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()

@@ -19,17 +19,15 @@ from src.config import (
     DEFAULT_PLAYER_XUID,
     DEFAULT_WAYPOINT_PLAYER,
 )
-from src.db import resolve_xuid_from_db
-from src.db.parsers import parse_xuid_input
 from src.ui import (
+    AppSettings,
     display_name_from_xuid,
+    ensure_spnkr_tokens,
     get_hero_html,
     get_profile_appearance,
-    ensure_spnkr_tokens,
-    AppSettings,
 )
 from src.ui.player_assets import download_image_to_cache, ensure_local_image_path
-
+from src.utils import parse_xuid_input, resolve_xuid_from_db
 
 # =============================================================================
 # Identity resolution
@@ -38,6 +36,7 @@ from src.ui.player_assets import download_image_to_cache, ensure_local_image_pat
 
 class PlayerIdentity(NamedTuple):
     """Identité d'un joueur (gamertag, xuid, waypoint)."""
+
     gamertag: str
     xuid: str
     waypoint_player: str
@@ -45,12 +44,12 @@ class PlayerIdentity(NamedTuple):
 
 def get_identity_from_secrets() -> PlayerIdentity:
     """Retourne l'identité par défaut depuis secrets/env/constants.
-    
+
     Ordre de priorité :
     1. Secrets Streamlit (.streamlit/secrets.toml)
     2. Variables d'environnement
     3. Constantes du projet
-    
+
     Returns:
         PlayerIdentity avec gamertag, xuid et waypoint_player.
     """
@@ -85,53 +84,54 @@ def resolve_xuid(
     identity: PlayerIdentity | None = None,
 ) -> str:
     """Résout un XUID à partir d'une entrée utilisateur.
-    
+
     Tente plusieurs stratégies :
     1. Parse direct si c'est un XUID valide
     2. Résolution depuis la DB si c'est un gamertag
     3. Fallback depuis l'identité par défaut si l'entrée correspond
-    
+
     Args:
         xuid_input: Entrée utilisateur (XUID ou gamertag).
         db_path: Chemin vers la base de données.
         identity: Identité par défaut optionnelle.
-        
+
     Returns:
         XUID résolu ou chaîne vide.
     """
     xraw = (xuid_input or "").strip()
     xuid_resolved = parse_xuid_input(xraw) or ""
-    
+
     # Si ce n'est pas un XUID numérique, essayer de résoudre depuis la DB
     if not xuid_resolved and xraw and not xraw.isdigit() and db_path:
         xuid_resolved = resolve_xuid_from_db(db_path, xraw) or ""
-        
+
         # Fallback: si la DB ne permet pas de résoudre,
         # utiliser les defaults si l'entrée correspond au gamertag par défaut
-        if not xuid_resolved and identity:
-            if (
-                identity.gamertag
-                and identity.xuid
-                and (not str(identity.gamertag).strip().isdigit())
-                and str(identity.gamertag).strip().casefold() == str(xraw).strip().casefold()
-            ):
-                xuid_resolved = identity.xuid
-    
+        if (
+            not xuid_resolved
+            and identity
+            and identity.gamertag
+            and identity.xuid
+            and (not str(identity.gamertag).strip().isdigit())
+            and str(identity.gamertag).strip().casefold() == str(xraw).strip().casefold()
+        ):
+            xuid_resolved = identity.xuid
+
     # Si toujours pas de XUID et pas d'entrée, utiliser l'identité par défaut
     if not xuid_resolved and not xraw and db_path and identity:
         if identity.gamertag and not identity.gamertag.isdigit():
             xuid_resolved = resolve_xuid_from_db(db_path, identity.gamertag) or identity.xuid
         else:
             xuid_resolved = identity.gamertag or identity.xuid
-    
+
     return xuid_resolved or ""
 
 
 def propagate_identity_to_env(identity: PlayerIdentity) -> None:
     """Propage l'identité vers les variables d'environnement.
-    
+
     Utile pour résoudre un XUID quand la DB SPNKr ne contient pas les gamertags.
-    
+
     Args:
         identity: Identité à propager.
     """
@@ -139,7 +139,7 @@ def propagate_identity_to_env(identity: PlayerIdentity) -> None:
         gt = identity.gamertag
         xuid = identity.xuid
         wp = identity.waypoint_player
-        
+
         if gt and not str(gt).strip().isdigit() and xuid:
             if not str(os.environ.get("OPENSPARTAN_DEFAULT_GAMERTAG") or "").strip():
                 os.environ["OPENSPARTAN_DEFAULT_GAMERTAG"] = str(gt).strip()
@@ -172,6 +172,7 @@ def _needs_halo_auth(url: str) -> bool:
 
 class ProfileAssets(NamedTuple):
     """Assets du profil joueur."""
+
     banner_path: str | None
     emblem_path: str | None
     backdrop_path: str | None
@@ -187,13 +188,13 @@ def load_profile_assets(
     settings: AppSettings,
 ) -> tuple[ProfileAssets, str | None]:
     """Charge les assets du profil joueur.
-    
+
     Combine les valeurs manuelles (settings) avec les données auto (API SPNKr).
-    
+
     Args:
         xuid: XUID du joueur.
         settings: Paramètres de l'application.
-        
+
     Returns:
         Tuple (ProfileAssets, erreur API ou None).
     """
@@ -201,7 +202,7 @@ def load_profile_assets(
     api_refresh_h = int(getattr(settings, "profile_api_auto_refresh_hours", 0) or 0)
     api_app = None
     api_err = None
-    
+
     if api_enabled and str(xuid or "").strip():
         try:
             api_app, api_err = get_profile_appearance(
@@ -211,44 +212,47 @@ def load_profile_assets(
             )
         except Exception as e:
             api_app, api_err = None, str(e)
-    
+
     # Valeurs manuelles (prioritaires) / sinon auto depuis API
     banner_value = str(getattr(settings, "profile_banner", "") or "").strip()
-    emblem_value = (
-        str(getattr(settings, "profile_emblem", "") or "").strip()
-        or (getattr(api_app, "emblem_image_url", None) if api_app else "")
+    emblem_value = str(getattr(settings, "profile_emblem", "") or "").strip() or (
+        getattr(api_app, "emblem_image_url", None) if api_app else ""
     )
-    backdrop_value = (
-        str(getattr(settings, "profile_backdrop", "") or "").strip()
-        or (getattr(api_app, "backdrop_image_url", None) if api_app else "")
+    backdrop_value = str(getattr(settings, "profile_backdrop", "") or "").strip() or (
+        getattr(api_app, "backdrop_image_url", None) if api_app else ""
     )
-    nameplate_value = (
-        str(getattr(settings, "profile_nameplate", "") or "").strip()
-        or (getattr(api_app, "nameplate_image_url", None) if api_app else "")
+    nameplate_value = str(getattr(settings, "profile_nameplate", "") or "").strip() or (
+        getattr(api_app, "nameplate_image_url", None) if api_app else ""
     )
-    service_tag_value = (
-        str(getattr(settings, "profile_service_tag", "") or "").strip()
-        or (getattr(api_app, "service_tag", None) if api_app else "")
+    service_tag_value = str(getattr(settings, "profile_service_tag", "") or "").strip() or (
+        getattr(api_app, "service_tag", None) if api_app else ""
     )
-    rank_label_value = (
-        str(getattr(settings, "profile_rank_label", "") or "").strip()
-        or (getattr(api_app, "rank_label", None) if api_app else "")
+    rank_label_value = str(getattr(settings, "profile_rank_label", "") or "").strip() or (
+        getattr(api_app, "rank_label", None) if api_app else ""
     )
-    rank_subtitle_value = (
-        str(getattr(settings, "profile_rank_subtitle", "") or "").strip()
-        or (getattr(api_app, "rank_subtitle", None) if api_app else "")
+    rank_subtitle_value = str(getattr(settings, "profile_rank_subtitle", "") or "").strip() or (
+        getattr(api_app, "rank_subtitle", None) if api_app else ""
     )
     rank_icon_value = (getattr(api_app, "rank_image_url", None) if api_app else "") or ""
-    
+
     # Configuration du téléchargement
-    dl_enabled = bool(getattr(settings, "profile_assets_download_enabled", False)) or bool(api_enabled)
+    dl_enabled = bool(getattr(settings, "profile_assets_download_enabled", False)) or bool(
+        api_enabled
+    )
     refresh_h = int(getattr(settings, "profile_assets_auto_refresh_hours", 0) or 0)
-    
+
     # Authentification si nécessaire pour les assets protégés
-    if dl_enabled and (not str(os.environ.get("SPNKR_CLEARANCE_TOKEN") or "").strip()):
-        if _needs_halo_auth(backdrop_value) or _needs_halo_auth(rank_icon_value) or _needs_halo_auth(nameplate_value):
-            ensure_spnkr_tokens(timeout_seconds=12)
-    
+    if (
+        dl_enabled
+        and (not str(os.environ.get("SPNKR_CLEARANCE_TOKEN") or "").strip())
+        and (
+            _needs_halo_auth(backdrop_value)
+            or _needs_halo_auth(rank_icon_value)
+            or _needs_halo_auth(nameplate_value)
+        )
+    ):
+        ensure_spnkr_tokens(timeout_seconds=12)
+
     # Téléchargement/résolution des chemins
     banner_path = ensure_local_image_path(
         banner_value, prefix="banner", download_enabled=dl_enabled, auto_refresh_hours=refresh_h
@@ -260,12 +264,15 @@ def load_profile_assets(
         backdrop_value, prefix="backdrop", download_enabled=dl_enabled, auto_refresh_hours=refresh_h
     )
     nameplate_path = ensure_local_image_path(
-        nameplate_value, prefix="nameplate", download_enabled=dl_enabled, auto_refresh_hours=refresh_h
+        nameplate_value,
+        prefix="nameplate",
+        download_enabled=dl_enabled,
+        auto_refresh_hours=refresh_h,
     )
     rank_icon_path = ensure_local_image_path(
         rank_icon_value, prefix="rank", download_enabled=dl_enabled, auto_refresh_hours=refresh_h
     )
-    
+
     assets = ProfileAssets(
         banner_path=banner_path,
         emblem_path=emblem_path,
@@ -276,7 +283,7 @@ def load_profile_assets(
         rank_label=str(rank_label_value or "").strip() or None,
         rank_subtitle=str(rank_subtitle_value or "").strip() or None,
     )
-    
+
     return assets, api_err
 
 
@@ -288,7 +295,7 @@ def warn_missing_assets(
     rank_icon_path: str | None,
 ) -> None:
     """Affiche des avertissements pour les assets non téléchargés.
-    
+
     Args:
         settings: Paramètres de l'application.
         backdrop_value: URL du backdrop.
@@ -299,7 +306,7 @@ def warn_missing_assets(
     dl_enabled = bool(getattr(settings, "profile_assets_download_enabled", False))
     api_enabled = bool(getattr(settings, "profile_api_enabled", False))
     dl_enabled = dl_enabled or api_enabled
-    
+
     def _warn_asset(prefix: str, url: str, path: str | None) -> None:
         if not dl_enabled:
             return
@@ -315,7 +322,7 @@ def warn_missing_assets(
         ok, err, _out = download_image_to_cache(u, prefix=prefix, timeout_seconds=12)
         if not ok:
             st.caption(f"Asset '{prefix}' non téléchargé: {err}")
-    
+
     _warn_asset("backdrop", backdrop_value, backdrop_path)
     _warn_asset("rank", rank_icon_value, rank_icon_path)
 
@@ -331,14 +338,14 @@ def render_profile_header(
     assets: ProfileAssets,
 ) -> None:
     """Rend le header/hero du profil joueur.
-    
+
     Args:
         xuid: XUID du joueur.
         settings: Paramètres de l'application.
         assets: Assets du profil.
     """
     me_name = display_name_from_xuid(xuid.strip()) if str(xuid or "").strip() else "(joueur)"
-    
+
     st.markdown(
         get_hero_html(
             player_name=me_name,
@@ -349,7 +356,10 @@ def render_profile_header(
             banner_path=assets.banner_path,
             backdrop_path=assets.backdrop_path,
             nameplate_path=assets.nameplate_path,
-            id_badge_text_color=str(getattr(settings, "profile_id_badge_text_color", "") or "").strip() or None,
+            id_badge_text_color=str(
+                getattr(settings, "profile_id_badge_text_color", "") or ""
+            ).strip()
+            or None,
             emblem_path=assets.emblem_path,
         ),
         unsafe_allow_html=True,

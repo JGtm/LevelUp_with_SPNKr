@@ -23,7 +23,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.analysis.antagonists import AggregationResult, aggregate_antagonists
 from src.analysis.killer_victim import compute_personal_antagonists
 from src.data.repositories.factory import get_repository_from_profile, load_db_profiles
-from src.db.loaders import load_highlight_events_for_match, load_match_players_stats
+
+
+def load_highlight_events_for_match(db_path: str, match_id: str) -> list:
+    """DEPRECATED: Charge les highlight events depuis une DB legacy (SQLite supprimé)."""
+    raise NotImplementedError(
+        "SQLite legacy supprimé. Utilisez DuckDBRepository.load_highlight_events()."
+    )
+
+
+def load_match_players_stats(db_path: str, match_id: str) -> list:
+    """DEPRECATED: Charge les stats-joueurs depuis une DB legacy (SQLite supprimé)."""
+    raise NotImplementedError(
+        "SQLite legacy supprimé. Utilisez DuckDBRepository.load_match_players_stats()."
+    )
+
 
 logging.basicConfig(
     level=logging.INFO,

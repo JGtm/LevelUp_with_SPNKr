@@ -120,9 +120,9 @@ from src.data.sync.transformers import (
     transform_personal_score_awards,
     transform_skill_stats,
 )
-from src.db.parsers import resolve_xuid_from_db
 from src.ui.multiplayer import list_duckdb_v4_players
 from src.ui.sync import get_player_duckdb_path, is_duckdb_player
+from src.utils import resolve_xuid_from_db
 
 # Import pour le calcul des scores de performance
 try:

@@ -26,7 +26,17 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 
 if TYPE_CHECKING:
-    from src.db.loaders import MatchPlayerStats
+    from typing import TypedDict
+
+    class MatchPlayerStats(TypedDict, total=False):
+        xuid: str
+        gamertag: str
+        kills: int
+        deaths: int
+        assists: int
+        team_id: int | None
+        rank: int
+        score: int | None
 
 
 @dataclass(frozen=True)

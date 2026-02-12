@@ -22,18 +22,14 @@ import pytest
 class TestIsSpnkrDbPath:
     """Tests pour is_spnkr_db_path."""
 
-    def test_spnkr_db_legacy(self):
-        """Test avec une base SPNKr legacy .db."""
+    def test_sqlite_db_legacy_refused(self):
+        """Test que les bases SQLite legacy .db sont refusées."""
         from src.ui.sync import is_spnkr_db_path
 
-        assert is_spnkr_db_path("data/spnkr_JGtm.db") is True
-        assert is_spnkr_db_path("spnkr_player.db") is True
-
-    def test_halo_db_legacy(self):
-        """Test avec une base fusionnée halo_*.db."""
-        from src.ui.sync import is_spnkr_db_path
-
-        assert is_spnkr_db_path("data/halo_merged.db") is True
+        # SQLite .db est maintenant refusé
+        assert is_spnkr_db_path("data/spnkr_JGtm.db") is False
+        assert is_spnkr_db_path("spnkr_player.db") is False
+        assert is_spnkr_db_path("data/halo_merged.db") is False
 
     def test_duckdb_v4_stats(self, tmp_path):
         """Test avec une base DuckDB v4 (stats.duckdb)."""

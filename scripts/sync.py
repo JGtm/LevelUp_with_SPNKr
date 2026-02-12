@@ -42,8 +42,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.config import get_default_db_path  # noqa: E402
-from src.db.connection import SQLiteForbiddenError, get_connection  # noqa: E402
 from src.ui.multiplayer import DuckDBPlayerInfo, list_duckdb_v4_players  # noqa: E402
+
+
+class SQLiteForbiddenError(Exception):
+    """Exception levée quand on tente d'utiliser SQLite (interdit)."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        super().__init__(f"SQLite interdit – utilisez DuckDB v4: {db_path}")
+
 
 # Configuration du logging
 logging.basicConfig(
@@ -173,26 +181,7 @@ def _resolve_player_in_db(db_path: str, player_query: str) -> tuple[str, str | N
         except Exception:
             pass
 
-    try:
-        from src.db.loaders import get_players_from_db
-
-        players = get_players_from_db(db_path)
-        if players:
-            for p in players:
-                xuid = str(p.get("xuid") or "").strip()
-                gamertag = str(p.get("gamertag") or "").strip()
-                label = str(p.get("label") or "").strip()
-
-                if q in {
-                    _normalize_player_key(xuid),
-                    _normalize_player_key(gamertag),
-                    _normalize_player_key(label),
-                }:
-                    player_id = xuid if xuid else gamertag
-                    display = label or gamertag or xuid
-                    return player_id, (xuid or None), (display or None)
-    except Exception:
-        pass
+    # SQLite legacy supprimé - plus de get_players_from_db
 
     # Fallback: considérer la query comme un gamertag (ou autre identifiant SPNKr).
     return player_query.strip(), None, player_query.strip()
@@ -265,170 +254,6 @@ def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
     if _is_duckdb_path(db_path):
         return True, "DuckDB: ignoré (n'utilise pas TeammatesAggregate)"
     return False, "Seuls les fichiers .duckdb sont supportés"
-
-
-def _rebuild_teammates_aggregate_impl(db_path: str) -> tuple[bool, str]:
-    """Reconstruit la table TeammatesAggregate depuis MatchStats.
-
-    Analyse tous les matchs pour extraire les coéquipiers et leurs stats.
-
-    Args:
-        db_path: Chemin vers la base de données.
-
-    Returns:
-        Tuple (success, message).
-    """
-    import json
-    import re
-
-    try:
-        from src.db.loaders import get_players_from_db
-
-        with get_connection(db_path) as con:
-            cur = con.cursor()
-
-            # Vider la table
-            cur.execute("DELETE FROM TeammatesAggregate")
-
-            # Récupérer tous les joueurs
-            players = get_players_from_db(db_path)
-            if not players:
-                return True, "Aucun joueur trouvé"
-
-            total_teammates = 0
-
-            for player in players:
-                xuid = player["xuid"]
-                logger.info(f"  Analyse des coéquipiers pour {xuid}...")
-
-                # Récupérer les matchs depuis MatchStats (source de vérité)
-                cur.execute("SELECT ResponseBody FROM MatchStats")
-
-                # Agréger par coéquipier
-                teammate_stats: dict[str, dict] = {}
-                gamertag_map: dict[str, str] = {}  # xuid -> gamertag
-
-                for (body,) in cur.fetchall():
-                    try:
-                        obj = json.loads(body)
-                    except Exception:
-                        continue
-
-                    players_list = obj.get("Players", [])
-                    if not players_list:
-                        continue
-
-                    # Trouver le joueur principal et son équipe
-                    me = None
-                    my_team_id = None
-                    target_ids = {xuid, f"xuid({xuid})"}
-
-                    for p in players_list:
-                        if not isinstance(p, dict):
-                            continue
-                        pid = p.get("PlayerId")
-                        pid_str = str(pid) if pid else ""
-                        if pid_str in target_ids or pid_str.lower() in {
-                            t.lower() for t in target_ids
-                        }:
-                            me = p
-                            my_team_id = p.get("LastTeamId")
-                            break
-
-                    if me is None or my_team_id is None:
-                        continue
-
-                    outcome = me.get("Outcome")
-                    match_info = obj.get("MatchInfo", {})
-                    start_time = match_info.get("StartTime", "")
-
-                    # Trouver les coéquipiers (même équipe)
-                    for p in players_list:
-                        if not isinstance(p, dict):
-                            continue
-
-                        p_team_id = p.get("LastTeamId")
-                        if p_team_id != my_team_id:
-                            continue
-
-                        pid = p.get("PlayerId")
-                        pid_str = str(pid) if pid else ""
-
-                        # Extraire le XUID
-                        tm_xuid = None
-                        if pid_str.isdigit():
-                            tm_xuid = pid_str
-                        else:
-                            m = re.match(r"xuid\((\d+)\)", pid_str, re.IGNORECASE)
-                            if m:
-                                tm_xuid = m.group(1)
-
-                        if not tm_xuid or tm_xuid == xuid:
-                            continue
-
-                        # Ignorer les bots
-                        if tm_xuid.startswith("bid(") or "bid(" in pid_str.lower():
-                            continue
-
-                        # Extraire le gamertag si disponible
-                        gt = None
-                        if isinstance(pid, dict):
-                            gt = pid.get("Gamertag") or pid.get("gamertag")
-                        if gt and isinstance(gt, str) and gt.strip():
-                            gamertag_map[tm_xuid] = gt.strip()
-
-                        if tm_xuid not in teammate_stats:
-                            teammate_stats[tm_xuid] = {
-                                "matches_together": 0,
-                                "same_team_count": 0,
-                                "wins_together": 0,
-                                "losses_together": 0,
-                                "first_played": start_time,
-                                "last_played": start_time,
-                            }
-
-                        stats = teammate_stats[tm_xuid]
-                        stats["matches_together"] += 1
-                        stats["same_team_count"] += 1
-                        if start_time:
-                            stats["last_played"] = start_time
-
-                        if outcome == 2:  # Win
-                            stats["wins_together"] += 1
-                        elif outcome == 3:  # Loss
-                            stats["losses_together"] += 1
-
-                # Insérer dans TeammatesAggregate
-                for tm_xuid, stats in teammate_stats.items():
-                    gamertag = gamertag_map.get(tm_xuid)
-                    cur.execute(
-                        """INSERT OR REPLACE INTO TeammatesAggregate (
-                            xuid, teammate_xuid, teammate_gamertag,
-                            matches_together, same_team_count, opposite_team_count,
-                            wins_together, losses_together, first_played, last_played, computed_at
-                        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
-                        (
-                            xuid,
-                            tm_xuid,
-                            gamertag,
-                            stats["matches_together"],
-                            stats["same_team_count"],
-                            stats["wins_together"],
-                            stats["losses_together"],
-                            stats["first_played"],
-                            stats["last_played"],
-                            _get_iso_now(),
-                        ),
-                    )
-                    total_teammates += 1
-
-                logger.info(f"    {len(teammate_stats)} coéquipiers trouvés")
-
-            con.commit()
-            return True, f"TeammatesAggregate reconstruit: {total_teammates} entrées"
-
-    except Exception as e:
-        return False, f"Erreur TeammatesAggregate: {e}"
 
 
 def refresh_duckdb_materialized_views(gamertag: str | None = None) -> tuple[bool, str]:
@@ -547,55 +372,6 @@ def rebuild_medals_aggregate(db_path: str) -> tuple[bool, str]:
     if _is_duckdb_path(db_path):
         return True, "DuckDB: ignoré (n'utilise pas MedalsAggregate)"
     return False, "Seuls les fichiers .duckdb sont supportés"
-
-
-def _rebuild_medals_aggregate_impl_unused(db_path: str) -> tuple[bool, str]:
-    """Code legacy SQLite - NE PLUS UTILISER."""
-    try:
-        from src.db.loaders import get_players_from_db, load_top_medals
-
-        with get_connection(db_path) as con:
-            cur = con.cursor()
-
-            # Vider la table
-            cur.execute("DELETE FROM MedalsAggregate")
-
-            # Récupérer tous les joueurs
-            players = get_players_from_db(db_path)
-            if not players:
-                return True, "Aucun joueur trouvé"
-
-            total_medals = 0
-
-            for player in players:
-                xuid = player["xuid"]
-
-                # Récupérer tous les match_ids pour ce joueur depuis MatchCache
-                cur.execute("SELECT match_id FROM MatchCache WHERE xuid = ?", (xuid,))
-                match_ids = [row[0] for row in cur.fetchall()]
-
-                if not match_ids:
-                    continue
-
-                # Charger toutes les médailles (pas de limite)
-                medals = load_top_medals(db_path, xuid, match_ids, top_n=None)
-
-                # Insérer dans MedalsAggregate
-                for medal_id, count in medals:
-                    cur.execute(
-                        """INSERT OR REPLACE INTO MedalsAggregate
-                           (xuid, scope_type, scope_id, medal_id, total_count, computed_at)
-                           VALUES (?, 'global', NULL, ?, ?, ?)""",
-                        (xuid, medal_id, count, _get_iso_now()),
-                    )
-                    total_medals += 1
-
-            con.commit()
-
-            return True, f"MedalsAggregate reconstruit: {total_medals} entrées"
-
-    except Exception as e:
-        return False, f"Erreur MedalsAggregate: {e}"
 
 
 def sync_delta(

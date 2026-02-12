@@ -2867,3 +2867,292 @@ class DuckDBRepository:
             Dict {xuid: gamertag} pour chaque XUID.
         """
         return {xuid: self.resolve_gamertag(xuid, match_id=match_id) for xuid in xuids}
+
+    # =========================================================================
+    # Méthodes legacy-compat (ajoutées pour migration src/db/)
+    # =========================================================================
+
+    def load_highlight_events(self, match_id: str) -> list[dict[str, Any]]:
+        """Charge les highlight events pour un match.
+
+        Équivalent DuckDB de src.db.loaders.load_highlight_events_for_match().
+
+        Args:
+            match_id: ID du match.
+
+        Returns:
+            Liste de dicts avec: event_type, time_ms, xuid, gamertag, type_hint.
+        """
+        if not match_id:
+            return []
+
+        conn = self._get_connection()
+        try:
+            # Vérifier si la table existe
+            tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'highlight_events'"
+            ).fetchall()
+            if not tables:
+                return []
+
+            result = conn.execute(
+                """
+                SELECT event_type, time_ms, xuid, gamertag, type_hint
+                FROM highlight_events
+                WHERE match_id = ?
+                ORDER BY time_ms ASC NULLS LAST
+                """,
+                [match_id],
+            )
+            columns = ["event_type", "time_ms", "xuid", "gamertag", "type_hint"]
+            return [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
+        except Exception as e:
+            logger.debug(f"Erreur load_highlight_events: {e}")
+            return []
+
+    def load_match_player_gamertags(self, match_id: str) -> dict[str, str]:
+        """Retourne un mapping XUID → Gamertag pour un match.
+
+        Équivalent DuckDB de src.db.loaders.load_match_player_gamertags().
+
+        Args:
+            match_id: ID du match.
+
+        Returns:
+            Dict {xuid: gamertag}.
+        """
+        if not match_id:
+            return {}
+
+        conn = self._get_connection()
+        result: dict[str, str] = {}
+
+        try:
+            # 1. Depuis match_participants (prioritaire)
+            if self._has_table("match_participants"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT xuid, gamertag
+                    FROM match_participants
+                    WHERE match_id = ? AND xuid IS NOT NULL AND gamertag IS NOT NULL
+                    """,
+                    [match_id],
+                ).fetchall()
+                for xuid, gt in rows:
+                    if xuid and gt:
+                        result[str(xuid)] = str(gt)
+
+            # 2. Compléter depuis highlight_events
+            if self._has_table("highlight_events"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT xuid, gamertag
+                    FROM highlight_events
+                    WHERE match_id = ? AND xuid IS NOT NULL AND gamertag IS NOT NULL
+                    """,
+                    [match_id],
+                ).fetchall()
+                for xuid, gt in rows:
+                    if xuid and gt and str(xuid) not in result:
+                        result[str(xuid)] = str(gt)
+
+            # 3. Compléter depuis xuid_aliases
+            if self._has_table("xuid_aliases"):
+                missing = [x for x in result if not result.get(x)]
+                if missing:
+                    placeholders = ", ".join(["?" for _ in missing])
+                    rows = conn.execute(
+                        f"SELECT xuid, gamertag FROM xuid_aliases WHERE xuid IN ({placeholders})",
+                        missing,
+                    ).fetchall()
+                    for xuid, gt in rows:
+                        if xuid and gt:
+                            result[str(xuid)] = str(gt)
+
+            return result
+        except Exception as e:
+            logger.debug(f"Erreur load_match_player_gamertags: {e}")
+            return result
+
+    def list_other_player_xuids(self, limit: int = 500) -> list[str]:
+        """Liste les XUIDs des autres joueurs rencontrés.
+
+        Équivalent DuckDB de src.db.loaders.list_other_player_xuids().
+
+        Args:
+            limit: Nombre max de XUIDs à retourner.
+
+        Returns:
+            Liste de XUIDs uniques (hors le joueur principal).
+        """
+        conn = self._get_connection()
+        xuids: set[str] = set()
+
+        try:
+            # Depuis highlight_events
+            if self._has_table("highlight_events"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT xuid
+                    FROM highlight_events
+                    WHERE xuid IS NOT NULL AND xuid != ?
+                    LIMIT ?
+                    """,
+                    [self._xuid, limit],
+                ).fetchall()
+                xuids.update(str(row[0]) for row in rows if row[0])
+
+            # Depuis match_participants
+            if self._has_table("match_participants"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT xuid
+                    FROM match_participants
+                    WHERE xuid IS NOT NULL AND xuid != ?
+                    LIMIT ?
+                    """,
+                    [self._xuid, limit],
+                ).fetchall()
+                xuids.update(str(row[0]) for row in rows if row[0])
+
+            # Depuis antagonists
+            if self._has_table("antagonists"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT opponent_xuid
+                    FROM antagonists
+                    WHERE opponent_xuid IS NOT NULL
+                    LIMIT ?
+                    """,
+                    [limit],
+                ).fetchall()
+                xuids.update(str(row[0]) for row in rows if row[0])
+
+            return list(xuids)[:limit]
+        except Exception as e:
+            logger.debug(f"Erreur list_other_player_xuids: {e}")
+            return []
+
+    def get_match_session_info(self, match_id: str) -> dict[str, Any] | None:
+        """Retourne les infos de session pour un match.
+
+        Args:
+            match_id: ID du match.
+
+        Returns:
+            Dict avec session_id, label, etc. ou None.
+        """
+        if not match_id:
+            return None
+
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                """
+                SELECT session_id
+                FROM match_stats
+                WHERE match_id = ?
+                """,
+                [match_id],
+            ).fetchone()
+
+            if row and row[0]:
+                return {"session_id": row[0]}
+            return None
+        except Exception:
+            return None
+
+    def has_table(self, table_name: str) -> bool:
+        """Vérifie si une table existe (alias public de _has_table).
+
+        Args:
+            table_name: Nom de la table.
+
+        Returns:
+            True si la table existe.
+        """
+        return self._has_table(table_name)
+
+    def load_match_players_stats(self, match_id: str) -> list[dict[str, Any]]:
+        """Charge les statistiques officielles de tous les joueurs d'un match.
+
+        Utilisé pour valider la cohérence des frags reconstitués via les
+        highlight events, et pour le tie-breaker némésis/souffre-douleur.
+
+        Args:
+            match_id: ID du match.
+
+        Returns:
+            Liste de dicts avec: xuid, gamertag, kills, deaths, assists, team_id, rank, score
+        """
+        if not match_id:
+            return []
+
+        conn = self._get_connection()
+        try:
+            if not self._has_table("match_participants"):
+                return []
+
+            # Vérifier les colonnes disponibles
+            has_rank = self._has_column(conn, "match_participants", "rank")
+            has_score = self._has_column(conn, "match_participants", "score")
+            has_kda = (
+                self._has_column(conn, "match_participants", "kills")
+                and self._has_column(conn, "match_participants", "deaths")
+                and self._has_column(conn, "match_participants", "assists")
+            )
+
+            # Construire la requête selon les colonnes disponibles
+            columns = ["xuid", "gamertag", "team_id"]
+            if has_rank:
+                columns.append("rank")
+            if has_score:
+                columns.append("score")
+            if has_kda:
+                columns.extend(["kills", "deaths", "assists"])
+
+            query = f"""
+                SELECT {", ".join(columns)}
+                FROM match_participants
+                WHERE match_id = ?
+                ORDER BY {"rank" if has_rank else "score DESC NULLS LAST"}
+            """
+
+            rows = conn.execute(query, [match_id]).fetchall()
+
+            result = []
+            for idx, row in enumerate(rows):
+                d: dict[str, Any] = {
+                    "xuid": str(row[0] or "").strip(),
+                    "gamertag": str(row[1] or row[0] or "").strip(),
+                    "team_id": int(row[2]) if row[2] is not None else None,
+                    "rank": 0,
+                    "score": None,
+                    "kills": 0,
+                    "deaths": 0,
+                    "assists": 0,
+                }
+
+                col_idx = 3
+                if has_rank:
+                    d["rank"] = int(row[col_idx]) if row[col_idx] is not None else idx + 1
+                    col_idx += 1
+                else:
+                    d["rank"] = idx + 1
+
+                if has_score:
+                    d["score"] = int(row[col_idx]) if row[col_idx] is not None else None
+                    col_idx += 1
+
+                if has_kda:
+                    d["kills"] = int(row[col_idx]) if row[col_idx] is not None else 0
+                    d["deaths"] = int(row[col_idx + 1]) if row[col_idx + 1] is not None else 0
+                    d["assists"] = int(row[col_idx + 2]) if row[col_idx + 2] is not None else 0
+
+                result.append(d)
+
+            return result
+        except Exception as e:
+            logger.debug(f"Erreur load_match_players_stats: {e}")
+            return []

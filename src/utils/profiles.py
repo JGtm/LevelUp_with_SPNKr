@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
 """Gestion des profils multi-base de données.
 
 Ce module permet de sauvegarder et charger plusieurs configurations
 de bases de données (profils), chacune avec son chemin DB, XUID et
 identifiant Waypoint.
 """
+
 from __future__ import annotations
 
 import json
@@ -59,7 +59,7 @@ def _load_profiles_cached(path: str, mtime: float | None) -> dict[str, dict[str,
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             obj: Any = json.load(f) or {}
     except Exception:
         return {}

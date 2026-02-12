@@ -25,11 +25,15 @@ from src.config import (
     get_aliases_file_path,
     get_repo_root,
 )
-from src.db import guess_xuid_from_db_path, infer_spnkr_player_from_db_path, resolve_xuid_from_db
-from src.db.parsers import parse_xuid_input
 from src.ui import AppSettings
 from src.ui.cache import db_cache_key, load_df_optimized
 from src.ui.sync import is_spnkr_db_path, pick_latest_spnkr_db_if_any
+from src.utils import (
+    guess_xuid_from_db_path,
+    infer_spnkr_player_from_db_path,
+    parse_xuid_input,
+    resolve_xuid_from_db,
+)
 
 # =============================================================================
 # Identité joueur depuis secrets/env

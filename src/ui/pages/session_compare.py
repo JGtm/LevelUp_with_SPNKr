@@ -117,19 +117,7 @@ def _get_friends_names(df_session: pd.DataFrame) -> set[str]:
                             friends_mapping[fxuid] = nickname or gamertag or fxuid
                 finally:
                     con.close()
-            else:
-                # SQLite legacy
-                from src.db.connection import get_connection
-
-                with get_connection(db_path) as con:
-                    cur = con.cursor()
-                    cur.execute(
-                        "SELECT friend_xuid, friend_gamertag, nickname FROM Friends WHERE owner_xuid = ?",
-                        (xuid,),
-                    )
-                    for row in cur.fetchall():
-                        fxuid, gamertag, nickname = row
-                        friends_mapping[fxuid] = nickname or gamertag or fxuid
+            # SQLite legacy supprimé - DuckDB v4 uniquement
         except Exception:
             pass
 

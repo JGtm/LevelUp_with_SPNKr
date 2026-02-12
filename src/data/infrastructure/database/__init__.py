@@ -4,7 +4,6 @@ Connecteurs de base de données.
 
 Ce module fournit :
 - DuckDBEngine : Moteur DuckDB pour requêtes analytiques
-- SQLiteMetadataStore : Accès aux métadonnées SQLite (legacy)
 - DuckDBConfig : Configuration centralisée DuckDB
 """
 
@@ -17,7 +16,6 @@ from src.data.infrastructure.database.duckdb_config import (
     get_attach_sql,
 )
 from src.data.infrastructure.database.duckdb_engine import DuckDBEngine
-from src.data.infrastructure.database.sqlite_metadata import SQLiteMetadataStore
 
 __all__ = [
     # Config DuckDB
@@ -29,5 +27,4 @@ __all__ = [
     "get_attach_sql",
     # Engines
     "DuckDBEngine",
-    "SQLiteMetadataStore",
 ]

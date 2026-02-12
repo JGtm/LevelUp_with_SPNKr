@@ -13,8 +13,6 @@ import streamlit as st
 
 from src.analysis import mark_firefight
 from src.app.data_loader import default_identity_from_secrets
-from src.db import resolve_xuid_from_db
-from src.db.parsers import parse_xuid_input
 from src.ui import (
     display_name_from_xuid,
     ensure_spnkr_tokens,
@@ -30,6 +28,7 @@ from src.ui.sync import (
     render_sync_indicator,
     sync_all_players,
 )
+from src.utils import parse_xuid_input, resolve_xuid_from_db
 
 if TYPE_CHECKING:
     from src.ui import AppSettings

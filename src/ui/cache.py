@@ -3,20 +3,11 @@
 Ce module regroupe toutes les fonctions @st.cache_data utilisées
 pour éviter de recharger les données à chaque interaction.
 
-Stratégie de cache à trois niveaux :
-1. Cache Parquet/DuckDB (nouveau) : Données en format colonnaire haute performance
-2. Cache DB (MatchCache, etc.) : Données pré-parsées, sessions pré-calculées
-3. Cache Streamlit (@st.cache_data) : Évite les requêtes DB répétées
+Stratégie de cache :
+1. Cache Parquet/DuckDB : Données en format colonnaire haute performance (v4)
+2. Cache Streamlit (@st.cache_data) : Évite les requêtes DB répétées
 
-Les fonctions suffixées par _cached utilisent prioritairement le cache DB
-avec fallback sur les loaders originaux si le cache n'existe pas.
-
-Architecture hybride (Phase 2+) :
-- Mode "legacy" : Utilise src/db/loaders.py (comportement original)
-- Mode "hybrid" : Utilise Parquet + DuckDB (haute performance)
-- Mode "shadow" : Lit legacy, écrit en shadow vers hybrid (migration)
-
-Le mode est configurable via AppSettings.repository_mode.
+Le mode legacy SQLite est supprimé depuis v4.8 (Sprint 9).
 """
 
 from __future__ import annotations
@@ -33,27 +24,8 @@ logger = logging.getLogger(__name__)
 
 from src.analysis import compute_sessions, compute_sessions_with_context_polars, mark_firefight
 from src.config import SESSION_CONFIG
-from src.db import (
-    get_cache_stats,
-    get_match_session_info,
-    has_cache_tables,
-    list_other_player_xuids,
-    list_top_teammates,
-    load_friends,
-    load_highlight_events_for_match,
-    load_match_medals_for_player,
-    load_match_player_gamertags,
-    load_match_rosters,
-    load_matches,
-    # Nouveaux loaders optimisés
-    load_matches_cached,
-    load_player_match_result,
-    load_top_medals,
-    load_top_teammates_cached,
-    query_matches_with_friend,
-)
-from src.db.profiles import list_local_dbs
 from src.ui import translate_pair_name, translate_playlist_name
+from src.utils.profiles import list_local_dbs
 
 if TYPE_CHECKING:
     pass
@@ -219,9 +191,9 @@ def cached_same_team_match_ids_with_friend(
             return tuple(sorted(match_ids))
         except Exception:
             return ()
-    rows = query_matches_with_friend(db_path, self_xuid, friend_xuid)
-    ids = {str(r.match_id) for r in rows if getattr(r, "same_team", False)}
-    return tuple(sorted(ids))
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return ()
 
 
 @st.cache_data(show_spinner=False)
@@ -249,7 +221,9 @@ def cached_query_matches_with_friend(
             return match_ids
         except Exception:
             return []
-    return query_matches_with_friend(db_path, self_xuid, friend_xuid)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 @st.cache_data(show_spinner=False)
@@ -288,9 +262,9 @@ def cached_load_player_match_result(
             }
         except Exception:
             return None
-
-    # Legacy SQLite
-    return load_player_match_result(db_path, match_id, xuid)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return None
 
 
 @st.cache_data(show_spinner=False)
@@ -313,9 +287,9 @@ def cached_load_match_medals_for_player(
             return repo.load_match_medals(match_id)
         except Exception:
             return []
-
-    # Legacy SQLite
-    return load_match_medals_for_player(db_path, match_id, xuid)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 @st.cache_data(show_spinner=False)
@@ -339,9 +313,9 @@ def cached_load_match_rosters(
             return repo.load_match_rosters(match_id)
         except Exception:
             return None
-
-    # Legacy SQLite
-    return load_match_rosters(db_path, match_id, xuid)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return None
 
 
 @st.cache_data(show_spinner=False)
@@ -403,9 +377,9 @@ def cached_load_highlight_events_for_match(
             return events
         except Exception:
             return []
-
-    # Legacy SQLite
-    return load_highlight_events_for_match(db_path, match_id)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 @st.cache_data(show_spinner=False)
@@ -463,9 +437,9 @@ def cached_load_match_player_gamertags(
                 return {}
         except Exception:
             return {}
-
-    # Legacy SQLite
-    return load_match_player_gamertags(db_path, match_id)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return {}
 
 
 @st.cache_data(show_spinner=False)
@@ -492,14 +466,9 @@ def cached_load_top_medals(
             )
         except Exception:
             return []
-
-    # Legacy SQLite
-    return load_top_medals(
-        db_path,
-        xuid,
-        list(match_ids),
-        top_n=(int(top_n) if top_n is not None else None),
-    )
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 def top_medals_smart(
@@ -526,11 +495,9 @@ def top_medals_smart(
             except Exception:
                 return []
         return cached_load_top_medals(db_path, xuid, tuple(match_ids), top_n, db_key=db_key)
-
-    # Legacy SQLite
-    if len(match_ids) > 1500:
-        return load_top_medals(db_path, xuid, match_ids, top_n=top_n)
-    return cached_load_top_medals(db_path, xuid, tuple(match_ids), top_n, db_key=db_key)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 @st.cache_data(show_spinner=False)
@@ -621,7 +588,9 @@ def cached_list_other_xuids(
             return []
         except Exception:
             return []
-    return list_other_player_xuids(db_path, self_xuid, limit)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 @st.cache_data(show_spinner=False)
@@ -642,15 +611,9 @@ def cached_list_top_teammates(
             return repo.list_top_teammates(limit=limit)
         except Exception:
             return []
-
-    # Legacy SQLite : essayer d'abord le cache optimisé (TeammatesAggregate)
-    cached_results = load_top_teammates_cached(db_path, self_xuid, limit)
-    if cached_results:
-        # Convertir le format (xuid, gamertag, matches, wins, losses) -> (xuid, matches)
-        return [(row[0], row[2]) for row in cached_results]
-
-    # Fallback sur la requête JSON (lente mais complète)
-    return list_top_teammates(db_path, self_xuid, limit)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 # =============================================================================
@@ -668,7 +631,9 @@ def cached_has_cache_tables(db_path: str, db_key: tuple[int, int] | None = None)
     # DuckDB v4 : toujours considéré comme ayant le cache
     if _is_duckdb_v4_path(db_path):
         return True
-    return has_cache_tables(db_path)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return False
 
 
 @st.cache_data(show_spinner=False)
@@ -692,7 +657,9 @@ def cached_get_cache_stats(db_path: str, xuid: str, db_key: tuple[int, int] | No
             }
         except Exception:
             return {"has_cache": True}
-    return get_cache_stats(db_path, xuid)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return {}
 
 
 def _is_duckdb_v4_path(db_path: str) -> bool:
@@ -753,12 +720,9 @@ def load_df_optimized(
         # DuckDB v4: utiliser le repository dédié
         matches = _load_matches_duckdb_v4(db_path, include_firefight=include_firefight)
     else:
-        # Legacy SQLite: tenter le cache optimisé d'abord
-        matches = load_matches_cached(db_path, xuid, include_firefight=include_firefight)
-
-        if not matches:
-            # Fallback sur loader original
-            matches = load_matches(db_path, xuid)
+        # Legacy SQLite non supporté depuis v4.8
+        logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+        matches = []
 
     if not matches:
         return pl.DataFrame()
@@ -866,7 +830,9 @@ def cached_load_friends(
     # DuckDB v4 : pas de table Friends
     if _is_duckdb_v4_path(db_path):
         return []
-    return load_friends(db_path, owner_xuid)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 @st.cache_data(show_spinner=False)
@@ -878,23 +844,26 @@ def cached_load_top_teammates_optimized(
 ) -> list[tuple[str, str | None, int, int, int]]:
     """Charge les top coéquipiers depuis TeammatesAggregate (optimisé).
 
-    Fallback sur l'ancienne méthode si le cache n'existe pas.
-
     Returns:
         Liste de tuples (xuid, gamertag, matches, wins, losses)
     """
     _ = db_key
 
-    # Tenter le cache d'abord
-    result = load_top_teammates_cached(db_path, xuid, limit)
+    # DuckDB v4 : utiliser le repository
+    if _is_duckdb_v4_path(db_path):
+        try:
+            from src.data.repositories.duckdb_repo import DuckDBRepository
 
-    if result:
-        return result
+            repo = DuckDBRepository(db_path, str(xuid).strip())
+            teammates = repo.list_top_teammates(limit=limit)
+            # Convertir (xuid, count) → (xuid, None, count, 0, 0)
+            return [(str(x), None, int(c), 0, 0) for x, c in teammates]
+        except Exception:
+            return []
 
-    # Fallback sur l'ancienne méthode (format différent)
-    old_result = list_top_teammates(db_path, xuid, limit)
-    # Convertir (xuid, count) → (xuid, None, count, 0, 0)
-    return [(x, None, c, 0, 0) for x, c in old_result]
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return []
 
 
 @st.cache_data(show_spinner=False)
@@ -911,7 +880,9 @@ def cached_get_match_session_info(
     # DuckDB v4 : pas d'info session disponible de cette façon
     if _is_duckdb_v4_path(db_path):
         return None
-    return get_match_session_info(db_path, match_id)
+    # Legacy SQLite non supporté depuis v4.8
+    logger.warning(f"DB legacy SQLite non supportée: {db_path}")
+    return None
 
 
 # =============================================================================

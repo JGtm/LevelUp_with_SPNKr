@@ -20,9 +20,8 @@ from src.config import (
     DEFAULT_PLAYER_XUID,
     DEFAULT_WAYPOINT_PLAYER,
     get_aliases_file_path,
-    get_default_db_path,
 )
-from src.db import guess_xuid_from_db_path, infer_spnkr_player_from_db_path
+from src.utils import guess_xuid_from_db_path, infer_spnkr_player_from_db_path
 
 if TYPE_CHECKING:
     from src.ui.settings import AppSettings
@@ -72,7 +71,7 @@ class AppState:
     pending_match_id: str | None = None
 
     @classmethod
-    def from_session(cls) -> "AppState":
+    def from_session(cls) -> AppState:
         """Charge l'état depuis session_state."""
         return cls(
             db_path=str(st.session_state.get("db_path", "") or ""),
@@ -151,7 +150,7 @@ def get_default_identity() -> PlayerIdentity:
     )
 
 
-def init_source_state(default_db: str, settings: "AppSettings") -> None:
+def init_source_state(default_db: str, settings: AppSettings) -> None:
     """Initialise le session_state avec les valeurs par défaut.
 
     Args:
@@ -170,9 +169,7 @@ def init_source_state(default_db: str, settings: "AppSettings") -> None:
         ).strip()
 
         # Auto-sélection SPNKr si préféré
-        if (not forced_env_db) and bool(
-            getattr(settings, "prefer_spnkr_db_if_available", False)
-        ):
+        if (not forced_env_db) and bool(getattr(settings, "prefer_spnkr_db_if_available", False)):
             spnkr = pick_latest_spnkr_db_if_any()
             if spnkr and os.path.exists(spnkr) and os.path.getsize(spnkr) > 0:
                 chosen = spnkr
@@ -187,13 +184,10 @@ def init_source_state(default_db: str, settings: "AppSettings") -> None:
 
         # Pour les DB SPNKr, on pré-remplit avec le joueur déduit du nom de DB
         inferred = (
-            infer_spnkr_player_from_db_path(str(st.session_state.get("db_path", "") or ""))
-            or ""
+            infer_spnkr_player_from_db_path(str(st.session_state.get("db_path", "") or "")) or ""
         )
 
-        st.session_state["xuid_input"] = (
-            legacy or inferred or guessed or identity.xuid_or_gamertag
-        )
+        st.session_state["xuid_input"] = legacy or inferred or guessed or identity.xuid_or_gamertag
 
     # Waypoint player
     if "waypoint_player" not in st.session_state:
@@ -248,20 +242,18 @@ def propagate_env_defaults() -> None:
         and identity.xuid_fallback
     ):
         if not str(os.environ.get("OPENSPARTAN_DEFAULT_GAMERTAG") or "").strip():
-            os.environ["OPENSPARTAN_DEFAULT_GAMERTAG"] = str(
-                identity.xuid_or_gamertag
-            ).strip()
+            os.environ["OPENSPARTAN_DEFAULT_GAMERTAG"] = str(identity.xuid_or_gamertag).strip()
         if not str(os.environ.get("OPENSPARTAN_DEFAULT_XUID") or "").strip():
             os.environ["OPENSPARTAN_DEFAULT_XUID"] = str(identity.xuid_fallback).strip()
 
-    if identity.waypoint_player:
-        if not str(os.environ.get("OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER") or "").strip():
-            os.environ["OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER"] = str(
-                identity.waypoint_player
-            ).strip()
+    if (
+        identity.waypoint_player
+        and not str(os.environ.get("OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER") or "").strip()
+    ):
+        os.environ["OPENSPARTAN_DEFAULT_WAYPOINT_PLAYER"] = str(identity.waypoint_player).strip()
 
 
-def apply_settings_path_overrides(settings: "AppSettings") -> None:
+def apply_settings_path_overrides(settings: AppSettings) -> None:
     """Applique les overrides de chemins depuis les paramètres.
 
     Args:
