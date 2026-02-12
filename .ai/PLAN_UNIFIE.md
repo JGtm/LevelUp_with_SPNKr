@@ -218,7 +218,7 @@ Sprint 9  : TOUS les fichiers restants (~24)                         → migrati
 
 - [x] `pytest tests/test_session_last_button.py -v` passe
 - [x] `pytest tests/test_filter_state.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
+- [x] `pytest tests/ -v` passe sans régression
 - [x] `.venv_windows/` supprimé
 - [ ] `levelup_halo.egg-info/` supprimé
 - [ ] Test manuel : bouton "Dernière session" + switch joueur A→B→A
@@ -261,7 +261,7 @@ pytest tests/ -v
 - [x] `scripts/` contient ~22 scripts actifs + `migration/` + `_archive/`
 - [x] `scripts/_obsolete/` n'existe plus
 - [ ] `.ai/` nettoyé : documents vivants + `archive/` datée
-- [ ] `pytest tests/ -v` passe (aucun test ne dépendait des scripts supprimés)
+- [x] `pytest tests/ -v` passe (aucun test ne dépendait des scripts supprimés)
 
 #### Commandes de validation
 
@@ -309,7 +309,7 @@ pytest tests/ -v
 - [x] `grep -r "import pandas" src/analysis/performance_score.py` → aucun résultat
 - [x] `grep -r "import pandas" scripts/backfill_data.py` → aucun résultat
 - [x] `pytest tests/test_performance_score.py tests/test_sync_performance_score.py tests/test_backfill_performance_score.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
+- [x] `pytest tests/ -v` passe sans régression
 
 #### Commandes de validation
 
@@ -412,7 +412,7 @@ pytest tests/ -v
 
 - [ ] `grep -r "import pandas" src/visualization/distributions.py src/ui/pages/timeseries.py src/ui/pages/teammates.py src/ui/pages/teammates_charts.py src/ui/pages/media_tab.py src/ui/pages/win_loss.py` → conforme à la politique Pandas active (tolérance contrôlée transitoire)
 - [ ] `pytest tests/test_visualizations.py tests/test_mode_normalization_winloss.py tests/test_teammates_refonte.py tests/test_media_improvements.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
+- [x] `pytest tests/ -v` passe sans régression
 
 #### 🔍 Revue Sprint 4
 
@@ -573,7 +573,7 @@ pytest tests/ -v
 #### Gate de livraison
 
 - [x] `pytest tests/test_teammates_new_comparisons.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
+- [x] `pytest tests/ -v` passe sans régression
 
 #### 🔍 Revue Sprint 8
 
@@ -639,7 +639,7 @@ pytest tests/ -v
 - [x] `grep -r "import sqlite3" src/` → aucun résultat
 - [ ] `grep -r "sqlite_master" src/` → aucun résultat
 - [x] `RepositoryMode` ne contient que `DUCKDB`
-- [ ] `pytest tests/ -v` passe à 100%
+- [x] `pytest tests/ -v` passe à 100%
 
 **Sprint 9C (Migration Pandas) livré le 2026-02-12.**
 
@@ -681,10 +681,10 @@ pytest tests/ -v
 
 | # | Tâche | Source |
 |---|-------|--------|
-| 10B.1 | [S] Extraire `scripts/backfill/` : `core.py`, `detection.py`, `strategies.py`, `orchestrator.py`, `cli.py` | P2 §3-6 |
-| 10B.2 | [S] Réduire `backfill_data.py` à ~200 lignes (point d'entrée) | P2 §6 |
-| 10B.3 | [S] Centraliser migrations dans `src/db/migrations.py` | P2 §6 |
-| 10B.4 | [S] Implémenter détection AND/OR configurable | P2 §4 |
+| 10B.1 | ✅ Extraire `scripts/backfill/` : `core.py`, `detection.py`, `strategies.py`, `orchestrator.py`, `cli.py` | P2 §3-6 |
+| 10B.2 | ✅ Réduire `backfill_data.py` à ~255 lignes (point d'entrée) | P2 §6 |
+| 10B.3 | ✅ Centraliser migrations dans `src/db/migrations.py` | P2 §6 |
+| 10B.4 | ✅ Implémenter détection AND/OR configurable + fix exclude_complete_matches | P2 §4 |
 
 > **Note** : Grâce au Sprint 1 (archivage scripts redondants), ce refactoring est plus simple car il n'y a plus de confusion avec les anciens scripts backfill.
 
@@ -788,8 +788,8 @@ find data/cache/player_assets -maxdepth 1 -type f | grep -E "rank_" || true
 - [ ] Backup vérifié avant suppression de données
 - [x] `data/` ne contient plus de `.db` (uniquement `.duckdb`)
 - [x] `thumbs/` relocalisé, code adapté
-- [ ] (si 10B fait) `wc -l scripts/backfill_data.py` < 300 lignes
-- [ ] `pytest tests/ -v` passe
+- [x] (10B fait) `wc -l scripts/backfill_data.py` = 255 lignes ✅
+- [x] `pytest tests/ -v` passe
 
 #### 🔍 Revue Sprint 10
 
@@ -822,7 +822,7 @@ find data/cache/player_assets -maxdepth 1 -type f | grep -E "rank_" || true
 #### Gate de livraison
 
 - [ ] `pytest tests/ -v --cov=src --cov-report=html` → > 95% couverture
-- [ ] `pytest tests/ -v` → 0 failure, 0 error
+- [x] `pytest tests/ -v` → 0 failure, 0 error
 - [ ] Tous les plans `.ai/features/` marqués Implémenté
 - [ ] `CLAUDE.md` à jour
 - [ ] Release notes rédigées
@@ -915,7 +915,7 @@ pytest tests/ -v
 - [x] Message d'erreur si < 2 joueurs sélectionnés
 - [x] Traductions FR en place
 - [x] `pytest tests/test_friends_impact*.py -v` passe
-- [ ] `pytest tests/ -v` passe sans régression
+- [x] `pytest tests/ -v` passe sans régression
 - [x] Design cohérent avec heatmap existante
 
 **Sprint 12 livré le 2026-02-12.**
@@ -1479,15 +1479,16 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 - Base E2E navigateur (Lot T5) : fichier `tests/e2e/test_streamlit_browser_e2e.py` présent (smokes).
 - Backlog 9.4.7 complété : **5/5 fichiers complémentaires créés et validés** (`16 passed` en exécution ciblée).
 - Vague P0 E2E implémentée (`E2E-001..004`) dans `tests/e2e/test_streamlit_browser_e2e.py`.
-- Exécution E2E locale (avec `--run-e2e-browser`) : `13 skipped` (Playwright/browser runtime non disponible), aucun échec.
-- Vagues P1/P2 implémentées (`E2E-005..009`, `INT-003`, `NR-003`) avec validation locale : `6 passed` (hors E2E) et `13 skipped` (E2E sans Playwright).
+- Exécution E2E locale (avec `--run-e2e-browser`) : `13 passed`, `0 skipped`, `0 failure`, `0 error`.
+- Vagues P1/P2 implémentées (`E2E-005..009`, `INT-003`, `NR-003`) avec validation locale : `6 passed` (hors E2E) et E2E local strict validé (`13 passed`, `0 skipped`).
 
 **Preuves d'exécution locale (2026-02-12)**
 
 - PR rapide (`test_data_contract_medals`, `test_data_contract_performance_metrics`, `test_data_contract_shots_accuracy`) : **9 passed**.
 - Intégration app (`test_app_data_to_chart_flow`, `test_app_partial_data_to_chart_flow`, `test_app_partial_participants_flow`) : **3 passed**.
 - Stable hors intégration (`python -m pytest -q --ignore=tests/integration`) : **1048 passed, 48 skipped** (revalidation locale après correction).
-- E2E navigateur (`python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser`) : **13 skipped**.
+- E2E navigateur (`python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser`) : **13 passed, 0 skipped**.
+- Suite complète (`python -m pytest tests/ -v`) : **1068 passed, 48 skipped, 0 failed, 0 error**.
 
 **Reste à faire pour clôturer la partie 9.4**
 
@@ -1522,9 +1523,9 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 
 #### Décision recochage 9.4.5
 
-- [ ] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven
+- [x] Le flux E2E optionnel couvre au moins 4 parcours métier data-driven
   - Critère de preuve: `tests >= 4` et `failures = 0` et `errors = 0`
-- [ ] La CI standard reste rapide (E2E navigateur hors pipeline bloquant)
+- [x] La CI standard reste rapide (E2E navigateur hors pipeline bloquant)
   - Critère de preuve: workflow E2E reste `workflow_dispatch` (non bloquant PR)
 
 #### Notes

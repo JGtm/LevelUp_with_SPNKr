@@ -1,13 +1,13 @@
 Priorité architecture :
 - Corriger la récupération du spartan ID et du rang de carrière pour tous les joueurs avec Grunt API
-- Ajouter la récupération de l'adornment au spartan ID
+- Ajouter la récupération de l'adornment au spartan ID -> Remplacer l'image du rang de carrière par l'adornment et vérifier si on parvient à récupérer ça et le spartan ID au complet pour chaque joueur qui a une DB (plus dinfos ici si nécéssaire : https://github.com/dend/blog-comments/issues/5#issuecomment-2030905428)
 
 Correctifs :
 - Modes et playlists à revoir encore (surtout sur la BDD de Madina97294, les traductions ou la catégorisation ne sont pas respectées)
 
 Heatmap d'Impact & Cercle d'Amis :Périmètre : Ne prendre en compte que la liste de mes amis (exclure les joueurs inconnus/aléatoires des calculs de cette section).Graphique : Grille Joueurs (Y) vs Matchs (X) avec des icônes ou couleurs spécifiques :Vert (First Blood) : Le premier frag du match a été fait par cet ami.Or (Clutch Finisher) : Le match s'est fini sur une VICTOIRE et cet ami a fait le dernier frag.Rouge (Last Casualty) : Le match s'est fini sur une DÉFAITE et cet ami a été la dernière victime.Tableau de 'Taquinerie' (Impact Score) :Calcule le score ainsi : $+2$ pour un Clutch Finisher, $+1$ pour un First Blood, et $-1$ pour une Last Casualty.Affiche le classement final : "Le MVP de la soirée" (en haut) vs "Le Maillon Faible" (en bas).
 
-Dernier premier frag ?
+Dernier premier frag ? Première mort ?
 
 Traductions :
 - Clutch Finisher (+2) : "Finisseur".
@@ -15,3 +15,5 @@ Traductions :
 - Last Casualty (-1) : "Boulet"
 
 Citations qu'on peut ressortir avec les scores obtenus pendant le match ?
+
+Pourquoi on a les images des rangs dans C:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\data\cache\player_assets ? On les as déjà dans C:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\data\cache\career_ranks ça sert à rien de les stocker deux fois
