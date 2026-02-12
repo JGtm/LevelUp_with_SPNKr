@@ -8,6 +8,43 @@
 
 ---
 
+## 🚀 CHECKLIST DE DÉMARRAGE POUR CHAQUE SPRINT
+
+> **À accomplir AVANT de lancer toute recherche ou modification de code**
+
+### Pour Sprints S0-S5
+
+1. **Consulter ce document** (`PLAN_UNIFIE.md`) — contient toutes les informations détaillées
+2. **Lancer les tests** `pytest tests/ -v` pour établir l'état de base
+3. **Procéder directement** aux tâches du sprint
+
+### Pour Sprints S6-S11 (recherche coûteuse éco-friendly ♻️)
+
+**⚠️ NE PAS relancer de recherches du codebase — les données existent déjà !**
+
+1. **Consulter `.ai/SPRINT_EXPLORATION.md`** (580 lignes, tout en place)
+   - Catalogue de données disponibles (colonnes, tables, méthodes DuckDBRepository)
+   - Audit Pandas exhaustif (35 fichiers + lignes d'import)
+   - Audit SQLite (5 fichiers)
+   - Carte des dépendants `src/db/` (33 fichiers impactés)
+   - Effort estimé par sprint + blockers documentés
+
+2. **Extraire les informations pertinentes au sprint** sans recherche
+   - Exemple S6 : Section "4. Sprint 8 — Coéquipiers comparaisons" + "8. Audit Pandas complet"
+   - Exemple S9 : Section "5. Sprint 9" + "10. Audit `src/db/` dépendants"
+
+3. **Lancer les tests** `pytest tests/ -v` pour établir l'état de base
+
+4. **Procéder à la mise en œuvre** avec le contexte complet en tête
+
+### Résultat
+
+✅ **Économies** : ~45 min de recherche × 6 sprints = ~270 min (~4.5h) gagnées  
+✅ **Coût** : Zéro requête supplémentaire  
+✅ **Qualité** : Toutes les données pré-analysées et validées  
+
+---
+
 ## Table des matières
 
 1. [Stratégie de fusion](#1-stratégie-de-fusion)
