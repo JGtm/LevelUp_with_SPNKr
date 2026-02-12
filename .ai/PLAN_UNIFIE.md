@@ -1323,6 +1323,57 @@ La phase audit S0→S9 est considérée close quand :
 
 > Note : Les tests sur `scripts/backfill_data.py` peuvent rester en complément, mais la campagne 9.4 est pilotée par des assertions "BDD présente -> app affiche".
 
+#### 9.4.7 Extension backlog quasi exhaustive (focus E2E)
+
+> Ajout du 2026-02-12 : consolidation de la matrice détaillée dans `/.ai/TESTS_MANQUANTS_E2E_MATRIX.md`.
+
+Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés métier (et non uniquement smoke), tout en gardant une CI PR rapide.
+
+**Priorité P0 (immédiat)**
+
+- `E2E-001` : filtre playlist qui modifie réellement les résultats visibles (`Séries temporelles`).
+- `E2E-002` : filtres combinés mode + map sur `Victoires/Défaites`.
+- `E2E-003` : `Mes coéquipiers` état vide (<2 amis) puis état rempli (heatmap + ranking).
+- `E2E-004` : deep-link `?page=Match&match_id=...`.
+- `INT-002` : test d'intégration dataset partiel/fallback (pas d'exception UI).
+
+**Priorité P1 (important)**
+
+- `E2E-005` : navigation `Historique des parties` -> `Match`.
+- `E2E-006` : navigation `Médias` -> `Match` via query params internes.
+- `E2E-007` : stabilité sélection A/B dans `Comparaison de sessions`.
+- `NR-001` : non-régression `_pending_page` / `consume_pending_page`.
+- `NR-002` : non-régression gestion `query_params` (set/clear).
+- `DATA-006` : contrat data `session_id/session_label`.
+
+**Priorité P2 (nightly / durcissement)**
+
+- `E2E-008` : smoke dédié `Objectifs` (3 onglets rendables).
+- `E2E-009` : smoke dédié `Carrière` (gauge + historique).
+- `INT-003` : intégration participants partiels (graceful degradation).
+- `NR-003` : persistance filtres cross-pages (`Séries temporelles` / `Victoires-Défaites` / `Coéquipiers`).
+
+**Fichiers complémentaires proposés**
+
+- `tests/integration/test_app_partial_data_to_chart_flow.py`
+- `tests/test_data_contract_sessions.py`
+- `tests/test_pending_page_navigation_regressions.py`
+- `tests/test_query_params_routing_regressions.py`
+- `tests/test_cross_page_filter_persistence.py`
+
+**Ordonnancement recommandé**
+
+1. Vague 1 (2-3 PR) : `E2E-001..004` + `INT-002` + `DATA-006`
+2. Vague 2 (2 PR) : `E2E-005..007` + `NR-001/NR-002`
+3. Vague 3 (nightly) : `E2E-008/009` + `INT-003` + `NR-003`
+
+**Critère de clôture “quasi exhaustive”**
+
+- chaque page de `src/ui/pages/` couverte par au moins 1 scénario E2E dédié,
+- chaque domaine data critique couvert par au moins 1 contrat table/colonnes/invariants,
+- chaque navigation inter-page critique (`historique->match`, `médias->match`, deep-link) testée,
+- chaque feature conditionnelle (ex: coéquipiers >= 2) testée en état vide + rempli.
+
 ---
 
 ## Calendrier récapitulatif

@@ -413,7 +413,7 @@ def compute_rolling_win_rate_polars(
 
     # Rolling mean via rolling_mean
     sorted_df = sorted_df.with_columns(
-        (pl.col("_is_win").rolling_mean(window_size=w, min_periods=1) * 100.0).alias("win_rate")
+        (pl.col("_is_win").rolling_mean(window_size=w, min_samples=1) * 100.0).alias("win_rate")
     )
 
     return sorted_df.select(["start_time", "win_rate", "match_index"])

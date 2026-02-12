@@ -7,6 +7,31 @@ on:
     branches: [main]
 
 jobs:
+  fast-data-contracts:
+    name: Fast Data Contracts (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run fast data contracts
+        run: |
+          python -m pytest tests/test_data_contract_medals.py tests/test_data_contract_performance_metrics.py tests/test_data_contract_shots_accuracy.py tests/test_data_contract_participants.py tests/test_data_contract_assets_aliases.py -q --tb=short
+
+      - name: Run filters/visualization non-regression
+        run: |
+          python -m pytest tests/test_filters_and_visualization_contracts.py -q --tb=short
+
   test:
     runs-on: ubuntu-latest
     strategy:

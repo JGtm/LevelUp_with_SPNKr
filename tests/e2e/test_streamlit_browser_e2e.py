@@ -125,3 +125,68 @@ def test_streamlit_can_navigate_to_settings_tab(running_streamlit_app: str) -> N
         assert "Paramètres" in content
 
         browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_streamlit_can_navigate_main_pages_without_front_error(running_streamlit_app: str) -> None:
+    """Ouvre les pages principales et vérifie l'absence d'erreur front évidente."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        tabs = ["Séries temporelles", "Victoires/Défaites", "Mes coéquipiers", "Paramètres"]
+        visible_any = False
+        for tab in tabs:
+            locator = page.get_by_text(tab)
+            if locator.count() == 0:
+                continue
+            visible_any = True
+            locator.first.click(timeout=20000)
+            page.wait_for_timeout(800)
+            content = page.content().lower()
+            assert "traceback" not in content
+            assert "exception" not in content
+
+        if not visible_any:
+            pytest.skip("Aucun onglet principal détecté dans cet environnement")
+
+        browser.close()
+
+
+@pytest.mark.e2e_browser
+def test_streamlit_filters_and_sessions_interaction_smoke(running_streamlit_app: str) -> None:
+    """Smoke E2E: interaction simple avec filtres/sessions si les contrôles sont visibles."""
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(running_streamlit_app, wait_until="domcontentloaded", timeout=120000)
+
+        # Aller sur la page temporelle quand disponible
+        timeseries_tab = page.get_by_text("Séries temporelles")
+        if timeseries_tab.count() > 0:
+            timeseries_tab.first.click(timeout=20000)
+            page.wait_for_timeout(1000)
+
+        # Tenter une interaction sur le mode de filtre si présent
+        period_toggle = page.get_by_text("Période")
+        sessions_toggle = page.get_by_text("Sessions")
+        if period_toggle.count() == 0 and sessions_toggle.count() == 0:
+            pytest.skip("Contrôles Période/Sessions non détectés")
+
+        if sessions_toggle.count() > 0:
+            sessions_toggle.first.click(timeout=15000)
+            page.wait_for_timeout(700)
+        if period_toggle.count() > 0:
+            period_toggle.first.click(timeout=15000)
+            page.wait_for_timeout(700)
+
+        content = page.content().lower()
+        assert "traceback" not in content
+        assert "exception" not in content
+
+        browser.close()

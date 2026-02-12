@@ -233,3 +233,117 @@ def test_plot_friends_impact_heatmap_has_represented_data() -> None:
     )
     fig = plot_friends_impact_heatmap(impact_matrix)
     _assert_has_represented_data(fig)
+
+
+@pytest.mark.parametrize(
+    ("playlists", "modes", "maps", "expected_match_ids"),
+    [
+        (["Ranked"], [], [], ["m1", "m4"]),
+        ([], ["CTF"], [], ["m2", "m4"]),
+        ([], [], ["Aquarius"], ["m1", "m4"]),
+    ],
+)
+def test_filters_change_dataset_for_key_pages(
+    playlists: list[str],
+    modes: list[str],
+    maps: list[str],
+    expected_match_ids: list[str],
+) -> None:
+    """Vérifie que les filtres modifient bien le dataset source de 3 pages clés."""
+    df = _make_match_df()
+    filter_state = FilterState(
+        filter_mode="Période",
+        start_d=date(2026, 1, 1),
+        end_d=date(2026, 1, 31),
+        gap_minutes=120,
+        picked_session_labels=None,
+        playlists_selected=playlists,
+        modes_selected=modes,
+        maps_selected=maps,
+        base_s_ui=None,
+        friends_tuple=None,
+    )
+
+    filtered = apply_filters(
+        dff=df,
+        filter_state=filter_state,
+        db_path="",
+        xuid="",
+        db_key=None,
+        clean_asset_label_fn=lambda s: str(s),
+        normalize_mode_label_fn=lambda s: str(s),
+        normalize_map_label_fn=lambda s: str(s),
+    )
+
+    assert sorted(filtered["match_id"].tolist()) == expected_match_ids
+
+    # Pages clés ciblées : timeseries, win/loss, teammates-impact (via figure impact)
+    fig_timeseries = plot_timeseries(filtered)
+    fig_outcomes, _label = plot_outcomes_over_time(filtered)
+    _assert_has_represented_data(fig_timeseries)
+    _assert_has_represented_data(fig_outcomes)
+
+
+def test_filters_change_graph_metric_values() -> None:
+    """Vérifie que changer le filtre playlist change réellement les valeurs tracées."""
+    df = _make_match_df()
+
+    ranked_state = FilterState(
+        filter_mode="Période",
+        start_d=date(2026, 1, 1),
+        end_d=date(2026, 1, 31),
+        gap_minutes=120,
+        picked_session_labels=None,
+        playlists_selected=["Ranked"],
+        modes_selected=[],
+        maps_selected=[],
+        base_s_ui=None,
+        friends_tuple=None,
+    )
+    quick_state = FilterState(
+        filter_mode="Période",
+        start_d=date(2026, 1, 1),
+        end_d=date(2026, 1, 31),
+        gap_minutes=120,
+        picked_session_labels=None,
+        playlists_selected=["Quick Play"],
+        modes_selected=[],
+        maps_selected=[],
+        base_s_ui=None,
+        friends_tuple=None,
+    )
+
+    ranked_df = apply_filters(
+        dff=df,
+        filter_state=ranked_state,
+        db_path="",
+        xuid="",
+        db_key=None,
+        clean_asset_label_fn=lambda s: str(s),
+        normalize_mode_label_fn=lambda s: str(s),
+        normalize_map_label_fn=lambda s: str(s),
+    )
+    quick_df = apply_filters(
+        dff=df,
+        filter_state=quick_state,
+        db_path="",
+        xuid="",
+        db_key=None,
+        clean_asset_label_fn=lambda s: str(s),
+        normalize_mode_label_fn=lambda s: str(s),
+        normalize_map_label_fn=lambda s: str(s),
+    )
+
+    assert len(ranked_df) > 0 and len(quick_df) > 0
+    assert ranked_df["match_id"].tolist() != quick_df["match_id"].tolist()
+
+    fig_ranked = plot_timeseries(ranked_df)
+    fig_quick = plot_timeseries(quick_df)
+
+    _assert_has_represented_data(fig_ranked)
+    _assert_has_represented_data(fig_quick)
+
+    # Une métrique tracée doit différer entre les deux vues filtrées.
+    ranked_deaths_sum = float(ranked_df["deaths"].sum())
+    quick_deaths_sum = float(quick_df["deaths"].sum())
+    assert ranked_deaths_sum != quick_deaths_sum

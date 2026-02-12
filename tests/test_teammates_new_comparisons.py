@@ -133,7 +133,6 @@ def teammate_match_df() -> pd.DataFrame:
 # =============================================================================
 
 
-@pytest.mark.usefixtures()
 class TestTeammatePersonalScoreComparison:
     """Comparaison du score personnel entre joueur et coéquipier."""
 

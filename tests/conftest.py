@@ -186,19 +186,16 @@ def df_with_nans_polars(sample_match_df_polars: pl.DataFrame) -> pl.DataFrame:
     df = sample_match_df_polars.clone()
     # Remplacer certaines valeurs par None (équivalent NaN en Polars)
     df = df.with_columns(
-        pl.when(pl.int_range(0, pl.count()) < 6)
-        .then(None)
-        .otherwise(pl.col("kills"))
-        .alias("kills")
+        pl.when(pl.int_range(0, pl.len()) < 6).then(None).otherwise(pl.col("kills")).alias("kills")
     )
     df = df.with_columns(
-        pl.when((pl.int_range(0, pl.count()) >= 10) & (pl.int_range(0, pl.count()) < 16))
+        pl.when((pl.int_range(0, pl.len()) >= 10) & (pl.int_range(0, pl.len()) < 16))
         .then(None)
         .otherwise(pl.col("accuracy"))
         .alias("accuracy")
     )
     df = df.with_columns(
-        pl.when((pl.int_range(0, pl.count()) >= 5) & (pl.int_range(0, pl.count()) < 11))
+        pl.when((pl.int_range(0, pl.len()) >= 5) & (pl.int_range(0, pl.len()) < 11))
         .then(None)
         .otherwise(pl.col("kda"))
         .alias("kda")
