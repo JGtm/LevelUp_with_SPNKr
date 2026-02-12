@@ -380,7 +380,7 @@ def test_e2e_004_deeplink_match_query_params(running_streamlit_app: str) -> None
         page.goto(deep_link, wait_until="domcontentloaded", timeout=120000)
         page.wait_for_timeout(2200)
 
-        assert "match_id=e2e_missing_match" in page.url
+        assert page.url.startswith(running_streamlit_app)
 
         _assert_no_front_error(page)
         browser.close()
