@@ -10,14 +10,14 @@ HOW IT WORKS:
 Ces modèles utilisent Pydantic v2 pour la validation stricte des données
 avant leur transformation en fichiers Parquet.
 """
+
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from enum import IntEnum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MatchOutcome(IntEnum):
@@ -25,9 +25,10 @@ class MatchOutcome(IntEnum):
     Résultats possibles d'un match.
     (Possible match outcomes)
     """
-    TIE = 1           # Égalité
-    WIN = 2           # Victoire
-    LOSS = 3          # Défaite
+
+    TIE = 1  # Égalité
+    WIN = 2  # Victoire
+    LOSS = 3  # Défaite
     DID_NOT_FINISH = 4  # Match non terminé
 
 
@@ -35,46 +36,47 @@ class MatchFactInput(BaseModel):
     """
     Modèle de validation pour les données brutes de l'API.
     (Validation model for raw API data)
-    
+
     Valide et transforme les données JSON avant stockage.
     Gère les différents formats de l'API SPNKr (nombres, durées, XUIDs).
     """
+
     model_config = ConfigDict(extra="ignore")  # Ignore les champs inconnus
-    
+
     match_id: str = Field(..., min_length=1, description="ID unique du match")
     xuid: str = Field(..., description="XUID du joueur")
     start_time: datetime = Field(..., description="Début du match (UTC)")
-    
+
     # Références (FKs vers tables de dimension)
     playlist_id: str | None = Field(default=None)
     map_id: str | None = Field(default=None)
     game_variant_id: str | None = Field(default=None)
-    
+
     # Résultat du match
     outcome: MatchOutcome = Field(default=MatchOutcome.DID_NOT_FINISH)
     team_id: Annotated[int, Field(ge=0, le=10)] = 0
-    
+
     # Statistiques de combat
     kills: Annotated[int, Field(ge=0)] = 0
     deaths: Annotated[int, Field(ge=0)] = 0
     assists: Annotated[int, Field(ge=0)] = 0
     kda: float = 0.0
     accuracy: Annotated[float, Field(ge=0, le=100)] | None = None
-    
+
     # Statistiques avancées
     headshot_kills: Annotated[int, Field(ge=0)] = 0
     max_killing_spree: Annotated[int, Field(ge=0)] = 0
     time_played_seconds: Annotated[int, Field(ge=0)] = 0
     avg_life_seconds: Annotated[float, Field(ge=0)] | None = None
-    
+
     # Scores d'équipe
     my_team_score: int = 0
     enemy_team_score: int = 0
-    
+
     # MMR (Matchmaking Rating)
     team_mmr: float | None = None
     enemy_mmr: float | None = None
-    
+
     # Noms pour affichage (dénormalisés)
     playlist_name: str | None = None
     map_name: str | None = None
@@ -86,7 +88,7 @@ class MatchFactInput(BaseModel):
         """
         Parse les différents formats de XUID.
         (Parse different XUID formats)
-        
+
         Formats supportés:
         - "2533274823110022" (string direct)
         - "xuid(2533274823110022)" (format wrapper)
@@ -101,7 +103,7 @@ class MatchFactInput(BaseModel):
         if v_str.startswith("xuid(") and v_str.endswith(")"):
             return v_str[5:-1]
         return v_str
-    
+
     @field_validator("start_time", mode="before")
     @classmethod
     def parse_datetime(cls, v: Any) -> datetime:
@@ -118,7 +120,7 @@ class MatchFactInput(BaseModel):
         if v_str.endswith("Z"):
             v_str = v_str[:-1] + "+00:00"
         return datetime.fromisoformat(v_str)
-    
+
     @field_validator("outcome", mode="before")
     @classmethod
     def parse_outcome(cls, v: Any) -> MatchOutcome:
@@ -137,35 +139,36 @@ class MatchFact(BaseModel):
     """
     Entité métier immuable pour un fait de match.
     (Immutable business entity for a match fact)
-    
+
     Représente une ligne dans la table de faits Parquet.
     Inclut les colonnes de partitionnement (year, month).
     """
+
     model_config = ConfigDict(frozen=True)  # Immuable
-    
+
     # Identifiants
     match_id: str
     xuid: str
     start_time: datetime
-    
+
     # Colonnes de partitionnement
     year: int
     month: int
-    
+
     # Références vers dimensions (FKs)
     playlist_id: str | None
     map_id: str | None
     game_variant_id: str | None
-    
+
     # Noms dénormalisés pour éviter les jointures fréquentes
     playlist_name: str | None
     map_name: str | None
     game_variant_name: str | None
-    
+
     # Faits de résultat
     outcome: MatchOutcome
     team_id: int
-    
+
     # Faits de combat
     kills: int
     deaths: int
@@ -176,23 +179,23 @@ class MatchFact(BaseModel):
     max_killing_spree: int
     time_played_seconds: int
     avg_life_seconds: float | None
-    
+
     # Faits d'équipe
     my_team_score: int
     enemy_team_score: int
     team_mmr: float | None
     enemy_mmr: float | None
-    
+
     # Enrichissement (calculé après)
     session_id: str | None = None
     performance_score: float | None = None
-    
+
     @classmethod
     def from_input(cls, input_data: MatchFactInput) -> MatchFact:
         """
         Crée un MatchFact depuis un MatchFactInput validé.
         (Create MatchFact from validated MatchFactInput)
-        
+
         Ajoute automatiquement les colonnes de partitionnement (year, month).
         """
         return cls(
@@ -223,12 +226,12 @@ class MatchFact(BaseModel):
             team_mmr=input_data.team_mmr,
             enemy_mmr=input_data.enemy_mmr,
         )
-    
+
     def to_match_row_dict(self) -> dict:
         """
         Convertit en dict compatible avec MatchRow (dataclass existante).
         (Convert to dict compatible with MatchRow dataclass)
-        
+
         Permet l'interopérabilité avec le code existant.
         """
         return {

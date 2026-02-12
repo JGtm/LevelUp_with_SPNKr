@@ -76,9 +76,9 @@ class AppSettings:
     profile_rank_label: str = ""  # ex: "Diamond III" / "Héros" / etc.
     profile_rank_subtitle: str = ""  # ex: "CSR 1540" / "Saison 5" / etc.
 
-    # Architecture de données hybride (Phase 2+)
-    # Mode: "legacy" (défaut), "hybrid" (Parquet+DuckDB), "shadow" (migration)
-    repository_mode: str = "legacy"
+    # Architecture de données v4
+    # Mode supporté: "duckdb"
+    repository_mode: str = "duckdb"
     # Activer les analytics DuckDB (requêtes haute performance)
     enable_duckdb_analytics: bool = False
 
@@ -217,9 +217,9 @@ def load_settings() -> AppSettings:
     s.profile_rank_label = str(obj.get("profile_rank_label") or "").strip()
     s.profile_rank_subtitle = str(obj.get("profile_rank_subtitle") or "").strip()
 
-    # Architecture de données hybride
+    # Architecture de données v4
     rm = str(obj.get("repository_mode") or s.repository_mode).strip().lower()
-    if rm in {"legacy", "hybrid", "shadow"}:
+    if rm == "duckdb":
         s.repository_mode = rm
     s.enable_duckdb_analytics = _coerce_bool(
         obj.get("enable_duckdb_analytics"), s.enable_duckdb_analytics

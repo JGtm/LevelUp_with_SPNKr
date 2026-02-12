@@ -37,7 +37,7 @@ from typing import Any, Literal, overload
 import duckdb
 import polars as pl
 
-from src.models import MatchRow
+from src.data.domain.models.stats import MatchRow
 
 logger = logging.getLogger(__name__)
 

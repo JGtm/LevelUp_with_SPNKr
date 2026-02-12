@@ -34,8 +34,8 @@ def _get_duckdb_repository_class():
     module = importlib.util.module_from_spec(spec)
 
     # Charger les dépendances nécessaires d'abord
-    # Le module a besoin de src.models
-    from src.models import MatchRow  # noqa: F401
+    # Le module a besoin des dataclasses de match
+    from src.data.domain.models.stats import MatchRow  # noqa: F401
 
     spec.loader.exec_module(module)
     return module.DuckDBRepository

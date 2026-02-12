@@ -44,15 +44,10 @@ class RepositoryMode(Enum):
     Modes de repository disponibles.
     (Available repository modes)
 
-    Note: Depuis v4, seul DUCKDB est supporté.
-    Les autres modes sont conservés pour compatibilité de l'enum mais lèvent une erreur.
+    Depuis v4, seul DUCKDB est supporté.
     """
 
-    LEGACY = "legacy"  # @deprecated - Supprimé en v4
-    HYBRID = "hybrid"  # @deprecated - Supprimé en v4
-    SHADOW = "shadow"  # @deprecated - Supprimé en v4
-    SHADOW_COMPARE = "compare"  # @deprecated - Supprimé en v4
-    DUCKDB = "duckdb"  # Système v4 (DuckDB natif) - Seul mode supporté
+    DUCKDB = "duckdb"
 
 
 def get_repository(
@@ -80,7 +75,7 @@ def get_repository(
         Instance de DataRepository (DuckDBRepository)
 
     Raises:
-        ValueError: Si un mode legacy est demandé
+        ValueError: Si un mode différent de DUCKDB est demandé
 
     Exemple:
         # Mode DuckDB natif (v4)
@@ -89,21 +84,18 @@ def get_repository(
             "1234567890",
         )
     """
-    # Normalise le mode si c'est une string
+    # Normalise et valide le mode
     if isinstance(mode, str):
-        mode = RepositoryMode(mode.lower())
+        normalized = mode.lower().strip()
+        if normalized != RepositoryMode.DUCKDB.value:
+            raise ValueError(
+                f"Mode '{mode}' non supporté. Utilisez '{RepositoryMode.DUCKDB.value}'."
+            )
+        mode = RepositoryMode.DUCKDB
 
-    # Depuis v4, seul DUCKDB est supporté
-    if mode in (
-        RepositoryMode.LEGACY,
-        RepositoryMode.HYBRID,
-        RepositoryMode.SHADOW,
-        RepositoryMode.SHADOW_COMPARE,
-    ):
+    if mode != RepositoryMode.DUCKDB:
         raise ValueError(
-            f"Mode '{mode.value}' n'est plus supporté depuis v4. "
-            f"Utilisez RepositoryMode.DUCKDB. "
-            f"Migrez vos données avec scripts/migrate_to_duckdb.py"
+            f"Mode '{mode.value}' non supporté. " f"Utilisez '{RepositoryMode.DUCKDB.value}'."
         )
 
     # Mode DuckDB natif - le db_path pointe vers stats.duckdb
@@ -179,12 +171,12 @@ def get_default_mode() -> RepositoryMode:
     (Return default mode based on configuration)
 
     Lit la variable d'environnement OPENSPARTAN_REPOSITORY_MODE.
+    Toute valeur différente de `duckdb` est ignorée.
     """
-    mode_str = os.environ.get("OPENSPARTAN_REPOSITORY_MODE", "legacy")
-    try:
-        return RepositoryMode(mode_str.lower())
-    except ValueError:
-        return RepositoryMode.LEGACY
+    mode_str = os.environ.get("OPENSPARTAN_REPOSITORY_MODE", RepositoryMode.DUCKDB.value)
+    if str(mode_str).lower().strip() == RepositoryMode.DUCKDB.value:
+        return RepositoryMode.DUCKDB
+    return RepositoryMode.DUCKDB
 
 
 def is_migration_complete(db_path: str, xuid: str) -> bool:

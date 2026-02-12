@@ -491,7 +491,7 @@ class TestPersonalScoreField:
         """MatchRow contient le champ personal_score."""
         from datetime import datetime
 
-        from src.models import MatchRow
+        from src.data.domain.models.stats import MatchRow
 
         row = MatchRow(
             match_id="test",
@@ -521,7 +521,7 @@ class TestPersonalScoreField:
         """MatchRow.personal_score par défaut est None."""
         from datetime import datetime
 
-        from src.models import MatchRow
+        from src.data.domain.models.stats import MatchRow
 
         row = MatchRow(
             match_id="test",

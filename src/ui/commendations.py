@@ -799,11 +799,6 @@ def render_h5g_commendations_section(
                 st.rerun()
         return
 
-    # Infos offline
-    local_icons_dir = _abs_from_repo(os.path.join("static", "commendations", "h5g"))
-    has_local_icons = os.path.isdir(local_icons_dir)
-    extra = f" — {excluded_count} exclue(s)" if excluded_count else ""
-
     # N'affiche que les citations suivies (celles ayant une méthode de calcul via tracking OU via CUSTOM_CITATION_RULES).
     def _has_tracking_rule(it: dict[str, Any]) -> bool:
         norm_name = _normalize_name(str(it.get("name") or "").strip())

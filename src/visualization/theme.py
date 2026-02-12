@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
-from src.config import HALO_COLORS, PLOT_CONFIG, THEME_COLORS
+from src.config import PLOT_CONFIG, THEME_COLORS
 
 
 def apply_halo_plot_style(
@@ -14,21 +14,21 @@ def apply_halo_plot_style(
     height: int | None = None,
 ) -> go.Figure:
     """Applique le thème Halo aux graphiques Plotly.
-    
+
     Style sombre avec fond Waypoint (rgb 29,35,40) pour cohérence visuelle.
     Utilise THEME_COLORS de config.py pour centraliser les couleurs.
-    
+
     Args:
         fig: Figure Plotly à styliser.
         title: Titre optionnel à ajouter.
         height: Hauteur optionnelle en pixels.
-        
+
     Returns:
         La figure stylisée (modifiée in-place).
     """
     # Couleurs centralisées depuis config.py
     bg_color = THEME_COLORS.bg_plot_rgba(1.0)
-    
+
     fig.update_layout(
         template="plotly_dark",
         # Fond Waypoint (section news) pour cohérence avec l'UI
@@ -40,7 +40,7 @@ def apply_halo_plot_style(
             bordercolor=THEME_COLORS.border,
         ),
     )
-    
+
     if title is not None:
         fig.update_layout(title=title)
     if height is not None:
@@ -60,16 +60,16 @@ def apply_halo_plot_style(
         showline=True,
         linecolor=THEME_COLORS.border,
     )
-    
+
     return fig
 
 
 def get_default_layout_kwargs(height: int | None = None) -> dict:
     """Retourne les kwargs de layout par défaut.
-    
+
     Args:
         height: Hauteur en pixels (default: PLOT_CONFIG.default_height).
-        
+
     Returns:
         Dictionnaire de kwargs pour fig.update_layout().
     """

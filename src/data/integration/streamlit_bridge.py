@@ -30,6 +30,7 @@ except ImportError:
     DataFrameType = pl.DataFrame  # type: ignore[misc]
 
 # Import direct depuis factory pour éviter l'import circulaire avec src.data
+from src.data.domain.models.stats import MatchRow
 from src.data.repositories.factory import (
     RepositoryMode,
     get_repository,
@@ -37,7 +38,6 @@ from src.data.repositories.factory import (
     load_db_profiles,
 )
 from src.data.repositories.protocol import DataRepository
-from src.models import MatchRow
 
 # Timezone Paris (identique à cache.py)
 PARIS_TZ_NAME = "Europe/Paris"
@@ -49,15 +49,15 @@ def get_repository_mode_from_settings() -> RepositoryMode:
     (Get repository mode from settings or environment)
 
     Priorité:
-    1. Variable d'environnement OPENSPARTAN_REPOSITORY_MODE
-    2. Paramètre dans st.session_state.app_settings.repository_mode
-    3. Auto-détection depuis db_profiles.json (version >= 2.0 = DUCKDB)
-    4. Défaut: LEGACY
+    1. Variable d'environnement OPENSPARTAN_REPOSITORY_MODE (duckdb)
+    2. Paramètre dans st.session_state.app_settings.repository_mode (duckdb)
+    3. Auto-détection depuis db_profiles.json
+    4. Défaut: DUCKDB
     """
     # 1. Variable d'environnement
-    env_mode = os.environ.get("OPENSPARTAN_REPOSITORY_MODE", "").lower()
-    if env_mode in ("legacy", "hybrid", "shadow", "duckdb"):
-        return RepositoryMode(env_mode)
+    env_mode = os.environ.get("OPENSPARTAN_REPOSITORY_MODE", "").lower().strip()
+    if env_mode == RepositoryMode.DUCKDB.value:
+        return RepositoryMode.DUCKDB
 
     # 2. Settings Streamlit (si disponible)
     try:
@@ -65,9 +65,9 @@ def get_repository_mode_from_settings() -> RepositoryMode:
 
         settings = st.session_state.get("app_settings")
         if settings and hasattr(settings, "repository_mode"):
-            mode_str = str(settings.repository_mode).lower()
-            if mode_str in ("legacy", "hybrid", "shadow", "duckdb"):
-                return RepositoryMode(mode_str)
+            mode_str = str(settings.repository_mode).lower().strip()
+            if mode_str == RepositoryMode.DUCKDB.value:
+                return RepositoryMode.DUCKDB
     except Exception:
         pass
 
@@ -80,7 +80,7 @@ def get_repository_mode_from_settings() -> RepositoryMode:
         pass
 
     # 4. Défaut
-    return RepositoryMode.LEGACY
+    return RepositoryMode.DUCKDB
 
 
 def get_warehouse_path(db_path: str) -> Path:
@@ -116,22 +116,10 @@ def get_repository_for_ui(
     if mode is None:
         mode = get_repository_mode_from_settings()
 
-    # Pour le mode DUCKDB, le db_path doit pointer vers stats.duckdb
-    if mode == RepositoryMode.DUCKDB:
-        return get_repository(
-            db_path,
-            xuid,
-            mode=mode,
-            gamertag=gamertag,
-        )
-
-    warehouse_path = get_warehouse_path(db_path)
-
     return get_repository(
         db_path,
         xuid,
         mode=mode,
-        warehouse_path=warehouse_path,
         gamertag=gamertag,
     )
 

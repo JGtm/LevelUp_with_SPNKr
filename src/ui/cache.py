@@ -354,7 +354,7 @@ def cached_load_highlight_events_for_match(
             import duckdb
 
             conn = duckdb.connect(db_path, read_only=True)
-            # Vérifier si la table existe (DuckDB utilise information_schema, pas sqlite_master)
+            # Vérifier si la table existe (DuckDB utilise information_schema)
             tables = conn.execute(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'highlight_events'"
             ).fetchall()
@@ -916,7 +916,7 @@ def _get_repository_mode() -> str:
             return str(settings.repository_mode).lower()
     except Exception:
         pass
-    return "legacy"
+    return "duckdb"
 
 
 def _is_duckdb_analytics_enabled() -> bool:

@@ -174,32 +174,21 @@ class TestRepositoryFactory:
         assert isinstance(repo, DuckDBRepository)
         repo.close()
 
-    def test_legacy_modes_raise_error(self, tmp_path):
-        """Teste que les modes legacy lèvent une erreur."""
-        from src.data import RepositoryMode, get_repository
+    def test_non_duckdb_mode_raises_error(self, tmp_path):
+        """Teste qu'un mode non-DUCKDB lève une erreur."""
+        from src.data import get_repository
 
         db_path = tmp_path / "test.db"
         db_path.touch()
 
-        # Les anciens modes doivent lever une ValueError
-        for mode in [
-            RepositoryMode.LEGACY,
-            RepositoryMode.HYBRID,
-            RepositoryMode.SHADOW,
-            RepositoryMode.SHADOW_COMPARE,
-        ]:
-            with pytest.raises(ValueError, match="n'est plus supporté depuis v4"):
-                get_repository(str(db_path), "1234567890", mode=mode)
+        with pytest.raises(ValueError, match="Mode 'legacy' non supporté"):
+            get_repository(str(db_path), "1234567890", mode="legacy")
 
     def test_repository_mode_values(self):
         """Teste les valeurs de l'enum RepositoryMode."""
         from src.data import RepositoryMode
 
-        # Tous les modes existent encore pour compatibilité
-        assert RepositoryMode.LEGACY.value == "legacy"
-        assert RepositoryMode.HYBRID.value == "hybrid"
-        assert RepositoryMode.SHADOW.value == "shadow"
-        assert RepositoryMode.SHADOW_COMPARE.value == "compare"
+        # DUCKDB est le seul mode supporté
         assert RepositoryMode.DUCKDB.value == "duckdb"
 
 

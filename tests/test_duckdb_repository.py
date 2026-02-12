@@ -171,9 +171,7 @@ class TestStreamlitBridge:
         # devrait retourner DUCKDB
         mode = get_repository_mode_from_settings()
 
-        # Le mode devrait être DUCKDB si db_profiles est en v2.0
-        # (sinon LEGACY, ce qui est aussi acceptable)
-        assert mode in (RepositoryMode.DUCKDB, RepositoryMode.LEGACY)
+        assert mode == RepositoryMode.DUCKDB
 
 
 @pytest.mark.skipif(
@@ -203,7 +201,7 @@ class TestDuckDBRepositoryWithRealData:
 
     def test_load_matches_returns_match_rows(self, repo):
         """Vérifie que les matchs sont des MatchRow."""
-        from src.models import MatchRow
+        from src.data.domain.models.stats import MatchRow
 
         matches = repo.load_matches()
         if matches:

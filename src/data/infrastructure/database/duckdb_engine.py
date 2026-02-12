@@ -28,7 +28,7 @@ from typing import Any
 
 import duckdb
 
-from src.models import MatchRow
+from src.data.domain.models.stats import MatchRow
 
 
 class DuckDBEngine:

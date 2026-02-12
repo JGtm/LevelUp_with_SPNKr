@@ -204,7 +204,7 @@ class TestQueryEngineWithData:
 
     def test_to_match_rows(self, engine_with_data):
         """Teste la conversion en MatchRow."""
-        from src.models import MatchRow
+        from src.data.domain.models.stats import MatchRow
 
         results = engine_with_data.query_match_facts(
             "1234567890",

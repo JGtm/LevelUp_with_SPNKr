@@ -4,7 +4,7 @@ import polars as pl
 
 from src.analysis.performance_score import compute_performance_series
 from src.analysis.stats import compute_global_ratio, compute_outcome_rates
-from src.models import MapBreakdown
+from src.data.domain.models.stats import MapBreakdown
 
 # Type alias pour compatibilité DataFrame
 try:

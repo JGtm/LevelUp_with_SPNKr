@@ -5,7 +5,7 @@ from __future__ import annotations
 import polars as pl
 
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
-from src.models import AggregatedStats, OutcomeRates
+from src.data.domain.models.stats import AggregatedStats, OutcomeRates
 from src.ui.formatting import format_mmss
 
 # Type alias pour compatibilité DataFrame

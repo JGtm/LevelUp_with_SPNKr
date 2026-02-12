@@ -23,7 +23,7 @@ from typing import Any
 
 import duckdb
 
-from src.models import MatchRow
+from src.data.domain.models.stats import MatchRow
 
 logger = logging.getLogger(__name__)
 
@@ -925,7 +925,7 @@ class DuckDBRepository:
         conn = self._get_connection()
 
         try:
-            # Vérifier si la table existe (DuckDB utilise information_schema, pas sqlite_master)
+            # Vérifier si la table existe (DuckDB utilise information_schema)
             tables = conn.execute(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'highlight_events'"
             ).fetchall()

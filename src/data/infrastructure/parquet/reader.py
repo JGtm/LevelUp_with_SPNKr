@@ -10,15 +10,16 @@ HOW IT WORKS:
 Note: Pour les requêtes complexes, préférer DuckDBEngine qui offre
 plus de flexibilité (jointures, agrégations SQL).
 """
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Sequence
 
 import polars as pl
 
-from src.models import MatchRow
+from src.data.domain.models.stats import MatchRow
 
 
 class ParquetReader:
@@ -26,17 +27,17 @@ class ParquetReader:
     Lecteur optimisé pour les fichiers Parquet partitionnés.
     (Optimized reader for partitioned Parquet files)
     """
-    
+
     def __init__(self, warehouse_path: str | Path) -> None:
         """
         Initialise le lecteur Parquet.
         (Initialize Parquet reader)
-        
+
         Args:
             warehouse_path: Chemin vers le dossier warehouse
         """
         self.warehouse_path = Path(warehouse_path)
-    
+
     def read_match_facts(
         self,
         xuid: str,
@@ -48,47 +49,47 @@ class ParquetReader:
         """
         Lit les faits de match pour un joueur.
         (Read match facts for a player)
-        
+
         Args:
             xuid: XUID du joueur
             start_date: Date de début optionnelle
             end_date: Date de fin optionnelle
             columns: Colonnes à lire (None = toutes)
-            
+
         Returns:
             DataFrame Polars avec les données
         """
         player_path = self.warehouse_path / "match_facts" / f"player={xuid}"
-        
+
         if not player_path.exists():
             return pl.DataFrame()
-        
+
         # Construire le pattern de fichiers
         if start_date and end_date:
             # Pruning de partitions par date
             patterns = self._get_partition_patterns(player_path, start_date, end_date)
             if not patterns:
                 return pl.DataFrame()
-            
+
             dfs = []
             for pattern in patterns:
                 files = list(player_path.glob(pattern))
                 if files:
                     df = pl.read_parquet(files, columns=columns)
                     dfs.append(df)
-            
+
             if not dfs:
                 return pl.DataFrame()
-            
+
             return pl.concat(dfs)
         else:
             # Lire toutes les partitions
             files = list(player_path.glob("**/*.parquet"))
             if not files:
                 return pl.DataFrame()
-            
+
             return pl.read_parquet(files, columns=columns)
-    
+
     def read_medals(
         self,
         xuid: str,
@@ -100,21 +101,21 @@ class ParquetReader:
         (Read medals for a player)
         """
         player_path = self.warehouse_path / "medals" / f"player={xuid}"
-        
+
         if not player_path.exists():
             return pl.DataFrame()
-        
+
         files = list(player_path.glob("**/*.parquet"))
         if not files:
             return pl.DataFrame()
-        
+
         df = pl.read_parquet(files)
-        
+
         if match_ids:
             df = df.filter(pl.col("match_id").is_in(match_ids))
-        
+
         return df
-    
+
     def to_match_rows(self, df: pl.DataFrame) -> list[MatchRow]:
         """
         Convertit un DataFrame en liste de MatchRow.
@@ -122,7 +123,7 @@ class ParquetReader:
         """
         if df.is_empty():
             return []
-        
+
         return [
             MatchRow(
                 match_id=row["match_id"],
@@ -153,7 +154,7 @@ class ParquetReader:
             )
             for row in df.iter_rows(named=True)
         ]
-    
+
     def has_data(self, xuid: str, table: str = "match_facts") -> bool:
         """
         Vérifie si des données existent pour un joueur.
@@ -163,7 +164,7 @@ class ParquetReader:
         if not player_path.exists():
             return False
         return bool(list(player_path.glob("**/*.parquet")))
-    
+
     def count_rows(self, xuid: str, table: str = "match_facts") -> int:
         """
         Compte le nombre de lignes pour un joueur.
@@ -172,18 +173,18 @@ class ParquetReader:
         player_path = self.warehouse_path / table / f"player={xuid}"
         if not player_path.exists():
             return 0
-        
+
         files = list(player_path.glob("**/*.parquet"))
         if not files:
             return 0
-        
+
         total = 0
         for f in files:
             # Lecture lazy pour compter sans charger les données
             total += pl.scan_parquet(f).select(pl.count()).collect().item()
-        
+
         return total
-    
+
     def _get_partition_patterns(
         self,
         player_path: Path,
@@ -196,15 +197,15 @@ class ParquetReader:
         """
         patterns = []
         current = start_date.replace(day=1)
-        
+
         while current <= end_date:
             pattern = f"year={current.year}/month={current.month:02d}/*.parquet"
             patterns.append(pattern)
-            
+
             # Mois suivant
             if current.month == 12:
                 current = current.replace(year=current.year + 1, month=1)
             else:
                 current = current.replace(month=current.month + 1)
-        
+
         return patterns

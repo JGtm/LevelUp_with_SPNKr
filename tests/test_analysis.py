@@ -18,7 +18,7 @@ from src.analysis.stats import (
     format_mmss,
     format_selected_matches_summary,
 )
-from src.models import OutcomeRates
+from src.data.domain.models.stats import OutcomeRates
 
 
 class TestComputeGlobalRatio:
