@@ -1211,9 +1211,9 @@ La phase audit S0→S9 est considérée close quand :
 
 - [x] Tous les écarts A/B/C/D sont traités ou explicitement acceptés comme dette
 - [x] Les gates du document sont alignées avec la politique réellement décidée
-- [ ] Un commit de consolidation documentaire + un commit technique de correction sont réalisés
+- [x] Un commit de consolidation documentaire + un commit technique de correction sont réalisés
 
-> État au 2026-02-12 : critères 1 et 2 validés ; critère 3 en attente d'exécution Git (hors périmètre de cette session).
+> État au 2026-02-12 : critères 1, 2 et 3 validés (phase audit S0→S9 clôturée).
 
 ---
 
