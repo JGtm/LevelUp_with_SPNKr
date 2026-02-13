@@ -1233,8 +1233,8 @@ python -m pytest tests/test_duckdb_repo_regressions.py -v
 |---|-------|--------|-----------|
 | 18.1 | [U] Exécuter campagne de tests complète (unitaires + intégration + E2E) | Qualité | `tests/` |
 | 18.2 | [U] Exécuter couverture et combler trous critiques | Qualité | `src/`, `tests/` |
-| 18.3 | [U] Mettre à jour docs finales (`README`, architecture, data, sync) | Documentation | `README.md`, `docs/*.md` |
-| 18.4 | [U] Mettre à jour `.ai/thought_log.md` + rapport revue final | Traçabilité | `.ai/` |
+| 18.3 | [U] Mettre à jour docs finales **utilisateur** (README obligatoire + architecture + data + sync) | Documentation | `README.md`, `docs/*.md` |
+| 18.4 | [U] Mettre à jour docs **AI** (`.ai/thought_log.md` + rapport revue final + plans `.ai/features/`) | Traçabilité | `.ai/` |
 | 18.5 | [U] Produire release notes v4.5 + checklist de clôture | Release | `.ai/RELEASE_NOTES_2026_Q1.md` (ou v4.5 dédié) |
 | 18.6 | [U] Tagger release `v4.5` après validation | Release | Git |
 | 18.7 | [S] Mettre à jour tous les plans `.ai/features/` avec statut final (report de 11.7) | S9 SUPER_PLAN (report) | `.ai/features/` |
@@ -1249,7 +1249,9 @@ python -m pytest tests/test_duckdb_repo_regressions.py -v
 
 - [ ] `pytest tests/ -v` : 0 failure, 0 error
 - [ ] Couverture cible réaliste atteinte (palier v4.5 : >= 75% global + >= 85% modules critiques)
-- [ ] Docs projet et `.ai/` alignées sur l'état réel
+- [ ] **README.md mis à jour** (installation, usage, nouveautés v4.5, limitations connues)
+- [ ] Docs utilisateur à jour (`docs/*.md`) et alignées sur le comportement réel
+- [ ] Docs AI à jour (`.ai/thought_log.md`, rapport final, plans `.ai/features/`)
 - [ ] Plans `.ai/features/` mis à jour avec statut final (reprise 11.7)
 - [ ] Rapport de revue finale ✅
 - [ ] Tag `v4.5` créé
@@ -1529,6 +1531,9 @@ Chaque sprint est considéré livré quand :
 - [ ] Toutes les nouvelles visualisations visibles
 - [ ] Section Carrière avec cercle de progression
 - [ ] Données damage_dealt/taken disponibles
+- [ ] `README.md` à jour (guide utilisateur + changements v4.5)
+- [ ] `docs/*.md` à jour (architecture/data/sync conformes au runtime)
+- [ ] Documentation AI à jour (`.ai/thought_log.md` + rapports + `.ai/features/`)
 - [ ] `CLAUDE.md` à jour (section "Code Déprécié" vidée)
 - [ ] Tag git `v4.5`
 
