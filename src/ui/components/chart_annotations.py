@@ -10,15 +10,6 @@ from typing import Any
 import plotly.graph_objects as go
 import polars as pl
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 
 def add_extreme_annotations(
     fig: go.Figure,
@@ -57,11 +48,11 @@ def add_extreme_annotations(
     if not x_values or not y_values or len(x_values) != len(y_values):
         return fig
 
-    # Convertir en listes si nécessaire
-    if isinstance(y_values, pd.Series):
-        y_values = y_values.tolist()
-    if isinstance(x_values, pd.Series):
-        x_values = x_values.tolist()
+    # Convertir en listes si nécessaire (séries Polars ou autres)
+    if hasattr(y_values, "to_list"):
+        y_values = y_values.to_list()
+    if hasattr(x_values, "to_list"):
+        x_values = x_values.to_list()
 
     # Filtrer les NaN
     valid_pairs = [
@@ -90,7 +81,7 @@ def add_extreme_annotations(
             text=f"▲ {label}",
             showarrow=False,
             yshift=yshift_max,
-            font=dict(size=font_size, color=max_color),
+            font={"size": font_size, "color": max_color},
             bgcolor="rgba(0,0,0,0.5)",
             borderpad=2,
             yref="y2" if secondary_y else "y",
@@ -109,7 +100,7 @@ def add_extreme_annotations(
             text=f"▼ {label}",
             showarrow=False,
             yshift=yshift_min,
-            font=dict(size=font_size, color=min_color),
+            font={"size": font_size, "color": min_color},
             bgcolor="rgba(0,0,0,0.5)",
             borderpad=2,
             yref="y2" if secondary_y else "y",
@@ -120,7 +111,7 @@ def add_extreme_annotations(
 
 def annotate_timeseries_extremes(
     fig: go.Figure,
-    df: pd.DataFrame,
+    df: pl.DataFrame,
     *,
     x_col: str = "idx",
     metrics: list[dict[str, Any]] | None = None,
@@ -129,7 +120,7 @@ def annotate_timeseries_extremes(
 
     Args:
         fig: Figure Plotly.
-        df: DataFrame avec les données.
+        df: DataFrame Polars avec les données.
         x_col: Colonne pour l'axe X (ou "idx" pour utiliser l'index).
         metrics: Liste de dicts définissant les métriques à annoter:
             [
@@ -151,20 +142,20 @@ def annotate_timeseries_extremes(
             },
         ]
 
-    if df is None or df.empty:
+    if df is None or (isinstance(df, pl.DataFrame) and df.is_empty()):
         return fig
 
     if x_col == "idx":
         x_values = list(range(len(df)))
     else:
-        x_values = df[x_col].tolist() if x_col in df.columns else list(range(len(df)))
+        x_values = df[x_col].to_list() if x_col in df.columns else list(range(len(df)))
 
     for metric in metrics:
         col = metric.get("col", "")
         if col not in df.columns:
             continue
 
-        y_values = df[col].tolist()
+        y_values = df[col].to_list()
 
         add_extreme_annotations(
             fig,

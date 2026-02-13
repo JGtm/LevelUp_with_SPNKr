@@ -94,7 +94,7 @@ def test_cached_compute_sessions_db_returns_expected_contract(sessions_contract_
         friends_xuids=None,
     )
 
-    assert not result.empty
-    assert ["match_id", "start_time", "session_id", "session_label"] == list(result.columns)
-    assert set(result["session_id"].astype(str).tolist()) == {"s1", "s2"}
-    assert set(result["session_label"].astype(str).tolist()) == {"Session 1", "Session 2"}
+    assert not result.is_empty()
+    assert ["match_id", "start_time", "session_id", "session_label"] == result.columns
+    assert set(result["session_id"].cast(str).to_list()) == {"s1", "s2"}
+    assert set(result["session_label"].cast(str).to_list()) == {"Session 1", "Session 2"}

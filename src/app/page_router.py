@@ -15,17 +15,9 @@ import streamlit as st
 
 from src.ui.settings import AppSettings
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
 
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
-
-def _to_polars(df: DataFrameType) -> pl.DataFrame:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+def _to_polars(df: pl.DataFrame) -> pl.DataFrame:
+    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
     if isinstance(df, pl.DataFrame):
         return df
     return pl.from_pandas(df)
@@ -53,7 +45,7 @@ def build_match_view_params(
     waypoint_player: str,
     db_key: str | None,
     settings: AppSettings,
-    df_full: DataFrameType,
+    df_full: pl.DataFrame,
     render_match_view_fn: Callable,
     normalize_mode_label_fn: Callable,
     format_score_label_fn: Callable,
@@ -116,9 +108,9 @@ def render_page_selector() -> str:
 
 def dispatch_page(
     page: str,
-    dff: DataFrameType,
-    df: DataFrameType,
-    base: DataFrameType,
+    dff: pl.DataFrame,
+    df: pl.DataFrame,
+    base: pl.DataFrame,
     me_name: str,
     xuid: str,
     db_path: str,
@@ -177,24 +169,27 @@ def dispatch_page(
         all_sessions_df = cached_compute_sessions_db_fn(
             db_path, xuid.strip(), db_key, True, gap_minutes, friends_xuids=friends_tuple
         )
+        # Normaliser en Polars
+        all_sessions_pl = _to_polars(all_sessions_df)
+        df_pl = _to_polars(df)
+
         # La page a besoin d'un DataFrame "sessions" enrichi : session_id/session_label
         # + toutes les stats match (kills, pair_name, etc.). En DuckDB v4, cached_compute_sessions_db
         # ne renvoie que match_id, start_time, session_id, session_label → on fusionne avec df.
         if (
-            not all_sessions_df.empty
-            and "match_id" in df.columns
-            and "match_id" in all_sessions_df.columns
+            not all_sessions_pl.is_empty()
+            and "match_id" in df_pl.columns
+            and "match_id" in all_sessions_pl.columns
         ):
             sess_cols = ["match_id", "session_id", "session_label"]
-            df_for_merge = df.drop(
-                columns=[c for c in ("session_id", "session_label") if c in df.columns],
-                errors="ignore",
-            )
-            sessions_for_compare = df_for_merge.merge(
-                all_sessions_df[sess_cols], on="match_id", how="inner"
+            # Retirer session_id/session_label de df avant join pour éviter doublons
+            drop_cols = [c for c in ("session_id", "session_label") if c in df_pl.columns]
+            df_for_merge = df_pl.drop(drop_cols) if drop_cols else df_pl
+            sessions_for_compare = df_for_merge.join(
+                all_sessions_pl.select(sess_cols), on="match_id", how="inner"
             )
         else:
-            sessions_for_compare = all_sessions_df
+            sessions_for_compare = all_sessions_pl
         render_session_comparison_page_fn(sessions_for_compare, df_full=df)
 
     elif page == "Séries temporelles":

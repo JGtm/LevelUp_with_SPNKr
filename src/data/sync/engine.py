@@ -47,6 +47,10 @@ from src.data.sync.batch_insert import (
     batch_insert_rows,
     batch_upsert_rows,
 )
+from src.data.sync.migrations import (
+    BACKFILL_FLAGS,
+    ensure_backfill_completed_column,
+)
 from src.data.sync.models import (
     CareerRankData,
     MatchStatsRow,
@@ -317,6 +321,9 @@ class DuckDBSyncEngine:
         # S'assurer que la séquence pour highlight_events existe (migration)
         self._ensure_highlight_events_sequence()
 
+        # Colonne bitmask backfill_completed (migration)
+        ensure_backfill_completed_column(conn)
+
     def _ensure_match_stats_table(self) -> None:
         """S'assure que la table match_stats existe avec toutes les colonnes nécessaires."""
         conn = self._connection
@@ -385,8 +392,8 @@ class DuckDBSyncEngine:
                 )
             """)
         else:
-            # Migrations centralisées (src.db.migrations)
-            from src.db.migrations import ensure_match_stats_columns
+            # Migrations centralisées
+            from src.data.sync.migrations import ensure_match_stats_columns
 
             ensure_match_stats_columns(conn)
 
@@ -395,7 +402,7 @@ class DuckDBSyncEngine:
         conn = self._connection
         if conn is None:
             return
-        from src.db.migrations import ensure_match_participants_columns
+        from src.data.sync.migrations import ensure_match_participants_columns
 
         ensure_match_participants_columns(conn)
 
@@ -779,6 +786,41 @@ class DuckDBSyncEngine:
                 # (après toutes les insertions pour avoir les données complètes)
                 self._compute_and_update_performance_score(match_id, match_row)
 
+                # ── Bitmask backfill_completed ──────────────────────────
+                # Marquer les types de données effectivement traités lors
+                # de cette sync pour que le backfill ne les re-détecte pas.
+                bf_mask = 0
+                # Toujours extraits depuis match_stats JSON :
+                bf_mask |= BACKFILL_FLAGS["medals"]
+                bf_mask |= BACKFILL_FLAGS["personal_scores"]
+                bf_mask |= BACKFILL_FLAGS["performance_scores"]
+                bf_mask |= BACKFILL_FLAGS["accuracy"]
+                bf_mask |= BACKFILL_FLAGS["shots"]
+                # Conditionnels selon SyncOptions :
+                if options.with_skill:
+                    bf_mask |= BACKFILL_FLAGS["skill"]
+                    bf_mask |= BACKFILL_FLAGS["enemy_mmr"]
+                if options.with_highlight_events:
+                    bf_mask |= BACKFILL_FLAGS["events"]
+                if options.with_participants:
+                    bf_mask |= BACKFILL_FLAGS["participants"]
+                    bf_mask |= BACKFILL_FLAGS["participants_scores"]
+                    bf_mask |= BACKFILL_FLAGS["participants_kda"]
+                    bf_mask |= BACKFILL_FLAGS["participants_shots"]
+                    bf_mask |= BACKFILL_FLAGS["participants_damage"]
+                if options.with_aliases:
+                    bf_mask |= BACKFILL_FLAGS["aliases"]
+                if options.with_assets:
+                    bf_mask |= BACKFILL_FLAGS["assets"]
+                # UPDATE atomique (OR pour ne pas écraser les bits existants)
+                conn = self._get_connection()
+                conn.execute(
+                    "UPDATE match_stats "
+                    "SET backfill_completed = COALESCE(backfill_completed, 0) | ? "
+                    "WHERE match_id = ?",
+                    [bf_mask, match_id],
+                )
+
             result["inserted"] = True
 
         except Exception as e:
@@ -789,7 +831,7 @@ class DuckDBSyncEngine:
 
     def _ensure_performance_score_column(self) -> None:
         """S'assure que la colonne performance_score existe dans match_stats."""
-        from src.db.migrations import ensure_performance_score_column
+        from src.data.sync.migrations import ensure_performance_score_column
 
         conn = self._get_connection()
         ensure_performance_score_column(conn)

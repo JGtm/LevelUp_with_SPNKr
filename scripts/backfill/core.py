@@ -49,6 +49,9 @@ def insert_medal_rows(conn: Any, rows: list) -> int:
 def insert_event_rows(conn: Any, rows: list) -> int:
     """Insère les highlight events en batch (Sprint 15).
 
+    Supprime d'abord les events existants pour le match_id afin d'éviter
+    les doublons (highlight_events n'a pas de contrainte UNIQUE).
+
     Args:
         conn: Connexion DuckDB.
         rows: Liste de HighlightEventRow.
@@ -58,6 +61,22 @@ def insert_event_rows(conn: Any, rows: list) -> int:
     """
     if not rows:
         return 0
+
+    # Déduplication : supprimer les events existants pour ces match_ids
+    match_ids = list(
+        {
+            getattr(r, "match_id", None) or (r.get("match_id") if isinstance(r, dict) else None)
+            for r in rows
+        }
+    )
+    match_ids = [m for m in match_ids if m is not None]
+    if match_ids:
+        placeholders = ", ".join(["?"] * len(match_ids))
+        conn.execute(
+            f"DELETE FROM highlight_events WHERE match_id IN ({placeholders})",
+            match_ids,
+        )
+
     return batch_insert_rows(conn, "highlight_events", rows, HIGHLIGHT_EVENT_COLUMNS)
 
 
@@ -110,6 +129,9 @@ def insert_skill_row(conn: Any, row: Any, xuid: str) -> int:
 def insert_personal_score_rows(conn: Any, rows: list) -> int:
     """Insère les personal score awards en batch (Sprint 15).
 
+    Supprime d'abord les scores existants pour le match_id + xuid
+    afin d'éviter les doublons.
+
     Args:
         conn: Connexion DuckDB.
         rows: Liste de PersonalScoreAwardRow.
@@ -119,6 +141,15 @@ def insert_personal_score_rows(conn: Any, rows: list) -> int:
     """
     if not rows:
         return 0
+
+    # Déduplication : supprimer les scores existants pour ces match_id/xuid
+    keys = list({(r.match_id, r.xuid) for r in rows if hasattr(r, "match_id")})
+    for match_id, xuid in keys:
+        conn.execute(
+            "DELETE FROM personal_score_awards WHERE match_id = ? AND xuid = ?",
+            [match_id, xuid],
+        )
+
     now = datetime.now(timezone.utc)
     dicts = []
     for row in rows:
@@ -179,7 +210,7 @@ def insert_participant_rows(conn: Any, rows: list) -> int:
     if not rows:
         return 0
 
-    from src.db.migrations import ensure_match_participants_columns
+    from src.data.sync.migrations import ensure_match_participants_columns
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS match_participants (

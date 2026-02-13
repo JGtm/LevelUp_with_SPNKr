@@ -20,7 +20,7 @@ from scripts.backfill.core import (
     insert_personal_score_rows,
     insert_skill_row,
 )
-from scripts.backfill.detection import find_matches_missing_data
+from scripts.backfill.detection import compute_backfill_mask, find_matches_missing_data
 from scripts.backfill.strategies import (
     backfill_end_time,
     backfill_killer_victim_pairs,
@@ -459,7 +459,8 @@ def _apply_schema_migrations(
     participants_damage: bool,
 ) -> None:
     """Applique les migrations de schéma nécessaires avant le backfill."""
-    from src.db.migrations import (
+    from src.data.sync.migrations import (
+        ensure_backfill_completed_column,
         ensure_match_participants_columns,
         ensure_medals_earned_bigint,
     )
@@ -469,7 +470,7 @@ def _apply_schema_migrations(
 
     # Colonne accuracy
     if accuracy:
-        from src.db.migrations import _add_column_if_missing
+        from src.data.sync.migrations import _add_column_if_missing
 
         _add_column_if_missing(conn, "match_stats", "accuracy", "FLOAT")
 
@@ -477,6 +478,24 @@ def _apply_schema_migrations(
     if participants_scores or participants_kda or participants_shots or participants_damage:
         with contextlib.suppress(Exception):
             ensure_match_participants_columns(conn)
+
+    ensure_backfill_completed_column(conn)
+
+
+def _mark_backfill_completed(conn: Any, match_id: str, *, mask: int) -> None:
+    """Met à jour le bitmask backfill_completed pour un match.
+
+    Chaque bit représente un type de données traité (que l'API ait
+    retourné des données ou non). Voir detection.BACKFILL_FLAGS.
+    """
+    if mask == 0:
+        return
+    conn.execute(
+        "UPDATE match_stats "
+        "SET backfill_completed = COALESCE(backfill_completed, 0) | ? "
+        "WHERE match_id = ?",
+        [mask, match_id],
+    )
 
 
 def _backfill_local_only(
@@ -591,6 +610,7 @@ async def _backfill_with_api(
 ) -> dict[str, int]:
     """Traitement des matchs via l'API SPNKr."""
     from src.data.sync.api_client import SPNKrAPIClient, get_tokens_from_env
+    from src.data.sync.migrations import ensure_match_participants_columns
     from src.data.sync.transformers import (
         extract_aliases,
         extract_medals,
@@ -602,7 +622,6 @@ async def _backfill_with_api(
         transform_personal_score_awards,
         transform_skill_stats,
     )
-    from src.db.migrations import ensure_match_participants_columns
 
     tokens = await get_tokens_from_env()
     if not tokens:
@@ -737,6 +756,45 @@ async def _backfill_with_api(
                 # ── Performance scores ──
                 if performance_scores and compute_performance_score_for_match(conn, match_id):
                     totals["performance_scores_inserted"] += 1
+
+                # Marquer le bitmask backfill_completed pour tous les types demandés
+                requested_types: list[str] = []
+                if medals:
+                    requested_types.append("medals")
+                if events:
+                    requested_types.append("events")
+                if skill:
+                    requested_types.append("skill")
+                if personal_scores:
+                    requested_types.append("personal_scores")
+                if performance_scores:
+                    requested_types.append("performance_scores")
+                if aliases:
+                    requested_types.append("aliases")
+                if accuracy:
+                    requested_types.append("accuracy")
+                if shots:
+                    requested_types.append("shots")
+                if enemy_mmr:
+                    requested_types.append("enemy_mmr")
+                if assets:
+                    requested_types.append("assets")
+                if participants:
+                    requested_types.append("participants")
+                if participants_scores:
+                    requested_types.append("participants_scores")
+                if participants_kda:
+                    requested_types.append("participants_kda")
+                if participants_shots:
+                    requested_types.append("participants_shots")
+                if participants_damage:
+                    requested_types.append("participants_damage")
+
+                _mark_backfill_completed(
+                    conn,
+                    match_id,
+                    mask=compute_backfill_mask(*requested_types),
+                )
 
                 # Commit après chaque match
                 conn.commit()

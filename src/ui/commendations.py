@@ -21,27 +21,16 @@ from typing import Any
 import polars as pl
 import streamlit as st
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 from src.config import get_repo_root
 
 
-def _to_polars(df: DataFrameType | None) -> pl.DataFrame | None:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+def _to_polars(df: pl.DataFrame | None) -> pl.DataFrame | None:
+    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
     if df is None:
         return None
     if isinstance(df, pl.DataFrame):
         return df
-    if pd is not None and isinstance(df, pd.DataFrame):
-        return pl.from_pandas(df)
-    return pl.DataFrame()
+    return pl.from_pandas(df)
 
 
 DEFAULT_H5G_JSON_PATH = os.path.join("data", "wiki", "halo5_commendations_fr.json")
@@ -115,7 +104,7 @@ CUSTOM_CITATION_RULES: dict[str, dict[str, Any]] = {
 
 def _compute_custom_citation_value(
     rule: dict[str, Any],
-    df: DataFrameType | None,
+    df: pl.DataFrame | None,
     counts_by_medal: dict[int, int],
     stats_totals: dict[str, int],
 ) -> int:
@@ -704,8 +693,8 @@ def render_h5g_commendations_section(
     stats_totals: dict[str, int] | None = None,
     counts_by_medal_full: dict[int, int] | None = None,
     stats_totals_full: dict[str, int] | None = None,
-    df: DataFrameType | None = None,
-    df_full: DataFrameType | None = None,
+    df: pl.DataFrame | None = None,
+    df_full: pl.DataFrame | None = None,
 ) -> None:
     """Affiche la section des commendations Halo 5.
 

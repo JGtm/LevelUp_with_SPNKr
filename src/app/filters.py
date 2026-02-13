@@ -15,15 +15,6 @@ from pathlib import Path
 import polars as pl
 import streamlit as st
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 from src.analysis import build_xuid_option_map
 from src.app.helpers import (
     clean_asset_label,
@@ -44,11 +35,26 @@ from src.ui.components import (
 )
 
 
-def _normalize_df(df: DataFrameType) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
+def _to_polars(df: object) -> pl.DataFrame:
+    """Convertit un DataFrame Pandas en Polars si nécessaire (pont de sécurité)."""
     if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
+        return df
+    try:
+        return pl.from_pandas(df)  # type: ignore[arg-type]
+    except Exception:
+        return pl.DataFrame()
+
+
+def _safe_to_date(val: object) -> date:
+    """Convertit une valeur en date Python, date.today() si invalide."""
+    if isinstance(val, date):
+        return val
+    try:
+        from dateutil.parser import parse as _parse_dt
+
+        return _parse_dt(str(val)).date()
+    except (ValueError, TypeError, ImportError):
+        return date.today()
 
 
 # =============================================================================
@@ -181,86 +187,97 @@ def get_friends_xuids_for_sessions(
 # =============================================================================
 
 
-def add_ui_columns(df: pd.DataFrame) -> pd.DataFrame:
+def add_ui_columns(df: pl.DataFrame) -> pl.DataFrame:
     """Ajoute les colonnes UI au DataFrame (playlist_ui, mode_ui, map_ui).
 
     Args:
-        df: DataFrame (Pandas ou Polars) source.
+        df: DataFrame Polars source.
 
     Returns:
-        DataFrame avec colonnes UI ajoutées.
+        DataFrame Polars avec colonnes UI ajoutées.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
-
+    df = _to_polars(df)
+    exprs: list[pl.Expr] = []
     if "playlist_ui" not in df.columns:
         if "playlist_name" in df.columns:
-            df["playlist_ui"] = (
-                df["playlist_name"].apply(clean_asset_label).apply(translate_playlist_name)
+            exprs.append(
+                pl.col("playlist_name")
+                .map_elements(
+                    lambda x: translate_playlist_name(clean_asset_label(x)),
+                    return_dtype=pl.Utf8,
+                )
+                .alias("playlist_ui")
             )
         else:
-            df["playlist_ui"] = ""
+            exprs.append(pl.lit("").alias("playlist_ui"))
     if "mode_ui" not in df.columns:
         if "pair_name" in df.columns:
-            df["mode_ui"] = df["pair_name"].apply(normalize_mode_label)
+            exprs.append(
+                pl.col("pair_name")
+                .map_elements(normalize_mode_label, return_dtype=pl.Utf8)
+                .alias("mode_ui")
+            )
         else:
-            df["mode_ui"] = ""
+            exprs.append(pl.lit("").alias("mode_ui"))
     if "map_ui" not in df.columns:
         if "map_name" in df.columns:
-            df["map_ui"] = df["map_name"].apply(normalize_map_label)
+            exprs.append(
+                pl.col("map_name")
+                .map_elements(normalize_map_label, return_dtype=pl.Utf8)
+                .alias("map_ui")
+            )
         else:
-            df["map_ui"] = ""
+            exprs.append(pl.lit("").alias("map_ui"))
+    if exprs:
+        df = df.with_columns(exprs)
     return df
 
 
-def apply_date_filter(df: pd.DataFrame | pl.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
+def apply_date_filter(df: pl.DataFrame, start_d: date, end_d: date) -> pl.DataFrame:
     """Applique un filtre de dates au DataFrame.
 
     Args:
-        df: DataFrame (Pandas ou Polars) source.
+        df: DataFrame Polars source.
         start_d: Date de début.
         end_d: Date de fin.
 
     Returns:
-        DataFrame filtré (Pandas).
+        DataFrame Polars filtré.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
-
-    # Convertir start_d et end_d en datetime pour comparaison avec la colonne date
-    # (qui peut être datetime64 après conversion Polars -> Pandas)
-    start_dt = pd.Timestamp(start_d) if isinstance(start_d, date) else pd.to_datetime(start_d)
-    end_dt = pd.Timestamp(end_d) if isinstance(end_d, date) else pd.to_datetime(end_d)
-    mask = (df["date"] >= start_dt) & (df["date"] <= end_dt)
-    return df.loc[mask].copy()
+    df = _to_polars(df)
+    if "date" not in df.columns:
+        return df
+    start_val = _safe_to_date(start_d)
+    end_val = _safe_to_date(end_d)
+    return df.filter(
+        (pl.col("date").cast(pl.Date) >= start_val) & (pl.col("date").cast(pl.Date) <= end_val)
+    )
 
 
 def apply_checkbox_filters(
-    df: pd.DataFrame | pl.DataFrame,
+    df: pl.DataFrame,
     playlists_selected: list[str] | None,
     modes_selected: list[str] | None,
     maps_selected: list[str] | None,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Applique les filtres checkbox (playlists, modes, cartes).
 
     Args:
-        df: DataFrame (Pandas ou Polars) source avec colonnes UI.
+        df: DataFrame Polars source avec colonnes UI.
         playlists_selected: Playlists sélectionnées ou None pour tout.
         modes_selected: Modes sélectionnés ou None pour tout.
         maps_selected: Cartes sélectionnées ou None pour tout.
 
     Returns:
-        DataFrame filtré (Pandas).
+        DataFrame Polars filtré.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
-
+    df = _to_polars(df)
     if playlists_selected:
-        df = df.loc[df["playlist_ui"].fillna("").isin(playlists_selected)]
+        df = df.filter(pl.col("playlist_ui").fill_null("").is_in(playlists_selected))
     if modes_selected:
-        df = df.loc[df["mode_ui"].fillna("").isin(modes_selected)]
+        df = df.filter(pl.col("mode_ui").fill_null("").is_in(modes_selected))
     if maps_selected:
-        df = df.loc[df["map_ui"].fillna("").isin(maps_selected)]
+        df = df.filter(pl.col("map_ui").fill_null("").is_in(maps_selected))
     return df
 
 
@@ -284,14 +301,8 @@ def render_date_filters(
     """
     cols = st.columns(2)
     with cols[0]:
-        start_default = pd.to_datetime(dmin, errors="coerce")
-        if pd.isna(start_default):
-            start_default = pd.Timestamp.today().normalize()
-        start_default_date = start_default.date()
-        end_limit = pd.to_datetime(dmax, errors="coerce")
-        if pd.isna(end_limit):
-            end_limit = start_default
-        end_limit_date = end_limit.date()
+        start_default_date = _safe_to_date(dmin)
+        end_limit_date = _safe_to_date(dmax)
         if "start_date_cal" not in st.session_state:
             st.session_state["start_date_cal"] = start_default_date
         else:
@@ -306,14 +317,8 @@ def render_date_filters(
             key="start_date_cal",
         )
     with cols[1]:
-        end_default = pd.to_datetime(dmax, errors="coerce")
-        if pd.isna(end_default):
-            end_default = pd.Timestamp.today().normalize()
-        end_default_date = end_default.date()
-        start_limit = pd.to_datetime(dmin, errors="coerce")
-        if pd.isna(start_limit):
-            start_limit = end_default
-        start_limit_date = start_limit.date()
+        end_default_date = _safe_to_date(dmax)
+        start_limit_date = _safe_to_date(dmin)
         if "end_date_cal" not in st.session_state:
             st.session_state["end_date_cal"] = end_default_date
         else:
@@ -338,7 +343,7 @@ def render_session_filters(
     xuid: str,
     db_key: tuple[int, int] | None,
     aliases_key: int | None,
-    base_for_filters: pd.DataFrame,
+    base_for_filters: pl.DataFrame,
 ) -> tuple[int, list[str] | None]:
     """Rend les filtres de session et retourne la sélection (gap fixé à 120 min)."""
     gap_minutes = GAP_MINUTES_FIXED
@@ -401,7 +406,7 @@ def render_session_filters(
 
     # Bouton Trio
     trio_label = _compute_trio_label(
-        db_path, xuid, db_key, aliases_key, base_for_filters, base_s_ui
+        db_path, xuid, db_key, aliases_key, _to_polars(base_for_filters), base_s_ui
     )
     st.session_state["_trio_latest_session_label"] = trio_label
     disabled_trio = not isinstance(trio_label, str) or not trio_label
@@ -430,8 +435,8 @@ def _compute_trio_label(
     xuid: str,
     db_key: tuple[int, int] | None,
     aliases_key: int | None,
-    base_for_filters: pd.DataFrame,
-    base_s_ui: pd.DataFrame,
+    base_for_filters: pl.DataFrame,
+    base_s_ui: pl.DataFrame,
 ) -> str | None:
     """Calcule le label de la dernière session en trio."""
     try:
@@ -457,41 +462,44 @@ def _compute_trio_label(
                 )
             )
             trio_ids = ids_m & ids_c
-            trio_ids = trio_ids & set(base_for_filters["match_id"].astype(str))
+            base_match_ids = set(base_for_filters["match_id"].cast(pl.Utf8).to_list())
+            trio_ids = trio_ids & base_match_ids
             if trio_ids:
-                trio_rows = base_s_ui.loc[base_s_ui["match_id"].astype(str).isin(trio_ids)].copy()
-                if not trio_rows.empty and "start_time" in trio_rows.columns:
+                trio_rows = base_s_ui.filter(pl.col("match_id").cast(pl.Utf8).is_in(list(trio_ids)))
+                if not trio_rows.is_empty() and "start_time" in trio_rows.columns:
                     agg = (
-                        trio_rows.groupby(["session_id", "session_label"], dropna=False)[
-                            "start_time"
-                        ]
-                        .max()
-                        .reset_index()
+                        trio_rows.group_by(["session_id", "session_label"])
+                        .agg(pl.col("start_time").max())
+                        .sort("start_time", descending=True)
                     )
-                    agg = agg.sort_values("start_time", ascending=False)
-                    return agg["session_label"].iloc[0] if not agg.empty else None
+                    if not agg.is_empty():
+                        return agg["session_label"][0]
     except Exception:
         pass
     return None
 
 
 def render_cascade_filters(
-    dropdown_base: pd.DataFrame,
+    dropdown_base: pl.DataFrame,
 ) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
     """Rend les filtres en cascade (Playlist → Mode → Carte).
 
     Args:
-        dropdown_base: DataFrame de base pour les options.
+        dropdown_base: DataFrame Polars de base pour les options.
 
     Returns:
         Tuple (playlists_selected, modes_selected, maps_selected).
     """
     # Ajouter colonnes UI si nécessaire
-    dropdown_base = add_ui_columns(dropdown_base.copy())
+    dropdown_base = add_ui_columns(_to_polars(dropdown_base))
 
     # --- Playlists (avec Firefight décoché par défaut) ---
     playlist_values = sorted(
-        {str(x).strip() for x in dropdown_base["playlist_ui"].dropna().tolist() if str(x).strip()}
+        {
+            str(x).strip()
+            for x in dropdown_base["playlist_ui"].drop_nulls().to_list()
+            if str(x).strip()
+        }
     )
     preferred_order = ["Partie rapide", "Arène classée", "Assassin classé"]
     playlist_values = [p for p in preferred_order if p in playlist_values] + [
@@ -510,11 +518,11 @@ def render_cascade_filters(
     # Scope après filtre playlist
     scope1 = dropdown_base
     if playlists_selected and len(playlists_selected) < len(playlist_values):
-        scope1 = scope1.loc[scope1["playlist_ui"].fillna("").isin(playlists_selected)].copy()
+        scope1 = scope1.filter(pl.col("playlist_ui").fill_null("").is_in(playlists_selected))
 
     # --- Modes (hiérarchique par catégorie) ---
     mode_values = sorted(
-        {str(x).strip() for x in scope1["mode_ui"].dropna().tolist() if str(x).strip()}
+        {str(x).strip() for x in scope1["mode_ui"].drop_nulls().to_list() if str(x).strip()}
     )
     modes_selected = render_hierarchical_checkbox_filter(
         label="Modes",
@@ -526,11 +534,11 @@ def render_cascade_filters(
     # Scope après filtre mode
     scope2 = scope1
     if modes_selected and len(modes_selected) < len(mode_values):
-        scope2 = scope2.loc[scope2["mode_ui"].fillna("").isin(modes_selected)].copy()
+        scope2 = scope2.filter(pl.col("mode_ui").fill_null("").is_in(modes_selected))
 
     # --- Cartes ---
     map_values = sorted(
-        {str(x).strip() for x in scope2["map_ui"].dropna().tolist() if str(x).strip()}
+        {str(x).strip() for x in scope2["map_ui"].drop_nulls().to_list() if str(x).strip()}
     )
     maps_selected = render_checkbox_filter(
         label="Cartes",

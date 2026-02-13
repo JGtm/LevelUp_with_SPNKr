@@ -12,12 +12,6 @@ from dataclasses import dataclass
 
 import polars as pl
 
-try:
-    import pandas as pd
-except ImportError:  # pragma: no cover
-    pd = None  # type: ignore[assignment]
-
-
 # ─── Dataclasses retour ────────────────────────────────────────────────
 
 
@@ -25,8 +19,8 @@ except ImportError:  # pragma: no cover
 class PerformanceData:
     """Données de performance enrichies (score calculé)."""
 
-    dff: pd.DataFrame
-    """DataFrame filtré avec colonne performance_score ajoutée."""
+    dff: pl.DataFrame
+    """DataFrame Polars filtré avec colonne performance_score ajoutée."""
 
 
 @dataclass(frozen=True)
@@ -51,8 +45,8 @@ class CumulativeMetrics:
 class ScorePerMinuteData:
     """Distribution du score personnel par minute."""
 
-    values: pd.Series
-    """Série des valeurs score/min."""
+    values: pl.Series
+    """Série Polars des valeurs score/min."""
     has_data: bool
     """True si assez de données (> 5)."""
 
@@ -61,8 +55,8 @@ class ScorePerMinuteData:
 class RollingWinRateData:
     """Distribution du taux de victoire glissant."""
 
-    values: pd.Series
-    """Série des taux de victoire glissants."""
+    values: pl.Series
+    """Série Polars des taux de victoire glissants."""
     has_data: bool
     """True si assez de données (> 5)."""
     missing_column: bool
@@ -101,32 +95,34 @@ class TimeseriesService:
 
     @staticmethod
     def enrich_performance_score(
-        dff: pd.DataFrame,
-        df_full: pd.DataFrame | None = None,
-    ) -> pd.DataFrame:
+        dff: pl.DataFrame,
+        df_full: pl.DataFrame | None = None,
+    ) -> pl.DataFrame:
         """Ajoute la colonne performance_score au DataFrame si absente.
 
         Args:
-            dff: DataFrame filtré des matchs.
+            dff: DataFrame Polars filtré des matchs.
             df_full: DataFrame complet pour le calcul relatif.
 
         Returns:
-            DataFrame enrichi avec performance_score.
+            DataFrame Polars enrichi avec performance_score.
         """
         from src.analysis.performance_score import compute_performance_series
 
         history_df = df_full if df_full is not None else dff
         if "performance_score" not in dff.columns:
-            dff = dff.copy()
-            dff["performance_score"] = compute_performance_series(dff, history_df)
+            dff = dff.clone()
+            dff = dff.with_columns(
+                pl.Series("performance_score", compute_performance_series(dff, history_df))
+            )
         return dff
 
     @staticmethod
-    def compute_cumulative_metrics(dff: pd.DataFrame) -> CumulativeMetrics | None:
+    def compute_cumulative_metrics(dff: pl.DataFrame) -> CumulativeMetrics | None:
         """Calcule les métriques cumulatives (net score, K/D, rolling K/D).
 
         Args:
-            dff: DataFrame filtré trié par start_time, avec kills/deaths.
+            dff: DataFrame Polars filtré trié par start_time, avec kills/deaths.
 
         Returns:
             CumulativeMetrics ou None si colonnes manquantes.
@@ -146,15 +142,14 @@ class TimeseriesService:
         if _has_tps:
             _cumul_cols.append("time_played_seconds")
 
-        _sorted = dff.sort_values("start_time")
-        pl_df = pl.from_pandas(_sorted[_cumul_cols].copy())
+        pl_df = dff.select(_cumul_cols).sort("start_time")
 
         if pl_df.is_empty():
             return None
 
         _tps_list: list[int | float] | None = None
         if _has_tps:
-            _tps_list = _sorted["time_played_seconds"].fillna(0).tolist()
+            _tps_list = pl_df["time_played_seconds"].fill_null(0).to_list()
 
         cumul_net = compute_cumulative_net_score_series_polars(pl_df)
         cumul_kd = compute_cumulative_kd_series_polars(pl_df)
@@ -170,40 +165,40 @@ class TimeseriesService:
         )
 
     @staticmethod
-    def compute_score_per_minute(dff: pd.DataFrame) -> ScorePerMinuteData:
+    def compute_score_per_minute(dff: pl.DataFrame) -> ScorePerMinuteData:
         """Calcule la distribution du score personnel par minute.
 
         Args:
-            dff: DataFrame filtré avec personal_score et time_played_seconds.
+            dff: DataFrame Polars filtré avec personal_score et time_played_seconds.
 
         Returns:
             ScorePerMinuteData avec les valeurs.
         """
         if "personal_score" not in dff.columns or "time_played_seconds" not in dff.columns:
-            return ScorePerMinuteData(values=pd.Series(dtype=float), has_data=False)
+            return ScorePerMinuteData(values=pl.Series(dtype=pl.Float64), has_data=False)
 
-        _ps = dff[["personal_score", "time_played_seconds"]].dropna()
-        _ps = _ps[_ps["time_played_seconds"] > 0]
+        _ps = dff.select(["personal_score", "time_played_seconds"]).drop_nulls()
+        _ps = _ps.filter(pl.col("time_played_seconds") > 0)
 
         if len(_ps) <= 5:
-            return ScorePerMinuteData(values=pd.Series(dtype=float), has_data=False)
+            return ScorePerMinuteData(values=pl.Series(dtype=pl.Float64), has_data=False)
 
         values = _ps["personal_score"] / (_ps["time_played_seconds"] / 60)
         return ScorePerMinuteData(values=values, has_data=True)
 
     @staticmethod
-    def compute_rolling_win_rate(dff: pd.DataFrame) -> RollingWinRateData:
+    def compute_rolling_win_rate(dff: pl.DataFrame) -> RollingWinRateData:
         """Calcule la distribution du taux de victoire glissant (fenêtre 10).
 
         Args:
-            dff: DataFrame filtré avec outcome et start_time.
+            dff: DataFrame Polars filtré avec outcome et start_time.
 
         Returns:
             RollingWinRateData avec les valeurs.
         """
         if "outcome" not in dff.columns:
             return RollingWinRateData(
-                values=pd.Series(dtype=float),
+                values=pl.Series(dtype=pl.Float64),
                 has_data=False,
                 missing_column=True,
                 not_enough_matches=False,
@@ -211,16 +206,16 @@ class TimeseriesService:
 
         if len(dff) < 10:
             return RollingWinRateData(
-                values=pd.Series(dtype=float),
+                values=pl.Series(dtype=pl.Float64),
                 has_data=False,
                 missing_column=False,
                 not_enough_matches=True,
             )
 
-        _wr_df = dff.sort_values("start_time") if "start_time" in dff.columns else dff
-        _wins = (_wr_df["outcome"] == 1).astype(float)
-        win_rate_rolling = _wins.rolling(window=10, min_periods=10).mean() * 100
-        win_rate_clean = win_rate_rolling.dropna()
+        _wr_df = dff.sort("start_time") if "start_time" in dff.columns else dff
+        _wins = (_wr_df["outcome"] == 1).cast(pl.Float64)
+        win_rate_rolling = _wins.rolling_mean(window_size=10, min_periods=10) * 100
+        win_rate_clean = win_rate_rolling.drop_nulls()
 
         return RollingWinRateData(
             values=win_rate_clean,

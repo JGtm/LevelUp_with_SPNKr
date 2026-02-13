@@ -319,20 +319,18 @@ def _render_ratio_by_map_section(
         on_change=_clear_min_matches_maps_auto,
     )
 
-    base_scope_pd = WinLossService.get_friend_scope_df(
+    base_scope_pl = WinLossService.get_friend_scope_df(
         scope,
-        dff.to_pandas(),
-        base.to_pandas(),
+        dff,
+        base,
         db_path,
         xuid,
         db_key,
     )
 
     with st.spinner("Calcul des stats par carte\u2026"):
-        map_result = WinLossService.compute_map_breakdown(base_scope_pd, min_matches)
-        breakdown = (
-            ensure_polars(map_result.breakdown) if not map_result.is_empty else pl.DataFrame()
-        )
+        map_result = WinLossService.compute_map_breakdown(base_scope_pl, min_matches)
+        breakdown = map_result.breakdown if not map_result.is_empty else pl.DataFrame()
 
     if map_result.is_empty:
         st.warning("Pas assez de matchs par map avec ces filtres.")
@@ -362,7 +360,7 @@ def _render_ratio_by_map_section(
 
     st.plotly_chart(fig, width="stretch")
 
-    base_scope = ensure_polars(base_scope_pd)
+    base_scope = base_scope_pl
     _render_map_table(breakdown, base_scope)
 
 

@@ -33,26 +33,18 @@ from src.ui.formatting import (
     format_duration_hms,
 )
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 if TYPE_CHECKING:
     pass
 
 
-def _to_polars(df: DataFrameType) -> pl.DataFrame:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+def _to_polars(df: pl.DataFrame) -> pl.DataFrame:
+    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
     if isinstance(df, pl.DataFrame):
         return df
     return pl.from_pandas(df)
 
 
-def render_kpis_section(dff: DataFrameType) -> None:
+def render_kpis_section(dff: pl.DataFrame) -> None:
     """Rend la section complète des KPIs.
 
     Args:

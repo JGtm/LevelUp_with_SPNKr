@@ -10,21 +10,12 @@ import re
 import polars as pl
 import streamlit as st
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 from src.config import HALO_COLORS
 from src.ui import translate_pair_name
 
 
-def _to_polars(df: DataFrameType) -> pl.DataFrame:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+def _to_polars(df: pl.DataFrame) -> pl.DataFrame:
+    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
     if isinstance(df, pl.DataFrame):
         return df
     return pl.from_pandas(df)
@@ -126,7 +117,7 @@ def normalize_map_label(map_name: str | None) -> str | None:
 # =============================================================================
 
 
-def compute_session_span_seconds(df_: DataFrameType) -> float | None:
+def compute_session_span_seconds(df_: pl.DataFrame) -> float | None:
     """Calcule la durée totale d'une session (premier match → fin dernier match).
 
     Args:
@@ -168,7 +159,7 @@ def compute_session_span_seconds(df_: DataFrameType) -> float | None:
     return float((t1 - t0).total_seconds())
 
 
-def compute_total_play_seconds(df_: DataFrameType) -> float | None:
+def compute_total_play_seconds(df_: pl.DataFrame) -> float | None:
     """Calcule le temps de jeu total (somme des durées de matchs).
 
     Args:
@@ -185,7 +176,7 @@ def compute_total_play_seconds(df_: DataFrameType) -> float | None:
     return float(val) if val is not None else None
 
 
-def avg_match_duration_seconds(df_: DataFrameType) -> float | None:
+def avg_match_duration_seconds(df_: pl.DataFrame) -> float | None:
     """Calcule la durée moyenne d'un match.
 
     Args:
@@ -207,7 +198,7 @@ def avg_match_duration_seconds(df_: DataFrameType) -> float | None:
 # =============================================================================
 
 
-def date_range(df: DataFrameType) -> tuple:
+def date_range(df: pl.DataFrame) -> tuple:
     """Retourne la plage de dates du DataFrame.
 
     Args:

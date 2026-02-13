@@ -130,7 +130,7 @@ def render_kda_trend_chart(
         return False
 
     try:
-        import pandas as pd
+        import polars as pl
 
         from src.ui.cache import cached_get_kda_trend_duckdb
 
@@ -145,29 +145,25 @@ def render_kda_trend_chart(
         if not data:
             return False
 
-        df = pd.DataFrame(data)
+        df = pl.DataFrame(data)
 
-        if df.empty:
+        if df.is_empty():
             return False
 
         st.markdown(f"### 📈 Évolution KDA (moyenne mobile {window_size} matchs)")
 
-        # Graphique avec Streamlit natif
-        chart_df = df[["match_number", "rolling_kda"]].copy()
-        chart_df = chart_df.rename(
-            columns={
-                "match_number": "Match",
-                "rolling_kda": "KDA",
-            }
+        # Graphique avec Streamlit natif (supporte Polars)
+        chart_df = df.select(
+            pl.col("match_number").alias("Match"),
+            pl.col("rolling_kda").alias("KDA"),
         )
-        chart_df = chart_df.set_index("Match")
 
-        st.line_chart(chart_df, width="stretch")
+        st.line_chart(chart_df.to_pandas().set_index("Match"), width="stretch")
 
         # Stats récentes vs anciennes
         if len(df) >= window_size * 2:
-            recent = df.head(window_size)["kda"].mean()
-            older = df.tail(window_size)["kda"].mean()
+            recent = df.head(window_size).select(pl.col("kda").mean()).item()
+            older = df.tail(window_size).select(pl.col("kda").mean()).item()
             delta = recent - older
 
             col1, col2, col3 = st.columns(3)
@@ -210,7 +206,7 @@ def render_performance_by_map(
         return False
 
     try:
-        import pandas as pd
+        import polars as pl
 
         from src.ui.cache import cached_get_performance_by_map_duckdb
 
@@ -224,36 +220,30 @@ def render_performance_by_map(
         if not data:
             return False
 
-        df = pd.DataFrame(data)
+        df = pl.DataFrame(data)
 
-        if df.empty:
+        if df.is_empty():
             return False
 
         # Trier par win_rate et limiter
-        df = df.sort_values("win_rate", ascending=False).head(top_n)
+        df = df.sort("win_rate", descending=True).head(top_n)
 
         st.markdown("### 🗺️ Performances par carte (DuckDB)")
 
         # Formater pour l'affichage
-        display_df = df[
-            ["map_name", "total_matches", "wins", "losses", "win_rate", "avg_kda", "kd_ratio"]
-        ].copy()
-        display_df = display_df.rename(
-            columns={
-                "map_name": "Carte",
-                "total_matches": "Matchs",
-                "wins": "V",
-                "losses": "D",
-                "win_rate": "Win %",
-                "avg_kda": "KDA",
-                "kd_ratio": "K/D",
-            }
+        display_df = df.select(
+            pl.col("map_name").alias("Carte"),
+            pl.col("total_matches").alias("Matchs"),
+            pl.col("wins").alias("V"),
+            pl.col("losses").alias("D"),
+            pl.col("win_rate")
+            .map_elements(lambda x: f"{x:.1f}%", return_dtype=pl.Utf8)
+            .alias("Win %"),
+            pl.col("avg_kda").map_elements(lambda x: f"{x:.2f}", return_dtype=pl.Utf8).alias("KDA"),
+            pl.col("kd_ratio")
+            .map_elements(lambda x: f"{x:.2f}", return_dtype=pl.Utf8)
+            .alias("K/D"),
         )
-
-        # Formater les nombres
-        display_df["Win %"] = display_df["Win %"].apply(lambda x: f"{x:.1f}%")
-        display_df["KDA"] = display_df["KDA"].apply(lambda x: f"{x:.2f}")
-        display_df["K/D"] = display_df["K/D"].apply(lambda x: f"{x:.2f}")
 
         st.dataframe(
             display_df,

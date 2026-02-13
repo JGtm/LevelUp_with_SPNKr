@@ -16,7 +16,7 @@ import pytest
 
 from scripts.backfill.detection import find_matches_missing_data
 from scripts.backfill.strategies import compute_performance_score_for_match
-from src.db.migrations import ensure_performance_score_column
+from src.data.sync.migrations import ensure_performance_score_column
 
 
 @pytest.fixture

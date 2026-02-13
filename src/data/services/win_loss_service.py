@@ -37,8 +37,8 @@ class PeriodTable:
 class MapBreakdownResult:
     """Résultat de l'analyse par carte."""
 
-    breakdown: pd.DataFrame
-    """DataFrame avec stats par carte (win_rate, loss_rate, ratio, etc.)."""
+    breakdown: pl.DataFrame
+    """DataFrame Polars avec stats par carte (win_rate, loss_rate, ratio, etc.)."""
     is_empty: bool
     """True si pas assez de matchs."""
 
@@ -49,8 +49,8 @@ class FriendMatchIds:
 
     match_ids: set[str]
     """Set des match_id partagés."""
-    scope_df: pd.DataFrame
-    """DataFrame filtré sur ces matchs."""
+    scope_df: pl.DataFrame
+    """DataFrame Polars filtré sur ces matchs."""
 
 
 # ─── Service ───────────────────────────────────────────────────────────
@@ -137,13 +137,13 @@ class WinLossService:
 
     @staticmethod
     def compute_map_breakdown(
-        base_scope: pd.DataFrame,
+        base_scope: pl.DataFrame,
         min_matches: int = 1,
     ) -> MapBreakdownResult:
         """Calcule le breakdown statistique par carte.
 
         Args:
-            base_scope: DataFrame à analyser.
+            base_scope: DataFrame Polars à analyser.
             min_matches: Nombre minimum de matchs par carte.
 
         Returns:
@@ -155,20 +155,20 @@ class WinLossService:
         breakdown = breakdown.filter(pl.col("matches") >= int(min_matches))
 
         return MapBreakdownResult(
-            breakdown=breakdown.to_pandas() if not breakdown.is_empty() else pd.DataFrame(),
+            breakdown=breakdown if not breakdown.is_empty() else pl.DataFrame(),
             is_empty=breakdown.is_empty(),
         )
 
     @staticmethod
     def get_friend_scope_df(
         scope: str,
-        dff: pd.DataFrame,
-        base: pd.DataFrame,
+        dff: pl.DataFrame,
+        base: pl.DataFrame,
         db_path: str,
         xuid: str,
         db_key: tuple[int, int] | None,
-    ) -> pd.DataFrame:
-        """Retourne le DataFrame filtré selon le scope (moi, ami, tous).
+    ) -> pl.DataFrame:
+        """Retourne le DataFrame Polars filtré selon le scope (moi, ami, tous).
 
         Args:
             scope: Label du scope sélectionné.
@@ -179,7 +179,7 @@ class WinLossService:
             db_key: Clé de cache DB.
 
         Returns:
-            DataFrame filtré sur le scope demandé.
+            DataFrame Polars filtré sur le scope demandé.
         """
         from src.ui.cache import cached_same_team_match_ids_with_friend
 
@@ -194,7 +194,7 @@ class WinLossService:
                     db_key=db_key,
                 )
             )
-            return base.loc[base["match_id"].astype(str).isin(match_ids)].copy()
+            return base.filter(pl.col("match_id").cast(pl.Utf8).is_in(list(match_ids)))
         elif scope == "Avec Chocoboflor":
             match_ids = set(
                 cached_same_team_match_ids_with_friend(
@@ -204,6 +204,6 @@ class WinLossService:
                     db_key=db_key,
                 )
             )
-            return base.loc[base["match_id"].astype(str).isin(match_ids)].copy()
+            return base.filter(pl.col("match_id").cast(pl.Utf8).is_in(list(match_ids)))
         else:
             return dff

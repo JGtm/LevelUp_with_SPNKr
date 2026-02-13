@@ -155,7 +155,7 @@ def test_dispatch_session_comparison_merges_session_columns(
     assert "kills" in sessions_df.columns
     assert "session_id" in sessions_df.columns
     assert "session_label" in sessions_df.columns
-    assert set(sessions_df["session_id"].tolist()) == {"s1", "s2"}
+    assert set(sessions_df["session_id"].to_list()) == {"s1", "s2"}
 
 
 @pytest.mark.regression

@@ -222,6 +222,6 @@ def test_nr_003_filter_persistence_cross_pages_consistent_dataset() -> None:
     )
 
     expected_ids = ["m2"]
-    assert timeseries_df["match_id"].tolist() == expected_ids
-    assert winloss_df["match_id"].tolist() == expected_ids
-    assert teammates_df["match_id"].tolist() == expected_ids
+    assert timeseries_df["match_id"].to_list() == expected_ids
+    assert winloss_df["match_id"].to_list() == expected_ids
+    assert teammates_df["match_id"].to_list() == expected_ids

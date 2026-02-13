@@ -14,12 +14,6 @@ from typing import Any
 
 import polars as pl
 
-try:
-    import pandas as pd
-except ImportError:  # pragma: no cover
-    pd = None  # type: ignore[assignment]
-
-
 # ─── Dataclasses retour ────────────────────────────────────────────────
 
 
@@ -29,8 +23,8 @@ class TeammateStats:
 
     gamertag: str
     """Gamertag du coéquipier."""
-    df: pd.DataFrame
-    """DataFrame des stats sur les matchs communs."""
+    df: pl.DataFrame
+    """DataFrame Polars des stats sur les matchs communs."""
     is_empty: bool
     """True si aucune donnée trouvée."""
 
@@ -39,8 +33,8 @@ class TeammateStats:
 class EnrichedSeries:
     """Série (nom, DataFrame) enrichie avec perfect_kills."""
 
-    series: list[tuple[str, pd.DataFrame]]
-    """Liste de (gamertag, df) avec colonne perfect_kills ajoutée."""
+    series: list[tuple[str, pl.DataFrame]]
+    """Liste de (gamertag, df Polars) avec colonne perfect_kills ajoutée."""
 
 
 @dataclass(frozen=True)
@@ -100,30 +94,29 @@ class TeammatesService:
         teammate_db_path = base_dir / teammate_gamertag / "stats.duckdb"
 
         if not teammate_db_path.exists():
-            return TeammateStats(gamertag=teammate_gamertag, df=pd.DataFrame(), is_empty=True)
+            return TeammateStats(gamertag=teammate_gamertag, df=pl.DataFrame(), is_empty=True)
 
         try:
             from src.ui.cache import load_df_optimized
 
             df_pl = load_df_optimized(str(teammate_db_path), "", db_key=None)
             if df_pl.is_empty():
-                return TeammateStats(gamertag=teammate_gamertag, df=pd.DataFrame(), is_empty=True)
+                return TeammateStats(gamertag=teammate_gamertag, df=pl.DataFrame(), is_empty=True)
 
             df_filtered = df_pl.filter(
                 pl.col("match_id").cast(pl.Utf8).is_in([str(mid) for mid in match_ids])
             )
-            result_df = df_filtered.to_pandas()
             return TeammateStats(
                 gamertag=teammate_gamertag,
-                df=result_df,
-                is_empty=result_df.empty,
+                df=df_filtered,
+                is_empty=df_filtered.is_empty(),
             )
         except Exception:
-            return TeammateStats(gamertag=teammate_gamertag, df=pd.DataFrame(), is_empty=True)
+            return TeammateStats(gamertag=teammate_gamertag, df=pl.DataFrame(), is_empty=True)
 
     @staticmethod
     def enrich_series_with_perfect_kills(
-        series: list[tuple[str, pd.DataFrame]],
+        series: list[tuple[str, pl.DataFrame]],
         db_path: str,
     ) -> EnrichedSeries:
         """Ajoute la colonne perfect_kills à chaque DataFrame de la série.
@@ -132,7 +125,7 @@ class TeammatesService:
         Les suivants = coéquipiers (utilise base_dir / gamertag / stats.duckdb).
 
         Args:
-            series: Liste de (gamertag, DataFrame).
+            series: Liste de (gamertag, DataFrame Polars).
             db_path: Chemin vers la DB du joueur principal.
 
         Returns:
@@ -144,12 +137,12 @@ class TeammatesService:
             return EnrichedSeries(series=series)
 
         base_dir = Path(db_path).parent.parent
-        enriched: list[tuple[str, pd.DataFrame]] = []
+        enriched: list[tuple[str, pl.DataFrame]] = []
 
         for idx, (name, df) in enumerate(series):
-            df = df.copy()
-            if "match_id" in df.columns and not df.empty:
-                match_ids = df["match_id"].astype(str).tolist()
+            df = df.clone()
+            if "match_id" in df.columns and not df.is_empty():
+                match_ids = df["match_id"].cast(pl.Utf8).to_list()
                 try:
                     if idx == 0:
                         use_path = db_path
@@ -158,13 +151,17 @@ class TeammatesService:
                         use_path = str(player_db) if player_db.exists() else db_path
                     repo = DuckDBRepository(use_path, "")
                     counts = repo.count_perfect_kills_by_match(match_ids)
-                    df["perfect_kills"] = (
-                        df["match_id"].astype(str).map(counts).fillna(0).astype(int)
+                    _counts = counts  # bind for lambda closure (B023)
+                    df = df.with_columns(
+                        pl.col("match_id")
+                        .cast(pl.Utf8)
+                        .map_elements(lambda mid, _c=_counts: _c.get(mid, 0), return_dtype=pl.Int64)
+                        .alias("perfect_kills")
                     )
                 except Exception:
-                    df["perfect_kills"] = 0
+                    df = df.with_columns(pl.lit(0).alias("perfect_kills"))
             else:
-                df["perfect_kills"] = 0
+                df = df.with_columns(pl.lit(0).alias("perfect_kills"))
             enriched.append((name, df))
 
         return EnrichedSeries(series=enriched)
@@ -202,7 +199,12 @@ class TeammatesService:
             color = player["color"]
             is_main = player.get("is_main", False)
 
-            if df_player.empty:
+            if (
+                hasattr(df_player, "is_empty")
+                and df_player.is_empty()
+                or hasattr(df_player, "empty")
+                and df_player.empty
+            ):
                 continue
 
             player_db = db_path if is_main else str(base_dir / name / "stats.duckdb")
@@ -214,16 +216,43 @@ class TeammatesService:
                 if repo.has_personal_score_awards():
                     ps = repo.load_personal_score_awards_as_polars(match_ids=shared_match_ids)
                     if not ps.is_empty():
+                        # Support Polars et Pandas pour df_player
+                        if isinstance(df_player, pl.DataFrame):
+                            _deaths = (
+                                int(df_player["deaths"].sum())
+                                if "deaths" in df_player.columns
+                                else 0
+                            )
+                            _tps = (
+                                float(df_player["time_played_seconds"].sum())
+                                if "time_played_seconds" in df_player.columns
+                                else 600.0 * len(df_player)
+                            )
+                            _pair = (
+                                df_player["pair_name"][0]
+                                if "pair_name" in df_player.columns and len(df_player) > 0
+                                else None
+                            )
+                        else:
+                            _deaths = (
+                                int(df_player["deaths"].sum())
+                                if "deaths" in df_player.columns
+                                else 0
+                            )
+                            _tps = (
+                                float(df_player["time_played_seconds"].sum())
+                                if "time_played_seconds" in df_player.columns
+                                else 600.0 * len(df_player)
+                            )
+                            _pair = (
+                                df_player["pair_name"].iloc[0]
+                                if "pair_name" in df_player.columns and len(df_player) > 0
+                                else None
+                            )
                         match_row = {
-                            "deaths": int(df_player["deaths"].sum())
-                            if "deaths" in df_player.columns
-                            else 0,
-                            "time_played_seconds": float(df_player["time_played_seconds"].sum())
-                            if "time_played_seconds" in df_player.columns
-                            else 600.0 * len(df_player),
-                            "pair_name": df_player["pair_name"].iloc[0]
-                            if "pair_name" in df_player.columns and len(df_player) > 0
-                            else None,
+                            "deaths": _deaths,
+                            "time_played_seconds": _tps,
+                            "pair_name": _pair,
                         }
                         profile = compute_participation_profile(
                             ps,

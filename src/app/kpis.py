@@ -18,22 +18,13 @@ from src.analysis.stats import format_mmss
 from src.ui.components import render_kpi_cards, render_top_summary
 from src.ui.formatting import format_duration_dhm, format_duration_hms
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
-
 # =============================================================================
 # Helpers
 # =============================================================================
 
 
-def _to_polars(df: DataFrameType) -> pl.DataFrame:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+def _to_polars(df: pl.DataFrame) -> pl.DataFrame:
+    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
     if isinstance(df, pl.DataFrame):
         return df
     return pl.from_pandas(df)
@@ -44,7 +35,7 @@ def _to_polars(df: DataFrameType) -> pl.DataFrame:
 # =============================================================================
 
 
-def avg_match_duration_seconds(df_: DataFrameType) -> float | None:
+def avg_match_duration_seconds(df_: pl.DataFrame) -> float | None:
     """Calcule la durée moyenne d'un match.
 
     Args:
@@ -61,7 +52,7 @@ def avg_match_duration_seconds(df_: DataFrameType) -> float | None:
     return float(val) if val is not None else None
 
 
-def compute_total_play_seconds(df_: DataFrameType) -> float | None:
+def compute_total_play_seconds(df_: pl.DataFrame) -> float | None:
     """Calcule le temps de jeu total (somme des durées de matchs).
 
     Args:
@@ -114,7 +105,7 @@ class KPIStats(NamedTuple):
     total_play_seconds: float | None
 
 
-def compute_kpi_stats(df: DataFrameType) -> KPIStats:
+def compute_kpi_stats(df: pl.DataFrame) -> KPIStats:
     """Calcule toutes les statistiques KPI.
 
     Args:
@@ -178,7 +169,7 @@ def compute_kpi_stats(df: DataFrameType) -> KPIStats:
 # =============================================================================
 
 
-def render_matches_summary(df: DataFrameType, kpis: KPIStats) -> None:
+def render_matches_summary(df: pl.DataFrame, kpis: KPIStats) -> None:
     """Rend le résumé des parties (bandeau supérieur).
 
     Args:
@@ -249,7 +240,7 @@ def render_career_kpis(kpis: KPIStats) -> None:
     )
 
 
-def render_all_kpis(df: DataFrameType) -> KPIStats:
+def render_all_kpis(df: pl.DataFrame) -> KPIStats:
     """Rend tous les KPIs (parties + carrière) et retourne les stats.
 
     Args:

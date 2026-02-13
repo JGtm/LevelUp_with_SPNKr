@@ -186,7 +186,7 @@ def backfill_end_time(conn: Any, force: bool = False) -> int:
     Returns:
         Nombre de lignes mises à jour.
     """
-    from src.db.migrations import ensure_end_time_column
+    from src.data.sync.migrations import ensure_end_time_column
 
     ensure_end_time_column(conn)
 
@@ -245,7 +245,7 @@ def compute_performance_score_for_match(conn: Any, match_id: str) -> bool:
     if not PERFORMANCE_SCORE_AVAILABLE:
         return False
 
-    from src.db.migrations import ensure_performance_score_column, get_table_columns
+    from src.data.sync.migrations import ensure_performance_score_column, get_table_columns
 
     try:
         existing_cols = get_table_columns(conn, "match_stats")

@@ -63,7 +63,7 @@ def _render_cumulative_performance(dff: pl.DataFrame) -> None:
         "Net score et K/D cumulés au fil des matchs, K/D glissant, "
         "et tendance (début vs fin de période)."
     )
-    cumul = TimeseriesService.compute_cumulative_metrics(dff.to_pandas())
+    cumul = TimeseriesService.compute_cumulative_metrics(dff)
     if cumul is not None:
         try:
             st.plotly_chart(
@@ -154,7 +154,7 @@ def _render_distribution_row3(dff: pl.DataFrame, colors: dict) -> None:
     """Ligne 3 : score/min + win rate glissant (Sprint 6)."""
     col5, col6 = st.columns(2)
     with col5:
-        spm_data = TimeseriesService.compute_score_per_minute(dff.to_pandas())
+        spm_data = TimeseriesService.compute_score_per_minute(dff)
         if spm_data.has_data:
             fig_spm = plot_histogram(
                 spm_data.values,
@@ -171,7 +171,7 @@ def _render_distribution_row3(dff: pl.DataFrame, colors: dict) -> None:
             st.info("Pas assez de données pour la distribution du score par minute.")
 
     with col6:
-        wr_data = TimeseriesService.compute_rolling_win_rate(dff.to_pandas())
+        wr_data = TimeseriesService.compute_rolling_win_rate(dff)
         if wr_data.has_data:
             fig_wr = plot_histogram(
                 wr_data.values,
@@ -476,11 +476,9 @@ def render_timeseries_page(
         return
 
     # Calculer le score de performance via service (Sprint 14)
-    dff = ensure_polars(
-        TimeseriesService.enrich_performance_score(
-            dff.to_pandas(),
-            df_full.to_pandas() if df_full is not None else None,
-        )
+    dff = TimeseriesService.enrich_performance_score(
+        dff,
+        df_full,
     )
 
     with st.spinner("Génération des graphes…"):

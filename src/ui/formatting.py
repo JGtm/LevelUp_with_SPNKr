@@ -12,17 +12,6 @@ import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 from src.config import HALO_COLORS
 
 __all__ = [
@@ -60,7 +49,7 @@ def _parse_datetime(value) -> datetime | None:
         return value
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day)
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         # Timestamp Unix
         try:
             return datetime.fromtimestamp(float(value))
@@ -85,14 +74,15 @@ def _parse_datetime(value) -> datetime | None:
             return datetime.strptime(s, fmt)
         except ValueError:
             continue
-    # Fallback pandas si disponible
-    if pd is not None:
-        try:
-            ts = pd.to_datetime(value, errors="coerce")
-            if ts is not None and not (isinstance(ts, float) and ts != ts):
-                return ts.to_pydatetime()
-        except Exception:
-            pass
+    # Fallback dateutil si disponible
+    try:
+        from dateutil.parser import parse as _dateutil_parse
+
+        dt = _dateutil_parse(s)
+        if dt is not None:
+            return dt
+    except Exception:
+        pass
     return None
 
 

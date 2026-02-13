@@ -6,30 +6,20 @@ from src.analysis.performance_score import compute_performance_series
 from src.analysis.stats import compute_global_ratio, compute_outcome_rates
 from src.data.domain.models.stats import MapBreakdown
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
 
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
-
-def _to_polars(df: DataFrameType) -> pl.DataFrame:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+def _to_polars(df: pl.DataFrame) -> pl.DataFrame:
+    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
     if isinstance(df, pl.DataFrame):
         return df
     return pl.from_pandas(df)
 
 
-def compute_map_breakdown(
-    df: DataFrameType, df_history: DataFrameType | None = None
-) -> pl.DataFrame:
+def compute_map_breakdown(df: pl.DataFrame, df_history: pl.DataFrame | None = None) -> pl.DataFrame:
     """Calcule les statistiques agrégées par carte.
 
     Args:
-        df: DataFrame (Pandas ou Polars) de matchs.
-        df_history: DataFrame complet (Pandas ou Polars) pour le calcul du score relatif.
+        df: DataFrame Polars de matchs.
+        df_history: DataFrame complet Polars pour le calcul du score relatif.
 
     Returns:
         DataFrame Polars avec colonnes:
@@ -77,9 +67,15 @@ def compute_map_breakdown(
             acc = float(acc_val) if acc_val is not None else None
 
         # Calcul de la performance moyenne RELATIVE pour cette carte
-        # compute_performance_series retourne une Series pandas, donc on gère le cas
-        perf_scores = compute_performance_series(g.to_pandas(), history_pl.to_pandas()).dropna()
-        perf_avg = float(perf_scores.mean()) if not perf_scores.empty else None
+        # compute_performance_series accepte Polars nativement
+        perf_series = compute_performance_series(g, history_pl)
+        if isinstance(perf_series, pl.Series):
+            perf_clean = perf_series.drop_nulls()
+            perf_avg = float(perf_clean.mean()) if len(perf_clean) > 0 else None
+        else:
+            # Fallback Pandas Series
+            perf_scores = perf_series.dropna()
+            perf_avg = float(perf_scores.mean()) if not perf_scores.empty else None
 
         rows.append(
             {
@@ -98,11 +94,11 @@ def compute_map_breakdown(
     return out
 
 
-def map_breakdown_to_models(df: DataFrameType) -> list[MapBreakdown]:
+def map_breakdown_to_models(df: pl.DataFrame) -> list[MapBreakdown]:
     """Convertit un DataFrame de breakdown en liste de MapBreakdown.
 
     Args:
-        df: DataFrame (Pandas ou Polars) issu de compute_map_breakdown.
+        df: DataFrame Polars issu de compute_map_breakdown.
 
     Returns:
         Liste de MapBreakdown.

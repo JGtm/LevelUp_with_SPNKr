@@ -8,28 +8,19 @@ from src.analysis.mode_categories import infer_custom_category_from_pair_name
 from src.data.domain.models.stats import AggregatedStats, OutcomeRates
 from src.ui.formatting import format_mmss
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
 
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
-
-def _to_polars(df: DataFrameType) -> pl.DataFrame:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
+def _to_polars(df: pl.DataFrame) -> pl.DataFrame:
+    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
     if isinstance(df, pl.DataFrame):
         return df
-    # Pandas DataFrame
     return pl.from_pandas(df)
 
 
-def compute_aggregated_stats(df: DataFrameType) -> AggregatedStats:
+def compute_aggregated_stats(df: pl.DataFrame) -> AggregatedStats:
     """Agrège les statistiques d'un DataFrame de matchs.
 
     Args:
-        df: DataFrame (Pandas ou Polars) avec colonnes kills, deaths, assists, time_played_seconds.
+        df: DataFrame Polars avec colonnes kills, deaths, assists, time_played_seconds.
 
     Returns:
         AggregatedStats contenant les totaux.
@@ -53,11 +44,11 @@ def compute_aggregated_stats(df: DataFrameType) -> AggregatedStats:
     )
 
 
-def compute_outcome_rates(df: DataFrameType) -> OutcomeRates:
+def compute_outcome_rates(df: pl.DataFrame) -> OutcomeRates:
     """Calcule les taux de victoire/défaite.
 
     Args:
-        df: DataFrame (Pandas ou Polars) avec colonne outcome.
+        df: DataFrame Polars avec colonne outcome.
 
     Returns:
         OutcomeRates avec les comptages.
@@ -85,11 +76,11 @@ def compute_outcome_rates(df: DataFrameType) -> OutcomeRates:
     )
 
 
-def compute_global_ratio(df: DataFrameType) -> float | None:
+def compute_global_ratio(df: pl.DataFrame) -> float | None:
     """Calcule le ratio global (K + A/2) / D sur un DataFrame.
 
     Args:
-        df: DataFrame (Pandas ou Polars) avec colonnes kills, deaths, assists.
+        df: DataFrame Polars avec colonnes kills, deaths, assists.
 
     Returns:
         Le ratio global, ou None si pas de deaths.
@@ -131,13 +122,13 @@ def extract_mode_category(pair_name: str | None) -> str:
 
 
 def compute_mode_category_averages(
-    df: DataFrameType,
+    df: pl.DataFrame,
     category: str,
 ) -> dict[str, float | None]:
     """Calcule les moyennes historiques pour une catégorie de mode.
 
     Args:
-        df: DataFrame (Pandas ou Polars) des matchs avec colonnes pair_name, kills, deaths, assists.
+        df: DataFrame Polars des matchs avec colonnes pair_name, kills, deaths, assists.
         category: Catégorie custom (Assassin, Fiesta, BTB, Ranked, Firefight, Other).
 
     Returns:

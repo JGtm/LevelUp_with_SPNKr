@@ -11,15 +11,6 @@ from collections.abc import Callable
 import polars as pl
 import streamlit as st
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 from src.analysis.performance_config import SCORE_LABELS, SCORE_THRESHOLDS
 from src.analysis.performance_score import (
     compute_session_performance_score_v1,
@@ -27,14 +18,7 @@ from src.analysis.performance_score import (
 )
 
 
-def _normalize_df(df: DataFrameType) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire."""
-    if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
-
-
-def compute_session_performance_score(df_session: pd.DataFrame | pl.DataFrame) -> dict:
+def compute_session_performance_score(df_session: pl.DataFrame) -> dict:
     """Calcule un score de performance (0-100) pour une session.
 
     Le score est une moyenne pondérée de :
@@ -44,19 +28,16 @@ def compute_session_performance_score(df_session: pd.DataFrame | pl.DataFrame) -
     - Score moyen par partie normalisé (20%)
 
     Args:
-        df_session: DataFrame (Pandas ou Polars) contenant les matchs de la session.
+        df_session: DataFrame Polars contenant les matchs de la session.
 
     Returns:
         Dict avec score global et composantes détaillées.
     """
-    # Normaliser en Pandas pour compatibilité
-    df_session = _normalize_df(df_session)
-
     return compute_session_performance_score_v1(df_session)
 
 
 def compute_session_performance_score_v2_ui(
-    df_session: pd.DataFrame | pl.DataFrame,
+    df_session: pl.DataFrame,
     *,
     include_mmr_adjustment: bool = True,
 ) -> dict:
@@ -65,12 +46,9 @@ def compute_session_performance_score_v2_ui(
     Version pensée pour être réutilisée ailleurs que dans la page de comparaison.
 
     Args:
-        df_session: DataFrame (Pandas ou Polars) contenant les matchs de la session.
+        df_session: DataFrame Polars contenant les matchs de la session.
         include_mmr_adjustment: Inclure l'ajustement MMR.
     """
-    # Normaliser en Pandas pour compatibilité
-    df_session = _normalize_df(df_session)
-
     return compute_session_performance_score_v2(
         df_session,
         include_mmr_adjustment=include_mmr_adjustment,

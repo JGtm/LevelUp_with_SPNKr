@@ -113,7 +113,7 @@ def test_apply_filters_period_updates_result_set() -> None:
     )
 
     assert len(filtered) == 1
-    assert filtered.iloc[0]["match_id"] == "m2"
+    assert filtered["match_id"][0] == "m2"
 
 
 def test_apply_filters_sessions_updates_result_set(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,7 +163,7 @@ def test_apply_filters_sessions_updates_result_set(monkeypatch: pytest.MonkeyPat
         normalize_map_label_fn=lambda s: str(s),
     )
 
-    assert sorted(filtered["match_id"].tolist()) == ["m2", "m3"]
+    assert sorted(filtered["match_id"].to_list()) == ["m2", "m3"]
 
 
 def test_plot_kda_distribution_has_represented_data() -> None:
@@ -275,7 +275,7 @@ def test_filters_change_dataset_for_key_pages(
         normalize_map_label_fn=lambda s: str(s),
     )
 
-    assert sorted(filtered["match_id"].tolist()) == expected_match_ids
+    assert sorted(filtered["match_id"].to_list()) == expected_match_ids
 
     # Pages clés ciblées : timeseries, win/loss, teammates-impact (via figure impact)
     fig_timeseries = plot_timeseries(filtered)
@@ -335,7 +335,7 @@ def test_filters_change_graph_metric_values() -> None:
     )
 
     assert len(ranked_df) > 0 and len(quick_df) > 0
-    assert ranked_df["match_id"].tolist() != quick_df["match_id"].tolist()
+    assert ranked_df["match_id"].to_list() != quick_df["match_id"].to_list()
 
     fig_ranked = plot_timeseries(ranked_df)
     fig_quick = plot_timeseries(quick_df)

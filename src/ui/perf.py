@@ -14,25 +14,6 @@ from contextlib import contextmanager
 import polars as pl
 import streamlit as st
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
-
-def _to_polars(df: DataFrameType) -> pl.DataFrame:
-    """Convertit un DataFrame Pandas en Polars si nécessaire."""
-    if isinstance(df, pl.DataFrame):
-        return df
-    if pd is not None and isinstance(df, pd.DataFrame):
-        return pl.from_pandas(df)
-    return pl.DataFrame()
-
-
 _PERF_ENABLED_KEY = "perf_enabled"
 _PERF_TIMINGS_KEY = "_perf_timings_ms"
 
@@ -70,10 +51,7 @@ def perf_dataframe() -> pl.DataFrame:
 
 
 def render_perf_panel(*, location: str = "sidebar") -> None:
-    if location == "sidebar":
-        container = st.sidebar
-    else:
-        container = st
+    container = st.sidebar if location == "sidebar" else st
 
     container.checkbox("Mode perf", key=_PERF_ENABLED_KEY)
 
@@ -93,9 +71,9 @@ def render_perf_panel(*, location: str = "sidebar") -> None:
     total = df_pl.select(pl.col("ms").sum()).item()
     c[1].caption(f"Total: {total:.0f} ms")
 
-    # Convertir en pandas pour st.dataframe (compatibilité Streamlit)
+    # Streamlit supporte nativement Polars
     container.dataframe(
-        df_pl.to_pandas(),
+        df_pl,
         width="stretch",
         hide_index=True,
         column_config={

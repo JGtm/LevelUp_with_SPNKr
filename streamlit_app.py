@@ -499,33 +499,25 @@ def main() -> None:
     # Désactivé par défaut - peut être activé via session_state["_show_debug_info"] = True
     show_debug = st.session_state.get("_show_debug_info", False)
 
-    # Convertir Polars en Pandas pour compatibilité avec le reste du code UI
-    # TODO: Migrer progressivement les pages UI vers Polars dans les tâches suivantes
-    import polars as pl
-
-    if isinstance(df, pl.DataFrame):
-        df = df.to_pandas()
-
-    if show_debug and not df.empty:
+    if show_debug and len(df) > 0:
         st.info("🔍 **Mode Debug activé** - Informations sur les données chargées")
         with st.expander("🔍 Debug - DataFrame complet (avant filtres)", expanded=True):
             st.write(f"**Nombre total de matchs dans df** : {len(df)}")
-            st.write(f"**Date min dans df** : {df['start_time'].min()}")
-            st.write(f"**Date max dans df** : {df['start_time'].max()}")
-            # Vérifier les valeurs NULL
-            null_count = df["start_time"].isna().sum()
-            st.write(f"**Nombre de start_time NULL** : {null_count}")
-            if null_count > 0:
-                st.warning("⚠️ Il y a des valeurs NULL dans start_time !")
-            # Afficher les 5 derniers matchs
-            last_5_df = df.sort_values("start_time", ascending=False).head(5)
-            st.write("**5 derniers matchs dans df (par date) :**")
-            for _, row in last_5_df.iterrows():
-                st.write(
-                    f"- {row.get('start_time')} | Match ID: {row.get('match_id')} | Map: {row.get('map_name')}"
-                )
+            if "start_time" in df.columns:
+                st.write(f"**Date min dans df** : {df['start_time'].min()}")
+                st.write(f"**Date max dans df** : {df['start_time'].max()}")
+                null_count = df["start_time"].is_null().sum()
+                st.write(f"**Nombre de start_time NULL** : {null_count}")
+                if null_count > 0:
+                    st.warning("⚠️ Il y a des valeurs NULL dans start_time !")
+                last_5_df = df.sort("start_time", descending=True).head(5)
+                st.write("**5 derniers matchs dans df (par date) :**")
+                for row in last_5_df.iter_rows(named=True):
+                    st.write(
+                        f"- {row.get('start_time')} | Match ID: {row.get('match_id')} | Map: {row.get('map_name')}"
+                    )
 
-    if df.empty:
+    if len(df) == 0:
         st.radio(
             "Navigation",
             options=["Paramètres"],
@@ -559,7 +551,7 @@ def main() -> None:
         )
 
     # Base "globale" : toutes les parties (après inclusion/exclusion Firefight)
-    base = df.copy()
+    base = df.clone()
 
     # ==========================================================================
     # Application des filtres
