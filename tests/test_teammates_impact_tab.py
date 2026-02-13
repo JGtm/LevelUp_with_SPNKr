@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import polars as pl
 
-from src.ui.pages import teammates
+from src.ui.pages import teammates_impact as teammates
 
 
 @contextmanager
@@ -91,7 +91,7 @@ def test_impact_tab_requires_at_least_two_friends(monkeypatch) -> None:
     """Affiche un message d'info si < 2 coéquipiers sont sélectionnés."""
     st_mocks = _patch_streamlit(monkeypatch)
 
-    teammates._render_impact_taquinerie(
+    teammates.render_impact_taquinerie(
         db_path="dummy.duckdb",
         xuid="100",
         match_ids=["m1"],
@@ -107,7 +107,7 @@ def test_impact_tab_warns_when_no_matches(monkeypatch) -> None:
     """Affiche un warning s'il n'y a aucun match à analyser."""
     st_mocks = _patch_streamlit(monkeypatch)
 
-    teammates._render_impact_taquinerie(
+    teammates.render_impact_taquinerie(
         db_path="dummy.duckdb",
         xuid="100",
         match_ids=[],
@@ -136,9 +136,9 @@ def test_impact_tab_handles_missing_highlight_table(monkeypatch) -> None:
             return self._conn
 
     st_mocks = _patch_streamlit(monkeypatch)
-    monkeypatch.setattr("src.data.repositories.DuckDBRepository", _FakeRepoNoEvents)
+    monkeypatch.setattr("src.ui.pages.teammates_impact.DuckDBRepository", _FakeRepoNoEvents)
 
-    teammates._render_impact_taquinerie(
+    teammates.render_impact_taquinerie(
         db_path="dummy.duckdb",
         xuid="100",
         match_ids=["m1", "m2"],
@@ -153,7 +153,7 @@ def test_impact_tab_renders_heatmap_and_ranking(monkeypatch) -> None:
     """Parcours nominal : rendu heatmap + tableau + résumé MVP/Boulet."""
     st_mocks = _patch_streamlit(monkeypatch)
 
-    monkeypatch.setattr("src.data.repositories.DuckDBRepository", _FakeRepo)
+    monkeypatch.setattr("src.ui.pages.teammates_impact.DuckDBRepository", _FakeRepo)
 
     first_bloods = {"m1": object()}
     clutch_finishers = {"m2": object()}
@@ -209,7 +209,7 @@ def test_impact_tab_renders_heatmap_and_ranking(monkeypatch) -> None:
         ),
     )
 
-    teammates._render_impact_taquinerie(
+    teammates.render_impact_taquinerie(
         db_path="dummy.duckdb",
         xuid="100",
         match_ids=["m1", "m2"],

@@ -12,6 +12,6 @@ def test_teammates_page_entrypoint_exists() -> None:
 
 def test_teammates_multi_view_exists() -> None:
     """La vue multi-coéquipiers (comparaisons) doit être présente."""
-    from src.ui.pages.teammates import _render_multi_teammate_view
+    from src.ui.pages.teammates_views import render_multi_teammate_view
 
-    assert callable(_render_multi_teammate_view)
+    assert callable(render_multi_teammate_view)
