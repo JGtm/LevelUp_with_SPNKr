@@ -1361,7 +1361,8 @@ python -m pytest tests/ --cov=src --cov-report=term-missing -q
 | 18.9 | [U] Mettre à jour docs **AI** (`.ai/thought_log.md` + rapport revue final + plans `.ai/features/`) | Traçabilité | `.ai/` |
 | 18.10 | [S] Mettre à jour tous les plans `.ai/features/` avec statut final (report de 11.7) | S9 SUPER_PLAN (report) | `.ai/features/` |
 | 18.11 | [U] Produire release notes v4.5 + checklist de clôture | Release | `.ai/RELEASE_NOTES_2026_Q1.md` (ou v4.5 dédié) |
-| 18.12 | [U] Tagger release `v4.5` après validation | Release | Git |
+| 18.12 | [U] Corriger les écarts de nommage Python (public/privé cohérents, variables locales `N806` en `snake_case`) | Qualité code | `src/data/sync/api_client.py`, `src/ui/components/radar_chart.py` |
+| 18.13 | [U] Tagger release `v4.5` après validation | Release | Git |
 
 #### Tests
 
@@ -1379,6 +1380,7 @@ python -m pytest tests/ --cov=src --cov-report=term-missing -q
 - [ ] `pytest tests/ -v` : 0 failure, 0 error
 - [ ] Couverture cible réaliste atteinte (palier v4.5 : >= 75% global + >= 85% modules critiques)
 - [ ] Benchmark comparatif publié avec gains mesurés
+- [ ] Conventions de nommage Python validées sur le périmètre release (`ruff --select N806` sans erreur)
 - [ ] **README.md mis à jour** (installation, usage, nouveautés v4.5, limitations connues)
 - [ ] Docs utilisateur à jour (`docs/*.md`) et alignées sur le comportement réel
 - [ ] Docs AI à jour (`.ai/thought_log.md`, rapport final, plans `.ai/features/`)
@@ -1397,6 +1399,7 @@ grep -r "import sqlite3\|sqlite_master\|from src\.db" src/ --include="*.py"
 # Phase B
 python -m pytest tests/ -v
 python -m pytest tests/ -v --cov=src --cov-report=html
+python -m ruff check src --select N806
 python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser
 git tag -l | grep "v4.5" || true
 ```
