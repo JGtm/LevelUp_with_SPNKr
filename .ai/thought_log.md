@@ -7,6 +7,63 @@
 
 ## Journal
 
+### [2026-02-13] - Sprint 13 — Lancement v4.5 : audit baseline & gouvernance
+
+**Statut** : Livré ✅
+
+**Objectif** : Établir une baseline factuelle (code, data, tests, perf), figer les règles v4.5, et produire les artefacts de gouvernance.
+
+**Réalisations** :
+
+**13.1 — Branche de travail** : `sprint13/v4.5-roadmap-hardening` (déjà créée) ✅
+
+**13.2 — Baseline tests** :
+- 1065 passed, 48 skipped, 0 failed en 35.78s
+- Suite stable hors intégration
+
+**13.3 — Baseline conformité** :
+- `import pandas` : 36 occurrences dans 34 fichiers
+- `import sqlite3` : 0 ✅
+- `sqlite_master` : 0 ✅
+- `.to_pandas()` : 37 occurrences dans 16 fichiers
+- `from src.db` : 3 occurrences (engine.py uniquement)
+
+**13.4 — Baseline perf** :
+- Couverture globale : **39%** (19 053 stmts)
+- Modules critiques : duckdb_repo 79%, engine 28%, timeseries 4%, teammates 16%, win_loss 5%
+- Lint ruff : 198 erreurs (96 auto-fixables), 100 C901
+
+**13.5 — Politique v4.5 figée** :
+- DuckDB-first, Parquet optionnel
+- Section ajoutée dans `docs/DATA_ARCHITECTURE.md`
+
+**13.6 — Contrat de livraison standard S13+** :
+- Section 4.6 ajoutée dans PLAN_UNIFIE.md
+- Critères gate, artefacts, workflow définis
+
+**13.7 — Artefacts baseline créés** :
+- `.ai/reports/V4_5_BASELINE.md` — baseline consolidée (TODO-free)
+- `.ai/reports/V4_5_LEGACY_AUDIT_S16.md` — audit entrée vague A (TODO-free)
+- `.ai/reports/V4_5_LEGACY_AUDIT_S17.md` — audit entrée vague B (TODO-free)
+
+**Métriques clés** :
+| Indicateur | Valeur |
+|------------|--------|
+| Tests passed / skipped / failed | 1065 / 48 / 0 |
+| Couverture globale | 39% |
+| `import pandas` résiduel | 36 fichiers |
+| `import sqlite3` | 0 |
+| Fichiers > 600 lignes | 25 |
+| Fonctions C901 > 10 | 100 |
+| Artefacts TODO-free | 3/3 ✅ |
+
+**Décisions** :
+- Tolérance Pandas jusqu'à S17 (levée progressive)
+- Baseline couverture 39% → cible 75% en S18
+- God Object `duckdb_repo.py` (3158 lignes) identifié comme dette majeure → plan de découpage en S17
+
+---
+
 ### [2026-02-12] - Sprint 11 — Finalisation v4.1 (Tests, Documentation, Release)
 
 **Statut** : Livré ✅

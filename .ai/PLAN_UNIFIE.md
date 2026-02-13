@@ -994,13 +994,14 @@ pytest tests/ -v
 
 #### Gate de livraison
 
-- [x] Branche `sprint13/v4.5-roadmap-hardening` créée depuis `sprint0/fix-session-sort-filter-cleanup`
-- [ ] Rapport baseline consolidé créé (`.ai/reports/V4_5_BASELINE.md`)
-- [ ] Rapports d'audit d'entrée créés (`.ai/reports/V4_5_LEGACY_AUDIT_S16.md`, `.ai/reports/V4_5_LEGACY_AUDIT_S17.md`)
-- [ ] Baseline conformité générée (Pandas/SQLite/Streamlit déprécié)
-- [ ] Baseline tests générée (pass/skip/fail)
-- [ ] Politique v4.5 validée : DuckDB-first, Parquet optionnel
-- [ ] **S13 TODO-free** : aucun `TODO` restant dans `V4_5_BASELINE.md`, `V4_5_LEGACY_AUDIT_S16.md`, `V4_5_LEGACY_AUDIT_S17.md`
+- [x] Branche `sprint13/v4.5-roadmap-hardening` créée depuis `sprint0/fix-session-sort-filter-cleanup` ✅ 2026-02-12
+- [x] Rapport baseline consolidé créé (`.ai/reports/V4_5_BASELINE.md`) ✅ 2026-02-13
+- [x] Rapports d'audit d'entrée créés (`.ai/reports/V4_5_LEGACY_AUDIT_S16.md`, `.ai/reports/V4_5_LEGACY_AUDIT_S17.md`) ✅ 2026-02-13
+- [x] Baseline conformité générée (Pandas/SQLite/Streamlit déprécié) ✅ 36 imports pandas, 0 sqlite3, 0 sqlite_master
+- [x] Baseline tests générée (pass/skip/fail) ✅ 1065 passed, 48 skipped, 0 failed
+- [x] Politique v4.5 validée : DuckDB-first, Parquet optionnel ✅ Ajoutée dans `docs/DATA_ARCHITECTURE.md`
+- [x] Contrat de livraison S13+ défini ✅ Section 4.6 dans PLAN_UNIFIE.md
+- [x] **S13 TODO-free** : aucun `TODO` restant dans `V4_5_BASELINE.md`, `V4_5_LEGACY_AUDIT_S16.md`, `V4_5_LEGACY_AUDIT_S17.md` ✅
 
 #### Commandes de validation
 
@@ -1404,7 +1405,7 @@ L'agent produit un rapport structuré :
 
 #### Règles de tests et couverture (paliers réalistes)
 
-- **Baseline S13** : mesurer couverture réelle sans objectif artificiel
+- **Baseline S13** : **39%** mesuré le 2026-02-13 (19 053 stmts, 10 914 miss)
 - **Cible S15** : >= 55% global
 - **Cible S16** : >= 65% global
 - **Cible S17** : >= 72% global
@@ -1418,6 +1419,45 @@ python -m pytest tests/ -v --cov=src --cov-report=term-missing
 ruff check src/ tests/
 ruff check src/ --select C901
 ```
+
+### 4.6 Contrat de livraison standard S13+ (obligatoire)
+
+> Défini par Sprint 13, applicable à tous les sprints S14-S18.
+
+#### Avant le sprint
+
+1. Consulter `PLAN_UNIFIE.md` et le rapport d'audit d'entrée associé
+2. Lancer `python -m pytest -q --ignore=tests/integration` — baseline verte obligatoire
+3. Vérifier la branche de travail (`git branch --show-current`)
+
+#### Pendant le sprint
+
+1. **Tests continus** : exécuter les tests après chaque modification significative
+2. **Type hints** : obligatoires sur toute fonction publique créée ou modifiée
+3. **Docstrings FR** : obligatoires sur tout module/fonction publique créé
+4. **Taille** : respecter les seuils (fonctions <= 50 lignes cible, fichiers <= 600 lignes cible)
+5. **Marquage** : mettre à jour le statut des tâches dans PLAN_UNIFIE.md immédiatement
+
+#### Livraison du sprint (gate)
+
+| Critère | Obligatoire |
+|---------|-------------|
+| 0 failure dans `python -m pytest -q --ignore=tests/integration` | **Oui** |
+| 0 régression (pas de nouveaux tests cassés vs baseline) | **Oui** |
+| Chaque tâche du sprint marquée ✅ ou ⏭️ avec destination | **Oui** |
+| Tests créés pour tout nouveau code métier | **Oui** |
+| Pas de `import sqlite3` ni `sqlite_master` ajouté | **Oui** |
+| Pas de nouveau `.to_pandas()` hors frontière documentée | **Oui** |
+| Rapport de revue produit (section 4.3) | **Oui** |
+| `thought_log.md` mis à jour | **Oui** |
+
+#### Artefacts de sprint
+
+| Artefact | Quand |
+|----------|-------|
+| Rapport de revue (section 4.3) | Fin de sprint |
+| Mise à jour baseline couverture | Si sprint touche le code (S14+) |
+| Rapport d'audit d'entrée | Début du sprint suivant (si requis) |
 
 ---
 

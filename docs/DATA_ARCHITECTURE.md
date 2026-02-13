@@ -409,3 +409,24 @@ class MatchStatsRow(BaseModel):
 - Clés primaires sur toutes les tables
 - Index sur colonnes fréquemment filtrées
 - Colonnes GENERATED pour les calculs
+
+---
+
+## Politique v4.5 — DuckDB-first (février 2026)
+
+### Principes
+
+1. **DuckDB-first** : Tous les flux de données actifs passent par DuckDB. Aucune dépendance SQLite dans le runtime.
+2. **Parquet optionnel** : Parquet est utilisé uniquement pour l'archivage saisonnier (`archive/`). Il n'est pas un prérequis pour le fonctionnement de l'application.
+3. **Polars comme format interne** : Les DataFrames internes sont en `pl.DataFrame`. La conversion `.to_pandas()` est tolérée uniquement à la frontière Plotly/Streamlit.
+4. **Fallback DuckDB** : En cas de données manquantes, le fallback est toujours une requête DuckDB (jamais un fichier Parquet ou SQLite).
+
+### Résumé des transitions
+
+| Composant | v3 (ancienne) | v4.5 (cible) |
+|-----------|--------------|--------------|
+| Stockage actif | SQLite + Parquet | DuckDB uniquement |
+| Format interne | `pd.DataFrame` | `pl.DataFrame` |
+| Archivage | Parquet obligatoire | Parquet optionnel |
+| Imports legacy | `src.db`, `import sqlite3` | Interdits (0 occurrence cible) |
+| Conversion `.to_pandas()` | Omniprésent | Frontière Plotly/Streamlit uniquement |
