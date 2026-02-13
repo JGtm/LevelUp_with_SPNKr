@@ -154,6 +154,24 @@ matches = repo.load_matches()
 
 **TOUJOURS** utiliser `scripts/backfill_data.py` pour le backfill ou la création de nouvelles fonctions de backfill. Ne pas créer de scripts backfill séparés ; ajouter une option dédiée dans `backfill_data.py` (ex. `--sessions`, `--killer-victim`). Voir la docstring du script pour le pattern à suivre.
 
+### Benchmark de performance
+
+Utiliser `scripts/benchmark_pages.py` pour mesurer les temps de chargement des données :
+
+```bash
+# Créer un baseline avant une modification
+python scripts/benchmark_pages.py --baseline --output .ai/reports/benchmark_baseline.json
+
+# Lancer un benchmark standard (5 itérations)
+python scripts/benchmark_pages.py --runs 5
+
+# Comparer avec un baseline existant
+python scripts/benchmark_pages.py --compare .ai/reports/benchmark_baseline.json
+```
+
+Le script mesure automatiquement : cold/warm load, médailles, coéquipiers, filtrage Polars, conversion Pandas.
+La variabilité (CV) doit rester < 10% pour des résultats fiables.
+
 ---
 
 ## Processus de Pull Request
