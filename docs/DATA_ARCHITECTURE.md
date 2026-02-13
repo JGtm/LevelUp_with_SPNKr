@@ -430,3 +430,56 @@ class MatchStatsRow(BaseModel):
 | Archivage | Parquet obligatoire | Parquet optionnel |
 | Imports legacy | `src.db`, `import sqlite3` | Interdits (0 occurrence cible) |
 | Conversion `.to_pandas()` | Omniprésent | Frontière Plotly/Streamlit uniquement |
+
+---
+
+## Ingestion DuckDB-first (Sprint 15)
+
+### Mode sans Parquet (actif)
+
+Le pipeline d'ingestion actif est **100% DuckDB** :
+
+```
+API SPNKr → JSON → Transform (Python) → DuckDB INSERT batch
+```
+
+**Caractéristiques :**
+- Aucun fichier Parquet intermédiaire
+- Aucune dépendance SQLite
+- Insertions groupées via `executemany` (module `src.data.sync.batch_insert`)
+- Typage centralisé via `CAST_PLAN` (garantit la cohérence des types à l'ingestion)
+
+### Mode avec Parquet (optionnel, archivage)
+
+L'archivage saisonnier vers Parquet reste disponible mais **n'est jamais requis** :
+
+```
+DuckDB → export Parquet → data/players/{gt}/archive/*.parquet
+```
+
+**Quand utiliser Parquet :**
+- Archivage de saisons passées (cold storage, lecture seule)
+- Backup externe / portabilité vers d'autres outils (Pandas, Spark, etc.)
+- **Jamais** comme format intermédiaire dans le pipeline d'ingestion
+
+### Plan de cast (CAST_PLAN)
+
+Le typage est centralisé dans `src/data/sync/batch_insert.py`. Chaque table a un
+dictionnaire colonne → type DuckDB attendu. Ce plan est utilisé :
+
+1. **À l'ingestion** : chaque valeur est convertie au type cible avant INSERT
+2. **À l'audit** : le script `scripts/diagnose_player_db.py --audit-types` compare
+   le schéma réel au CAST_PLAN et signale les incohérences
+
+### Audit de schéma
+
+```bash
+# Auditer les types d'un joueur
+python scripts/diagnose_player_db.py --player MonGamertag --audit-types
+
+# Auditer tous les joueurs
+python scripts/diagnose_player_db.py --all --audit-types
+
+# Sortie JSON pour intégration CI
+python scripts/diagnose_player_db.py --all --audit-types --json
+```

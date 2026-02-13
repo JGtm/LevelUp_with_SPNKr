@@ -2,6 +2,7 @@
 
 Responsabilités :
 - Insertion de médailles, events, skill, personal scores, aliases, participants
+- Utilise les insertions batch (Sprint 15) pour de meilleures performances
 - Aucun commit : le commit est géré par l'orchestrateur
 """
 
@@ -12,6 +13,16 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from src.data.sync.batch_insert import (
+    ALIAS_COLUMNS,
+    HIGHLIGHT_EVENT_COLUMNS,
+    MEDAL_COLUMNS,
+    PARTICIPANT_COLUMNS,
+    PERSONAL_SCORE_COLUMNS,
+    batch_insert_rows,
+    batch_upsert_rows,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def insert_medal_rows(conn: Any, rows: list) -> int:
-    """Insère les médailles dans la table medals_earned.
+    """Insère les médailles dans la table medals_earned (batch Sprint 15).
 
     Args:
         conn: Connexion DuckDB.
@@ -32,27 +43,11 @@ def insert_medal_rows(conn: Any, rows: list) -> int:
     """
     if not rows:
         return 0
-
-    inserted = 0
-    for row in rows:
-        try:
-            conn.execute(
-                """INSERT OR REPLACE INTO medals_earned
-                   (match_id, medal_name_id, count)
-                   SELECT ?, CAST(? AS BIGINT), ?""",
-                (row.match_id, row.medal_name_id, row.count),
-            )
-            inserted += 1
-        except Exception as e:
-            logger.warning(
-                f"Erreur insertion médaille {row.medal_name_id} pour {row.match_id}: {e}"
-            )
-
-    return inserted
+    return batch_upsert_rows(conn, "medals_earned", rows, MEDAL_COLUMNS)
 
 
 def insert_event_rows(conn: Any, rows: list) -> int:
-    """Insère les highlight events.
+    """Insère les highlight events en batch (Sprint 15).
 
     Args:
         conn: Connexion DuckDB.
@@ -63,38 +58,11 @@ def insert_event_rows(conn: Any, rows: list) -> int:
     """
     if not rows:
         return 0
-
-    max_id_result = conn.execute("SELECT COALESCE(MAX(id), 0) FROM highlight_events").fetchone()
-    next_id = (max_id_result[0] or 0) + 1
-
-    inserted = 0
-    for row in rows:
-        try:
-            conn.execute(
-                """INSERT INTO highlight_events
-                   (id, match_id, event_type, time_ms, xuid, gamertag, type_hint, raw_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    next_id,
-                    row.match_id,
-                    row.event_type,
-                    row.time_ms,
-                    row.xuid,
-                    row.gamertag,
-                    row.type_hint,
-                    row.raw_json,
-                ),
-            )
-            next_id += 1
-            inserted += 1
-        except Exception as e:
-            logger.warning(f"Erreur insertion event pour {row.match_id}: {e}")
-
-    return inserted
+    return batch_insert_rows(conn, "highlight_events", rows, HIGHLIGHT_EVENT_COLUMNS)
 
 
 def insert_skill_row(conn: Any, row: Any, xuid: str) -> int:
-    """Insère les stats skill/MMR.
+    """Insère les stats skill/MMR en batch (Sprint 15).
 
     Args:
         conn: Connexion DuckDB.
@@ -106,37 +74,41 @@ def insert_skill_row(conn: Any, row: Any, xuid: str) -> int:
     """
     if not row:
         return 0
-
-    try:
-        conn.execute(
-            """INSERT OR REPLACE INTO player_match_stats
-               (match_id, xuid, team_id, team_mmr, enemy_mmr,
-                kills_expected, kills_stddev,
-                deaths_expected, deaths_stddev,
-                assists_expected, assists_stddev)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                row.match_id,
-                xuid,
-                row.team_id,
-                row.team_mmr,
-                row.enemy_mmr,
-                row.kills_expected,
-                row.kills_stddev,
-                row.deaths_expected,
-                row.deaths_stddev,
-                row.assists_expected,
-                row.assists_stddev,
-            ),
-        )
-        return 1
-    except Exception as e:
-        logger.warning(f"Erreur insertion skill pour {row.match_id}: {e}")
-        return 0
+    skill_dict = {
+        "match_id": row.match_id,
+        "xuid": xuid,
+        "team_id": row.team_id,
+        "team_mmr": row.team_mmr,
+        "enemy_mmr": row.enemy_mmr,
+        "kills_expected": row.kills_expected,
+        "kills_stddev": row.kills_stddev,
+        "deaths_expected": row.deaths_expected,
+        "deaths_stddev": row.deaths_stddev,
+        "assists_expected": row.assists_expected,
+        "assists_stddev": row.assists_stddev,
+    }
+    return batch_upsert_rows(
+        conn,
+        "player_match_stats",
+        [skill_dict],
+        [
+            "match_id",
+            "xuid",
+            "team_id",
+            "team_mmr",
+            "enemy_mmr",
+            "kills_expected",
+            "kills_stddev",
+            "deaths_expected",
+            "deaths_stddev",
+            "assists_expected",
+            "assists_stddev",
+        ],
+    )
 
 
 def insert_personal_score_rows(conn: Any, rows: list) -> int:
-    """Insère les personal score awards.
+    """Insère les personal score awards en batch (Sprint 15).
 
     Args:
         conn: Connexion DuckDB.
@@ -147,33 +119,25 @@ def insert_personal_score_rows(conn: Any, rows: list) -> int:
     """
     if not rows:
         return 0
-
-    inserted = 0
+    now = datetime.now(timezone.utc)
+    dicts = []
     for row in rows:
-        try:
-            conn.execute(
-                """INSERT INTO personal_score_awards
-                   (match_id, xuid, award_name, award_category,
-                    award_count, award_score, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
-                (
-                    row.match_id,
-                    row.xuid,
-                    row.award_name,
-                    row.award_category,
-                    row.award_count,
-                    row.award_score,
-                ),
-            )
-            inserted += 1
-        except Exception as e:
-            logger.warning(f"Erreur insertion personal_score pour {row.match_id}: {e}")
-
-    return inserted
+        dicts.append(
+            {
+                "match_id": row.match_id,
+                "xuid": row.xuid,
+                "award_name": row.award_name,
+                "award_category": row.award_category,
+                "award_count": row.award_count,
+                "award_score": row.award_score,
+                "created_at": now,
+            }
+        )
+    return batch_insert_rows(conn, "personal_score_awards", dicts, PERSONAL_SCORE_COLUMNS)
 
 
 def insert_alias_rows(conn: Any, rows: list) -> int:
-    """Insère les aliases XUID.
+    """Insère les aliases XUID en batch (Sprint 15).
 
     Args:
         conn: Connexion DuckDB.
@@ -184,32 +148,23 @@ def insert_alias_rows(conn: Any, rows: list) -> int:
     """
     if not rows:
         return 0
-
     now = datetime.now(timezone.utc)
-    inserted = 0
+    dicts = []
     for row in rows:
-        try:
-            conn.execute(
-                """INSERT OR REPLACE INTO xuid_aliases
-                   (xuid, gamertag, last_seen, source, updated_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (
-                    row.xuid,
-                    row.gamertag,
-                    row.last_seen.isoformat() if row.last_seen else None,
-                    row.source,
-                    now.isoformat(),
-                ),
-            )
-            inserted += 1
-        except Exception as e:
-            logger.warning(f"Erreur insertion alias {row.xuid}: {e}")
-
-    return inserted
+        dicts.append(
+            {
+                "xuid": row.xuid,
+                "gamertag": row.gamertag,
+                "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+                "source": row.source,
+                "updated_at": now.isoformat(),
+            }
+        )
+    return batch_upsert_rows(conn, "xuid_aliases", dicts, ALIAS_COLUMNS)
 
 
 def insert_participant_rows(conn: Any, rows: list) -> int:
-    """Insère les participants dans match_participants.
+    """Insère les participants dans match_participants en batch (Sprint 15).
 
     Crée la table si elle n'existe pas et s'assure que les colonnes
     sont à jour via migrations.
@@ -249,31 +204,4 @@ def insert_participant_rows(conn: Any, rows: list) -> int:
             "CREATE INDEX IF NOT EXISTS idx_participants_team ON match_participants(match_id, team_id)"
         )
 
-    inserted = 0
-    for row in rows:
-        try:
-            conn.execute(
-                """INSERT OR REPLACE INTO match_participants
-                   (match_id, xuid, team_id, outcome, gamertag, rank, score,
-                    kills, deaths, assists, shots_fired, shots_hit)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    row.match_id,
-                    row.xuid,
-                    row.team_id,
-                    row.outcome,
-                    row.gamertag,
-                    row.rank,
-                    row.score,
-                    row.kills,
-                    row.deaths,
-                    row.assists,
-                    getattr(row, "shots_fired", None),
-                    getattr(row, "shots_hit", None),
-                ),
-            )
-            inserted += 1
-        except Exception as e:
-            logger.warning(f"Erreur insertion participant {row.xuid} pour {row.match_id}: {e}")
-
-    return inserted
+    return batch_upsert_rows(conn, "match_participants", rows, PARTICIPANT_COLUMNS)

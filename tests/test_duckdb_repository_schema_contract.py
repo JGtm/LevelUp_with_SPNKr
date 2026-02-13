@@ -227,3 +227,74 @@ def test_repository_methods_still_work_with_expected_schema(temp_repo_contract_d
         assert not stats_df.is_empty()
     finally:
         repo.close()
+
+
+# =============================================================================
+# Sprint 15 : Tests CAST_PLAN vs schéma contractuel
+# =============================================================================
+
+
+def test_cast_plan_covers_all_contract_tables() -> None:
+    """Le CAST_PLAN couvre les tables du contrat de schéma."""
+    from src.data.sync.batch_insert import CAST_PLAN
+
+    contract_tables = ["match_stats", "medals_earned", "highlight_events", "match_participants"]
+    for table in contract_tables:
+        assert table in CAST_PLAN, f"Table contractuelle {table} absente du CAST_PLAN"
+
+
+def test_cast_plan_match_stats_columns_match_contract(temp_repo_contract_db) -> None:
+    """Les colonnes du CAST_PLAN pour match_stats incluent celles du contrat."""
+    from src.data.sync.batch_insert import CAST_PLAN
+
+    plan_cols = set(CAST_PLAN["match_stats"].keys())
+    # Colonnes minimales du contrat
+    contract_cols = {
+        "match_id",
+        "start_time",
+        "outcome",
+        "kills",
+        "deaths",
+        "assists",
+        "kda",
+        "accuracy",
+        "time_played_seconds",
+        "team_mmr",
+        "enemy_mmr",
+    }
+    missing = contract_cols - plan_cols
+    assert not missing, f"Colonnes contractuelles manquantes dans CAST_PLAN: {missing}"
+
+
+def test_audit_types_on_contract_db(temp_repo_contract_db) -> None:
+    """L'audit de types ne détecte pas de TYPE_MISMATCH sur le schéma contractuel."""
+    from src.data.sync.batch_insert import audit_column_types
+
+    conn = duckdb.connect(str(temp_repo_contract_db), read_only=True)
+    try:
+        issues = audit_column_types(conn, "match_stats")
+        type_mismatches = [i for i in issues if i["status"] == "TYPE_MISMATCH"]
+        # Les types du schéma contractuel doivent être compatibles
+        # (INTEGER est plus large que SMALLINT → acceptable)
+        assert not type_mismatches, f"TYPE_MISMATCH inattendus: {type_mismatches}"
+    finally:
+        conn.close()
+
+
+def test_batch_insert_compatible_with_contract_schema(temp_repo_contract_db) -> None:
+    """Les insertions batch fonctionnent sur le schéma contractuel."""
+    from src.data.sync.batch_insert import MEDAL_COLUMNS, batch_insert_rows
+    from src.data.sync.models import MedalEarnedRow
+
+    conn = duckdb.connect(str(temp_repo_contract_db))
+    try:
+        rows = [
+            MedalEarnedRow(match_id="m2", medal_name_id=9999, count=3),
+        ]
+        inserted = batch_insert_rows(conn, "medals_earned", rows, MEDAL_COLUMNS)
+        assert inserted == 1
+
+        result = conn.execute("SELECT count FROM medals_earned WHERE match_id = 'm2'").fetchone()
+        assert result[0] == 3
+    finally:
+        conn.close()

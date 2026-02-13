@@ -37,6 +37,16 @@ from src.data.sync.api_client import (
     enrich_match_info_with_assets,
     get_tokens_from_env,
 )
+from src.data.sync.batch_insert import (
+    ALIAS_COLUMNS,
+    HIGHLIGHT_EVENT_COLUMNS,
+    MEDAL_COLUMNS,
+    PARTICIPANT_COLUMNS,
+    PERSONAL_SCORE_COLUMNS,
+    SKILL_COLUMNS,
+    batch_insert_rows,
+    batch_upsert_rows,
+)
 from src.data.sync.models import (
     CareerRankData,
     MatchStatsRow,
@@ -128,8 +138,9 @@ CREATE INDEX IF NOT EXISTS idx_kv_victim ON killer_victim_pairs(victim_xuid);
 
 -- Table personal_score_awards (Sprint 8 - Décomposition du score personnel)
 -- Stocke les awards individuels pour analyse de la contribution aux objectifs
+CREATE SEQUENCE IF NOT EXISTS personal_score_awards_id_seq;
 CREATE TABLE IF NOT EXISTS personal_score_awards (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY DEFAULT nextval('personal_score_awards_id_seq'),
     match_id VARCHAR NOT NULL,
     xuid VARCHAR NOT NULL,
     award_name VARCHAR NOT NULL,
@@ -936,173 +947,93 @@ class DuckDBSyncEngine:
         )
 
     def _insert_skill_row(self, row: PlayerMatchStatsRow) -> None:
-        """Insère une ligne player_match_stats."""
+        """Insère une ligne player_match_stats en batch (Sprint 15)."""
         conn = self._get_connection()
-
-        conn.execute(
-            """INSERT OR REPLACE INTO player_match_stats (
-                match_id, xuid, team_id, team_mmr, enemy_mmr,
-                kills_expected, kills_stddev,
-                deaths_expected, deaths_stddev,
-                assists_expected, assists_stddev,
-                created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                row.match_id,
-                row.xuid,
-                row.team_id,
-                row.team_mmr,
-                row.enemy_mmr,
-                row.kills_expected,
-                row.kills_stddev,
-                row.deaths_expected,
-                row.deaths_stddev,
-                row.assists_expected,
-                row.assists_stddev,
-                datetime.now(timezone.utc),
-            ),
-        )
+        skill_dict = {
+            "match_id": row.match_id,
+            "xuid": row.xuid,
+            "team_id": row.team_id,
+            "team_mmr": row.team_mmr,
+            "enemy_mmr": row.enemy_mmr,
+            "kills_expected": row.kills_expected,
+            "kills_stddev": row.kills_stddev,
+            "deaths_expected": row.deaths_expected,
+            "deaths_stddev": row.deaths_stddev,
+            "assists_expected": row.assists_expected,
+            "assists_stddev": row.assists_stddev,
+            "created_at": datetime.now(timezone.utc),
+        }
+        batch_upsert_rows(conn, "player_match_stats", [skill_dict], SKILL_COLUMNS)
 
     def _insert_event_rows(self, rows: list) -> None:
-        """Insère des lignes highlight_events."""
+        """Insère des lignes highlight_events en batch (Sprint 15)."""
         if not rows:
             return
-
         conn = self._get_connection()
-
-        for row in rows:
-            try:
-                conn.execute(
-                    """INSERT INTO highlight_events (
-                        match_id, event_type, time_ms, xuid, gamertag, type_hint, raw_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        row.match_id,
-                        row.event_type,
-                        row.time_ms,
-                        row.xuid,
-                        row.gamertag,
-                        row.type_hint,
-                        row.raw_json,
-                    ),
-                )
-            except Exception as e:
-                # Logger l'erreur au lieu de la supprimer silencieusement
-                logger.warning(
-                    f"Erreur insertion highlight_event {row.event_type} pour {row.match_id}: {e}"
-                )
+        batch_insert_rows(conn, "highlight_events", rows, HIGHLIGHT_EVENT_COLUMNS)
 
     def _insert_alias_rows(self, rows: list) -> None:
-        """Insère des lignes xuid_aliases."""
+        """Insère des lignes xuid_aliases en batch avec upsert (Sprint 15)."""
         if not rows:
             return
-
-        conn = self._get_connection()
-
-        for row in rows:
-            with contextlib.suppress(Exception):
-                conn.execute(
-                    """INSERT INTO xuid_aliases (xuid, gamertag, last_seen, source, updated_at)
-                       VALUES (?, ?, ?, ?, ?)
-                       ON CONFLICT(xuid) DO UPDATE SET
-                           gamertag = CASE
-                               WHEN excluded.gamertag != '' AND excluded.gamertag != xuid_aliases.gamertag
-                               THEN excluded.gamertag
-                               ELSE xuid_aliases.gamertag
-                           END,
-                           last_seen = excluded.last_seen,
-                           updated_at = CURRENT_TIMESTAMP""",
-                    (
-                        row.xuid,
-                        row.gamertag,
-                        row.last_seen,
-                        row.source,
-                        datetime.now(timezone.utc),
-                    ),
-                )
-
-    def _insert_personal_score_rows(self, rows: list) -> None:
-        """Insère des lignes personal_score_awards (Sprint 8.2)."""
-        if not rows:
-            return
-
         conn = self._get_connection()
         now = datetime.now(timezone.utc)
-
+        # Enrichir les rows avec updated_at avant l'upsert
+        alias_dicts = []
         for row in rows:
-            with contextlib.suppress(Exception):
-                conn.execute(
-                    """INSERT INTO personal_score_awards (
-                        match_id, xuid, award_name, award_category,
-                        award_count, award_score, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        row.match_id,
-                        row.xuid,
-                        row.award_name,
-                        row.award_category,
-                        row.award_count,
-                        row.award_score,
-                        now,
-                    ),
-                )
+            alias_dicts.append(
+                {
+                    "xuid": row.xuid,
+                    "gamertag": row.gamertag,
+                    "last_seen": row.last_seen,
+                    "source": row.source,
+                    "updated_at": now,
+                }
+            )
+        batch_upsert_rows(conn, "xuid_aliases", alias_dicts, ALIAS_COLUMNS)
 
-    def _insert_medal_rows(self, rows: list) -> None:
-        """Insère les lignes medals_earned."""
+    def _insert_personal_score_rows(self, rows: list) -> None:
+        """Insère des lignes personal_score_awards en batch (Sprint 15)."""
         if not rows:
             return
-
         conn = self._get_connection()
-
+        now = datetime.now(timezone.utc)
+        # Enrichir chaque row avec created_at
+        score_dicts = []
         for row in rows:
-            with contextlib.suppress(Exception):
-                conn.execute(
-                    """INSERT OR REPLACE INTO medals_earned (
-                        match_id, medal_name_id, count
-                    ) VALUES (?, ?, ?)""",
-                    (
-                        row.match_id,
-                        row.medal_name_id,
-                        row.count,
-                    ),
-                )
+            score_dicts.append(
+                {
+                    "match_id": row.match_id,
+                    "xuid": row.xuid,
+                    "award_name": row.award_name,
+                    "award_category": row.award_category,
+                    "award_count": row.award_count,
+                    "award_score": row.award_score,
+                    "created_at": now,
+                }
+            )
+        batch_insert_rows(conn, "personal_score_awards", score_dicts, PERSONAL_SCORE_COLUMNS)
+
+    def _insert_medal_rows(self, rows: list) -> None:
+        """Insère les lignes medals_earned en batch (Sprint 15).
+
+        medals_earned n'a pas de PK/UNIQUE → insert simple (pas upsert).
+        """
+        if not rows:
+            return
+        conn = self._get_connection()
+        batch_insert_rows(conn, "medals_earned", rows, MEDAL_COLUMNS)
 
     def _insert_participant_rows(self, rows: list) -> None:
-        """Insère les lignes match_participants (roster complet du match).
+        """Insère les lignes match_participants en batch (Sprint 15).
 
         Sprint Gamertag Roster Fix : stocke tous les joueurs avec team_id, outcome,
         gamertag, score et rang dans le match (1 = meilleur).
         """
         if not rows:
             return
-
         conn = self._get_connection()
-
-        for row in rows:
-            with contextlib.suppress(Exception):
-                conn.execute(
-                    """INSERT OR REPLACE INTO match_participants (
-                        match_id, xuid, team_id, outcome, gamertag, rank, score,
-                        kills, deaths, assists, shots_fired, shots_hit,
-                        damage_dealt, damage_taken
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        row.match_id,
-                        row.xuid,
-                        row.team_id,
-                        row.outcome,
-                        row.gamertag,
-                        row.rank,
-                        row.score,
-                        row.kills,
-                        row.deaths,
-                        row.assists,
-                        row.shots_fired,
-                        row.shots_hit,
-                        row.damage_dealt,
-                        row.damage_taken,
-                    ),
-                )
+        batch_upsert_rows(conn, "match_participants", rows, PARTICIPANT_COLUMNS)
 
     async def _refresh_aggregates_async(self) -> None:
         """Rafraîchit les agrégats après sync (async wrapper)."""

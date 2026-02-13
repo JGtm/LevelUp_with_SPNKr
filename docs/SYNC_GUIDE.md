@@ -275,6 +275,44 @@ python scripts/archive_season.py --gamertag MonGamertag --older-than-days 365
 
 ---
 
+## Architecture d'Ingestion (Sprint 15)
+
+### Pipeline DuckDB-first
+
+L'ingestion suit un pipeline direct sans intermédiaire Parquet ou SQLite :
+
+```
+API SPNKr (JSON)
+    │
+    ▼
+Transformers (Python)        ← src/data/sync/transformers.py
+    │
+    ▼
+Type Casting (CAST_PLAN)     ← src/data/sync/batch_insert.py
+    │
+    ▼
+Batch INSERT (executemany)   ← DuckDB natif, pas de boucle row-by-row
+    │
+    ▼
+stats.duckdb
+```
+
+**Avantages :**
+- Insertions 10-50x plus rapides (batch vs row-by-row)
+- Typage garanti à l'ingestion via le CAST_PLAN centralisé
+- Aucune dépendance Parquet dans le flux actif
+- Fallback automatique row-by-row en cas de conflit d'unicité
+
+### Audit de schéma
+
+Pour vérifier la cohérence des types après une migration ou un backfill :
+
+```bash
+python scripts/diagnose_player_db.py --player MonGamertag --audit-types
+```
+
+---
+
 ## Dépannage
 
 ### Sync Bloquée

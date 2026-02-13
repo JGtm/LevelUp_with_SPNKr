@@ -10,6 +10,7 @@ Les tests du DuckDBSyncEngine complet sont dans test_sync_integration.py.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pytest
@@ -719,3 +720,168 @@ class TestCareerRankApiParsing:
         data = client._parse_career_rank("123", api_response)
         assert data.is_max_rank is True
         assert data.current_rank == 272
+
+
+# =============================================================================
+# Tests Sprint 15 : Batch insert dans DuckDBSyncEngine
+# =============================================================================
+
+duckdb = pytest.importorskip("duckdb")
+
+
+class TestEngineBatchInsertMethods:
+    """Tests pour les méthodes batch du DuckDBSyncEngine (Sprint 15)."""
+
+    @pytest.fixture
+    def engine_with_db(self, tmp_path):
+        """Crée un DuckDBSyncEngine avec une DB temporaire."""
+        from src.data.sync.engine import DuckDBSyncEngine
+
+        db_path = tmp_path / "player" / "stats.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Créer metadata.duckdb minimal
+        meta_dir = tmp_path / "warehouse"
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        meta_conn = duckdb.connect(str(meta_dir / "metadata.duckdb"))
+        meta_conn.close()
+
+        engine = DuckDBSyncEngine(
+            player_db_path=db_path,
+            xuid="2535423456789",
+            gamertag="TestPlayer",
+            metadata_db_path=meta_dir / "metadata.duckdb",
+        )
+        # Initialiser la connexion et le schéma
+        conn = engine._get_connection()
+        # medals_earned n'est pas dans SYNC_SCHEMA_DDL, créer manuellement
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS medals_earned (
+                match_id VARCHAR NOT NULL,
+                medal_name_id INTEGER NOT NULL,
+                count INTEGER DEFAULT 1
+            )
+        """)
+        return engine
+
+    def test_batch_insert_medals_via_engine(self, engine_with_db):
+        """Les médailles sont insérées en batch."""
+        from src.data.sync.models import MedalEarnedRow
+
+        engine = engine_with_db
+        rows = [
+            MedalEarnedRow(match_id="m1", medal_name_id=1001, count=2),
+            MedalEarnedRow(match_id="m1", medal_name_id=1002, count=1),
+        ]
+        engine._insert_medal_rows(rows)
+
+        conn = engine._get_connection()
+        result = conn.execute("SELECT COUNT(*) FROM medals_earned").fetchone()[0]
+        assert result == 2
+        engine.close()
+
+    def test_batch_insert_events_via_engine(self, engine_with_db):
+        """Les events sont insérés en batch."""
+        from src.data.sync.models import HighlightEventRow
+
+        engine = engine_with_db
+        rows = [
+            HighlightEventRow(
+                match_id="m1", event_type="kill", time_ms=1000, xuid="x1", gamertag="P1"
+            ),
+            HighlightEventRow(
+                match_id="m1", event_type="death", time_ms=2000, xuid="x1", gamertag="P1"
+            ),
+        ]
+        engine._insert_event_rows(rows)
+
+        conn = engine._get_connection()
+        result = conn.execute("SELECT COUNT(*) FROM highlight_events").fetchone()[0]
+        assert result == 2
+        engine.close()
+
+    def test_batch_insert_participants_via_engine(self, engine_with_db):
+        """Les participants sont insérés en batch."""
+        from src.data.sync.models import MatchParticipantRow
+
+        engine = engine_with_db
+        rows = [
+            MatchParticipantRow(
+                match_id="m1",
+                xuid="x1",
+                team_id=0,
+                outcome=2,
+                gamertag="Player1",
+                rank=1,
+                score=1500,
+                kills=15,
+                deaths=8,
+                assists=5,
+            ),
+        ]
+        engine._insert_participant_rows(rows)
+
+        conn = engine._get_connection()
+        result = conn.execute("SELECT gamertag FROM match_participants").fetchone()
+        assert result[0] == "Player1"
+        engine.close()
+
+    def test_batch_insert_aliases_via_engine(self, engine_with_db):
+        """Les aliases sont insérés en batch."""
+        from src.data.sync.models import XuidAliasRow
+
+        engine = engine_with_db
+        rows = [
+            XuidAliasRow(xuid="x1", gamertag="Player1", source="sync"),
+            XuidAliasRow(xuid="x2", gamertag="Player2", source="sync"),
+        ]
+        engine._insert_alias_rows(rows)
+
+        conn = engine._get_connection()
+        result = conn.execute("SELECT COUNT(*) FROM xuid_aliases").fetchone()[0]
+        assert result == 2
+        engine.close()
+
+    def test_batch_insert_skill_via_engine(self, engine_with_db):
+        """Les données skill sont insérées en batch."""
+        from src.data.sync.models import PlayerMatchStatsRow
+
+        engine = engine_with_db
+        row = PlayerMatchStatsRow(
+            match_id="m1",
+            xuid="x1",
+            team_id=0,
+            team_mmr=1500.0,
+            enemy_mmr=1480.0,
+            kills_expected=12.5,
+            kills_stddev=3.2,
+        )
+        engine._insert_skill_row(row)
+
+        conn = engine._get_connection()
+        result = conn.execute(
+            "SELECT team_mmr FROM player_match_stats WHERE match_id = 'm1'"
+        ).fetchone()
+        assert result[0] == pytest.approx(1500.0, abs=1.0)
+        engine.close()
+
+    def test_batch_insert_personal_scores_via_engine(self, engine_with_db):
+        """Les personal scores sont insérés en batch."""
+        engine = engine_with_db
+
+        @dataclass
+        class MockScoreRow:
+            match_id: str = "m1"
+            xuid: str = "x1"
+            award_name: str = "KillLeader"
+            award_category: str = "kill"
+            award_count: int = 1
+            award_score: int = 100
+
+        rows = [MockScoreRow(), MockScoreRow(award_name="Assist", award_score=75)]
+        engine._insert_personal_score_rows(rows)
+
+        conn = engine._get_connection()
+        result = conn.execute("SELECT COUNT(*) FROM personal_score_awards").fetchone()[0]
+        assert result == 2
+        engine.close()
