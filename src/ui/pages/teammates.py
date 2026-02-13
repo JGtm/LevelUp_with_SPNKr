@@ -30,6 +30,7 @@ from src.analysis.friends_impact import (
     build_impact_matrix,
     get_all_impact_events,
 )
+from src.data.services.teammates_service import TeammatesService
 from src.ui import display_name_from_xuid
 from src.ui.cache import (
     cached_compute_sessions_db,
@@ -37,7 +38,6 @@ from src.ui.cache import (
     cached_has_cache_tables,
     cached_query_matches_with_friend,
     cached_same_team_match_ids_with_friend,
-    load_df_optimized,
 )
 from src.ui.medals import render_medals_grid
 
@@ -75,46 +75,18 @@ def _load_teammate_stats_from_own_db(
 ) -> pd.DataFrame:
     """Charge les stats d'un coéquipier depuis sa propre DB si disponible.
 
-    Dans l'architecture DuckDB v4, chaque joueur a sa propre DB :
-    data/players/{gamertag}/stats.duckdb
-
-    Pour afficher les stats d'un coéquipier sur des matchs communs,
-    on doit aller chercher dans SA DB, pas dans celle du joueur principal.
+    Délègue au TeammatesService (Sprint 14 — isolation backend/frontend).
 
     Args:
         teammate_gamertag: Gamertag du coéquipier.
         match_ids: Set des match_id à filtrer.
-        reference_db_path: Chemin vers la DB de référence (pour déduire le dossier parent).
+        reference_db_path: Chemin vers la DB de référence.
 
     Returns:
         DataFrame des stats du coéquipier (filtré sur match_ids), ou vide si DB non trouvée.
     """
-    from pathlib import Path
-
-    # Construire le chemin vers la DB du coéquipier
-    # reference_db_path = data/players/{mon_gamertag}/stats.duckdb
-    # On veut : data/players/{teammate_gamertag}/stats.duckdb
-    base_dir = Path(reference_db_path).parent.parent  # Remonter de {gamertag}/stats.duckdb
-    teammate_db_path = base_dir / teammate_gamertag / "stats.duckdb"
-
-    if not teammate_db_path.exists():
-        return pd.DataFrame()
-
-    try:
-        import polars as pl
-
-        # Charger depuis la DB du coéquipier (retourne Polars maintenant)
-        df_pl = load_df_optimized(str(teammate_db_path), "", db_key=None)
-        if df_pl.is_empty():
-            return pd.DataFrame()
-
-        # Filtrer avec Polars puis convertir en Pandas pour compatibilité
-        df_filtered = df_pl.filter(
-            pl.col("match_id").cast(pl.Utf8).is_in([str(mid) for mid in match_ids])
-        )
-        return df_filtered.to_pandas()
-    except Exception:
-        return pd.DataFrame()
+    result = TeammatesService.load_teammate_stats(teammate_gamertag, match_ids, reference_db_path)
+    return result.df
 
 
 # =============================================================================
@@ -128,37 +100,10 @@ def _enrich_series_with_perfect_kills(
 ) -> list[tuple[str, pd.DataFrame]]:
     """Ajoute la colonne perfect_kills à chaque DataFrame de la série.
 
-    Le 1er élément (idx=0) = joueur principal (utilise db_path).
-    Les suivants = coéquipiers (utilise base_dir / gamertag / stats.duckdb).
+    Délègue au TeammatesService (Sprint 14 — isolation backend/frontend).
     """
-    from pathlib import Path
-
-    from src.data.repositories.duckdb_repo import DuckDBRepository
-
-    if not db_path or not str(db_path).endswith(".duckdb"):
-        return series
-
-    base_dir = Path(db_path).parent.parent
-    enriched = []
-    for idx, (name, df) in enumerate(series):
-        df = df.copy()
-        if "match_id" in df.columns and not df.empty:
-            match_ids = df["match_id"].astype(str).tolist()
-            try:
-                if idx == 0:
-                    use_path = db_path
-                else:
-                    player_db = base_dir / name / "stats.duckdb"
-                    use_path = str(player_db) if player_db.exists() else db_path
-                repo = DuckDBRepository(use_path, "")
-                counts = repo.count_perfect_kills_by_match(match_ids)
-                df["perfect_kills"] = df["match_id"].astype(str).map(counts).fillna(0).astype(int)
-            except Exception:
-                df["perfect_kills"] = 0
-        else:
-            df["perfect_kills"] = 0
-        enriched.append((name, df))
-    return enriched
+    result = TeammatesService.enrich_series_with_perfect_kills(series, db_path)
+    return result.series
 
 
 # =============================================================================

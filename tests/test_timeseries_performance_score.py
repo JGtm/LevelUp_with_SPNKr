@@ -52,12 +52,13 @@ def test_performance_score_handles_missing_data():
 
 
 def test_timeseries_page_imports_compute_performance_series():
-    """Test que timeseries.py importe compute_performance_series."""
+    """Test que timeseries.py utilise TimeseriesService pour compute_performance_series."""
     import src.ui.pages.timeseries as timeseries_module
 
+    # Sprint 14 : compute_performance_series est maintenant dans TimeseriesService
     assert hasattr(
-        timeseries_module, "compute_performance_series"
-    ), "timeseries.py doit importer compute_performance_series"
+        timeseries_module, "TimeseriesService"
+    ), "timeseries.py doit importer TimeseriesService (Sprint 14)"
 
 
 def test_performance_score_column_exists_after_computation():

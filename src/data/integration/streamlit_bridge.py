@@ -288,6 +288,94 @@ def get_trends_for_ui(
     return engine, trends
 
 
+def matches_to_polars(matches: list[MatchRow]) -> pl.DataFrame:
+    """Convertit une liste de MatchRow en DataFrame Polars.
+
+    Format normalisé v4.5 — privilégier cette fonction pour les services.
+
+    Args:
+        matches: Liste de MatchRow.
+
+    Returns:
+        pl.DataFrame avec colonnes typées.
+    """
+    if not matches:
+        return pl.DataFrame()
+
+    data = {
+        "match_id": [m.match_id for m in matches],
+        "start_time": [m.start_time for m in matches],
+        "map_id": [m.map_id for m in matches],
+        "map_name": [m.map_name for m in matches],
+        "playlist_id": [m.playlist_id for m in matches],
+        "playlist_name": [m.playlist_name for m in matches],
+        "pair_id": [m.map_mode_pair_id for m in matches],
+        "pair_name": [m.map_mode_pair_name for m in matches],
+        "outcome": [m.outcome for m in matches],
+        "kills": [m.kills for m in matches],
+        "deaths": [m.deaths for m in matches],
+        "assists": [m.assists for m in matches],
+        "accuracy": [m.accuracy for m in matches],
+        "ratio": [m.ratio for m in matches],
+        "kda": [m.kda for m in matches],
+        "time_played_seconds": [m.time_played_seconds for m in matches],
+        "average_life_seconds": [m.average_life_seconds for m in matches],
+        "personal_score": [m.personal_score for m in matches],
+        "team_mmr": [m.team_mmr for m in matches],
+        "enemy_mmr": [m.enemy_mmr for m in matches],
+    }
+
+    df = pl.DataFrame(data)
+
+    # Ajouter stats par minute
+    minutes = pl.col("time_played_seconds").cast(pl.Float64) / 60.0
+    df = df.with_columns(
+        (pl.col("kills").cast(pl.Float64) / minutes).alias("kills_per_min"),
+        (pl.col("deaths").cast(pl.Float64) / minutes).alias("deaths_per_min"),
+        (pl.col("assists").cast(pl.Float64) / minutes).alias("assists_per_min"),
+    )
+
+    return df
+
+
+def load_matches_polars(
+    db_path: str,
+    xuid: str,
+    *,
+    include_firefight: bool = True,
+    playlist_filter: str | None = None,
+    map_filter: str | None = None,
+    mode: RepositoryMode | None = None,
+) -> pl.DataFrame:
+    """Charge les matchs en pl.DataFrame via le DataRepository.
+
+    Version Polars-native de load_matches_df(). Retour normalisé v4.5.
+
+    Args:
+        db_path: Chemin vers la base de données.
+        xuid: XUID du joueur.
+        include_firefight: Inclure les matchs PvE.
+        playlist_filter: Filtre sur playlist_id.
+        map_filter: Filtre sur map_id.
+        mode: Mode de repository (défaut: depuis settings).
+
+    Returns:
+        pl.DataFrame compatible avec les services et la couche analysis.
+    """
+    repo = get_repository_for_ui(db_path, xuid, mode=mode)
+
+    try:
+        matches = repo.load_matches(
+            playlist_filter=playlist_filter,
+            map_filter=map_filter,
+            include_firefight=include_firefight,
+        )
+        return matches_to_polars(matches)
+    finally:
+        if hasattr(repo, "close"):
+            repo.close()
+
+
 def check_hybrid_available(db_path: str, xuid: str) -> bool:
     """
     @deprecated Vérifie si les données hybrides (Parquet) sont disponibles.

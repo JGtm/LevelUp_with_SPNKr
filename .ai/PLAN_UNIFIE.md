@@ -1041,10 +1041,10 @@ grep -r "import pandas|import sqlite3|sqlite_master" src/ --include="*.py"
 
 #### Gate de livraison
 
-- [ ] Aucun calcul lourd métier dans les pages cibles
-- [ ] Nouvelles fonctions Data API testées et typées
-- [ ] Tests de contrats service/page passent
-- [ ] Documentation architecture v4.5 mise à jour
+- [x] Aucun calcul lourd métier dans les pages cibles
+- [x] Nouvelles fonctions Data API testées et typées
+- [x] Tests de contrats service/page passent
+- [x] Documentation architecture v4.5 mise à jour
 
 #### Commandes de validation
 

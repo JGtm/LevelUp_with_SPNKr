@@ -18,9 +18,8 @@ except ImportError:
 
 import streamlit as st
 
-from src.analysis import compute_map_breakdown
-from src.config import HALO_COLORS, SESSION_CONFIG
-from src.ui.cache import cached_same_team_match_ids_with_friend
+from src.config import HALO_COLORS
+from src.data.services.win_loss_service import WinLossService
 from src.visualization import (
     plot_map_comparison,
     plot_map_ratio_with_winloss,
@@ -253,56 +252,12 @@ def render_win_loss_page(
 
         st.divider()
         st.subheader("Par période")
-        d = dff.dropna(subset=["outcome"]).copy()
-        if d.empty:
+        # Calcul via service Sprint 14
+        period = WinLossService.compute_period_table(dff, bucket_label, is_session_scope)
+        if period.is_empty:
             st.info("Aucune donnée pour construire le tableau.")
         else:
-            if is_session_scope:
-                d = d.sort_values("start_time").reset_index(drop=True)
-                if len(d.index) <= 20:
-                    d["bucket"] = d.index + 1
-                else:
-                    t = pd.to_datetime(d["start_time"], errors="coerce")
-                    d["bucket"] = t.dt.floor("h")
-            else:
-                tmin = pd.to_datetime(d["start_time"], errors="coerce").min()
-                tmax = pd.to_datetime(d["start_time"], errors="coerce").max()
-                dt_range = (
-                    (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
-                )
-                days = float(dt_range.total_seconds() / 86400.0) if dt_range is not None else 999.0
-                cfg = SESSION_CONFIG
-                if days < cfg.bucket_threshold_hourly:
-                    d = d.sort_values("start_time").reset_index(drop=True)
-                    d["bucket"] = d.index + 1
-                elif days <= cfg.bucket_threshold_daily:
-                    d["bucket"] = d["start_time"].dt.floor("h")
-                elif days <= cfg.bucket_threshold_weekly:
-                    d["bucket"] = d["start_time"].dt.to_period("D").astype(str)
-                elif days <= cfg.bucket_threshold_monthly:
-                    d["bucket"] = d["start_time"].dt.to_period("W-MON").astype(str)
-                else:
-                    d["bucket"] = d["start_time"].dt.to_period("M").astype(str)
-
-            pivot = (
-                d.pivot_table(index="bucket", columns="outcome", values="match_id", aggfunc="count")
-                .fillna(0)
-                .astype(int)
-                .sort_index()
-            )
-            out_tbl = pd.DataFrame(index=pivot.index)
-            out_tbl["Victoires"] = pivot[2] if 2 in pivot.columns else 0
-            out_tbl["Défaites"] = pivot[3] if 3 in pivot.columns else 0
-            out_tbl["Égalités"] = pivot[1] if 1 in pivot.columns else 0
-            out_tbl["Non terminés"] = pivot[4] if 4 in pivot.columns else 0
-            out_tbl["Total"] = out_tbl[["Victoires", "Défaites", "Égalités", "Non terminés"]].sum(
-                axis=1
-            )
-            out_tbl["Taux de victoires"] = (
-                100.0 * (out_tbl["Victoires"] / out_tbl["Total"].where(out_tbl["Total"] > 0))
-            ).fillna(0.0)
-
-            out_tbl = out_tbl.reset_index().rename(columns={"bucket": bucket_label.capitalize()})
+            out_tbl = period.table
 
             def _style_pct(v) -> str:
                 try:
@@ -354,36 +309,14 @@ def render_win_loss_page(
             on_change=_clear_min_matches_maps_auto,
         )
 
-        if scope == "Moi (toutes les parties)":
-            base_scope = base
-        elif scope == "Avec Madina972":
-            match_ids = set(
-                cached_same_team_match_ids_with_friend(
-                    db_path,
-                    xuid.strip(),
-                    "2533274858283686",
-                    db_key=db_key,
-                )
-            )
-            base_scope = base.loc[base["match_id"].astype(str).isin(match_ids)].copy()
-        elif scope == "Avec Chocoboflor":
-            match_ids = set(
-                cached_same_team_match_ids_with_friend(
-                    db_path,
-                    xuid.strip(),
-                    "2535469190789936",
-                    db_key=db_key,
-                )
-            )
-            base_scope = base.loc[base["match_id"].astype(str).isin(match_ids)].copy()
-        else:
-            base_scope = dff
+        # Scope et breakdown via service Sprint 14
+        base_scope = WinLossService.get_friend_scope_df(scope, dff, base, db_path, xuid, db_key)
 
         with st.spinner("Calcul des stats par carte…"):
-            breakdown = compute_map_breakdown(base_scope)
-            breakdown = breakdown.loc[breakdown["matches"] >= int(min_matches)].copy()
+            map_result = WinLossService.compute_map_breakdown(base_scope, min_matches)
+            breakdown = map_result.breakdown
 
-        if breakdown.empty:
+        if map_result.is_empty:
             st.warning("Pas assez de matchs par map avec ces filtres.")
         else:
             metric = st.selectbox(

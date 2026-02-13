@@ -30,6 +30,12 @@ levelup-halo/
 │   │   ├── repositories/         # Accès aux données
 │   │   │   ├── duckdb_repo.py    # Repository DuckDB principal
 │   │   │   └── factory.py        # Factory pattern
+│   │   ├── services/             # Services métier (Sprint 14)
+│   │   │   ├── timeseries_service.py  # Agrégats séries temporelles
+│   │   │   ├── win_loss_service.py    # Bucketing V/D, breakdown cartes
+│   │   │   └── teammates_service.py   # Stats coéquipiers multi-DB
+│   │   ├── integration/          # Bridge Streamlit ↔ Data
+│   │   │   └── streamlit_bridge.py # Conversion MatchRow → DataFrame
 │   │   ├── sync/                 # Synchronisation API
 │   │   │   ├── api_client.py     # Client SPNKr
 │   │   │   ├── engine.py         # Moteur de sync
@@ -171,10 +177,16 @@ API SPNKr ─► SPNKrAPIClient ─► Transformers ─► DuckDBSyncEngine ─�
 ### 2. Lecture (DuckDB → UI)
 
 ```
-Streamlit UI
+Streamlit UI (Pages)
      │
      ▼
-DuckDBRepository
+Services (Sprint 14)                    ← NOUVEAU
+     │  TimeseriesService
+     │  WinLossService
+     │  TeammatesService
+     │
+     ▼
+DuckDBRepository / Analysis
      │
      ├─► Lecture directe (match_stats, etc.)
      │
@@ -184,6 +196,29 @@ DuckDBRepository
      └─► Lazy loading + Pagination
          └─► load_recent_matches(limit=50)
 ```
+
+### Architecture Services (v4.5)
+
+Les services encapsulent les calculs lourds entre la couche Data et les pages UI :
+
+```
+Page UI ──► Service ──► Repository / Analysis ──► DuckDB
+  │              │
+  │              └─► Retourne des dataclasses typées (frozen)
+  │                  - CumulativeMetrics
+  │                  - PeriodTable
+  │                  - TeammateStats
+  │                  - etc.
+  │
+  └─► N'a plus de calcul inline, consomme uniquement
+      les dataclasses retournées par le service.
+```
+
+| Service | Page | Responsabilités |
+|---------|------|-----------------|
+| `TimeseriesService` | `timeseries.py` | Performance score, métriques cumulatives, score/min, win rate glissant, first events, perfect kills |
+| `WinLossService` | `win_loss.py` | Bucketing temporel, breakdown cartes, scope amis |
+| `TeammatesService` | `teammates.py` | Stats coéquipier multi-DB, enrichissement perfect kills, profils radar, impact |
 
 ---
 

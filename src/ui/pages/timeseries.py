@@ -18,8 +18,8 @@ except ImportError:
 
 import streamlit as st
 
-from src.analysis.performance_score import compute_performance_series
 from src.config import HALO_COLORS
+from src.data.services.timeseries_service import TimeseriesService
 from src.visualization.distributions import (
     plot_correlation_scatter,
     plot_first_event_distribution,
@@ -65,12 +65,8 @@ def render_timeseries_page(
         st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
         return
 
-    # Calculer le score de performance AVANT d'afficher les distributions
-    # (nécessaire pour la distribution du score de performance)
-    history_df = df_full if df_full is not None else dff
-    if "performance_score" not in dff.columns:
-        dff = dff.copy()
-        dff["performance_score"] = compute_performance_series(dff, history_df)
+    # Calculer le score de performance via service (Sprint 14)
+    dff = TimeseriesService.enrich_performance_score(dff, df_full)
 
     with st.spinner("Génération des graphes…"):
         fig = plot_timeseries(dff)
@@ -85,57 +81,38 @@ def render_timeseries_page(
             m[0].metric("KDA moyen", f"{valid['kda'].mean():.2f}", label_visibility="collapsed")
             st.plotly_chart(plot_kda_distribution(dff), width="stretch")
 
-        # ═══ Performance cumulée & tendance (Sprint 6) ═══
+        # ═══ Performance cumulée & tendance (Sprint 6) — via service Sprint 14 ═══
         st.divider()
         st.subheader("Performance cumulée & tendance")
         st.caption(
             "Net score et K/D cumulés au fil des matchs, K/D glissant, et tendance (début vs fin de période)."
         )
-        _required_cumul = ["start_time", "kills", "deaths"]
-        if all(c in dff.columns for c in _required_cumul):
+        cumul = TimeseriesService.compute_cumulative_metrics(dff)
+        if cumul is not None:
             try:
-                # Inclure time_played_seconds si disponible (pour marqueurs durée Sprint 6.4)
-                _cumul_cols = list(_required_cumul)
-                _has_tps = "time_played_seconds" in dff.columns
-                if _has_tps:
-                    _cumul_cols.append("time_played_seconds")
-
-                _sorted_dff = dff.sort_values("start_time")
-                pl_df = pl.from_pandas(_sorted_dff[_cumul_cols].copy())
-                from src.analysis.cumulative import (
-                    compute_cumulative_kd_series_polars,
-                    compute_cumulative_net_score_series_polars,
-                    compute_rolling_kd_polars,
+                st.plotly_chart(
+                    plot_cumulative_net_score(
+                        cumul.cumul_net, time_played_seconds=cumul.time_played_seconds
+                    ),
+                    width="stretch",
                 )
-
-                if not pl_df.is_empty():
-                    # Extraire time_played_seconds pour les marqueurs de durée
-                    _tps_list: list[int | float] | None = None
-                    if _has_tps:
-                        _tps_list = _sorted_dff["time_played_seconds"].fillna(0).tolist()
-
-                    cumul_net = compute_cumulative_net_score_series_polars(pl_df)
+                st.plotly_chart(
+                    plot_cumulative_kd(
+                        cumul.cumul_kd, time_played_seconds=cumul.time_played_seconds
+                    ),
+                    width="stretch",
+                )
+                st.plotly_chart(
+                    plot_rolling_kd(cumul.rolling_kd, window_size=5),
+                    width="stretch",
+                )
+                if cumul.has_enough_for_trend:
                     st.plotly_chart(
-                        plot_cumulative_net_score(cumul_net, time_played_seconds=_tps_list),
+                        plot_session_trend(cumul.pl_df),
                         width="stretch",
                     )
-                    cumul_kd = compute_cumulative_kd_series_polars(pl_df)
-                    st.plotly_chart(
-                        plot_cumulative_kd(cumul_kd, time_played_seconds=_tps_list),
-                        width="stretch",
-                    )
-                    rolling_df = compute_rolling_kd_polars(pl_df, window_size=5)
-                    st.plotly_chart(
-                        plot_rolling_kd(rolling_df, window_size=5),
-                        width="stretch",
-                    )
-                    if len(pl_df) >= 4:
-                        st.plotly_chart(
-                            plot_session_trend(pl_df),
-                            width="stretch",
-                        )
-                    else:
-                        st.info("Tendance de session : au moins 4 matchs requis.")
+                else:
+                    st.info("Tendance de session : au moins 4 matchs requis.")
             except Exception as e:
                 st.warning(f"Graphiques de performance cumulée indisponibles : {e}")
         else:
@@ -250,53 +227,45 @@ def render_timeseries_page(
         col_dist5, col_dist6 = st.columns(2)
 
         with col_dist5:
-            # Distribution du score personnel par minute (6.2)
-            if "personal_score" in dff.columns and "time_played_seconds" in dff.columns:
-                _ps = dff[["personal_score", "time_played_seconds"]].dropna()
-                _ps = _ps[_ps["time_played_seconds"] > 0]
-                if len(_ps) > 5:
-                    score_per_min = _ps["personal_score"] / (_ps["time_played_seconds"] / 60)
-                    fig_spm = plot_histogram(
-                        score_per_min,
-                        title="Distribution Score Personnel / min",
-                        x_label="Score / min",
-                        y_label="Matchs",
-                        show_kde=True,
-                        color=colors["amber"],
-                    )
-                    st.plotly_chart(fig_spm, width="stretch")
-                else:
-                    st.info("Pas assez de données pour la distribution du score par minute.")
-            else:
+            # Distribution du score personnel par minute (6.2) — via service Sprint 14
+            spm_data = TimeseriesService.compute_score_per_minute(dff)
+            if spm_data.has_data:
+                fig_spm = plot_histogram(
+                    spm_data.values,
+                    title="Distribution Score Personnel / min",
+                    x_label="Score / min",
+                    y_label="Matchs",
+                    show_kde=True,
+                    color=colors["amber"],
+                )
+                st.plotly_chart(fig_spm, width="stretch")
+            elif "personal_score" not in dff.columns or "time_played_seconds" not in dff.columns:
                 st.info("Colonnes score personnel ou time_played non disponibles.")
+            else:
+                st.info("Pas assez de données pour la distribution du score par minute.")
 
         with col_dist6:
-            # Distribution du taux de victoire glissant (6.3)
-            if "outcome" in dff.columns and len(dff) >= 10:
-                _wr_df = dff.sort_values("start_time") if "start_time" in dff.columns else dff
-                _wins = (_wr_df["outcome"] == 1).astype(float)
-                win_rate_rolling = _wins.rolling(window=10, min_periods=10).mean() * 100
-                win_rate_clean = win_rate_rolling.dropna()
-                if len(win_rate_clean) > 5:
-                    fig_wr = plot_histogram(
-                        win_rate_clean,
-                        title="Distribution Win Rate Glissant (10 matchs)",
-                        x_label="Taux de victoire (%)",
-                        y_label="Fréquence",
-                        show_kde=True,
-                        color=colors["green"],
-                    )
-                    st.plotly_chart(fig_wr, width="stretch")
-                else:
-                    st.info(
-                        "Pas assez de données pour la distribution du win rate glissant "
-                        "(10 matchs minimum par fenêtre)."
-                    )
+            # Distribution du taux de victoire glissant (6.3) — via service Sprint 14
+            wr_data = TimeseriesService.compute_rolling_win_rate(dff)
+            if wr_data.has_data:
+                fig_wr = plot_histogram(
+                    wr_data.values,
+                    title="Distribution Win Rate Glissant (10 matchs)",
+                    x_label="Taux de victoire (%)",
+                    y_label="Fréquence",
+                    show_kde=True,
+                    color=colors["green"],
+                )
+                st.plotly_chart(fig_wr, width="stretch")
+            elif wr_data.missing_column:
+                st.info("Colonne outcome non disponible.")
+            elif wr_data.not_enough_matches:
+                st.info("Au moins 10 matchs requis pour le win rate glissant.")
             else:
-                if "outcome" not in dff.columns:
-                    st.info("Colonne outcome non disponible.")
-                else:
-                    st.info("Au moins 10 matchs requis pour le win rate glissant.")
+                st.info(
+                    "Pas assez de données pour la distribution du win rate glissant "
+                    "(10 matchs minimum par fenêtre)."
+                )
 
         # === Corrélations Sprint 5.4.5 ===
         st.divider()
@@ -424,24 +393,14 @@ def render_timeseries_page(
             "Visualise à quelle vitesse tu obtiens ton premier frag vs ta première mort."
         )
 
-        first_kills: dict[str, int | None] = {}
-        first_deaths: dict[str, int | None] = {}
+        # Chargement via service Sprint 14
+        _match_ids = dff["match_id"].astype(str).tolist() if "match_id" in dff.columns else []
+        first_event = TimeseriesService.load_first_event_times(db_path, xuid, _match_ids)
 
-        if db_path and xuid and "match_id" in dff.columns:
-            try:
-                from src.data.repositories.duckdb_repo import DuckDBRepository
-
-                if db_path.endswith(".duckdb"):
-                    repo = DuckDBRepository(db_path, str(xuid).strip())
-                    match_ids = dff["match_id"].astype(str).tolist()
-                    first_kills, first_deaths = repo.get_first_kill_death_times(match_ids)
-            except Exception:
-                pass
-
-        if first_kills or first_deaths:
+        if first_event.available:
             fig_events = plot_first_event_distribution(
-                first_kills,
-                first_deaths,
+                first_event.first_kills,
+                first_event.first_deaths,
                 title=None,
             )
             st.plotly_chart(fig_events, width="stretch")
@@ -474,25 +433,14 @@ def render_timeseries_page(
 
         st.subheader("Folie meurtrière / Tirs à la tête / Frags parfaits")
 
-        # Charger les Perfect kills depuis le repository (priorité aux paramètres passés par le routeur)
-        perfect_counts: dict[str, int] | None = None
+        # Chargement via service Sprint 14
         _db_path = db_path or st.session_state.get("db_path")
         _xuid = xuid or st.session_state.get("player_xuid") or st.session_state.get("xuid")
-
-        if _db_path and _xuid and "match_id" in dff.columns:
-            try:
-                # Importer le repository ici pour éviter les imports circulaires
-                from src.data.repositories.duckdb_repo import DuckDBRepository
-
-                if _db_path.endswith(".duckdb"):
-                    repo = DuckDBRepository(_db_path, str(_xuid).strip())
-                    match_ids = dff["match_id"].astype(str).tolist()
-                    perfect_counts = repo.count_perfect_kills_by_match(match_ids)
-            except Exception:
-                perfect_counts = None
+        _match_ids_pk = dff["match_id"].astype(str).tolist() if "match_id" in dff.columns else []
+        pk_data = TimeseriesService.load_perfect_kills(_db_path, _xuid, _match_ids_pk)
 
         st.plotly_chart(
-            plot_spree_headshots_accuracy(dff, perfect_counts=perfect_counts),
+            plot_spree_headshots_accuracy(dff, perfect_counts=pk_data.counts),
             width="stretch",
         )
 
