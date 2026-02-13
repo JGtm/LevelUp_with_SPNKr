@@ -14,16 +14,6 @@ from datetime import datetime
 from typing import Any
 
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 
 from src.analysis.performance_config import SCORE_THRESHOLDS
@@ -50,6 +40,7 @@ from src.ui.pages.match_view_players import (
     render_nemesis_section,
     render_roster_section,
 )
+from src.visualization._compat import DataFrameLike, ensure_polars
 
 # =============================================================================
 # Fonction principale
@@ -58,14 +49,14 @@ from src.ui.pages.match_view_players import (
 
 def render_match_view(
     *,
-    row: pd.Series | dict[str, Any],
+    row: dict[str, Any],
     match_id: str,
     db_path: str,
     xuid: str,
     waypoint_player: str,
     db_key: tuple[int, int] | None,
     settings: AppSettings,
-    df_full: pd.DataFrame | pl.DataFrame | None = None,
+    df_full: DataFrameLike | None = None,
     # Fonctions injectées
     normalize_mode_label_fn: Callable[[str | None], str],
     format_score_label_fn: Callable[[Any, Any], str],
@@ -82,8 +73,8 @@ def render_match_view(
 
     Parameters
     ----------
-    row : pd.Series | dict[str, Any]
-        Données du match depuis le DataFrame (ou dict Polars).
+    row : dict[str, Any]
+        Données du match (dict issu de iter_rows(named=True) ou to_dicts()).
     match_id : str
         Identifiant du match.
     db_path : str
@@ -96,7 +87,7 @@ def render_match_view(
         Clé de cache pour la base de données.
     settings : AppSettings
         Paramètres de l'application.
-    df_full : pd.DataFrame | pl.DataFrame | None
+    df_full : DataFrameLike | None
         DataFrame complet pour le calcul du score relatif.
     normalize_mode_label_fn, format_score_label_fn, score_css_color_fn, format_datetime_fn
         Fonctions de formatage injectées.
@@ -106,9 +97,9 @@ def render_match_view(
     paris_tz
         Timezone Paris.
     """
-    # Normaliser df_full Polars → Pandas si nécessaire (compatibilité interne)
-    if isinstance(df_full, pl.DataFrame):
-        df_full = df_full.to_pandas()
+    # Normaliser df_full en Polars
+    if df_full is not None:
+        df_full = ensure_polars(df_full)
 
     match_id = str(match_id or "").strip()
     if not match_id:
@@ -302,10 +293,14 @@ def render_match_view(
     if not medals_last:
         st.info("Médailles indisponibles pour ce match (ou aucune médaille).")
     else:
-        md_df = pd.DataFrame(medals_last)
-        md_df["label"] = md_df["name_id"].apply(lambda x: medal_label(int(x)))
-        md_df = md_df.sort_values(["count", "label"], ascending=[False, True])
-        render_medals_grid(md_df[["name_id", "count"]].to_dict(orient="records"), cols_per_row=8)
+        md_df = pl.DataFrame(medals_last)
+        md_df = md_df.with_columns(
+            pl.col("name_id")
+            .map_elements(lambda x: medal_label(int(x)), return_dtype=pl.Utf8)
+            .alias("label")
+        )
+        md_df = md_df.sort(["count", "label"], descending=[True, False])
+        render_medals_grid(md_df.select(["name_id", "count"]).to_dicts(), cols_per_row=8)
 
     # Médias
     render_media_section(

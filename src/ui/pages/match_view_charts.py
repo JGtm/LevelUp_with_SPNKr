@@ -6,22 +6,13 @@ from typing import Any
 
 import plotly.graph_objects as go
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 from plotly.subplots import make_subplots
 
 from src.analysis.stats import compute_mode_category_averages, extract_mode_category, format_mmss
 from src.config import HALO_COLORS
 from src.ui.pages.match_view_helpers import os_card
+from src.visualization._compat import DataFrameLike, ensure_polars
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
 
@@ -42,18 +33,18 @@ def _safe_numeric(value: Any) -> float:
 
 
 def render_expected_vs_actual(
-    row: pd.Series | dict[str, Any],
+    row: dict[str, Any],
     pm: dict,
     colors: dict,
-    df_full: pd.DataFrame | pl.DataFrame | None = None,
+    df_full: DataFrameLike | None = None,
     *,
     db_path: str | None = None,
     xuid: str | None = None,
 ) -> None:
     """Rend la section Réel vs Attendu avec moyenne historique par catégorie de mode."""
-    # Normaliser df_full Polars → Pandas si nécessaire
-    if isinstance(df_full, pl.DataFrame):
-        df_full = df_full.to_pandas()
+    # Normaliser df_full en Polars
+    if df_full is not None:
+        df_full = ensure_polars(df_full)
     team_mmr = pm.get("team_mmr")
     enemy_mmr = pm.get("enemy_mmr")
     delta_mmr = (team_mmr - enemy_mmr) if (team_mmr is not None and enemy_mmr is not None) else None
@@ -262,8 +253,8 @@ def render_expected_vs_actual(
 
 
 def _render_spree_headshots(
-    row: pd.Series | dict[str, Any],
-    df_full: pd.DataFrame | pl.DataFrame | None = None,
+    row: dict[str, Any],
+    df_full: DataFrameLike | None = None,
     *,
     db_path: str | None = None,
     xuid: str | None = None,
@@ -274,9 +265,9 @@ def _render_spree_headshots(
     historique sur la même catégorie custom (alignée sidebar).
     Les frags parfaits sont comptés via les médailles Perfect (medals_earned).
     """
-    # Normaliser df_full Polars → Pandas si nécessaire
-    if isinstance(df_full, pl.DataFrame):
-        df_full = df_full.to_pandas()
+    # Normaliser df_full en Polars
+    if df_full is not None:
+        df_full = ensure_polars(df_full)
 
     spree_v = _safe_numeric(row.get("max_killing_spree"))
     headshots_v = _safe_numeric(row.get("headshot_kills"))
@@ -306,10 +297,12 @@ def _render_spree_headshots(
                 perfect_current = counts.get(match_id, 0)
             # Moyenne historique par catégorie (même filtre que spree/headshots)
             if df_full is not None and hist_avgs.get("match_count", 0) >= 10:
-                mask = df_full["pair_name"].apply(extract_mode_category) == mode_category
-                filtered = df_full.loc[mask]
+                filtered = df_full.filter(
+                    pl.col("pair_name").map_elements(extract_mode_category, return_dtype=pl.Utf8)
+                    == mode_category
+                )
                 if len(filtered) >= 10:
-                    match_ids = filtered["match_id"].astype(str).tolist()
+                    match_ids = filtered["match_id"].cast(pl.Utf8).to_list()
                     perfect_counts = repo.count_perfect_kills_by_match(match_ids)
                     total = sum(perfect_counts.get(mid, 0) for mid in match_ids)
                     hist_avgs["avg_perfect_kills"] = total / len(match_ids)

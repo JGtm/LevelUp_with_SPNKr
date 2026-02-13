@@ -11,24 +11,16 @@ Sprint 4.2 : Optimisation N+1
 from __future__ import annotations
 
 import html as html_lib
+from datetime import datetime
 
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 
 from src.analysis.performance_score import compute_performance_series
 from src.analysis.stats import format_mmss
 from src.ui.components.performance import get_score_class
 from src.ui.translations import translate_playlist_name
+from src.visualization._compat import DataFrameLike, ensure_polars
 
 
 def _normalize_mode_label(pair_name: str | None) -> str | None:
@@ -38,9 +30,9 @@ def _normalize_mode_label(pair_name: str | None) -> str | None:
     return translate_pair_name(pair_name) if pair_name else None
 
 
-def _format_datetime_fr_hm(dt: pd.Timestamp | None) -> str:
+def _format_datetime_fr_hm(dt: datetime | None) -> str:
     """Formate une date FR avec heures/minutes."""
-    if pd.isna(dt):
+    if dt is None:
         return "-"
     try:
         return dt.strftime("%d/%m/%Y %H:%M")
@@ -105,12 +97,12 @@ def _fmt_mmr_int(v) -> str:
 
 
 def render_match_history_page(
-    dff: pd.DataFrame,
+    dff: DataFrameLike,
     waypoint_player: str,
     db_path: str,
     xuid: str,
     db_key: tuple[int, int] | None,
-    df_full: pd.DataFrame | None = None,
+    df_full: DataFrameLike | None = None,
 ) -> None:
     """Affiche la page Historique des parties.
 
@@ -122,55 +114,91 @@ def render_match_history_page(
         db_key: Clé de cache de la DB.
         df_full: DataFrame complet (non filtré) pour le calcul du score relatif.
     """
+    dff = ensure_polars(dff)
+
     # Protection contre les DataFrames vides
-    if dff.empty:
+    if dff.is_empty():
         st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
         return
 
     st.subheader("Historique des parties")
 
-    dff_table = dff.copy()
+    dff_table = dff.clone()
     if "playlist_fr" not in dff_table.columns:
-        dff_table["playlist_fr"] = dff_table["playlist_name"].apply(translate_playlist_name)
+        dff_table = dff_table.with_columns(
+            pl.col("playlist_name")
+            .map_elements(translate_playlist_name, return_dtype=pl.Utf8)
+            .alias("playlist_fr")
+        )
     if "mode_ui" not in dff_table.columns:
-        dff_table["mode_ui"] = dff_table["pair_name"].apply(_normalize_mode_label)
-    dff_table["match_url"] = (
-        "https://www.halowaypoint.com/halo-infinite/players/"
-        + waypoint_player.strip()
-        + "/matches/"
-        + dff_table["match_id"].astype(str)
+        dff_table = dff_table.with_columns(
+            pl.col("pair_name")
+            .map_elements(_normalize_mode_label, return_dtype=pl.Utf8)
+            .alias("mode_ui")
+        )
+    dff_table = dff_table.with_columns(
+        (
+            pl.lit("https://www.halowaypoint.com/halo-infinite/players/")
+            + pl.lit(waypoint_player.strip())
+            + pl.lit("/matches/")
+            + pl.col("match_id").cast(pl.Utf8)
+        ).alias("match_url")
     )
 
     outcome_map = {2: "Victoire", 3: "Défaite", 1: "Égalité", 4: "Non terminé"}
-    dff_table["outcome_label"] = dff_table["outcome"].map(outcome_map).fillna("-")
+    dff_table = dff_table.with_columns(
+        pl.col("outcome")
+        .map_elements(lambda v: outcome_map.get(v, "-"), return_dtype=pl.Utf8)
+        .alias("outcome_label")
+    )
 
-    dff_table["score"] = dff_table.apply(
-        lambda r: _format_score_label(r.get("my_team_score"), r.get("enemy_team_score")), axis=1
+    dff_table = dff_table.with_columns(
+        pl.struct(["my_team_score", "enemy_team_score"])
+        .map_elements(
+            lambda r: _format_score_label(r["my_team_score"], r["enemy_team_score"]),
+            return_dtype=pl.Utf8,
+        )
+        .alias("score")
     )
 
     # MMR équipe/adverse - Sprint 4.2 : Optimisation N+1
     # Les colonnes sont déjà dans le DataFrame (chargées par load_matches)
     # Plus de boucle N+1 (était: 1 requête par match = 500+ requêtes)
     if "team_mmr" not in dff_table.columns:
-        dff_table["team_mmr"] = None
+        dff_table = dff_table.with_columns(pl.lit(None).cast(pl.Float64).alias("team_mmr"))
     if "enemy_mmr" not in dff_table.columns:
-        dff_table["enemy_mmr"] = None
+        dff_table = dff_table.with_columns(pl.lit(None).cast(pl.Float64).alias("enemy_mmr"))
 
     # Calcul du delta MMR (vectorisé, pas de boucle)
-    dff_table["delta_mmr"] = pd.to_numeric(dff_table["team_mmr"], errors="coerce") - pd.to_numeric(
-        dff_table["enemy_mmr"], errors="coerce"
+    dff_table = dff_table.with_columns(
+        (
+            pl.col("team_mmr").cast(pl.Float64, strict=False)
+            - pl.col("enemy_mmr").cast(pl.Float64, strict=False)
+        ).alias("delta_mmr")
     )
 
-    dff_table["start_time_fr"] = dff_table["start_time"].apply(_format_datetime_fr_hm)
-    dff_table["average_life_mmss"] = dff_table["average_life_seconds"].apply(
-        lambda x: format_mmss(x)
+    dff_table = dff_table.with_columns(
+        pl.col("start_time")
+        .map_elements(_format_datetime_fr_hm, return_dtype=pl.Utf8)
+        .alias("start_time_fr")
+    )
+    dff_table = dff_table.with_columns(
+        pl.col("average_life_seconds")
+        .map_elements(lambda x: format_mmss(x), return_dtype=pl.Utf8)
+        .alias("average_life_mmss")
     )
 
     # Calcul de la note de performance RELATIVE (basée sur l'historique complet)
-    history_df = df_full if df_full is not None else dff_table
-    dff_table["performance"] = compute_performance_series(dff_table, history_df)
-    dff_table["performance_display"] = dff_table["performance"].apply(
-        lambda x: f"{x:.0f}" if pd.notna(x) else "-"
+    history_df = ensure_polars(df_full) if df_full is not None else dff_table
+    perf_series = compute_performance_series(dff_table, history_df)
+    # compute_performance_series retourne une Series Polars quand l'entrée est Polars
+    if not isinstance(perf_series, pl.Series):
+        perf_series = pl.Series("performance", perf_series.to_list())
+    dff_table = dff_table.with_columns(perf_series.alias("performance"))
+    dff_table = dff_table.with_columns(
+        pl.col("performance")
+        .map_elements(lambda x: f"{x:.0f}" if x is not None else "-", return_dtype=pl.Utf8)
+        .alias("performance_display")
     )
 
     # Table HTML
@@ -180,7 +208,7 @@ def render_match_history_page(
     _render_csv_download(dff_table)
 
 
-def _render_history_table(dff_table: pd.DataFrame) -> None:
+def _render_history_table(dff_table: pl.DataFrame) -> None:
     """Génère et affiche le tableau HTML de l'historique."""
 
     def _outcome_class(label: str) -> str:
@@ -220,11 +248,11 @@ def _render_history_table(dff_table: pd.DataFrame) -> None:
         ("Ratio", "ratio"),
     ]
 
-    view = dff_table.sort_values("start_time", ascending=False).head(250).reset_index(drop=True)
+    view = dff_table.sort("start_time", descending=True).head(250)
 
     head = "".join(f"<th>{html_lib.escape(h)}</th>" for h, _ in cols)
     body_rows: list[str] = []
-    for _, r in view.iterrows():
+    for r in view.iter_rows(named=True):
         mid = str(r.get("match_id") or "").strip()
         app = _app_url("Match", match_id=mid)
         match_link = f"<a href='{html_lib.escape(app)}' target='_self'>Ouvrir</a>" if mid else "-"
@@ -268,7 +296,7 @@ def _render_history_table(dff_table: pd.DataFrame) -> None:
     )
 
 
-def _render_csv_download(dff_table: pd.DataFrame) -> None:
+def _render_csv_download(dff_table: pl.DataFrame) -> None:
     """Affiche le bouton de téléchargement CSV."""
     show_cols = [
         "match_url",
@@ -292,14 +320,13 @@ def _render_csv_download(dff_table: pd.DataFrame) -> None:
         "ratio",
     ]
     table = (
-        dff_table[show_cols + ["start_time"]]
-        .sort_values("start_time", ascending=False)
-        .reset_index(drop=True)
+        dff_table.select(show_cols + ["start_time"])
+        .sort("start_time", descending=True)
+        .select(show_cols)
     )
-    table = table[show_cols]
 
-    csv_table = table.rename(columns={"start_time_fr": "Date de début"})
-    csv = csv_table.to_csv(index=False).encode("utf-8")
+    csv_table = table.rename({"start_time_fr": "Date de début"})
+    csv = csv_table.write_csv().encode("utf-8")
     st.download_button(
         "Télécharger CSV",
         data=csv,

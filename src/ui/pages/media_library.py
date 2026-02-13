@@ -28,21 +28,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 
 from src.ui.formatting import PARIS_TZ, format_datetime_fr_hm
 from src.ui.pages.match_view_helpers import index_media_dir
 from src.ui.settings import AppSettings
+from src.visualization._compat import DataFrameLike, ensure_polars
 
 
 @dataclass(frozen=True)
@@ -106,159 +97,201 @@ def _epoch_seconds_paris(dt_value: datetime | None) -> float | None:
 
 
 def _to_paris_naive(dt_value: object) -> datetime | None:
+    """Convertit une valeur datetime en datetime naïve (fuseau Paris)."""
     try:
-        ts = pd.to_datetime(dt_value, errors="coerce")
-        if pd.isna(ts):
+        if dt_value is None:
             return None
-        if getattr(ts, "tzinfo", None) is None:
-            return ts.to_pydatetime()
-        return ts.tz_convert(PARIS_TZ).tz_localize(None).to_pydatetime()
+        if isinstance(dt_value, datetime):
+            ts = dt_value
+        elif isinstance(dt_value, str):
+            s = str(dt_value).strip()
+            if not s:
+                return None
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            ts = datetime.fromisoformat(s)
+        else:
+            return None
+        if ts.tzinfo is None:
+            return ts
+        return ts.astimezone(PARIS_TZ).replace(tzinfo=None)
     except Exception:
         return None
 
 
-def _compute_match_windows(df_full: pd.DataFrame, settings: AppSettings) -> pd.DataFrame:
+def _compute_match_windows(df_full: DataFrameLike, settings: AppSettings) -> pl.DataFrame:
     """Construit les fenêtres temporelles des matchs (epoch seconds) pour l'association média.
 
     Améliorations:
     - Gère les start_time NULL avec un diagnostic
     - Utilise une durée par défaut de 12 minutes si time_played_seconds est NULL
     """
-    if df_full is None or df_full.empty:
-        return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
+    _empty = pl.DataFrame(
+        schema={
+            "match_id": pl.Utf8,
+            "start_epoch": pl.Float64,
+            "end_epoch": pl.Float64,
+            "start_time": pl.Datetime,
+        }
+    )
+    if df_full is None:
+        return _empty
+    df_full = ensure_polars(df_full)
+    if df_full.is_empty():
+        return _empty
 
     tol_min = int(getattr(settings, "media_tolerance_minutes", 0) or 0)
     tol = timedelta(minutes=max(0, tol_min))
 
+    needed = {"match_id", "start_time"}
+    if not needed.issubset(set(df_full.columns)):
+        return _empty
+
     cols = [c for c in ["match_id", "start_time", "time_played_seconds"] if c in df_full.columns]
-    if "match_id" not in cols or "start_time" not in cols:
-        return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
+    base = df_full.select(cols)
 
-    base = df_full[cols].copy()
-
-    # Filtrer les matchs avec start_time NULL pour diagnostic (mais ne pas les exclure complètement)
-    # On les exclura seulement à la fin si on ne peut pas créer de fenêtre valide
-    base["_start"] = base["start_time"].apply(_to_paris_naive)
-
-    def _end_from_row(r: pd.Series) -> datetime | None:
-        start = r.get("_start")
+    # Calculer les fenêtres via Python (struct temporel complexe)
+    rows: list[dict[str, object]] = []
+    for rec in base.iter_rows(named=True):
+        start = _to_paris_naive(rec.get("start_time"))
         if not isinstance(start, datetime):
-            return None
-        dur_s = r.get("time_played_seconds")
+            continue
+        dur_s = rec.get("time_played_seconds")
         try:
-            dur = float(dur_s) if dur_s == dur_s else None
+            dur = float(dur_s) if dur_s is not None else None
         except Exception:
             dur = None
         if dur is None or dur <= 0:
-            # Fallback: durée typique d'un match (~12 min au lieu de 30)
-            return start + timedelta(minutes=12)
-        return start + timedelta(seconds=float(dur))
+            end = start + timedelta(minutes=12)
+        else:
+            end = start + timedelta(seconds=dur)
+        t0 = start - tol
+        t1 = end + tol
+        se = _epoch_seconds_paris(t0)
+        ee = _epoch_seconds_paris(t1)
+        mid = rec.get("match_id")
+        if mid is None or se is None or ee is None:
+            continue
+        rows.append(
+            {
+                "match_id": str(mid),
+                "start_epoch": se,
+                "end_epoch": ee,
+                "start_time": start,
+            }
+        )
 
-    base["_end"] = base.apply(_end_from_row, axis=1)
-    base["_t0"] = base["_start"].apply(lambda d: (d - tol) if isinstance(d, datetime) else None)
-    base["_t1"] = base["_end"].apply(lambda d: (d + tol) if isinstance(d, datetime) else None)
+    if not rows:
+        return _empty
 
-    base["start_epoch"] = base["_t0"].apply(_epoch_seconds_paris)
-    base["end_epoch"] = base["_t1"].apply(_epoch_seconds_paris)
-
-    out = base[["match_id", "start_epoch", "end_epoch", "_start"]].rename(
-        columns={"_start": "start_time"}
-    )
-    # Exclure uniquement les lignes où on ne peut pas créer de fenêtre valide
-    out = out.dropna(subset=["match_id", "start_epoch", "end_epoch"]).copy()
-    if out.empty:
-        return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
-
-    out["match_id"] = out["match_id"].astype(str)
-    out = out.sort_values("start_epoch", ascending=True).reset_index(drop=True)
-    return out
+    return pl.DataFrame(rows).sort("start_epoch")
 
 
-def _index_all_media(settings: AppSettings) -> pd.DataFrame:
+def _index_all_media(settings: AppSettings) -> pl.DataFrame:
     """Indexe les médias configurés (captures + vidéos)."""
     dirs = _coerce_dirs(settings)
-    frames: list[pd.DataFrame] = []
+    frames: list[pl.DataFrame] = []
 
     if dirs.screens_dir and os.path.isdir(dirs.screens_dir):
         img_df = index_media_dir(dirs.screens_dir, ("png", "jpg", "jpeg", "webp"))
-        if not img_df.empty:
-            img_df = img_df.copy()
-            img_df["kind"] = "image"
+        if not img_df.is_empty():
+            img_df = img_df.with_columns(pl.lit("image").alias("kind"))
             frames.append(img_df)
 
     if dirs.videos_dir and os.path.isdir(dirs.videos_dir):
         vid_df = index_media_dir(dirs.videos_dir, ("mp4", "webm", "mkv", "mov"))
-        if not vid_df.empty:
-            vid_df = vid_df.copy()
-            vid_df["kind"] = "video"
+        if not vid_df.is_empty():
+            vid_df = vid_df.with_columns(pl.lit("video").alias("kind"))
             frames.append(vid_df)
 
     if not frames:
-        return pd.DataFrame(columns=["path", "mtime", "ext", "kind"])
+        return pl.DataFrame(
+            schema={"path": pl.Utf8, "mtime": pl.Float64, "ext": pl.Utf8, "kind": pl.Utf8}
+        )
 
-    df = pd.concat(frames, ignore_index=True)
-    if df.empty:
+    df = pl.concat(frames)
+    if df.is_empty():
         return df
 
-    df["path"] = df["path"].astype(str)
-    df["basename"] = df["path"].apply(lambda p: os.path.basename(str(p)))
-    df["mtime"] = pd.to_numeric(df["mtime"], errors="coerce")
-    df = df.dropna(subset=["mtime"]).copy()
-    return df.sort_values("mtime", ascending=False).reset_index(drop=True)
+    df = df.with_columns(
+        [
+            pl.col("path").cast(pl.Utf8),
+            pl.col("path")
+            .map_elements(lambda p: os.path.basename(str(p)), return_dtype=pl.Utf8)
+            .alias("basename"),
+        ]
+    ).drop_nulls(subset=["mtime"])
+    return df.sort("mtime", descending=True)
 
 
-def _associate_media_to_matches(media_df: pd.DataFrame, windows_df: pd.DataFrame) -> pd.DataFrame:
-    """Associe chaque média à un match (best-effort) via merge_asof + check de fenêtre.
+def _associate_media_to_matches(media_df: pl.DataFrame, windows_df: pl.DataFrame) -> pl.DataFrame:
+    """Associe chaque média à un match (best-effort) via join_asof + check de fenêtre.
 
-    Amélioration: utilise direction="nearest" pour capturer les médias pris
+    Amélioration: utilise strategy="nearest" pour capturer les médias pris
     légèrement AVANT le match (ex: pendant le chargement) ou APRÈS.
     Vérifie ensuite que le média est bien dans la fenêtre [start_epoch, end_epoch].
     """
-    if media_df is None or media_df.empty:
-        return (
-            pd.DataFrame(columns=list(media_df.columns) + ["match_id", "match_start_time"])
-            if media_df is not None
-            else pd.DataFrame()
+    if media_df is None or media_df.is_empty():
+        extra_cols = {"match_id": pl.Utf8, "match_start_time": pl.Datetime}
+        if media_df is not None:
+            schema = {
+                **{c: media_df.dtypes[i] for i, c in enumerate(media_df.columns)},
+                **extra_cols,
+            }
+            return pl.DataFrame(schema=schema)
+        return pl.DataFrame()
+
+    if windows_df is None or windows_df.is_empty():
+        return media_df.with_columns(
+            [
+                pl.lit(None).cast(pl.Utf8).alias("match_id"),
+                pl.lit(None).cast(pl.Datetime).alias("match_start_time"),
+            ]
         )
-    if windows_df is None or windows_df.empty:
-        out = media_df.copy()
-        out["match_id"] = None
-        out["match_start_time"] = None
-        return out
 
-    m = media_df.copy()
-    m["mtime"] = pd.to_numeric(m["mtime"], errors="coerce")
-    m = m.dropna(subset=["mtime"]).copy()
+    # S'assurer que mtime est numérique et non-null
+    m = media_df.drop_nulls(subset=["mtime"]).sort("mtime")
+    w = windows_df.sort("start_epoch")
 
-    m_sorted = m.sort_values("mtime", ascending=True)
-    w_sorted = windows_df.sort_values("start_epoch", ascending=True)
-
-    # Utiliser direction="nearest" pour trouver le match le plus proche
-    # Cela permet de capturer les médias pris avant le début officiel du match
-    joined = pd.merge_asof(
-        m_sorted,
-        w_sorted,
+    # join_asof : strategy="nearest" pour trouver le match le plus proche
+    joined = m.join_asof(
+        w,
         left_on="mtime",
         right_on="start_epoch",
-        direction="nearest",
-        allow_exact_matches=True,
+        strategy="nearest",
     )
 
     # Vérifier que le média est dans la fenêtre [start_epoch, end_epoch]
-    ok_mask = (
-        (joined["start_epoch"].notna())
-        & (joined["end_epoch"].notna())
-        & (joined["mtime"] >= joined["start_epoch"])
-        & (joined["mtime"] <= joined["end_epoch"])
+    joined = joined.with_columns(
+        [
+            pl.when(
+                pl.col("start_epoch").is_not_null()
+                & pl.col("end_epoch").is_not_null()
+                & (pl.col("mtime") >= pl.col("start_epoch"))
+                & (pl.col("mtime") <= pl.col("end_epoch"))
+            )
+            .then(pl.col("match_id"))
+            .otherwise(pl.lit(None))
+            .alias("match_id"),
+            pl.when(
+                pl.col("start_epoch").is_not_null()
+                & pl.col("end_epoch").is_not_null()
+                & (pl.col("mtime") >= pl.col("start_epoch"))
+                & (pl.col("mtime") <= pl.col("end_epoch"))
+            )
+            .then(pl.col("start_time"))
+            .otherwise(pl.lit(None))
+            .alias("start_time"),
+        ]
     )
-    joined.loc[~ok_mask, "match_id"] = None
-    joined.loc[~ok_mask, "start_time"] = None
 
-    joined = joined.rename(columns={"start_time": "match_start_time"})
-    joined = joined.drop(
-        columns=[c for c in ["start_epoch", "end_epoch"] if c in joined.columns], errors="ignore"
-    )
-    return joined.sort_values("mtime", ascending=False).reset_index(drop=True)
+    # Renommer et nettoyer
+    drop_cols = [c for c in ["start_epoch", "end_epoch"] if c in joined.columns]
+    joined = joined.drop(drop_cols)
+    if "start_time" in joined.columns:
+        joined = joined.rename({"start_time": "match_start_time"})
+
+    return joined.sort("mtime", descending=True)
 
 
 def _placeholder_html(base: str, hint: str = "Cliquer pour afficher la miniature") -> str:
@@ -273,9 +306,14 @@ def _placeholder_html(base: str, hint: str = "Cliquer pour afficher la miniature
 
 
 def _render_media_grid(
-    items: pd.DataFrame, *, cols_per_row: int, render_context: str = "default"
+    items: DataFrameLike, *, cols_per_row: int, render_context: str = "default"
 ) -> None:
-    if items is None or items.empty:
+    """Affiche une grille de médias Streamlit."""
+    if items is None:
+        st.info("Aucun média à afficher avec ces filtres.")
+        return
+    items = ensure_polars(items)
+    if items.is_empty():
         st.info("Aucun média à afficher avec ces filtres.")
         return
 
@@ -287,10 +325,9 @@ def _render_media_grid(
 
     # Ajouter un identifiant stable au DataFrame AVANT le rendu
     # pour éviter que les clés session_state changent à chaque rendu
-    items = items.copy()
-    items["_stable_id"] = items.reset_index().index
+    items = items.with_row_index("_stable_id")
 
-    rows = items.to_dict(orient="records")
+    rows = items.to_dicts()
     for i in range(0, len(rows), cols_per_row):
         chunk = rows[i : i + cols_per_row]
         # TOUJOURS créer cols_per_row colonnes, même si len(chunk) < cols_per_row
@@ -371,18 +408,26 @@ def _render_media_grid(
                         st.caption("Match: non associé")
 
 
-def _load_match_windows_from_db(db_path: str) -> pd.DataFrame:
+def _load_match_windows_from_db(db_path: str) -> pl.DataFrame:
     """Charge les fenêtres temporelles des matchs depuis la DB pour le diagnostic.
 
     Note: Cette fonction charge depuis toutes les DBs joueurs disponibles,
     pas seulement celle du joueur actuel, car l'association se fait multi-joueurs.
     """
+    _empty = pl.DataFrame(
+        schema={
+            "match_id": pl.Utf8,
+            "start_epoch": pl.Float64,
+            "end_epoch": pl.Float64,
+            "start_time": pl.Datetime,
+        }
+    )
     try:
         import duckdb
 
         from src.utils.paths import PLAYER_DB_FILENAME, PLAYERS_DIR
 
-        all_windows = []
+        all_windows: list[dict[str, object]] = []
 
         # Parcourir toutes les DBs joueurs
         if PLAYERS_DIR.exists():
@@ -462,13 +507,12 @@ def _load_match_windows_from_db(db_path: str) -> pd.DataFrame:
                     continue
 
         if not all_windows:
-            return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
+            return _empty
 
-        df = pd.DataFrame(all_windows)
-        return df.sort_values("start_epoch", ascending=True).reset_index(drop=True)
+        return pl.DataFrame(all_windows).sort("start_epoch")
 
     except Exception:
-        return pd.DataFrame(columns=["match_id", "start_epoch", "end_epoch", "start_time"])
+        return _empty
 
 
 def _gamertag_from_db_path(db_path: str) -> str | None:
@@ -491,7 +535,7 @@ def _load_media_from_db(
     db_path: str,
     xuid: str | None = None,
     gamertag: str | None = None,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Charge les médias depuis la BDD DuckDB.
 
     Args:
@@ -503,6 +547,19 @@ def _load_media_from_db(
     Returns:
         DataFrame avec colonnes: path, mtime, ext, kind, basename, match_id, match_start_time, xuid
     """
+    _col_names = [
+        "path",
+        "mtime",
+        "mtime_paris_epoch",
+        "ext",
+        "kind",
+        "basename",
+        "thumbnail_path",
+        "match_id",
+        "match_start_time",
+        "association_confidence",
+        "xuid",
+    ]
     try:
         import duckdb
 
@@ -519,7 +576,7 @@ def _load_media_from_db(
             ).fetchall()
 
             if not tables:
-                return pd.DataFrame()
+                return pl.DataFrame()
 
             # Charger les médias avec leurs associations.
             # Si xuid est fourni, on accepte mma.xuid = xuid OU mma.xuid = gamertag
@@ -583,35 +640,20 @@ def _load_media_from_db(
                 ).fetchall()
 
             if not result:
-                return pd.DataFrame()
+                return pl.DataFrame()
 
-            df = pd.DataFrame(
-                result,
-                columns=[
-                    "path",
-                    "mtime",
-                    "mtime_paris_epoch",
-                    "ext",
-                    "kind",
-                    "basename",
-                    "thumbnail_path",
-                    "match_id",
-                    "match_start_time",
-                    "association_confidence",
-                    "xuid",
-                ],
-            )
-
-            return df
+            # Construire un pl.DataFrame à partir des tuples
+            rows = [dict(zip(_col_names, row, strict=False)) for row in result]
+            return pl.DataFrame(rows)
 
         finally:
             conn.close()
 
     except Exception:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
 
-def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -> None:
+def render_media_library_page(*, df_full: DataFrameLike, settings: AppSettings) -> None:
     """Rend la page Bibliothèque médias."""
     st.subheader("Bibliothèque médias")
 
@@ -744,69 +786,69 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
                     st.warning("Configure un dossier vidéos dans Paramètres → Médias.")
 
     # Charger depuis BDD si disponible
-    media_df = pd.DataFrame()
+    media_df = pl.DataFrame()
     using_db = False
-    windows_df = pd.DataFrame()  # Initialiser pour le diagnostic
+    windows_df = pl.DataFrame()  # Initialiser pour le diagnostic
     if db_path and db_path.endswith(".duckdb"):
         # Charger les médias avec associations pour le joueur actuel (ou tous si xuid=None)
         gamertag = _gamertag_from_db_path(db_path)
         media_df = _load_media_from_db(db_path, xuid=xuid, gamertag=gamertag)
-        using_db = not media_df.empty
+        using_db = not media_df.is_empty()
 
     # Fallback sur scan disque si BDD vide
-    if media_df.empty:
+    if media_df.is_empty():
         media_df = _index_all_media(settings)
         # Si on a scanné depuis disque, on peut essayer d'associer avec les matchs
-        if not media_df.empty:
+        if not media_df.is_empty():
             windows_df = _compute_match_windows(df_full, settings)
             assoc_df = _associate_media_to_matches(media_df, windows_df)
         else:
-            assoc_df = pd.DataFrame()
+            assoc_df = pl.DataFrame()
     else:
         # Les associations sont déjà dans la BDD
-        assoc_df = media_df.copy()
+        assoc_df = media_df.clone()
         # S'assurer que match_id est bien présent même si NULL
         if "match_id" not in assoc_df.columns:
-            assoc_df["match_id"] = None
+            assoc_df = assoc_df.with_columns(pl.lit(None).alias("match_id"))
         if "match_start_time" not in assoc_df.columns:
-            assoc_df["match_start_time"] = None
+            assoc_df = assoc_df.with_columns(pl.lit(None).alias("match_start_time"))
         # Calculer windows_df pour le diagnostic depuis la DB des médias (pas df_full)
         # car l'association se fait depuis toutes les DBs joueurs, pas seulement celle du joueur actuel
-        windows_df = _load_match_windows_from_db(db_path) if db_path else pd.DataFrame()
+        windows_df = _load_match_windows_from_db(db_path) if db_path else pl.DataFrame()
 
     # Diagnostic : afficher info si médias non associés depuis BDD
-    if using_db and not assoc_df.empty:
-        unassigned_count = assoc_df["match_id"].isna().sum()
+    if using_db and not assoc_df.is_empty():
+        unassigned_count = assoc_df["match_id"].is_null().sum()
         if unassigned_count > 0:
             st.info(
                 f"ℹ️ {unassigned_count} média(s) non associé(s) depuis la BDD. "
                 "Cliquez sur 'Re-scanner les dossiers' pour forcer l'indexation et l'association."
             )
 
-    if assoc_df.empty:
+    if assoc_df.is_empty():
         st.info("Aucun média trouvé.")
         return
 
     assoc_df = assoc_df.head(int(max_items))
 
     if kinds:
-        assoc_df = assoc_df.loc[assoc_df["kind"].isin([str(k) for k in kinds])].copy()
+        assoc_df = assoc_df.filter(pl.col("kind").is_in([str(k) for k in kinds]))
 
     if name_filter.strip():
         nf = name_filter.strip().lower()
-        assoc_df = assoc_df.loc[
-            assoc_df["basename"].astype(str).str.lower().str.contains(nf, na=False)
-        ].copy()
+        assoc_df = assoc_df.filter(
+            pl.col("basename").cast(pl.Utf8).str.to_lowercase().str.contains(nf, literal=True)
+        )
 
-    assigned = assoc_df.loc[assoc_df["match_id"].notna()].copy()
-    unassigned = assoc_df.loc[assoc_df["match_id"].isna()].copy()
+    assigned = assoc_df.filter(pl.col("match_id").is_not_null())
+    unassigned = assoc_df.filter(pl.col("match_id").is_null())
 
     # DÉDUPLIQUER : Un média peut avoir plusieurs associations (multi-joueurs)
     # On garde une seule ligne par média/match pour l'affichage
-    if not assigned.empty:
-        assigned = assigned.drop_duplicates(subset=["path", "match_id"], keep="first")
-    if not unassigned.empty:
-        unassigned = unassigned.drop_duplicates(subset=["path"], keep="first")
+    if not assigned.is_empty():
+        assigned = assigned.unique(subset=["path", "match_id"], keep="first")
+    if not unassigned.is_empty():
+        unassigned = unassigned.unique(subset=["path"], keep="first")
 
     # Diagnostic unifié : afficher un seul message informatif
     if not using_db:
@@ -815,7 +857,7 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
             "ℹ️ Les médias sont chargés depuis le scan disque (pas encore indexés en BDD). "
             "Cliquez sur 'Re-scanner les dossiers' pour indexer en BDD et associer automatiquement."
         )
-    elif windows_df.empty and assigned.empty:
+    elif windows_df.is_empty() and assigned.is_empty():
         # Afficher le warning seulement si on n'a AUCUNE association ET que windows_df est vide
         # (si on a déjà des associations, pas besoin d'afficher ce message)
         st.warning(
@@ -829,7 +871,7 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
             "2. Cliquer sur 'Re-scanner les dossiers' pour forcer l'association\n"
             "3. Vérifier les logs pour plus de détails"
         )
-    elif assigned.empty and not unassigned.empty and using_db:
+    elif assigned.is_empty() and not unassigned.is_empty() and using_db:
         # Seulement afficher ce message si windows_df n'est pas vide et qu'on utilise la BDD
         tolerance = int(getattr(settings, "media_tolerance_minutes", 5) or 5)
         st.warning(
@@ -843,32 +885,33 @@ def render_media_library_page(*, df_full: pd.DataFrame, settings: AppSettings) -
         _render_media_grid(assoc_df, cols_per_row=int(cols_per_row), render_context="all")
         return
 
-    if not assigned.empty:
+    if not assigned.is_empty():
         # Tri: match le plus récent d'abord, puis médias par ordre chronologique (mtime asc)
-        assigned["_match_sort"] = pd.to_datetime(assigned["match_start_time"], errors="coerce")
-        groups = assigned.sort_values(["_match_sort", "mtime"], ascending=[False, True]).groupby(
-            "match_id", sort=False
+        assigned = assigned.with_columns(
+            pl.col("match_start_time").cast(pl.Datetime, strict=False).alias("_match_sort")
         )
+        assigned = assigned.sort(["_match_sort", "mtime"], descending=[True, False])
 
-        for match_id, g in groups:
+        for match_id, g in assigned.group_by("match_id", maintain_order=True):
+            match_id_val = match_id[0] if isinstance(match_id, tuple) else match_id
             title_dt = None
             try:
-                dt0 = g["match_start_time"].iloc[0]
+                dt0 = g["match_start_time"][0]
                 title_dt = format_datetime_fr_hm(dt0) if dt0 is not None else None
             except Exception:
                 title_dt = None
 
-            label = f"Match {match_id}" + (" — " + str(title_dt) if title_dt else "")
+            label = f"Match {match_id_val}" + (" — " + str(title_dt) if title_dt else "")
             with st.expander(label, expanded=False):
-                _open_match_button(str(match_id))
-                g2 = g.sort_values("mtime", ascending=True).copy()
+                _open_match_button(str(match_id_val))
+                g2 = g.sort("mtime", descending=False)
                 # Dédupliquer une dernière fois par sécurité (au cas où plusieurs xuid pour même média/match)
-                g2 = g2.drop_duplicates(subset=["path"], keep="first")
+                g2 = g2.unique(subset=["path"], keep="first")
                 _render_media_grid(
-                    g2, cols_per_row=int(cols_per_row), render_context=f"match_{match_id}"
+                    g2, cols_per_row=int(cols_per_row), render_context=f"match_{match_id_val}"
                 )
 
-    if show_unassigned and not unassigned.empty:
+    if show_unassigned and not unassigned.is_empty():
         st.divider()
         st.subheader("Non associés")
         _render_media_grid(unassigned, cols_per_row=int(cols_per_row), render_context="unassigned")

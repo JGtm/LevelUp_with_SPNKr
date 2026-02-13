@@ -6,35 +6,15 @@ en barres chronologiques des statistiques de match.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import plotly.graph_objects as go
 import polars as pl
 
+from src.visualization._compat import DataFrameLike, ensure_polars
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
-if TYPE_CHECKING:
-    pass
-
-
-def _normalize_df(df: DataFrameType) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas (Plotly fonctionne mieux avec pandas)."""
-    if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
 
 
 def plot_metric_bars_by_match(
-    df_: DataFrameType,
+    df_: DataFrameLike,
     *,
     metric_col: str,
     title: str,
@@ -59,25 +39,38 @@ def plot_metric_bars_by_match(
     Returns:
         Figure Plotly ou None si données insuffisantes.
     """
-    df_pd = _normalize_df(df_) if df_ is not None else None
-    if df_pd is None or df_pd.empty:
+    if df_ is None:
         return None
-    if metric_col not in df_pd.columns or "start_time" not in df_pd.columns:
+    df_pl = ensure_polars(df_)
+    if df_pl.is_empty():
         return None
-
-    d = df_pd[["start_time", metric_col]].copy()
-    d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
-    d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
-    if d.empty:
+    if metric_col not in df_pl.columns or "start_time" not in df_pl.columns:
         return None
 
-    y = pd.to_numeric(d[metric_col], errors="coerce")
+    d = df_pl.select(["start_time", metric_col])
+    # Convertir start_time en Datetime si nécessaire
+    st_dtype = d.schema["start_time"]
+    if st_dtype == pl.String or st_dtype == pl.Utf8:
+        d = d.with_columns(pl.col("start_time").str.to_datetime(strict=False))
+    elif st_dtype == pl.Date:
+        d = d.with_columns(pl.col("start_time").cast(pl.Datetime))
+    d = d.drop_nulls("start_time").sort("start_time")
+    if d.is_empty():
+        return None
+
+    d = d.with_columns(pl.col(metric_col).cast(pl.Float64, strict=False))
+    y = d.get_column(metric_col).to_list()
     x_idx = list(range(len(d)))
-    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    labels = d.get_column("start_time").dt.strftime("%m-%d %H:%M").to_list()
     step = max(1, len(labels) // 10) if labels else 1
 
     w = int(smooth_window) if smooth_window else 0
-    smooth = y.rolling(window=max(1, w), min_periods=1).mean() if w and w > 1 else y
+    if w and w > 1:
+        smooth = (
+            d.get_column(metric_col).rolling_mean(window_size=max(1, w), min_samples=1).to_list()
+        )
+    else:
+        smooth = y
 
     fig = go.Figure()
     fig.add_trace(
@@ -120,7 +113,7 @@ def plot_metric_bars_by_match(
 
 
 def plot_multi_metric_bars_by_match(
-    series: list[tuple[str, pd.DataFrame]],
+    series: list[tuple[str, DataFrameLike]],
     *,
     metric_col: str,
     title: str,
@@ -148,57 +141,81 @@ def plot_multi_metric_bars_by_match(
     if not series:
         return None
 
-    # Vérifier si match_id est disponible dans tous les DataFrames non-vides
-    has_match_id = True
-    for _, df_ in series:
-        if df_ is not None and not df_.empty and "match_id" not in df_.columns:
-            has_match_id = False
-            break
-
-    prepared: list[tuple[str, pd.DataFrame]] = []
-    all_match_data: list[pd.DataFrame] = []  # Pour construire l'axe X commun
-
+    # Normaliser tous les DataFrames en Polars
+    normalized: list[tuple[str, pl.DataFrame]] = []
     for name, df_ in series:
-        if df_ is None or df_.empty:
+        if df_ is None:
             continue
-        if metric_col not in df_.columns or "start_time" not in df_.columns:
+        df_pl = ensure_polars(df_)
+        if df_pl.is_empty():
+            continue
+        normalized.append((str(name), df_pl))
+
+    if not normalized:
+        return None
+
+    # Vérifier si match_id est disponible dans tous les DataFrames
+    has_match_id = all("match_id" in df_pl.columns for _, df_pl in normalized)
+
+    prepared: list[tuple[str, pl.DataFrame]] = []
+    all_match_data: list[pl.DataFrame] = []  # Pour construire l'axe X commun
+
+    for name, df_pl in normalized:
+        if metric_col not in df_pl.columns or "start_time" not in df_pl.columns:
             continue
 
         cols_to_use = ["start_time", metric_col]
         if has_match_id:
             cols_to_use.append("match_id")
 
-        d = df_[cols_to_use].copy()
-        d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
-        d = d.dropna(subset=["start_time"]).sort_values("start_time").reset_index(drop=True)
-        if d.empty:
+        d = df_pl.select(cols_to_use)
+        # Convertir start_time en Datetime si nécessaire
+        st_dtype = d.schema["start_time"]
+        if st_dtype == pl.String or st_dtype == pl.Utf8:
+            d = d.with_columns(pl.col("start_time").str.to_datetime(strict=False))
+        elif st_dtype == pl.Date:
+            d = d.with_columns(pl.col("start_time").cast(pl.Datetime))
+        d = d.drop_nulls("start_time").sort("start_time")
+        if d.is_empty():
             continue
 
-        prepared.append((str(name), d))
+        prepared.append((name, d))
 
         # Collecter les données pour l'axe X commun (vectorisé)
         if has_match_id:
-            match_df = d[["match_id", "start_time"]].copy()
-            match_df["match_id"] = match_df["match_id"].astype(str)
+            match_df = d.select(
+                [
+                    pl.col("match_id").cast(pl.String).alias("match_id"),
+                    pl.col("start_time"),
+                ]
+            )
         else:
-            match_df = d[["start_time"]].copy()
-            match_df["match_id"] = match_df["start_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+            match_df = d.select(
+                [
+                    pl.col("start_time").dt.strftime("%Y-%m-%dT%H:%M:%S").alias("match_id"),
+                    pl.col("start_time"),
+                ]
+            )
         all_match_data.append(match_df)
 
     if not prepared or not all_match_data:
         return None
 
     # Construire l'axe X commun (vectorisé)
-    combined = pd.concat(all_match_data, ignore_index=True)
+    combined = pl.concat(all_match_data, how="vertical")
     # Garder le premier start_time par match_id (le plus ancien)
-    match_times = combined.groupby("match_id")["start_time"].min().reset_index()
-    match_times = match_times.sort_values("start_time").reset_index(drop=True)
+    match_times = combined.group_by("match_id").agg(pl.col("start_time").min()).sort("start_time")
 
-    match_ids_ordered = match_times["match_id"].tolist()
-    idx_map = {mid: i for i, mid in enumerate(match_ids_ordered)}
+    match_ids_ordered = match_times.get_column("match_id").to_list()
+    idx_map_df = pl.DataFrame(
+        {
+            "_match_key": match_ids_ordered,
+            "_x": list(range(len(match_ids_ordered))),
+        }
+    )
 
     # Labels pour l'axe X (dates)
-    labels = match_times["start_time"].dt.strftime("%d/%m %H:%M").tolist()
+    labels = match_times.get_column("start_time").dt.strftime("%d/%m %H:%M").to_list()
     step = max(1, len(labels) // 10) if labels else 1
 
     fig = go.Figure()
@@ -212,48 +229,39 @@ def plot_multi_metric_bars_by_match(
         else:
             color = "#35D0FF"
 
-        y = pd.to_numeric(d[metric_col], errors="coerce")
-        mask = y.notna()
-        d2 = d.loc[mask].copy()
-        if d2.empty:
+        # Cast métrique en Float64 et filtrer les nulls
+        d = d.with_columns(pl.col(metric_col).cast(pl.Float64, strict=False).alias("_y"))
+        d = d.filter(pl.col("_y").is_not_null())
+        if d.is_empty():
             continue
 
-        y2 = pd.to_numeric(d2[metric_col], errors="coerce")
-
-        # Mapper vers l'axe X commun via match_id (vectorisé)
-        if has_match_id:
-            d2["_match_key"] = d2["match_id"].astype(str)
-        else:
-            d2["_match_key"] = d2["start_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
-
-        d2["_x"] = d2["_match_key"].map(idx_map)
-        valid_mask = d2["_x"].notna()
-        d2 = d2.loc[valid_mask].copy()
-        y2 = y2.loc[valid_mask]
-
-        # Calculer la moyenne lissée sur les valeurs dans l'ordre chronologique
-        # (d2 est déjà trié par start_time, donc y2 est dans l'ordre chronologique)
+        # Calculer la moyenne lissée dans l'ordre chronologique (avant réordonnancement)
         if bool(show_smooth_lines):
-            smooth_chrono = (
-                y2.rolling(window=max(1, w), min_periods=1).mean() if w and w > 1 else y2
-            )
+            if w and w > 1:
+                d = d.with_columns(
+                    pl.col("_y").rolling_mean(window_size=max(1, w), min_samples=1).alias("_smooth")
+                )
+            else:
+                d = d.with_columns(pl.col("_y").alias("_smooth"))
+
+        # Ajouter la clé de match pour mapper vers l'axe X commun
+        if has_match_id:
+            d = d.with_columns(pl.col("match_id").cast(pl.String).alias("_match_key"))
         else:
-            smooth_chrono = None
+            d = d.with_columns(
+                pl.col("start_time").dt.strftime("%Y-%m-%dT%H:%M:%S").alias("_match_key")
+            )
 
-        # Trier par indices X pour garantir l'ordre correct (évite les boucles visuelles)
-        # Créer un DataFrame temporaire pour trier ensemble x, y2 et smooth
-        temp_df = pd.DataFrame(
-            {
-                "_x": d2["_x"].astype(int),
-                "y": y2.values,
-            }
-        )
-        if smooth_chrono is not None:
-            temp_df["smooth"] = smooth_chrono.values
-        temp_df = temp_df.sort_values("_x").reset_index(drop=True)
+        # Joindre pour obtenir l'index X commun
+        d = d.join(idx_map_df, on="_match_key", how="inner")
+        if d.is_empty():
+            continue
 
-        x = temp_df["_x"].tolist()
-        y2_sorted = temp_df["y"].tolist()
+        # Trier par _x pour garantir l'ordre correct (évite les boucles visuelles)
+        d = d.sort("_x")
+
+        x = d.get_column("_x").to_list()
+        y2_sorted = d.get_column("_y").to_list()
 
         if not x:
             continue
@@ -270,8 +278,8 @@ def plot_multi_metric_bars_by_match(
             )
         )
 
-        if bool(show_smooth_lines) and smooth_chrono is not None:
-            smooth_sorted = temp_df["smooth"].tolist()
+        if bool(show_smooth_lines):
+            smooth_sorted = d.get_column("_smooth").to_list()
 
             fig.add_trace(
                 go.Scatter(

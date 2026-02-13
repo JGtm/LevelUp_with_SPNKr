@@ -6,12 +6,9 @@ Support, Score, Impact, Survie. Réutilisable dans Mes coéquipiers.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
 import streamlit as st
-
-if TYPE_CHECKING:
-    import pandas as pd
 
 
 def render_participation_section(
@@ -20,7 +17,7 @@ def render_participation_section(
     xuid: str,
     db_key: tuple[int, int] | None = None,
     *,
-    match_row: pd.Series | dict | None = None,
+    match_row: dict[str, Any] | None = None,
 ) -> None:
     """Affiche la section Participation au match (radar unifié 6 axes).
 
@@ -98,7 +95,7 @@ def render_participation_comparison(
     xuid: str,
     labels: list[str] | None = None,
     colors: list[str] | None = None,
-    match_rows: list[pd.Series | dict] | None = None,
+    match_rows: list[dict[str, Any]] | None = None,
 ) -> None:
     """Affiche une comparaison de participation entre plusieurs matchs.
 

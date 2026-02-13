@@ -11,16 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 
 from src.config import get_repo_root
@@ -36,12 +26,18 @@ def to_paris_naive_local(dt_value, paris_tz) -> datetime | None:
     if dt_value is None:
         return None
     try:
-        ts = pd.to_datetime(dt_value, errors="coerce")
-        if pd.isna(ts):
-            return None
+        if isinstance(dt_value, datetime):
+            ts = dt_value
+        elif isinstance(dt_value, str):
+            ts = datetime.fromisoformat(dt_value.replace("Z", "+00:00"))
+        elif hasattr(dt_value, "to_pydatetime"):
+            # pd.Timestamp / np.datetime64 (tolérance migration)
+            ts = dt_value.to_pydatetime()
+        else:
+            ts = datetime.fromisoformat(str(dt_value).replace("Z", "+00:00"))
         if ts.tzinfo is None:
-            return ts.to_pydatetime()
-        return ts.tz_convert(paris_tz).tz_localize(None).to_pydatetime()
+            return ts
+        return ts.astimezone(paris_tz).replace(tzinfo=None)
     except Exception:
         return None
 
@@ -52,7 +48,7 @@ def safe_dt(v, paris_tz) -> datetime | None:
 
 
 def match_time_window(
-    row: pd.Series | dict[str, Any], *, tolerance_minutes: int, paris_tz
+    row: dict[str, Any], *, tolerance_minutes: int, paris_tz
 ) -> tuple[datetime | None, datetime | None, bool]:
     """Calcule la fenêtre temporelle d'un match avec tolérance.
 
@@ -102,16 +98,17 @@ def paris_epoch_seconds_local(dt: datetime | None, paris_tz) -> float | None:
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def index_media_dir(dir_path: str, exts: tuple[str, ...]) -> pd.DataFrame:
+def index_media_dir(dir_path: str, exts: tuple[str, ...]) -> pl.DataFrame:
     """Indexe un répertoire de médias par extension et date de modification."""
+    _empty = pl.DataFrame(schema={"path": pl.Utf8, "mtime": pl.Float64, "ext": pl.Utf8})
     rows: list[dict[str, object]] = []
     p = str(dir_path or "").strip()
     if not p or not os.path.isdir(p):
-        return pd.DataFrame(columns=["path", "mtime", "ext"])
+        return _empty
 
     wanted = {e.lower().lstrip(".") for e in (exts or ()) if isinstance(e, str) and e.strip()}
     if not wanted:
-        return pd.DataFrame(columns=["path", "mtime", "ext"])
+        return _empty
 
     max_files = 12000
     try:
@@ -132,12 +129,12 @@ def index_media_dir(dir_path: str, exts: tuple[str, ...]) -> pd.DataFrame:
             if len(rows) >= max_files:
                 break
     except Exception:
-        return pd.DataFrame(columns=["path", "mtime", "ext"])
+        return _empty
 
-    df = pd.DataFrame(rows)
-    if df.empty:
+    df = pl.DataFrame(rows)
+    if df.is_empty():
         return df
-    return df.sort_values("mtime", ascending=False).reset_index(drop=True)
+    return df.sort("mtime", descending=True)
 
 
 # =============================================================================
@@ -147,7 +144,7 @@ def index_media_dir(dir_path: str, exts: tuple[str, ...]) -> pd.DataFrame:
 
 def render_media_section(
     *,
-    row: pd.Series | dict[str, Any],
+    row: dict[str, Any],
     settings: AppSettings,
     format_datetime_fn: Callable[[datetime | None], str],
     paris_tz,
@@ -187,13 +184,14 @@ def render_media_section(
 
     if screens_dir and os.path.isdir(screens_dir):
         img_df = index_media_dir(screens_dir, ("png", "jpg", "jpeg", "webp"))
-        if not img_df.empty:
-            mask = (img_df["mtime"] >= t0_epoch) & (img_df["mtime"] <= t1_epoch)
-            hits = img_df.loc[mask].head(24)
-            if not hits.empty:
+        if not img_df.is_empty():
+            hits = img_df.filter(
+                (pl.col("mtime") >= t0_epoch) & (pl.col("mtime") <= t1_epoch)
+            ).head(24)
+            if not hits.is_empty():
                 found_any = True
                 st.caption("Captures")
-                for p in hits["path"].tolist():
+                for p in hits["path"].to_list():
                     try:
                         st.image(p, caption=str(p))
                     except Exception:
@@ -201,13 +199,14 @@ def render_media_section(
 
     if videos_dir and os.path.isdir(videos_dir):
         vid_df = index_media_dir(videos_dir, ("mp4", "webm", "mkv", "mov"))
-        if not vid_df.empty:
-            mask = (vid_df["mtime"] >= t0_epoch) & (vid_df["mtime"] <= t1_epoch)
-            hits = vid_df.loc[mask].head(10)
-            if not hits.empty:
+        if not vid_df.is_empty():
+            hits = vid_df.filter(
+                (pl.col("mtime") >= t0_epoch) & (pl.col("mtime") <= t1_epoch)
+            ).head(10)
+            if not hits.is_empty():
                 found_any = True
                 st.caption("Vidéos")
-                paths = [str(p) for p in hits["path"].tolist() if p]
+                paths = [str(p) for p in hits["path"].to_list() if p]
                 if paths:
                     labels = [os.path.basename(p) for p in paths]
                     picked = st.selectbox(
@@ -267,7 +266,7 @@ def os_card(
     )
 
 
-def map_thumb_path(row: pd.Series | dict[str, Any], map_id: str | None) -> str | None:
+def map_thumb_path(row: dict[str, Any], map_id: str | None) -> str | None:
     """Trouve le chemin vers la miniature de la carte."""
 
     def _safe_stem_from_name(name: str | None) -> str:

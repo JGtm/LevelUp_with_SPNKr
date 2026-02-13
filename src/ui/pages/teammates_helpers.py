@@ -9,16 +9,6 @@ import html as html_lib
 import urllib.parse
 
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 
 from src.config import HALO_COLORS
@@ -30,11 +20,12 @@ from src.ui import (
 )
 from src.ui.cache import cached_load_player_match_result
 from src.ui.player_assets import ensure_local_image_path
+from src.visualization._compat import DataFrameLike, ensure_polars
 
 
-def _format_datetime_fr_hm(dt: pd.Timestamp | None) -> str:
+def _format_datetime_fr_hm(dt: object) -> str:
     """Formate une date FR avec heures/minutes."""
-    if pd.isna(dt):
+    if dt is None:
         return "-"
     try:
         return dt.strftime("%d/%m/%Y %H:%M")
@@ -165,7 +156,7 @@ def render_teammate_cards(picked_xuids: list[str], settings: object) -> None:
 
 
 def render_friends_history_table(
-    sub_all: pd.DataFrame,
+    sub_all: DataFrameLike,
     db_path: str,
     xuid: str,
     db_key: tuple[int, int] | None,
@@ -180,71 +171,109 @@ def render_friends_history_table(
         db_key: Clé de cache de la DB.
         waypoint_player: Nom Waypoint du joueur.
     """
-    friends_table = sub_all.copy()
-    friends_table["start_time_fr"] = friends_table["start_time"].apply(_format_datetime_fr_hm)
+    friends_table = ensure_polars(sub_all)
+    friends_table = friends_table.with_columns(
+        pl.col("start_time").dt.strftime("%d/%m/%Y %H:%M").fill_null("-").alias("start_time_fr")
+    )
     if "playlist_fr" not in friends_table.columns:
-        friends_table["playlist_fr"] = friends_table["playlist_name"].apply(translate_playlist_name)
+        friends_table = friends_table.with_columns(
+            pl.col("playlist_name")
+            .map_elements(translate_playlist_name, return_dtype=pl.Utf8)
+            .alias("playlist_fr")
+        )
     if "mode_ui" in friends_table.columns:
-        friends_table["mode"] = friends_table["mode_ui"].apply(
-            lambda x: x if (x is not None and str(x).strip()) else None
+        friends_table = friends_table.with_columns(
+            pl.when(
+                pl.col("mode_ui").is_not_null()
+                & (pl.col("mode_ui").cast(pl.Utf8).str.strip_chars() != "")
+            )
+            .then(pl.col("mode_ui"))
+            .otherwise(pl.lit(None))
+            .alias("mode")
         )
     else:
-        friends_table["mode"] = None
-    if friends_table["mode"].isna().any() and "pair_name" in friends_table.columns:
-        mask = friends_table["mode"].isna()
-        friends_table.loc[mask, "mode"] = friends_table.loc[mask, "pair_name"].apply(
-            lambda p: _normalize_mode_label(str(p) if p is not None else None)
+        friends_table = friends_table.with_columns(pl.lit(None).cast(pl.Utf8).alias("mode"))
+    if friends_table["mode"].is_null().any() and "pair_name" in friends_table.columns:
+        friends_table = friends_table.with_columns(
+            pl.when(pl.col("mode").is_null())
+            .then(
+                pl.col("pair_name").map_elements(
+                    lambda p: _normalize_mode_label(str(p) if p is not None else None),
+                    return_dtype=pl.Utf8,
+                )
+            )
+            .otherwise(pl.col("mode"))
+            .alias("mode")
         )
-    friends_table["mode"] = friends_table["mode"].fillna("-")
-    friends_table["outcome_label"] = (
-        friends_table["outcome"]
-        .map({2: "Victoire", 3: "Défaite", 1: "Égalité", 4: "Non terminé"})
-        .fillna("-")
+    friends_table = friends_table.with_columns(pl.col("mode").fill_null("-"))
+    friends_table = friends_table.with_columns(
+        pl.col("outcome")
+        .replace_strict(
+            {2: "Victoire", 3: "Défaite", 1: "Égalité", 4: "Non terminé"},
+            default="-",
+            return_dtype=pl.Utf8,
+        )
+        .alias("outcome_label")
     )
-    friends_table["score"] = friends_table.apply(
-        lambda r: _format_score_label(r.get("my_team_score"), r.get("enemy_team_score")), axis=1
-    )
+    # Calcul du score
+    score_cols = ["my_team_score", "enemy_team_score"]
+    if all(c in friends_table.columns for c in score_cols):
+        friends_table = friends_table.with_columns(
+            pl.struct(score_cols)
+            .map_elements(
+                lambda r: _format_score_label(r["my_team_score"], r["enemy_team_score"]),
+                return_dtype=pl.Utf8,
+            )
+            .alias("score")
+        )
+    else:
+        friends_table = friends_table.with_columns(pl.lit("-").alias("score"))
 
     # Utiliser les colonnes MMR du DataFrame si elles existent (DuckDB v4 les charge déjà)
     # Sinon, fallback vers des requêtes individuelles (legacy ou colonnes manquantes)
-    if "team_mmr" not in friends_table.columns or friends_table["team_mmr"].isna().all():
-
-        def _mmr_tuple(match_id: str):
-            pm = cached_load_player_match_result(
-                db_path, str(match_id), xuid.strip(), db_key=db_key
-            )
+    if "team_mmr" not in friends_table.columns or friends_table["team_mmr"].is_null().all():
+        match_ids_list = friends_table["match_id"].cast(pl.Utf8).to_list()
+        team_mmrs: list[object] = []
+        enemy_mmrs: list[object] = []
+        for mid in match_ids_list:
+            pm = cached_load_player_match_result(db_path, str(mid), xuid.strip(), db_key=db_key)
             if not isinstance(pm, dict):
-                return (None, None)
-            return (pm.get("team_mmr"), pm.get("enemy_mmr"))
-
-        mmr_pairs = friends_table["match_id"].astype(str).apply(_mmr_tuple)
-        friends_table["team_mmr"] = mmr_pairs.apply(lambda t: t[0])
-        friends_table["enemy_mmr"] = mmr_pairs.apply(lambda t: t[1])
+                team_mmrs.append(None)
+                enemy_mmrs.append(None)
+            else:
+                team_mmrs.append(pm.get("team_mmr"))
+                enemy_mmrs.append(pm.get("enemy_mmr"))
+        friends_table = friends_table.with_columns(
+            [
+                pl.Series("team_mmr", team_mmrs),
+                pl.Series("enemy_mmr", enemy_mmrs),
+            ]
+        )
 
     # S'assurer que les colonnes existent
     if "team_mmr" not in friends_table.columns:
-        friends_table["team_mmr"] = None
+        friends_table = friends_table.with_columns(pl.lit(None).alias("team_mmr"))
     if "enemy_mmr" not in friends_table.columns:
-        friends_table["enemy_mmr"] = None
+        friends_table = friends_table.with_columns(pl.lit(None).alias("enemy_mmr"))
 
-    friends_table["delta_mmr"] = friends_table.apply(
-        lambda r: (float(r["team_mmr"]) - float(r["enemy_mmr"]))
-        if (pd.notna(r.get("team_mmr")) and pd.notna(r.get("enemy_mmr")))
-        else None,
-        axis=1,
+    friends_table = friends_table.with_columns(
+        pl.when(pl.col("team_mmr").is_not_null() & pl.col("enemy_mmr").is_not_null())
+        .then(pl.col("team_mmr").cast(pl.Float64) - pl.col("enemy_mmr").cast(pl.Float64))
+        .otherwise(pl.lit(None))
+        .alias("delta_mmr")
     )
     wp = str(waypoint_player or "").strip()
     if wp:
-        friends_table["match_url"] = (
-            "https://www.halowaypoint.com/halo-infinite/players/"
-            + wp
-            + "/matches/"
-            + friends_table["match_id"].astype(str)
+        friends_table = friends_table.with_columns(
+            (
+                pl.lit("https://www.halowaypoint.com/halo-infinite/players/" + wp + "/matches/")
+                + pl.col("match_id").cast(pl.Utf8)
+            ).alias("match_url")
         )
     else:
-        friends_table["match_url"] = ""
+        friends_table = friends_table.with_columns(pl.lit("").alias("match_url"))
 
-    view = friends_table.sort_values("start_time", ascending=False).head(250).reset_index(drop=True)
+    view = friends_table.sort("start_time", descending=True).head(250)
 
     def _fmt(v) -> str:
         if v is None:
@@ -300,7 +329,7 @@ def render_friends_history_table(
 
     head = "".join(f"<th>{html_lib.escape(h)}</th>" for h, _ in cols)
     body_rows: list[str] = []
-    for _, r in view.iterrows():
+    for r in view.to_dicts():
         mid = str(r.get("match_id") or "").strip()
         app = _app_url("Match", match_id=mid)
         match_link = f"<a href='{html_lib.escape(app)}' target='_self'>Ouvrir</a>" if mid else "-"

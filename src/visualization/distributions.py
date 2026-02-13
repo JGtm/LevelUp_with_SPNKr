@@ -1,39 +1,34 @@
-"""Graphiques de distributions et répartitions."""
+"""Graphiques de distributions et répartitions.
+
+Les fonctions liées aux outcome (outcomes_over_time, stacked_outcomes,
+heatmap, matches_at_top) ont été extraites dans distributions_outcomes.py
+(Sprint 16).  Elles sont ré-exportées ici pour compatibilité.
+"""
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 import plotly.graph_objects as go
 import polars as pl
 
-from src.config import HALO_COLORS, OUTCOME_CODES, PLOT_CONFIG, SESSION_CONFIG
+from src.config import HALO_COLORS, OUTCOME_CODES, PLOT_CONFIG
+from src.visualization._compat import (
+    DataFrameLike,
+    ensure_polars,
+    ensure_polars_series,
+)
 from src.visualization.theme import (
     apply_halo_plot_style,
-    get_legend_horizontal_bottom,
+    get_legend_horizontal_bottom,  # noqa: F401 – re-export implicite
 )
 
-# Type alias pour compatibilité DataFrame
-try:
+if TYPE_CHECKING:
     import pandas as pd
 
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
 
-
-def _normalize_df(df: DataFrameType) -> pd.DataFrame:
-    """Convertit un DataFrame Polars en Pandas si nécessaire.
-
-    Les fonctions de visualisation utilisent encore certaines opérations Pandas
-    spécifiques (Plotly fonctionne mieux avec pandas). Cette fonction normalise l'entrée.
-    """
-    if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
-
-
-def plot_kda_distribution(df: pd.DataFrame | pl.DataFrame) -> go.Figure:
+def plot_kda_distribution(df: DataFrameLike) -> go.Figure:
     """Graphique de distribution du KDA (FDA) avec KDE.
 
     Args:
@@ -42,12 +37,11 @@ def plot_kda_distribution(df: pd.DataFrame | pl.DataFrame) -> go.Figure:
     Returns:
         Figure Plotly avec densité KDE et rug plot.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df = ensure_polars(df)
 
     colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=["kda"]).copy()
-    x = pd.to_numeric(d["kda"], errors="coerce").dropna().astype(float).to_numpy()
+    d = df.drop_nulls(subset=["kda"])
+    x = d.get_column("kda").cast(pl.Float64, strict=False).drop_nulls().to_numpy()
 
     if x.size == 0:
         fig = go.Figure()
@@ -122,388 +116,6 @@ def plot_kda_distribution(df: pd.DataFrame | pl.DataFrame) -> go.Figure:
     fig.update_yaxes(title_text="Densité", rangemode="tozero")
 
     return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height)
-
-
-def plot_outcomes_over_time(
-    df: pd.DataFrame | pl.DataFrame, *, session_style: bool = False
-) -> tuple[go.Figure, str]:
-    """Graphique d'évolution des victoires/défaites dans le temps.
-
-    Args:
-        df: DataFrame (Pandas ou Polars) avec colonnes outcome et start_time.
-        session_style: Si True, force une logique de bucket orientée "session" :
-            - <= 20 matchs : bucket par partie (1..n)
-            - > 20 matchs : bucket par heure
-
-    Returns:
-        Tuple (figure, bucket_label) où bucket_label décrit la granularité.
-    """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
-
-    colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=["outcome"]).copy()
-
-    if d.empty:
-        fig = go.Figure()
-        fig.update_layout(
-            height=PLOT_CONFIG.default_height, margin={"l": 40, "r": 20, "t": 30, "b": 40}
-        )
-        fig.update_yaxes(title_text="Nombre")
-        return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height), "période"
-
-    if session_style:
-        d = d.sort_values("start_time").reset_index(drop=True)
-        if len(d.index) <= 20:
-            bucket = d.index + 1
-            bucket_label = "partie"
-        else:
-            t = pd.to_datetime(d["start_time"], errors="coerce")
-            bucket = t.dt.floor("h")
-            bucket_label = "heure"
-    else:
-        tmin = pd.to_datetime(d["start_time"], errors="coerce").min()
-        tmax = pd.to_datetime(d["start_time"], errors="coerce").max()
-
-        dt_range = (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
-        days = float(dt_range.total_seconds() / 86400.0) if dt_range is not None else 999.0
-
-        cfg = SESSION_CONFIG
-
-        # Détermine le bucket selon la plage de dates
-        if days < cfg.bucket_threshold_hourly:
-            d = d.sort_values("start_time").reset_index(drop=True)
-            bucket = d.index + 1
-            bucket_label = "partie"
-        elif days <= cfg.bucket_threshold_daily:
-            bucket = d["start_time"].dt.floor("h")
-            bucket_label = "heure"
-        elif days <= cfg.bucket_threshold_weekly:
-            bucket = d["start_time"].dt.to_period("D").astype(str)
-            bucket_label = "jour"
-        elif days <= cfg.bucket_threshold_monthly:
-            bucket = d["start_time"].dt.to_period("W-MON").astype(str)
-            bucket_label = "semaine"
-        else:
-            bucket = d["start_time"].dt.to_period("M").astype(str)
-            bucket_label = "mois"
-
-    d["bucket"] = bucket
-    pivot = (
-        d.pivot_table(index="bucket", columns="outcome", values="match_id", aggfunc="count")
-        .fillna(0)
-        .astype(int)
-        .sort_index()
-    )
-
-    def col(code: int) -> pd.Series:
-        return (
-            pivot[code] if code in pivot.columns else pd.Series([0] * len(pivot), index=pivot.index)
-        )
-
-    wins = col(2)
-    losses = col(3)
-    ties = col(1)
-    nofin = col(4)
-
-    # Objectif UI: victoires au-dessus (positif) et défaites en dessous (négatif).
-    # Plotly empile séparément positifs/négatifs en mode "relative".
-    losses_neg = -losses
-
-    fig = go.Figure()
-    fig.add_bar(
-        x=pivot.index,
-        y=wins,
-        name="Victoires",
-        marker_color=colors["green"],
-        hovertemplate="%{x}<br>Victoires: %{y}<extra></extra>",
-    )
-    fig.add_bar(
-        x=pivot.index,
-        y=losses_neg,
-        name="Défaites",
-        marker_color=colors["red"],
-        customdata=losses.to_numpy(),
-        hovertemplate="%{x}<br>Défaites: %{customdata}<extra></extra>",
-    )
-
-    # Ces statuts ne sont pas des "défaites" : on les garde au-dessus.
-    if ties.sum() > 0:
-        fig.add_bar(
-            x=pivot.index,
-            y=ties,
-            name="Égalités",
-            marker_color=colors["violet"],
-            hovertemplate="%{x}<br>Égalités: %{y}<extra></extra>",
-        )
-    if nofin.sum() > 0:
-        fig.add_bar(
-            x=pivot.index,
-            y=nofin,
-            name="Non terminés",
-            marker_color=colors["violet"],
-            hovertemplate="%{x}<br>Non terminés: %{y}<extra></extra>",
-        )
-
-    fig.update_layout(
-        barmode="relative",
-        height=PLOT_CONFIG.default_height,
-        margin={"l": 40, "r": 20, "t": 30, "b": 40},
-    )
-    fig.update_yaxes(title_text="Nombre", zeroline=True)
-
-    if bucket_label == "partie" and len(pivot.index) > 30:
-        fig.update_xaxes(showticklabels=False, title_text="")
-
-    return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height), bucket_label
-
-
-def plot_stacked_outcomes_by_category(
-    df: pd.DataFrame | pl.DataFrame,
-    category_col: str,
-    *,
-    title: str | None = None,
-    min_matches: int = 1,
-    sort_by: str = "total",
-    max_categories: int = 20,
-) -> go.Figure:
-    """Graphique de colonnes empilées Win/Loss/Tie/Left par catégorie.
-
-    Args:
-        df: DataFrame (Pandas ou Polars) avec colonnes `category_col` et `outcome`.
-        category_col: Nom de la colonne de catégorie (ex: "map_name", "mode_category").
-        title: Titre optionnel du graphique.
-        min_matches: Nombre minimum de matchs pour afficher une catégorie.
-        sort_by: Tri des catégories ("total", "win_rate", "name").
-        max_categories: Nombre maximum de catégories à afficher.
-
-    Returns:
-        Figure Plotly avec barres empilées verticales.
-    """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
-
-    colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=[category_col, "outcome"]).copy()
-
-    if d.empty:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    # Agrégation par catégorie et outcome
-    pivot = (
-        d.pivot_table(
-            index=category_col,
-            columns="outcome",
-            values="match_id",
-            aggfunc="count",
-        )
-        .fillna(0)
-        .astype(int)
-    )
-
-    def col(code: int) -> pd.Series:
-        return pivot[code] if code in pivot.columns else pd.Series(0, index=pivot.index)
-
-    pivot["wins"] = col(OUTCOME_CODES.WIN)
-    pivot["losses"] = col(OUTCOME_CODES.LOSS)
-    pivot["ties"] = col(OUTCOME_CODES.TIE)
-    pivot["left"] = col(OUTCOME_CODES.NO_FINISH)
-    pivot["total"] = pivot["wins"] + pivot["losses"] + pivot["ties"] + pivot["left"]
-    pivot["win_rate"] = (pivot["wins"] / pivot["total"]).fillna(0)
-
-    # Filtrer par minimum de matchs
-    pivot = pivot[pivot["total"] >= min_matches]
-
-    if pivot.empty:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    # Tri
-    if sort_by == "win_rate":
-        pivot = pivot.sort_values("win_rate", ascending=False)
-    elif sort_by == "name":
-        pivot = pivot.sort_index()
-    else:
-        pivot = pivot.sort_values("total", ascending=False)
-
-    # Limiter le nombre de catégories
-    pivot = pivot.head(max_categories)
-
-    fig = go.Figure()
-
-    # Victoires
-    fig.add_trace(
-        go.Bar(
-            x=pivot.index,
-            y=pivot["wins"],
-            name="Victoires",
-            marker_color=colors["green"],
-            opacity=0.85,
-            text=pivot["wins"],
-            textposition="inside",
-            hovertemplate="%{x}<br>Victoires: %{y}<br>Win Rate: %{customdata:.1%}<extra></extra>",
-            customdata=pivot["win_rate"],
-        )
-    )
-
-    # Défaites
-    fig.add_trace(
-        go.Bar(
-            x=pivot.index,
-            y=pivot["losses"],
-            name="Défaites",
-            marker_color=colors["red"],
-            opacity=0.75,
-            text=pivot["losses"],
-            textposition="inside",
-            hovertemplate="%{x}<br>Défaites: %{y}<extra></extra>",
-        )
-    )
-
-    # Égalités (si présentes)
-    if pivot["ties"].sum() > 0:
-        fig.add_trace(
-            go.Bar(
-                x=pivot.index,
-                y=pivot["ties"],
-                name="Égalités",
-                marker_color=colors["amber"],
-                opacity=0.70,
-                text=pivot["ties"].apply(lambda v: str(v) if v > 0 else ""),
-                textposition="inside",
-                hovertemplate="%{x}<br>Égalités: %{y}<extra></extra>",
-            )
-        )
-
-    # Non terminés (si présents)
-    if pivot["left"].sum() > 0:
-        fig.add_trace(
-            go.Bar(
-                x=pivot.index,
-                y=pivot["left"],
-                name="Non terminés",
-                marker_color=colors["violet"],
-                opacity=0.60,
-                text=pivot["left"].apply(lambda v: str(v) if v > 0 else ""),
-                textposition="inside",
-                hovertemplate="%{x}<br>Non terminés: %{y}<extra></extra>",
-            )
-        )
-
-    height = PLOT_CONFIG.tall_height if len(pivot) > 10 else PLOT_CONFIG.default_height
-
-    fig.update_layout(
-        barmode="stack",
-        bargap=0.15,
-        height=height,
-        margin={"l": 40, "r": 20, "t": 60 if title else 30, "b": 100},
-        legend=get_legend_horizontal_bottom(),
-    )
-    fig.update_xaxes(tickangle=45, title_text="")
-    fig.update_yaxes(title_text="Matchs")
-
-    return apply_halo_plot_style(fig, title=title, height=height)
-
-
-def plot_win_ratio_heatmap(
-    df: pd.DataFrame,
-    *,
-    title: str | None = None,
-    min_matches: int = 2,
-) -> go.Figure:
-    """Heatmap du Win Ratio par jour de la semaine et heure.
-
-    Args:
-        df: DataFrame avec colonnes `start_time` et `outcome`.
-        title: Titre optionnel.
-        min_matches: Minimum de matchs pour afficher une cellule.
-
-    Returns:
-        Figure Plotly avec heatmap (jours × heures).
-    """
-    colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=["start_time", "outcome"]).copy()
-
-    if d.empty:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
-    d = d.dropna(subset=["start_time"])
-
-    # Extraire jour de semaine et heure
-    d["day_of_week"] = d["start_time"].dt.dayofweek  # 0=Lundi, 6=Dimanche
-    d["hour"] = d["start_time"].dt.hour
-    d["is_win"] = (d["outcome"] == OUTCOME_CODES.WIN).astype(int)
-
-    # Agrégation
-    agg = (
-        d.groupby(["day_of_week", "hour"])
-        .agg(
-            wins=("is_win", "sum"),
-            total=("match_id", "count"),
-        )
-        .reset_index()
-    )
-    agg["win_rate"] = (agg["wins"] / agg["total"]).fillna(0)
-
-    # Filtrer par minimum de matchs
-    agg.loc[agg["total"] < min_matches, "win_rate"] = np.nan
-
-    # Pivoter pour créer la matrice
-    matrix = agg.pivot(index="day_of_week", columns="hour", values="win_rate")
-    counts = agg.pivot(index="day_of_week", columns="hour", values="total")
-
-    # Remplir toutes les heures (0-23) et jours (0-6)
-    all_hours = list(range(24))
-    all_days = list(range(7))
-    matrix = matrix.reindex(index=all_days, columns=all_hours)
-    counts = counts.reindex(index=all_days, columns=all_hours).fillna(0).astype(int)
-
-    day_labels = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
-    hour_labels = [f"{h:02d}h" for h in all_hours]
-
-    # Créer le texte des cellules (nombre de matchs)
-    text_matrix = counts.values.astype(str)
-    text_matrix[counts.values == 0] = ""
-
-    fig = go.Figure(
-        data=go.Heatmap(
-            z=matrix.values,
-            x=hour_labels,
-            y=day_labels,
-            colorscale=[
-                [0.0, colors["red"]],
-                [0.5, colors["amber"]],
-                [1.0, colors["green"]],
-            ],
-            zmin=0,
-            zmax=1,
-            text=text_matrix,
-            texttemplate="%{text}",
-            textfont={"size": 10},
-            hovertemplate=(
-                "%{y} %{x}<br>" "Win Rate: %{z:.1%}<br>" "Matchs: %{text}<extra></extra>"
-            ),
-            colorbar={
-                "title": "Win Rate",
-                "tickformat": ".0%",
-            },
-        )
-    )
-
-    fig.update_layout(
-        height=PLOT_CONFIG.default_height,
-        margin={"l": 60, "r": 20, "t": 60 if title else 30, "b": 40},
-    )
-    fig.update_xaxes(title_text="Heure", side="bottom")
-    fig.update_yaxes(title_text="Jour", autorange="reversed")
-
-    return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
 def plot_top_weapons(
@@ -598,13 +210,11 @@ def plot_histogram(
     colors = HALO_COLORS.as_dict()
     bar_color = color or colors["cyan"]
 
-    if isinstance(values, pl.Series):
-        x = values.drop_nulls().to_numpy()
-    elif isinstance(values, pd.Series):
-        x = values.dropna().to_numpy()
+    if isinstance(values, np.ndarray):
+        x = values[~np.isnan(values)].astype(float)
     else:
-        x = np.array(values)
-        x = x[~np.isnan(x)]
+        s = ensure_polars_series(values)
+        x = s.cast(pl.Float64, strict=False).drop_nulls().to_numpy()
 
     if x.size == 0:
         fig = go.Figure()
@@ -742,7 +352,7 @@ def plot_medals_distribution(
 
 
 def plot_correlation_scatter(
-    df: pd.DataFrame | pl.DataFrame,
+    df: DataFrameLike,
     x_col: str,
     y_col: str,
     *,
@@ -767,24 +377,22 @@ def plot_correlation_scatter(
     Returns:
         Figure Plotly avec scatter plot.
     """
-    # Normaliser en Pandas pour compatibilité
-    df = _normalize_df(df)
+    df = ensure_polars(df)
 
     colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=[x_col, y_col]).copy()
+    d = df.drop_nulls(subset=[x_col, y_col])
 
-    if d.empty:
+    if d.is_empty():
         fig = go.Figure()
         fig.update_layout(height=PLOT_CONFIG.default_height)
         return apply_halo_plot_style(fig, title=title)
 
-    x = pd.to_numeric(d[x_col], errors="coerce")
-    y = pd.to_numeric(d[y_col], errors="coerce")
+    x_series = d.get_column(x_col).cast(pl.Float64, strict=False)
+    y_series = d.get_column(y_col).cast(pl.Float64, strict=False)
 
     # Couleur des points
     if color_col and color_col in d.columns:
-        d["_color"] = d[color_col]
-        color_values = d["_color"].values
+        color_values = d.get_column(color_col).to_list()
 
         # Si c'est outcome, mapper vers des couleurs
         if color_col == "outcome":
@@ -800,12 +408,15 @@ def plot_correlation_scatter(
     else:
         marker_colors = colors["cyan"]
 
+    x_np = x_series.to_numpy()
+    y_np = y_series.to_numpy()
+
     fig = go.Figure()
 
     fig.add_trace(
         go.Scatter(
-            x=x,
-            y=y,
+            x=x_np,
+            y=y_np,
             mode="markers",
             marker={
                 "color": marker_colors,
@@ -820,11 +431,11 @@ def plot_correlation_scatter(
     )
 
     # Ligne de tendance
-    if show_trendline and x.size > 2:
-        valid = ~(x.isna() | y.isna())
+    if show_trendline and len(x_np) > 2:
+        valid = ~(np.isnan(x_np) | np.isnan(y_np))
         if valid.sum() > 2:
-            x_valid = x[valid].to_numpy()
-            y_valid = y[valid].to_numpy()
+            x_valid = x_np[valid]
+            y_valid = y_np[valid]
 
             # Régression linéaire simple
             m, b = np.polyfit(x_valid, y_valid, 1)
@@ -855,142 +466,6 @@ def plot_correlation_scatter(
     )
     fig.update_xaxes(title_text=x_label or x_col)
     fig.update_yaxes(title_text=y_label or y_col)
-
-    return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
-
-
-def plot_matches_at_top_by_week(
-    df: pd.DataFrame,
-    *,
-    title: str | None = None,
-    rank_col: str = "rank",
-    top_n_ranks: int = 1,
-) -> go.Figure:
-    """Graphique comparant les matchs 'Top' vs Total par période.
-
-    La période est adaptée automatiquement à la durée des données :
-    - < 2 jours : par match (index numérique)
-    - < 7 jours : par jour
-    - >= 7 jours : par semaine
-
-    Args:
-        df: DataFrame avec colonnes `start_time` et `rank` (ou équivalent).
-        title: Titre optionnel.
-        rank_col: Nom de la colonne de rang (défaut: "rank").
-        top_n_ranks: Nombre de rangs considérés comme "Top" (défaut: 1 = 1ère place uniquement).
-
-    Returns:
-        Figure Plotly avec barres empilées (Top + Autres).
-    """
-    colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=["start_time"]).copy()
-
-    if d.empty:
-        fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height)
-        return apply_halo_plot_style(fig, title=title)
-
-    d["start_time"] = pd.to_datetime(d["start_time"], errors="coerce")
-    d = d.dropna(subset=["start_time"])
-
-    # Déterminer la période dynamiquement (Sprint 7.7)
-    tmin = d["start_time"].min()
-    tmax = d["start_time"].max()
-    dt_range = (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
-    days = float(dt_range.total_seconds() / 86400.0) if dt_range is not None else 999.0
-
-    if days < 2:
-        # Période très courte : par match (index numérique)
-        d = d.sort_values("start_time").reset_index(drop=True)
-        d["period"] = d.index.astype(str)
-        period_label = "Match"
-    elif days < 7:
-        # Moins d'une semaine : par jour
-        d["period"] = d["start_time"].dt.strftime("%Y-%m-%d")
-        period_label = "Jour"
-    else:
-        # Par semaine (comportement original)
-        d["period"] = d["start_time"].dt.to_period("W-MON").astype(str)
-        period_label = "Semaine"
-
-    # Déterminer si le joueur a fini "Top"
-    if rank_col in d.columns:
-        d["is_top"] = pd.to_numeric(d[rank_col], errors="coerce").fillna(99) <= top_n_ranks
-    else:
-        # Fallback: utiliser outcome (victoire = top)
-        d["is_top"] = d["outcome"] == OUTCOME_CODES.WIN if "outcome" in d.columns else False
-
-    # Agrégation
-    agg = (
-        d.groupby("period")
-        .agg(
-            total=("match_id", "count"),
-            top_count=("is_top", "sum"),
-        )
-        .reset_index()
-    )
-    agg["other_count"] = agg["total"] - agg["top_count"]
-    agg["top_rate"] = (agg["top_count"] / agg["total"] * 100).round(1)
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=agg["period"],
-            y=agg["top_count"],
-            name=f"Top {top_n_ranks}",
-            marker_color=colors["green"],
-            opacity=0.85,
-            text=agg["top_count"],
-            textposition="inside",
-            hovertemplate="%{x}<br>Top: %{y}<br>Taux: %{customdata:.1f}%<extra></extra>",
-            customdata=agg["top_rate"],
-        )
-    )
-
-    fig.add_trace(
-        go.Bar(
-            x=agg["period"],
-            y=agg["other_count"],
-            name="Autres",
-            marker_color=colors["slate"],
-            opacity=0.55,
-            text=agg["other_count"].apply(lambda v: str(v) if v > 0 else ""),
-            textposition="inside",
-            hovertemplate="%{x}<br>Autres: %{y}<extra></extra>",
-        )
-    )
-
-    # Ligne de tendance du taux
-    fig.add_trace(
-        go.Scatter(
-            x=agg["period"],
-            y=agg["top_rate"],
-            mode="lines+markers",
-            name="Taux Top (%)",
-            yaxis="y2",
-            line={"color": colors["amber"], "width": 2},
-            marker={"size": 6},
-            hovertemplate="%{x}<br>Taux Top: %{y:.1f}%<extra></extra>",
-        )
-    )
-
-    fig.update_layout(
-        barmode="stack",
-        bargap=0.15,
-        height=PLOT_CONFIG.default_height,
-        margin={"l": 40, "r": 60, "t": 60 if title else 30, "b": 80},
-        legend=get_legend_horizontal_bottom(),
-        yaxis2={
-            "title": "Taux (%)",
-            "overlaying": "y",
-            "side": "right",
-            "range": [0, 100],
-            "showgrid": False,
-        },
-    )
-    fig.update_xaxes(tickangle=45, title_text=period_label)
-    fig.update_yaxes(title_text="Matchs")
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
@@ -1102,3 +577,14 @@ def plot_first_event_distribution(
     fig.update_yaxes(title_text="Nombre de matchs")
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
+
+
+# ---------------------------------------------------------------------------
+# Re-exports depuis distributions_outcomes (compat backward — Sprint 16)
+# ---------------------------------------------------------------------------
+from src.visualization.distributions_outcomes import (  # noqa: E402, F401
+    plot_matches_at_top_by_week,
+    plot_outcomes_over_time,
+    plot_stacked_outcomes_by_category,
+    plot_win_ratio_heatmap,
+)

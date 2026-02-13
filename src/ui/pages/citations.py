@@ -5,27 +5,18 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 
 from src.ui.commendations import render_h5g_commendations_section
 from src.ui.medals import medal_label, render_medals_grid
+from src.visualization._compat import DataFrameLike, ensure_polars
 from src.visualization.distributions import plot_medals_distribution
 
 
 def render_citations_page(
     *,
-    dff: pd.DataFrame,
-    df_full: pd.DataFrame,
+    dff: DataFrameLike,
+    df_full: DataFrameLike,
     xuid: str | None,
     db_path: str,
     db_key: tuple[int, int] | None,
@@ -37,9 +28,9 @@ def render_citations_page(
 
     Parameters
     ----------
-    dff : pd.DataFrame
+    dff : DataFrameLike
         DataFrame filtré des matchs.
-    df_full : pd.DataFrame
+    df_full : DataFrameLike
         DataFrame complet (non filtré) pour calculer les deltas.
     xuid : str | None
         XUID du joueur principal.
@@ -50,8 +41,11 @@ def render_citations_page(
     top_medals_fn : Callable
         Fonction pour récupérer les top médailles (signature: db_path, xuid, match_ids, top_n, db_key).
     """
+    # Normaliser en Polars dès l'entrée
+    dff = ensure_polars(dff)
+    df_full = ensure_polars(df_full)
     # Protection contre les DataFrames vides
-    if dff.empty:
+    if dff.is_empty():
         st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
         return
 
@@ -65,8 +59,10 @@ def render_citations_page(
     xuid_clean = str(xuid or "").strip()
 
     # Charger les médailles pour le DataFrame filtré.
-    if not dff.empty and xuid_clean:
-        match_ids = [str(x) for x in dff["match_id"].dropna().astype(str).tolist()]
+    if not dff.is_empty() and xuid_clean:
+        match_ids = (
+            dff.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
+        )
         with st.spinner("Agrégation des médailles…"):
             top_all = top_medals_fn(db_path, xuid_clean, match_ids, top_n=None, db_key=db_key)
         try:
@@ -79,13 +75,17 @@ def render_citations_page(
             if col not in dff.columns:
                 continue
             try:
-                stats_totals[col] = int(pd.to_numeric(dff[col], errors="coerce").fillna(0).sum())
+                stats_totals[col] = int(
+                    dff.select(pl.col(col).cast(pl.Float64, strict=False).fill_null(0).sum()).item()
+                )
             except Exception:
                 stats_totals[col] = 0
 
     # Charger les médailles pour le DataFrame complet (pour le delta).
-    if not df_full.empty and xuid_clean:
-        match_ids_full = [str(x) for x in df_full["match_id"].dropna().astype(str).tolist()]
+    if not df_full.is_empty() and xuid_clean:
+        match_ids_full = (
+            df_full.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
+        )
         # Utilise le cache existant si possible.
         top_all_full = top_medals_fn(db_path, xuid_clean, match_ids_full, top_n=None, db_key=db_key)
         try:
@@ -98,7 +98,9 @@ def render_citations_page(
                 continue
             try:
                 stats_totals_full[col] = int(
-                    pd.to_numeric(df_full[col], errors="coerce").fillna(0).sum()
+                    df_full.select(
+                        pl.col(col).cast(pl.Float64, strict=False).fill_null(0).sum()
+                    ).item()
                 )
             except Exception:
                 stats_totals_full[col] = 0
@@ -113,7 +115,7 @@ def render_citations_page(
     _delta_citations = total_citations_filtered  # noqa: F841
 
     # Détermine si on est en mode "filtré" (pas tous les matchs).
-    is_filtered = len(dff) < len(df_full) if not df_full.empty else False
+    is_filtered = len(dff) < len(df_full) if not df_full.is_empty() else False
 
     # 1) Commendations Halo 5 (référentiel offline)
     # Passer les compteurs full pour afficher les deltas par citation
@@ -129,7 +131,7 @@ def render_citations_page(
 
     # 2) Médailles (Halo Infinite) - Affiche TOUJOURS toutes les médailles.
     st.caption("Médailles sur la sélection/filtres actuels.")
-    if dff.empty:
+    if dff.is_empty():
         st.info("Aucun match disponible avec les filtres actuels.")
     else:
         top = sorted(counts_by_medal.items(), key=lambda kv: kv[1], reverse=True)
@@ -137,9 +139,14 @@ def render_citations_page(
         if not top:
             st.info("Aucune médaille trouvée (ou payload médailles absent).")
         else:
-            md = pd.DataFrame(top, columns=["name_id", "count"])
-            md["label"] = md["name_id"].apply(lambda x: medal_label(int(x)))
-            md_desc = md.sort_values("count", ascending=False)
+            md = pl.DataFrame(
+                {"name_id": [t[0] for t in top], "count": [t[1] for t in top]}
+            ).with_columns(
+                pl.col("name_id")
+                .map_elements(lambda x: medal_label(int(x)), return_dtype=pl.String)
+                .alias("label")
+            )
+            md_desc = md.sort("count", descending=True)
 
             # === Graphique de distribution des médailles (Sprint 5.4.9) ===
             st.subheader("Distribution des médailles")
@@ -162,7 +169,7 @@ def render_citations_page(
             if is_filtered:
                 deltas = {int(nid): int(cnt) for nid, cnt in counts_by_medal.items()}
             render_medals_grid(
-                md_desc[["name_id", "count"]].to_dict(orient="records"),
+                md_desc.select("name_id", "count").to_dicts(),
                 cols_per_row=8,
                 deltas=deltas,
             )

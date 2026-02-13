@@ -4,26 +4,11 @@ import plotly.graph_objects as go
 import polars as pl
 
 from src.config import HALO_COLORS, PLOT_CONFIG
+from src.visualization._compat import DataFrameLike, ensure_polars, to_pandas_for_plotly
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
 
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
-
-def _normalize_df(df: DataFrameType) -> "pd.DataFrame":
-    """Convertit un DataFrame Polars en Pandas (Plotly fonctionne mieux avec pandas)."""
-    if isinstance(df, pl.DataFrame):
-        return df.to_pandas()
-    return df
-
-
-def plot_map_comparison(df_breakdown: DataFrameType, metric: str, title: str) -> go.Figure:
+def plot_map_comparison(df_breakdown: DataFrameLike, metric: str, title: str) -> go.Figure:
     """Graphique de comparaison d'une métrique par carte.
 
     Args:
@@ -35,12 +20,16 @@ def plot_map_comparison(df_breakdown: DataFrameType, metric: str, title: str) ->
         Figure Plotly (barres horizontales).
     """
     colors = HALO_COLORS.as_dict()
-    d = _normalize_df(df_breakdown).dropna(subset=[metric]).copy()
+    df_pl = ensure_polars(df_breakdown).drop_nulls(subset=[metric])
 
-    if d.empty:
+    if df_pl.is_empty():
         fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height, margin=dict(l=40, r=20, t=30, b=40))
+        fig.update_layout(
+            height=PLOT_CONFIG.default_height, margin={"l": 40, "r": 20, "t": 30, "b": 40}
+        )
         return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height)
+
+    d = to_pandas_for_plotly(df_pl)
 
     fig = go.Figure(
         data=[
@@ -60,14 +49,14 @@ def plot_map_comparison(df_breakdown: DataFrameType, metric: str, title: str) ->
     fig.update_layout(
         height=PLOT_CONFIG.tall_height,
         title=title,
-        margin=dict(l=40, r=20, t=60, b=90),
+        margin={"l": 40, "r": 20, "t": 60, "b": 90},
         legend=get_legend_horizontal_bottom(),
     )
 
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
 
 
-def plot_map_ratio_with_winloss(df_breakdown: DataFrameType, title: str) -> go.Figure:
+def plot_map_ratio_with_winloss(df_breakdown: DataFrameLike, title: str) -> go.Figure:
     """Graphique de ratio par carte avec taux de victoire/défaite.
 
     Args:
@@ -78,17 +67,22 @@ def plot_map_ratio_with_winloss(df_breakdown: DataFrameType, title: str) -> go.F
         Figure Plotly avec barres empilées Win/Loss (+ autres statuts).
     """
     colors = HALO_COLORS.as_dict()
-    d = _normalize_df(df_breakdown).dropna(subset=["win_rate", "loss_rate"]).copy()
+    df_pl = ensure_polars(df_breakdown).drop_nulls(subset=["win_rate", "loss_rate"])
 
-    if d.empty:
+    if df_pl.is_empty():
         fig = go.Figure()
-        fig.update_layout(height=PLOT_CONFIG.default_height, margin=dict(l=40, r=20, t=30, b=40))
+        fig.update_layout(
+            height=PLOT_CONFIG.default_height, margin={"l": 40, "r": 20, "t": 30, "b": 40}
+        )
         return apply_halo_plot_style(fig, height=PLOT_CONFIG.default_height)
 
     # Complément: égalités / non terminés / inconnus -> affiché en "Autres".
-    d["other_rate"] = (1.0 - (d["win_rate"].astype(float) + d["loss_rate"].astype(float))).clip(
-        0.0, 1.0
+    df_pl = df_pl.with_columns(
+        (pl.lit(1.0) - pl.col("win_rate").cast(pl.Float64) - pl.col("loss_rate").cast(pl.Float64))
+        .clip(0.0, 1.0)
+        .alias("other_rate")
     )
+    d = to_pandas_for_plotly(df_pl)
 
     fig = go.Figure()
 
@@ -133,7 +127,7 @@ def plot_map_ratio_with_winloss(df_breakdown: DataFrameType, title: str) -> go.F
     fig.update_layout(
         height=PLOT_CONFIG.tall_height,
         title=title,
-        margin=dict(l=40, r=20, t=60, b=90),
+        margin={"l": 40, "r": 20, "t": 60, "b": 90},
         barmode="stack",
         bargap=0.18,
         legend=get_legend_horizontal_bottom(),

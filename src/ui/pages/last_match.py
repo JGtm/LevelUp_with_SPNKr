@@ -12,17 +12,9 @@ from datetime import date, datetime, time
 from typing import TYPE_CHECKING
 
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
+
+from src.visualization._compat import DataFrameLike, ensure_polars
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -31,13 +23,13 @@ if TYPE_CHECKING:
 
 
 def render_last_match_page(
-    dff: pd.DataFrame,
+    dff: DataFrameLike,
     db_path: str,
     xuid: str,
     waypoint_player: str,
     db_key: tuple[int, int] | None,
     settings: AppSettings,
-    df_full: pd.DataFrame | None,
+    df_full: DataFrameLike | None,
     render_match_view_fn: Callable,
     normalize_mode_label_fn: Callable[[str | None], str | None],
     format_score_label_fn: Callable,
@@ -76,11 +68,12 @@ def render_last_match_page(
     """
     st.caption("Dernière partie selon la sélection/filtres actuels.")
 
-    if dff.empty:
+    dff = ensure_polars(dff)
+    if dff.is_empty():
         st.info("Aucun match disponible avec les filtres actuels.")
         return
 
-    last_row = dff.sort_values("start_time").iloc[-1]
+    last_row = dff.sort("start_time").row(-1, named=True)
     last_match_id = str(last_row.get("match_id", "")).strip()
 
     render_match_view_fn(
@@ -106,14 +99,14 @@ def render_last_match_page(
 
 
 def render_match_search_page(
-    df: pd.DataFrame,
-    dff: pd.DataFrame,
+    df: DataFrameLike,
+    dff: DataFrameLike,
     db_path: str,
     xuid: str,
     waypoint_player: str,
     db_key: tuple[int, int] | None,
     settings: AppSettings,
-    df_full: pd.DataFrame | None,
+    df_full: DataFrameLike | None,
     render_match_view_fn: Callable,
     normalize_mode_label_fn: Callable[[str | None], str | None],
     format_score_label_fn: Callable,
@@ -153,22 +146,35 @@ def render_match_search_page(
     """
     st.caption("Afficher un match précis via un MatchId, une date/heure, ou une sélection.")
 
+    df = ensure_polars(df)
+    dff = ensure_polars(dff)
+
     # Entrée MatchId
     match_id_input = st.text_input("MatchId", key="match_id_input")
 
     # Sélection rapide (sur les filtres actuels, triés du plus récent au plus ancien)
-    quick_df = dff.sort_values("start_time", ascending=False).head(200).copy()
-    quick_df["start_time_fr"] = quick_df["start_time"].apply(format_datetime_fn)
-    if "mode_ui" not in quick_df.columns:
-        quick_df["mode_ui"] = quick_df["pair_name"].apply(normalize_mode_label_fn)
-    quick_df["label"] = (
-        quick_df["start_time_fr"].astype(str)
-        + " — "
-        + quick_df["map_name"].astype(str)
-        + " — "
-        + quick_df["mode_ui"].astype(str)
+    quick_df = dff.sort("start_time", descending=True).head(200)
+    quick_df = quick_df.with_columns(
+        pl.col("start_time")
+        .map_elements(format_datetime_fn, return_dtype=pl.Utf8)
+        .alias("start_time_fr"),
     )
-    opts = {r["label"]: str(r["match_id"]) for _, r in quick_df.iterrows()}
+    if "mode_ui" not in quick_df.columns:
+        quick_df = quick_df.with_columns(
+            pl.col("pair_name")
+            .map_elements(normalize_mode_label_fn, return_dtype=pl.Utf8)
+            .alias("mode_ui"),
+        )
+    quick_df = quick_df.with_columns(
+        (
+            pl.col("start_time_fr").cast(pl.Utf8)
+            + " — "
+            + pl.col("map_name").cast(pl.Utf8)
+            + " — "
+            + pl.col("mode_ui").cast(pl.Utf8)
+        ).alias("label"),
+    )
+    opts = {row["label"]: str(row["match_id"]) for row in quick_df.iter_rows(named=True)}
     st.selectbox(
         "Sélection rapide (filtres actuels)",
         options=["(aucun)"] + list(opts.keys()),
@@ -191,15 +197,24 @@ def render_match_search_page(
 
         def _on_search_by_datetime() -> None:
             target = datetime.combine(dd, tt)
-            all_df = df.copy()
-            all_df["_dt"] = pd.to_datetime(all_df["start_time"], errors="coerce")
-            all_df = all_df.dropna(subset=["_dt"]).copy()
-            if all_df.empty:
+            # Conversion datetime si la colonne est en string
+            if df.schema.get("start_time") == pl.Utf8:
+                all_df = df.with_columns(
+                    pl.col("start_time").str.to_datetime(strict=False).alias("_dt"),
+                )
+            else:
+                all_df = df.with_columns(
+                    pl.col("start_time").alias("_dt"),
+                )
+            all_df = all_df.drop_nulls(subset=["_dt"])
+            if all_df.is_empty():
                 st.warning("Aucune date exploitable dans la DB.")
                 return
 
-            all_df["_diff"] = (all_df["_dt"] - target).abs()
-            best = all_df.sort_values("_diff").iloc[0]
+            all_df = all_df.with_columns(
+                (pl.col("_dt").cast(pl.Datetime("us")) - pl.lit(target)).abs().alias("_diff"),
+            )
+            best = all_df.sort("_diff").row(0, named=True)
             diff_min = float(best["_diff"].total_seconds() / 60.0)
             if diff_min <= float(tol_min):
                 st.session_state["match_id_input"] = str(best.get("match_id") or "").strip()
@@ -214,11 +229,11 @@ def render_match_search_page(
     if not mid:
         st.info("Renseigne un MatchId ou utilise la sélection/recherche ci-dessus.")
     else:
-        rows = df.loc[df["match_id"].astype(str) == mid]
-        if rows.empty:
+        rows = df.filter(pl.col("match_id").cast(pl.Utf8) == mid)
+        if rows.is_empty():
             st.warning("MatchId introuvable dans la DB actuelle.")
         else:
-            match_row = rows.sort_values("start_time").iloc[-1]
+            match_row = rows.sort("start_time").row(-1, named=True)
             render_match_view_fn(
                 row=match_row,
                 match_id=mid,

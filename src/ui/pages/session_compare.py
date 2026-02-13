@@ -1,41 +1,21 @@
-"""Page de comparaison de sessions.
-
-Cette page permet de comparer les performances entre deux sessions de jeu,
-avec des graphiques radar, des barres comparatives, et un tableau historique.
-"""
+"""Page de comparaison de sessions."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import plotly.graph_objects as go
 import polars as pl
-
-# Type alias pour compatibilité DataFrame
-try:
-    import pandas as pd
-
-    DataFrameType = pd.DataFrame | pl.DataFrame
-except ImportError:
-    pd = None  # type: ignore[assignment]
-    DataFrameType = pl.DataFrame  # type: ignore[misc]
-
 import streamlit as st
 
 from src.analysis.mode_categories import infer_custom_category_from_pair_name
-from src.analysis.performance_score import compute_performance_series
-from src.ui import translate_pair_name
 from src.ui.components.performance import (
     compute_session_performance_score_v2_ui,
-    get_score_class,
     render_metric_comparison_row,
     render_performance_score_card,
 )
+from src.visualization._compat import (
+    DataFrameLike,
+    ensure_polars,
+)
 from src.visualization.performance import plot_cumulative_comparison
-
-if TYPE_CHECKING:
-    pass
-
 
 _CATEGORY_FR: dict[str, str] = {
     "Assassin": "Assassin",
@@ -47,29 +27,30 @@ _CATEGORY_FR: dict[str, str] = {
 }
 
 
-def _infer_session_dominant_category(df_session: pd.DataFrame) -> str:
+def _infer_session_dominant_category(df_session: DataFrameLike) -> str:
     """Infère la catégorie dominante d'une session.
 
     On applique la catégorisation custom (alignée sidebar) à chaque match via
     `pair_name`, puis on prend la catégorie la plus fréquente.
     """
-    if df_session.empty or "pair_name" not in df_session.columns:
+    df_session = ensure_polars(df_session)
+    if df_session.is_empty() or "pair_name" not in df_session.columns:
         return "Other"
 
     cats = (
-        df_session["pair_name"]
-        .apply(infer_custom_category_from_pair_name)
-        .fillna("Other")
-        .astype(str)
+        df_session.get_column("pair_name")
+        .map_elements(infer_custom_category_from_pair_name, return_dtype=pl.Utf8)
+        .fill_null("Other")
+        .alias("category")
     )
-    if cats.empty:
+    if cats.is_empty():
         return "Other"
 
-    vc = cats.value_counts()
-    return str(vc.index[0]) if not vc.empty else "Other"
+    vc = cats.value_counts().sort("count", descending=True)
+    return str(vc[0, "category"]) if not vc.is_empty() else "Other"
 
 
-def _get_friends_names(df_session: pd.DataFrame) -> set[str]:
+def _get_friends_names(df_session: DataFrameLike) -> set[str]:
     """Récupère les noms/nicknames des amis présents dans une session.
 
     Utilise les aliases chargés en session_state si disponibles,
@@ -81,12 +62,13 @@ def _get_friends_names(df_session: pd.DataFrame) -> set[str]:
     Returns:
         Set des noms d'amis (gamertags ou nicknames).
     """
-    if df_session.empty or "friends_xuids" not in df_session.columns:
+    df_session = ensure_polars(df_session)
+    if df_session.is_empty() or "friends_xuids" not in df_session.columns:
         return set()
 
     # Collecter tous les XUIDs des amis
     friends_xuids: set[str] = set()
-    for friends_str in df_session["friends_xuids"].dropna():
+    for friends_str in df_session.get_column("friends_xuids").drop_nulls().to_list():
         if friends_str:
             friends_xuids.update(friends_str.split(","))
     friends_xuids.discard("")
@@ -144,7 +126,7 @@ def _get_friends_names(df_session: pd.DataFrame) -> set[str]:
     return names
 
 
-def is_session_with_friends(df_session: pd.DataFrame) -> bool:
+def is_session_with_friends(df_session: DataFrameLike) -> bool:
     """Détermine si une session est considérée comme 'avec amis'.
 
     Une session est avec amis si la majorité des matchs ont is_with_friends=True.
@@ -155,14 +137,15 @@ def is_session_with_friends(df_session: pd.DataFrame) -> bool:
     Returns:
         True si la majorité des matchs sont avec amis.
     """
-    if df_session.empty:
+    df_session = ensure_polars(df_session)
+    if df_session.is_empty():
         return False
     if "is_with_friends" not in df_session.columns:
         return False
-    return df_session["is_with_friends"].sum() > len(df_session) / 2
+    return df_session.get_column("is_with_friends").sum() > len(df_session) / 2
 
 
-def get_session_friends_signature(df_session: pd.DataFrame) -> set[str]:
+def get_session_friends_signature(df_session: DataFrameLike) -> set[str]:
     """Extrait l'ensemble des amis présents dans une session.
 
     Args:
@@ -171,11 +154,12 @@ def get_session_friends_signature(df_session: pd.DataFrame) -> set[str]:
     Returns:
         Set des XUIDs des amis présents (union de tous les matchs).
     """
-    if df_session.empty or "friends_xuids" not in df_session.columns:
+    df_session = ensure_polars(df_session)
+    if df_session.is_empty() or "friends_xuids" not in df_session.columns:
         return set()
 
     all_friends: set[str] = set()
-    for friends_str in df_session["friends_xuids"].dropna():
+    for friends_str in df_session.get_column("friends_xuids").drop_nulls().to_list():
         if friends_str:
             all_friends.update(friends_str.split(","))
 
@@ -184,126 +168,131 @@ def get_session_friends_signature(df_session: pd.DataFrame) -> set[str]:
     return all_friends
 
 
-def compute_similar_sessions_average(
-    all_sessions_df: pd.DataFrame,
+def _filter_candidate_sessions(
+    all_sessions_df: DataFrameLike,
     is_with_friends: bool,
     exclude_session_ids: list[int] | None = None,
     same_friends_xuids: set[str] | None = None,
     mode_category: str | None = None,
-) -> dict:
-    """Calcule la moyenne des sessions similaires.
+) -> list:
+    """Filtre les sessions candidates pour la comparaison historique."""
+    all_sessions_df = ensure_polars(all_sessions_df)
+    if all_sessions_df.is_empty() or "session_id" not in all_sessions_df.columns:
+        return []
 
-    Modes de comparaison :
-    - Si same_friends_xuids est fourni : compare avec sessions ayant les MÊMES amis
-    - Sinon : compare solo vs avec amis (n'importe lesquels)
-
-    Args:
-        all_sessions_df: DataFrame avec toutes les sessions.
-        is_with_friends: True pour sessions avec amis, False pour solo.
-        exclude_session_ids: Session IDs à exclure du calcul.
-        same_friends_xuids: Si fourni, ne matcher que les sessions avec ces amis exacts.
-        mode_category: Si fourni, ne garder que les sessions dont la catégorie dominante
-            correspond (Assassin/Fiesta/BTB/Ranked/Firefight/Other).
-
-    Returns:
-        Dict avec kd_ratio, win_rate, accuracy, avg_life_seconds, session_count, etc.
-    """
-    if all_sessions_df.empty or "session_id" not in all_sessions_df.columns:
-        return {}
-
-    exclude_ids = set(exclude_session_ids or [])
+    exclude_ids = list(set(exclude_session_ids or []))
 
     # Filtrer les sessions exclues
-    df = all_sessions_df[~all_sessions_df["session_id"].isin(exclude_ids)].copy()
-    if df.empty:
-        return {}
+    df = all_sessions_df.filter(~pl.col("session_id").is_in(exclude_ids))
+    if df.is_empty():
+        return []
 
     # Mode "mêmes amis" : matcher les sessions avec exactement les mêmes amis
     # NOTE: Si la colonne `is_with_friends` n'existe pas, on ne peut pas faire
     # de comparaison solo/amis. Dans ce cas, on considère "toutes sessions".
     if "is_with_friends" not in df.columns:
-        matching_session_ids = df["session_id"].dropna().unique().tolist()
+        matching_session_ids = df.get_column("session_id").drop_nulls().unique().to_list()
     elif same_friends_xuids and len(same_friends_xuids) > 0:
         matching_session_ids = []
-        for session_id, group in df.groupby("session_id"):
-            session_friends = get_session_friends_signature(group)
+        for group_df in df.partition_by("session_id", maintain_order=True):
+            session_id = group_df[0, "session_id"]
+            session_friends = get_session_friends_signature(group_df)
             # Match si au moins les mêmes amis sont présents (peut avoir plus)
             if same_friends_xuids <= session_friends:
                 matching_session_ids.append(session_id)
     else:
         # Mode "solo vs avec amis" classique
-        session_friend_ratio = df.groupby("session_id")["is_with_friends"].mean()
-        matching_session_ids = session_friend_ratio[
-            (session_friend_ratio > 0.5) == is_with_friends
-        ].index.tolist()
+        session_agg = df.group_by("session_id").agg(
+            pl.col("is_with_friends").mean().alias("friend_ratio")
+        )
+        if is_with_friends:
+            matching_session_ids = (
+                session_agg.filter(pl.col("friend_ratio") > 0.5).get_column("session_id").to_list()
+            )
+        else:
+            matching_session_ids = (
+                session_agg.filter(pl.col("friend_ratio") <= 0.5).get_column("session_id").to_list()
+            )
 
     if len(matching_session_ids) == 0:
-        return {}
+        return []
 
     # Filtrer par catégorie dominante si demandée (nécessite pair_name dans le DataFrame)
     if mode_category and "pair_name" in df.columns:
-        df_candidates = df[df["session_id"].isin(matching_session_ids)].copy()
-        if df_candidates.empty:
-            return {}
+        df_candidates = df.filter(pl.col("session_id").is_in(matching_session_ids))
+        if df_candidates.is_empty():
+            return []
 
-        dom_by_session = (
-            df_candidates.assign(
-                _cat=df_candidates["pair_name"].apply(infer_custom_category_from_pair_name)
-            )
-            .groupby("session_id")["_cat"]
-            .apply(lambda s: s.value_counts().index[0] if len(s) else "Other")
+        df_candidates = df_candidates.with_columns(
+            pl.col("pair_name")
+            .map_elements(infer_custom_category_from_pair_name, return_dtype=pl.Utf8)
+            .alias("_cat")
         )
+        dom_by_session: dict = {}
+        for group_df in df_candidates.partition_by("session_id", maintain_order=True):
+            sid = group_df[0, "session_id"]
+            vc = group_df.get_column("_cat").value_counts().sort("count", descending=True)
+            dom_by_session[sid] = str(vc[0, "_cat"]) if not vc.is_empty() else "Other"
 
         matching_session_ids = [
             sid for sid in matching_session_ids if dom_by_session.get(sid) == mode_category
         ]
-        if len(matching_session_ids) == 0:
-            return {}
 
-    # Filtrer les matchs des sessions correspondantes
-    df_matching = df[df["session_id"].isin(matching_session_ids)]
+    return matching_session_ids
 
-    if df_matching.empty:
+
+def _aggregate_session_stats(
+    df_matching: DataFrameLike,
+    matching_session_ids: list,
+) -> dict:
+    """Agrège les statistiques des sessions filtrées."""
+    df_matching = ensure_polars(df_matching)
+    if df_matching.is_empty():
         return {}
 
     session_count = len(matching_session_ids)
 
     # Calculs agrégés directs sur le DataFrame (beaucoup plus rapide)
-    total_kills = df_matching["kills"].sum()
-    total_deaths = df_matching["deaths"].sum()
-    total_assists = df_matching["assists"].sum()
+    total_kills = df_matching.get_column("kills").sum()
+    total_deaths = df_matching.get_column("deaths").sum()
+    total_assists = df_matching.get_column("assists").sum()
     total_matches = len(df_matching)
 
     # K/D ratio moyen par session
-    agg_spec: dict[str, object] = {
-        "kills": "sum",
-        "deaths": "sum",
-        "assists": "sum",
-        "outcome": lambda x: (x == 2).sum() / len(x) * 100 if len(x) > 0 else 0,
-        "average_life_seconds": "mean",
-    }
+    agg_exprs: list = [
+        pl.col("kills").sum(),
+        pl.col("deaths").sum(),
+        pl.col("assists").sum(),
+        ((pl.col("outcome") == 2).sum().cast(pl.Float64) / pl.len().cast(pl.Float64) * 100).alias(
+            "win_rate"
+        ),
+        pl.col("average_life_seconds").mean(),
+    ]
     acc_col: str | None = None
     if "accuracy" in df_matching.columns:
         acc_col = "accuracy"
     elif "shots_accuracy" in df_matching.columns:
         acc_col = "shots_accuracy"
     if acc_col:
-        agg_spec[acc_col] = "mean"
+        agg_exprs.append(pl.col(acc_col).mean())
 
-    session_stats = (
-        df_matching.groupby("session_id").agg(agg_spec).rename(columns={"outcome": "win_rate"})
-    )
+    session_stats = df_matching.group_by("session_id").agg(agg_exprs)
 
     # Calculer K/D par session puis moyenne
-    session_stats["kd_ratio"] = session_stats.apply(
-        lambda r: r["kills"] / r["deaths"] if r["deaths"] > 0 else r["kills"], axis=1
+    session_stats = session_stats.with_columns(
+        pl.when(pl.col("deaths") > 0)
+        .then(pl.col("kills").cast(pl.Float64) / pl.col("deaths").cast(pl.Float64))
+        .otherwise(pl.col("kills").cast(pl.Float64))
+        .alias("kd_ratio")
     )
 
-    avg_kd = session_stats["kd_ratio"].mean()
-    avg_win_rate = session_stats["win_rate"].mean()
-    avg_life = session_stats["average_life_seconds"].mean()
+    avg_kd = session_stats.get_column("kd_ratio").mean()
+    avg_win_rate = session_stats.get_column("win_rate").mean()
+    avg_life = session_stats.get_column("average_life_seconds").mean()
     avg_accuracy = (
-        session_stats[acc_col].mean() if acc_col and acc_col in session_stats.columns else None
+        session_stats.get_column(acc_col).mean()
+        if acc_col and acc_col in session_stats.columns
+        else None
     )
 
     return {
@@ -316,6 +305,32 @@ def compute_similar_sessions_average(
         "assists_per_match": total_assists / total_matches if total_matches > 0 else 0,
         "session_count": session_count,
     }
+
+
+def compute_similar_sessions_average(
+    all_sessions_df: DataFrameLike,
+    is_with_friends: bool,
+    exclude_session_ids: list[int] | None = None,
+    same_friends_xuids: set[str] | None = None,
+    mode_category: str | None = None,
+) -> dict:
+    """Calcule la moyenne des sessions similaires (orchestre filtrage + agrégation)."""
+    all_sessions_df = ensure_polars(all_sessions_df)
+    matching_session_ids = _filter_candidate_sessions(
+        all_sessions_df,
+        is_with_friends,
+        exclude_session_ids,
+        same_friends_xuids,
+        mode_category,
+    )
+    if not matching_session_ids:
+        return {}
+
+    exclude_ids = list(set(exclude_session_ids or []))
+    df = all_sessions_df.filter(~pl.col("session_id").is_in(exclude_ids))
+    df_matching = df.filter(pl.col("session_id").is_in(matching_session_ids))
+
+    return _aggregate_session_stats(df_matching, matching_session_ids)
 
 
 def _format_seconds_to_mmss(seconds) -> str:
@@ -334,7 +349,7 @@ def _format_seconds_to_mmss(seconds) -> str:
 
 def _format_date_with_weekday(dt) -> str:
     """Formate une date avec jour de la semaine abrégé : lun. 12/01/26 14:30."""
-    if dt is None or pd.isna(dt):
+    if dt is None:
         return "-"
     try:
         # Jours en français
@@ -359,531 +374,8 @@ def _outcome_class(label: str) -> str:
     return ""
 
 
-def render_session_history_table(
-    df_sess: pd.DataFrame,
-    session_name: str,
-    df_full: pd.DataFrame | None = None,
-) -> None:
-    """Affiche le tableau historique d'une session.
-
-    Args:
-        df_sess: DataFrame de la session.
-        session_name: Nom de la session pour les messages.
-        df_full: DataFrame complet pour le calcul du score relatif.
-    """
-    if df_sess.empty:
-        st.info(f"Aucune partie dans {session_name}.")
-        return
-
-    # Copie pour éviter les warnings pandas
-    df_sess = df_sess.copy()
-
-    # Traduire le mode si non traduit
-    if "pair_fr" not in df_sess.columns and "pair_name" in df_sess.columns:
-        df_sess["pair_fr"] = df_sess["pair_name"].apply(translate_pair_name)
-
-    # Préparer les colonnes à afficher
-    display_cols = []
-    col_map = {}
-
-    if "start_time" in df_sess.columns:
-        df_sess["Heure"] = df_sess["start_time"].apply(_format_date_with_weekday)
-        display_cols.append("Heure")
-
-    if "pair_fr" in df_sess.columns:
-        col_map["pair_fr"] = "Mode"
-        display_cols.append("pair_fr")
-    elif "pair_name" in df_sess.columns:
-        # Traduire à la volée si pair_fr n'existe pas
-        df_sess["mode_traduit"] = df_sess["pair_name"].apply(translate_pair_name)
-        col_map["mode_traduit"] = "Mode"
-        display_cols.append("mode_traduit")
-
-    if "map_ui" in df_sess.columns:
-        col_map["map_ui"] = "Carte"
-        display_cols.append("map_ui")
-    elif "map_name" in df_sess.columns:
-        col_map["map_name"] = "Carte"
-        display_cols.append("map_name")
-
-    for c in ["kills", "deaths", "assists"]:
-        if c in df_sess.columns:
-            col_map[c] = {"kills": "Frags", "deaths": "Morts", "assists": "Assists"}[c]
-            display_cols.append(c)
-
-    if "outcome" in df_sess.columns:
-        outcome_map = {2: "Victoire", 3: "Défaite", 1: "Égalité", 4: "Non terminé"}
-        df_sess["Résultat"] = df_sess["outcome"].map(outcome_map).fillna("-")
-        display_cols.append("Résultat")
-
-    # Colonne Performance RELATIVE (après Résultat)
-    history_df = df_full if df_full is not None else df_sess
-    df_sess["Performance"] = compute_performance_series(df_sess, history_df)
-    df_sess["Perf_display"] = df_sess["Performance"].apply(
-        lambda x: f"{x:.0f}" if pd.notna(x) else "-"
-    )
-    display_cols.append("Perf_display")
-    col_map["Perf_display"] = "Performance"
-
-    if "team_mmr" in df_sess.columns:
-        df_sess["MMR Équipe"] = df_sess["team_mmr"].apply(
-            lambda x: f"{x:.0f}" if pd.notna(x) else "-"
-        )
-        display_cols.append("MMR Équipe")
-
-    if "enemy_mmr" in df_sess.columns:
-        df_sess["MMR Adverse"] = df_sess["enemy_mmr"].apply(
-            lambda x: f"{x:.0f}" if pd.notna(x) else "-"
-        )
-        display_cols.append("MMR Adverse")
-
-    # Renommer les colonnes
-    df_display = df_sess[display_cols].copy()
-    df_display = df_display.rename(columns=col_map)
-
-    # Garder les scores de performance pour la coloration
-    perf_scores = df_sess["Performance"].values if "Performance" in df_sess.columns else None
-
-    # Trier par heure (conserver l'ordre chronologique via start_time)
-    if "start_time" in df_sess.columns:
-        sort_indices = df_sess["start_time"].argsort().values
-        df_display = df_display.iloc[sort_indices]
-        if perf_scores is not None:
-            perf_scores = perf_scores[sort_indices]
-
-    # Affichage HTML pour styliser les résultats
-    import html as html_lib
-
-    html_rows = []
-    for idx, (_, row) in enumerate(df_display.iterrows()):
-        cells = []
-        for col in df_display.columns:
-            val = row[col]
-            if col == "Résultat":
-                css_class = _outcome_class(str(val))
-                cells.append(f"<td class='{css_class}'>{html_lib.escape(str(val))}</td>")
-            elif col == "Performance":
-                # Coloration selon le score
-                perf_val = perf_scores[idx] if perf_scores is not None else None
-                css_class = get_score_class(perf_val)
-                cells.append(
-                    f"<td class='{css_class}'>{html_lib.escape(str(val) if val is not None else '-')}</td>"
-                )
-            else:
-                cells.append(f"<td>{html_lib.escape(str(val) if val is not None else '-')}</td>")
-        html_rows.append("<tr>" + "".join(cells) + "</tr>")
-
-    header_cells = "".join(f"<th>{html_lib.escape(c)}</th>" for c in df_display.columns)
-    html_table = f"""
-    <table class="session-history-table">
-    <thead><tr>{header_cells}</tr></thead>
-    <tbody>{''.join(html_rows)}</tbody>
-    </table>
-    """
-    st.markdown(html_table, unsafe_allow_html=True)
-
-
-# Couleurs distinctes pour les sessions (contraste élevé, accessible daltoniens)
-SESSION_COLORS = {
-    "session_a": "#E74C3C",  # Rouge corail
-    "session_a_fill": "rgba(231, 76, 60, 0.3)",
-    "session_b": "#3498DB",  # Bleu vif
-    "session_b_fill": "rgba(52, 152, 219, 0.3)",
-    "historical": "#9B59B6",  # Violet
-    "historical_fill": "rgba(155, 89, 182, 0.2)",
-}
-
-
-def render_comparison_radar_chart(
-    perf_a: dict,
-    perf_b: dict,
-    hist_avg: dict | None = None,
-) -> None:
-    """Affiche le radar chart comparatif avec moyenne historique optionnelle.
-
-    Args:
-        perf_a: Métriques de la session A.
-        perf_b: Métriques de la session B.
-        hist_avg: Moyenne historique des sessions similaires (optionnel).
-    """
-    categories = ["K/D", "Victoire %", "Précision"]
-
-    def _normalize_for_radar(kd, wr, acc):
-        kd_norm = min(100, (kd or 0) * 50)  # K/D 2.0 = 100
-        wr_norm = wr or 0  # Déjà en %
-        acc_norm = acc if acc is not None else 50  # Déjà en %
-        return [kd_norm, wr_norm, acc_norm]
-
-    values_a = _normalize_for_radar(perf_a["kd_ratio"], perf_a["win_rate"], perf_a["accuracy"])
-    values_b = _normalize_for_radar(perf_b["kd_ratio"], perf_b["win_rate"], perf_b["accuracy"])
-
-    fig_radar = go.Figure()
-
-    # Moyenne historique en fond (si disponible)
-    hist_n = int((hist_avg or {}).get("session_count", 0) or 0)
-    if hist_avg and hist_n >= 1:
-        values_hist = _normalize_for_radar(
-            hist_avg.get("kd_ratio"), hist_avg.get("win_rate"), hist_avg.get("accuracy")
-        )
-        suffix = " ⚠️" if hist_n < 3 else ""
-        fig_radar.add_trace(
-            go.Scatterpolar(
-                r=values_hist + [values_hist[0]],
-                theta=categories + [categories[0]],
-                fill="toself",
-                name=f"Moy. historique ({hist_n} sessions){suffix}",
-                line_color=SESSION_COLORS["historical"],
-                fillcolor=SESSION_COLORS["historical_fill"],
-                line={"dash": "dot"},
-            )
-        )
-
-    fig_radar.add_trace(
-        go.Scatterpolar(
-            r=values_a + [values_a[0]],  # Fermer le polygone
-            theta=categories + [categories[0]],
-            fill="toself",
-            name="Session A",
-            line_color=SESSION_COLORS["session_a"],
-            fillcolor=SESSION_COLORS["session_a_fill"],
-        )
-    )
-
-    fig_radar.add_trace(
-        go.Scatterpolar(
-            r=values_b + [values_b[0]],
-            theta=categories + [categories[0]],
-            fill="toself",
-            name="Session B",
-            line_color=SESSION_COLORS["session_b"],
-            fillcolor=SESSION_COLORS["session_b_fill"],
-        )
-    )
-
-    fig_radar.update_layout(
-        polar={
-            "radialaxis": {"visible": True, "range": [0, 100]},
-            "bgcolor": "rgba(0,0,0,0)",
-        },
-        showlegend=True,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#E0E0E0"},
-        height=400,
-    )
-
-    st.plotly_chart(fig_radar, width="stretch")
-
-
-def render_comparison_bar_chart(
-    perf_a: dict,
-    perf_b: dict,
-    hist_avg: dict | None = None,
-) -> None:
-    """Affiche le graphique en barres comparatif.
-
-    Args:
-        perf_a: Métriques de la session A.
-        perf_b: Métriques de la session B.
-        hist_avg: Moyenne historique des sessions similaires (optionnel).
-    """
-
-    def _per_match(total: float | int | None, matches: int | None) -> float:
-        m = int(matches or 0)
-        if m <= 0:
-            return 0.0
-        try:
-            return float(total or 0.0) / float(m)
-        except Exception:
-            return 0.0
-
-    left_metrics = ["Frags / partie", "Morts / partie", "Ratio F/D"]
-    right_metric = "Victoire (%)"
-
-    a_left = [
-        _per_match(perf_a.get("kills"), perf_a.get("matches")),
-        _per_match(perf_a.get("deaths"), perf_a.get("matches")),
-        float(perf_a.get("kd_ratio") or 0.0),
-    ]
-    b_left = [
-        _per_match(perf_b.get("kills"), perf_b.get("matches")),
-        _per_match(perf_b.get("deaths"), perf_b.get("matches")),
-        float(perf_b.get("kd_ratio") or 0.0),
-    ]
-    a_wr = float(perf_a.get("win_rate") or 0.0)
-    b_wr = float(perf_b.get("win_rate") or 0.0)
-
-    fig_bar = go.Figure()
-
-    # Axe gauche : frags/morts/ratio
-    fig_bar.add_trace(
-        go.Bar(
-            name="Session A",
-            x=left_metrics,
-            y=a_left,
-            marker_color=SESSION_COLORS["session_a"],
-            hovertemplate="%{x} (A): %{y:.2f}<extra></extra>",
-            legendgroup="A",
-            showlegend=True,
-        )
-    )
-    fig_bar.add_trace(
-        go.Bar(
-            name="Session B",
-            x=left_metrics,
-            y=b_left,
-            marker_color=SESSION_COLORS["session_b"],
-            hovertemplate="%{x} (B): %{y:.2f}<extra></extra>",
-            legendgroup="B",
-            showlegend=True,
-        )
-    )
-
-    # Axe droit : victoire (%)
-    fig_bar.add_trace(
-        go.Bar(
-            name="Session A",
-            x=[right_metric],
-            y=[a_wr],
-            marker_color=SESSION_COLORS["session_a"],
-            hovertemplate="%{x} (A): %{y:.1f}%<extra></extra>",
-            legendgroup="A",
-            showlegend=False,
-            yaxis="y2",
-        )
-    )
-    fig_bar.add_trace(
-        go.Bar(
-            name="Session B",
-            x=[right_metric],
-            y=[b_wr],
-            marker_color=SESSION_COLORS["session_b"],
-            hovertemplate="%{x} (B): %{y:.1f}%<extra></extra>",
-            legendgroup="B",
-            showlegend=False,
-            yaxis="y2",
-        )
-    )
-
-    # Ajouter la moyenne historique si disponible
-    hist_n = int((hist_avg or {}).get("session_count", 0) or 0)
-    if hist_avg and hist_n >= 1:
-        h_left = [
-            float(hist_avg.get("kills_per_match", 0) or 0.0),
-            float(hist_avg.get("deaths_per_match", 0) or 0.0),
-            float(hist_avg.get("kd_ratio", 0) or 0.0),
-        ]
-        h_wr = float(hist_avg.get("win_rate", 0) or 0.0)
-
-        name = f"Moy. historique ({hist_n} sessions)" + (" ⚠️" if hist_n < 3 else "")
-        hist_marker = {
-            "color": SESSION_COLORS["historical"],
-            "pattern": {"shape": ".", "fgcolor": "rgba(255,255,255,0.75)", "solidity": 0.10},
-        }
-
-        fig_bar.add_trace(
-            go.Bar(
-                name=name,
-                x=left_metrics,
-                y=h_left,
-                marker=hist_marker,
-                opacity=0.45,
-                hovertemplate="%{x} (moy. hist): %{y:.2f}<extra></extra>",
-                legendgroup="H",
-                showlegend=True,
-            )
-        )
-        fig_bar.add_trace(
-            go.Bar(
-                name=name,
-                x=[right_metric],
-                y=[h_wr],
-                marker=hist_marker,
-                opacity=0.45,
-                hovertemplate="%{x} (moy. hist): %{y:.1f}%<extra></extra>",
-                legendgroup="H",
-                showlegend=False,
-                yaxis="y2",
-            )
-        )
-
-    fig_bar.update_layout(
-        barmode="group",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#E0E0E0"},
-        xaxis={"showgrid": False},
-        yaxis={
-            "showgrid": True,
-            "gridcolor": "rgba(255,255,255,0.1)",
-            "title": "Par partie / Ratio",
-        },
-        yaxis2={
-            "title": "Victoire (%)",
-            "overlaying": "y",
-            "side": "right",
-            "showgrid": False,
-            "rangemode": "tozero",
-        },
-        height=350,
-    )
-
-    st.plotly_chart(fig_bar, width="stretch")
-
-
-def render_participation_trend_section(
-    df_session_a: pd.DataFrame,
-    df_session_b: pd.DataFrame,
-    db_path: str,
-    xuid: str,
-) -> None:
-    """Affiche la tendance de participation entre deux sessions (Sprint 8.2).
-
-    Utilise les PersonalScores pour montrer l'évolution du profil de jeu.
-
-    Args:
-        df_session_a: DataFrame de la session A.
-        df_session_b: DataFrame de la session B.
-        db_path: Chemin vers la base de données.
-        xuid: XUID du joueur.
-    """
-    from src.data.repositories import DuckDBRepository
-
-    try:
-        repo = DuckDBRepository(db_path, xuid)
-        if not repo.has_personal_score_awards():
-            return  # Pas de données PersonalScores
-
-        # Récupérer les match_ids de chaque session
-        match_ids_a = df_session_a["match_id"].tolist() if not df_session_a.empty else []
-        match_ids_b = df_session_b["match_id"].tolist() if not df_session_b.empty else []
-
-        if not match_ids_a and not match_ids_b:
-            return
-
-        # Charger les données de participation
-        df_a = (
-            repo.load_personal_score_awards_as_polars(match_ids=match_ids_a)
-            if match_ids_a
-            else None
-        )
-        df_b = (
-            repo.load_personal_score_awards_as_polars(match_ids=match_ids_b)
-            if match_ids_b
-            else None
-        )
-
-        if (df_a is None or df_a.is_empty()) and (df_b is None or df_b.is_empty()):
-            return
-
-        from src.ui.components.radar_chart import create_participation_profile_radar
-        from src.visualization.participation_radar import (
-            RADAR_AXIS_LINES,
-            compute_participation_profile,
-            get_radar_thresholds,
-        )
-
-        thresholds = get_radar_thresholds(db_path) if db_path else None
-
-        def _match_row_from_df(dff: pd.DataFrame) -> dict | None:
-            if dff.empty:
-                return None
-            return {
-                "deaths": int(dff["deaths"].sum()) if "deaths" in dff.columns else 0,
-                "time_played_seconds": float(dff["time_played_seconds"].sum())
-                if "time_played_seconds" in dff.columns
-                else 600.0 * len(dff),
-                "pair_name": dff["pair_name"].iloc[0]
-                if "pair_name" in dff.columns and len(dff) > 0
-                else None,
-            }
-
-        profiles = []
-
-        if df_a is not None and not df_a.is_empty():
-            match_row_a = _match_row_from_df(df_session_a)
-            profile_a = compute_participation_profile(
-                df_a,
-                match_row=match_row_a,
-                name="Session A",
-                color=SESSION_COLORS["session_a"],
-                pair_name=match_row_a.get("pair_name") if match_row_a else None,
-                thresholds=thresholds,
-            )
-            profiles.append(profile_a)
-
-        if df_b is not None and not df_b.is_empty():
-            match_row_b = _match_row_from_df(df_session_b)
-            profile_b = compute_participation_profile(
-                df_b,
-                match_row=match_row_b,
-                name="Session B",
-                color=SESSION_COLORS["session_b"],
-                pair_name=match_row_b.get("pair_name") if match_row_b else None,
-                thresholds=thresholds,
-            )
-            profiles.append(profile_b)
-
-        if not profiles:
-            return
-
-        st.markdown("---")
-        st.markdown("#### 🎯 Évolution du profil de participation")
-        st.caption("Comparaison de la contribution au score entre les deux sessions")
-
-        col_radar, col_legend = st.columns([2, 1])
-        with col_radar:
-            fig = create_participation_profile_radar(profiles, title="", height=380)
-            st.plotly_chart(fig, width="stretch")
-        with col_legend:
-            st.markdown("**Axes**")
-            for line in RADAR_AXIS_LINES:
-                st.markdown(line)
-
-    except Exception:
-        pass  # Ne pas bloquer la page en cas d'erreur
-
-
-def render_session_comparison_page(
-    all_sessions_df: pd.DataFrame,
-    df_full: pd.DataFrame | None = None,
-    *,
-    db_path: str | None = None,
-    xuid: str | None = None,
-) -> None:
-    """Rend la page de comparaison de sessions.
-
-    Args:
-        all_sessions_df: DataFrame avec toutes les sessions (colonnes session_id, session_label).
-        df_full: DataFrame complet pour le calcul du score relatif.
-        db_path: Chemin vers la base de données (optionnel, récupéré depuis session_state).
-        xuid: XUID du joueur (optionnel, récupéré depuis session_state).
-    """
-    # Récupérer db_path et xuid depuis session_state si non fournis
-    if db_path is None:
-        db_path = st.session_state.get("db_path", "")
-    if xuid is None:
-        xuid = st.session_state.get("xuid", "")
-    st.caption("Compare les performances entre deux sessions de jeu.")
-
-    if all_sessions_df.empty:
-        st.info("Aucune session disponible.")
-        return
-
-    # Liste des sessions triées (plus récente en premier)
-    session_info = (
-        all_sessions_df.groupby(["session_id", "session_label"])
-        .size()
-        .reset_index(name="count")
-        .sort_values("session_id", ascending=False)
-    )
-    session_labels = session_info["session_label"].tolist()
-
-    if len(session_labels) < 2:
-        st.warning("Il faut au moins 2 sessions pour comparer.")
-        return
-
-    # Sélecteurs de sessions
+def _select_sessions(session_labels: list[str]) -> tuple[str, str]:
+    """Affiche les sélecteurs de sessions A et B et retourne les labels choisis."""
     col_sel_a, col_sel_b = st.columns(2)
     with col_sel_a:
         # Session A = avant-dernière par défaut
@@ -902,32 +394,20 @@ def render_session_comparison_page(
             index=0,
             key="compare_session_b",
         )
+    return session_a_label, session_b_label
 
-    # Filtrer les DataFrames
-    df_session_a = all_sessions_df[all_sessions_df["session_label"] == session_a_label].copy()
-    df_session_b = all_sessions_df[all_sessions_df["session_label"] == session_b_label].copy()
 
-    # Calculer les scores de performance (v2)
-    perf_a = compute_session_performance_score_v2_ui(df_session_a)
-    perf_b = compute_session_performance_score_v2_ui(df_session_b)
+def _compute_historical_context(
+    all_sessions_df: DataFrameLike,
+    df_session_b: DataFrameLike,
+    exclude_ids: list,
+    session_b_category: str,
+) -> tuple[dict, str]:
+    """Calcule la moyenne historique des sessions similaires.
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Calcul de la moyenne historique des sessions similaires
-    # ══════════════════════════════════════════════════════════════════════════
-    # Récupérer les session_ids à exclure
-    session_a_id = (
-        df_session_a["session_id"].iloc[0]
-        if not df_session_a.empty and "session_id" in df_session_a.columns
-        else None
-    )
-    session_b_id = (
-        df_session_b["session_id"].iloc[0]
-        if not df_session_b.empty and "session_id" in df_session_b.columns
-        else None
-    )
-    exclude_ids = [sid for sid in [session_a_id, session_b_id] if sid is not None]
-
-    # Déterminer le type de session (solo vs avec amis) - basé sur la session B (celle qu'on compare)
+    Returns:
+        Tuple (hist_avg dict, compare_mode string).
+    """
     has_with_friends_col = "is_with_friends" in all_sessions_df.columns
     session_b_with_friends = (
         is_session_with_friends(df_session_b) if has_with_friends_col else False
@@ -935,10 +415,7 @@ def render_session_comparison_page(
     session_b_friends = (
         get_session_friends_signature(df_session_b) if has_with_friends_col else set()
     )
-    session_b_category = _infer_session_dominant_category(df_session_b)
 
-    # Option de comparaison : mêmes amis vs solo/avec amis
-    compare_mode = "same_friends"  # Par défaut : mêmes amis si possible
     if not has_with_friends_col:
         # Fallback: pas d'info amis => comparer sur toutes les sessions
         hist_avg = compute_similar_sessions_average(
@@ -947,8 +424,9 @@ def render_session_comparison_page(
             exclude_session_ids=exclude_ids,
             mode_category=session_b_category,
         )
-        compare_mode = "all"
-    elif session_b_with_friends and len(session_b_friends) > 0:
+        return hist_avg, "all"
+
+    if session_b_with_friends and len(session_b_friends) > 0:
         # Essayer d'abord avec les mêmes amis
         hist_avg = compute_similar_sessions_average(
             all_sessions_df,
@@ -957,6 +435,7 @@ def render_session_comparison_page(
             same_friends_xuids=session_b_friends,
             mode_category=session_b_category,
         )
+        compare_mode = "same_friends"
 
         # Si pas assez de sessions avec les mêmes amis, fallback sur "avec amis"
         if hist_avg.get("session_count", 0) < 3:
@@ -968,22 +447,40 @@ def render_session_comparison_page(
                 mode_category=session_b_category,
             )
             compare_mode = "any_friends"
-    else:
-        # Solo : comparer avec autres sessions solo
-        hist_avg = compute_similar_sessions_average(
-            all_sessions_df,
-            is_with_friends=False,
-            exclude_session_ids=exclude_ids,
-            mode_category=session_b_category,
-        )
-        compare_mode = "solo"
+        return hist_avg, compare_mode
 
-    # Construire le label du type de session
+    # Solo : comparer avec autres sessions solo
+    hist_avg = compute_similar_sessions_average(
+        all_sessions_df,
+        is_with_friends=False,
+        exclude_session_ids=exclude_ids,
+        mode_category=session_b_category,
+    )
+    return hist_avg, "solo"
+
+
+def _build_session_labels(
+    all_sessions_df: DataFrameLike,
+    df_session_b: DataFrameLike,
+    hist_avg: dict,
+    compare_mode: str,
+    session_b_category: str,
+) -> tuple[str, str]:
+    """Construit les labels de type de session et de comparaison."""
+    has_with_friends_col = "is_with_friends" in all_sessions_df.columns
+    session_b_with_friends = (
+        is_session_with_friends(df_session_b) if has_with_friends_col else False
+    )
+    session_b_friends = (
+        get_session_friends_signature(df_session_b) if has_with_friends_col else set()
+    )
+    cat_label = _CATEGORY_FR.get(session_b_category, session_b_category)
+
     if not has_with_friends_col:
         session_type_label = "(amis indisponibles) 🎮"
         compare_label = (
             f"toutes sessions ({hist_avg.get('session_count', 0)} sessions)"
-            f" — catégorie {_CATEGORY_FR.get(session_b_category, session_b_category)}"
+            f" — catégorie {cat_label}"
         )
     elif session_b_with_friends and len(session_b_friends) > 0:
         # Récupérer les gamertags des amis (depuis la table Friends si possible)
@@ -997,21 +494,25 @@ def render_session_comparison_page(
         if compare_mode == "same_friends":
             compare_label = (
                 f"mêmes amis ({hist_avg.get('session_count', 0)} sessions)"
-                f" — catégorie {_CATEGORY_FR.get(session_b_category, session_b_category)}"
+                f" — catégorie {cat_label}"
             )
         else:
             compare_label = (
                 f"sessions avec amis ({hist_avg.get('session_count', 0)} sessions)"
-                f" — catégorie {_CATEGORY_FR.get(session_b_category, session_b_category)}"
+                f" — catégorie {cat_label}"
             )
     else:
         session_type_label = "solo 🎮"
         compare_label = (
             f"sessions solo ({hist_avg.get('session_count', 0)} sessions)"
-            f" — catégorie {_CATEGORY_FR.get(session_b_category, session_b_category)}"
+            f" — catégorie {cat_label}"
         )
 
-    # Déterminer qui est meilleur
+    return session_type_label, compare_label
+
+
+def _render_score_cards(perf_a: dict, perf_b: dict) -> None:
+    """Affiche les grandes cartes de score côte à côte."""
     score_a = perf_a.get("score")
     score_b = perf_b.get("score")
     is_b_better = None
@@ -1021,9 +522,6 @@ def render_session_comparison_page(
         elif score_b < score_a:
             is_b_better = False
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Grandes cartes de score côte à côte
-    # ══════════════════════════════════════════════════════════════════════════
     st.markdown("### 🏆 Score de performance")
     col_score_a, col_score_b = st.columns(2)
     with col_score_a:
@@ -1037,9 +535,9 @@ def render_session_comparison_page(
 
     st.markdown("---")
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Colonnes Session A / Session B avec métriques détaillées
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _render_detailed_metrics(perf_a: dict, perf_b: dict) -> None:
+    """Affiche la section des métriques détaillées."""
     st.markdown("### 📊 Métriques détaillées")
 
     # En-têtes
@@ -1077,9 +575,9 @@ def render_session_comparison_page(
         "Total des assistances", perf_a["assists"], perf_b["assists"], "{}"
     )
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Comparaison MMR
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _render_mmr_comparison(perf_a: dict, perf_b: dict) -> None:
+    """Affiche la section de comparaison MMR."""
     st.markdown("---")
     st.markdown("### 🎯 Comparaison MMR")
 
@@ -1105,12 +603,127 @@ def render_session_comparison_page(
         "Écart MMR (moy)", perf_a["delta_mmr_avg"], perf_b["delta_mmr_avg"], "{:+.1f}"
     )
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Graphiques comparatifs (côte à côte)
-    # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("---")
 
-    # Afficher l'indicateur du type de session et la moyenne historique
+def _render_cumulative_section(
+    df_session_a: DataFrameLike,
+    df_session_b: DataFrameLike,
+    session_a_label: str,
+    session_b_label: str,
+) -> None:
+    """Affiche la section du net score cumulé par session."""
+    df_session_a = ensure_polars(df_session_a)
+    df_session_b = ensure_polars(df_session_b)
+    _req = ["start_time", "kills", "deaths"]
+    if not all(c in df_session_a.columns for c in _req) or not all(
+        c in df_session_b.columns for c in _req
+    ):
+        return
+
+    try:
+        pl_a = df_session_a.sort("start_time").select(_req)
+        pl_b = df_session_b.sort("start_time").select(_req)
+        if not pl_a.is_empty() and not pl_b.is_empty():
+            st.markdown("#### Net score cumulé par session")
+            st.caption(
+                "Évolution du net score (Frags − Deaths) au fil des matchs de chaque session."
+            )
+            st.plotly_chart(
+                plot_cumulative_comparison(
+                    pl_a,
+                    pl_b,
+                    label_a=session_a_label,
+                    label_b=session_b_label,
+                    title="",
+                ),
+                width="stretch",
+            )
+    except Exception:
+        pass
+
+
+def render_session_comparison_page(
+    all_sessions_df: DataFrameLike,
+    df_full: DataFrameLike | None = None,
+    *,
+    db_path: str | None = None,
+    xuid: str | None = None,
+) -> None:
+    """Rend la page de comparaison de sessions (orchestrateur)."""
+    all_sessions_df = ensure_polars(all_sessions_df)
+    if df_full is not None:
+        df_full = ensure_polars(df_full)
+    # Récupérer db_path et xuid depuis session_state si non fournis
+    if db_path is None:
+        db_path = st.session_state.get("db_path", "")
+    if xuid is None:
+        xuid = st.session_state.get("xuid", "")
+    st.caption("Compare les performances entre deux sessions de jeu.")
+
+    if all_sessions_df.is_empty():
+        st.info("Aucune session disponible.")
+        return
+
+    # Liste des sessions triées (plus récente en premier)
+    session_info = (
+        all_sessions_df.group_by(["session_id", "session_label"])
+        .len()
+        .rename({"len": "count"})
+        .sort("session_id", descending=True)
+    )
+    session_labels = session_info.get_column("session_label").to_list()
+
+    if len(session_labels) < 2:
+        st.warning("Il faut au moins 2 sessions pour comparer.")
+        return
+
+    # Sélecteurs de sessions
+    session_a_label, session_b_label = _select_sessions(session_labels)
+
+    # Filtrer les DataFrames
+    df_session_a = all_sessions_df.filter(pl.col("session_label") == session_a_label)
+    df_session_b = all_sessions_df.filter(pl.col("session_label") == session_b_label)
+
+    # Calculer les scores de performance (v2)
+    perf_a = compute_session_performance_score_v2_ui(df_session_a)
+    perf_b = compute_session_performance_score_v2_ui(df_session_b)
+
+    # Contexte historique
+    session_a_id = (
+        df_session_a[0, "session_id"]
+        if not df_session_a.is_empty() and "session_id" in df_session_a.columns
+        else None
+    )
+    session_b_id = (
+        df_session_b[0, "session_id"]
+        if not df_session_b.is_empty() and "session_id" in df_session_b.columns
+        else None
+    )
+    exclude_ids = [sid for sid in [session_a_id, session_b_id] if sid is not None]
+    session_b_category = _infer_session_dominant_category(df_session_b)
+
+    hist_avg, compare_mode = _compute_historical_context(
+        all_sessions_df,
+        df_session_b,
+        exclude_ids,
+        session_b_category,
+    )
+    session_type_label, compare_label = _build_session_labels(
+        all_sessions_df,
+        df_session_b,
+        hist_avg,
+        compare_mode,
+        session_b_category,
+    )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sections de la page
+    # ══════════════════════════════════════════════════════════════════════════
+    _render_score_cards(perf_a, perf_b)
+    _render_detailed_metrics(perf_a, perf_b)
+    _render_mmr_comparison(perf_a, perf_b)
+
+    # Graphiques comparatifs
+    st.markdown("---")
     if hist_avg and hist_avg.get("session_count", 0) >= 1:
         st.markdown(
             f"### 📈 Graphiques comparatifs\n"
@@ -1120,46 +733,17 @@ def render_session_comparison_page(
         st.markdown(f"### 📈 Graphiques comparatifs\n*Session {session_type_label}*")
 
     col_radar, col_bars = st.columns(2)
-
     with col_radar:
         st.markdown("#### Vue radar")
         render_comparison_radar_chart(perf_a, perf_b, hist_avg=hist_avg)
-
     with col_bars:
         st.markdown("#### Comparaison par métrique")
         render_comparison_bar_chart(perf_a, perf_b, hist_avg=hist_avg)
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Net score cumulé par session (Sprint 6)
-    # ══════════════════════════════════════════════════════════════════════════
-    _req = ["start_time", "kills", "deaths"]
-    if all(c in df_session_a.columns for c in _req) and all(
-        c in df_session_b.columns for c in _req
-    ):
-        try:
-            pl_a = pl.from_pandas(df_session_a.sort_values("start_time")[_req].copy())
-            pl_b = pl.from_pandas(df_session_b.sort_values("start_time")[_req].copy())
-            if not pl_a.is_empty() and not pl_b.is_empty():
-                st.markdown("#### Net score cumulé par session")
-                st.caption(
-                    "Évolution du net score (Frags − Deaths) au fil des matchs de chaque session."
-                )
-                st.plotly_chart(
-                    plot_cumulative_comparison(
-                        pl_a,
-                        pl_b,
-                        label_a=session_a_label,
-                        label_b=session_b_label,
-                        title="",
-                    ),
-                    width="stretch",
-                )
-        except Exception:
-            pass
+    # Net score cumulé
+    _render_cumulative_section(df_session_a, df_session_b, session_a_label, session_b_label)
 
-    # ══════════════════════════════════════════════════════════════════════════
     # Tendance de participation (PersonalScores) - Sprint 8.2
-    # ══════════════════════════════════════════════════════════════════════════
     render_participation_trend_section(
         df_session_a=df_session_a,
         df_session_b=df_session_b,
@@ -1167,16 +751,21 @@ def render_session_comparison_page(
         xuid=xuid,
     )
 
-    # ══════════════════════════════════════════════════════════════════════════
     # Tableau historique des parties
-    # ══════════════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.markdown("### 📋 Historique des parties")
-
     tab_hist_a, tab_hist_b = st.tabs(["Session A", "Session B"])
-
     with tab_hist_a:
         render_session_history_table(df_session_a, "Session A", df_full=df_full)
-
     with tab_hist_b:
         render_session_history_table(df_session_b, "Session B", df_full=df_full)
+
+
+# Re-exports pour compatibilité ascendante
+from src.ui.pages.session_compare_charts import (  # noqa: E402, F401
+    SESSION_COLORS,
+    render_comparison_bar_chart,
+    render_comparison_radar_chart,
+    render_participation_trend_section,
+    render_session_history_table,
+)
