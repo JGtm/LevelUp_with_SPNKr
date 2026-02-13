@@ -1143,6 +1143,7 @@ python -m pytest tests/test_duckdb_repository_schema_contract.py -v
 - [ ] Aucun crash sur dataset vide/partiel
 - [ ] Non-régression UX confirmée
 - [ ] Toute fonction modifiée >120 lignes a été découpée
+- [ ] Refactoring réel validé : logique effectivement déplacée, lisible et modulaire ; stubs/placeholders (`pass`, `TODO`, `NotImplementedError`) autorisés **uniquement à titre exceptionnel** avec justification + ticket de dette + date cible, et jamais sur un chemin runtime critique
 
 #### Commandes de validation
 
@@ -1205,6 +1206,7 @@ python -m pytest tests/test_teammates_new_comparisons.py tests/test_teammates_im
 - [ ] Standards clean code respectés sur périmètre modifié :
   - fonctions <= 80 lignes (tolérance temporaire <= 120 avec ticket de dette)
   - fichiers <= 800 lignes (tolérance temporaire <= 1200 avec plan de découpage)
+- [ ] Refactoring réel validé sur hotspots S17 : baisse mesurable de complexité, interfaces compréhensibles pour humains, tests de contrats ; stubs tolérés seulement en exception documentée (ticket + échéance)
 
 #### Commandes de validation
 
@@ -1402,6 +1404,8 @@ L'agent produit un rapport structuré :
 - Interdiction des `except Exception: pass` (remplacer par logs et traitement explicite)
 - Interdiction des boucles row-by-row Pandas sur gros volumes (`iterrows`, `.apply` métier)
 - Préférer Polars expressions ou SQL DuckDB vectorisé
+- Refactoring réel obligatoire : les extractions doivent déplacer de la logique métier existante, être appelées dans le runtime, rester lisibles/modulaires/souples et être couvertes par tests
+- Stubs/placeholders autorisés **exceptionnellement** uniquement si : justification écrite, ticket de dette lié, date cible de suppression, et exclusion des chemins critiques de production
 
 #### Règles de tests et couverture (paliers réalistes)
 
@@ -1448,6 +1452,7 @@ ruff check src/ --select C901
 | Tests créés pour tout nouveau code métier | **Oui** |
 | Pas de `import sqlite3` ni `sqlite_master` ajouté | **Oui** |
 | Pas de nouveau `.to_pandas()` hors frontière documentée | **Oui** |
+| Refactoring réel lisible/modulaire ; stubs uniquement en exception documentée (ticket + échéance, hors chemin critique) | **Oui** |
 | Rapport de revue produit (section 4.3) | **Oui** |
 | `thought_log.md` mis à jour | **Oui** |
 
