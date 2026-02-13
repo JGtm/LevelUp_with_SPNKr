@@ -50,6 +50,7 @@ from src.data.sync.batch_insert import (
 from src.data.sync.migrations import (
     BACKFILL_FLAGS,
     ensure_backfill_completed_column,
+    ensure_highlight_events_autoincrement,
 )
 from src.data.sync.models import (
     CareerRankData,
@@ -407,43 +408,11 @@ class DuckDBSyncEngine:
         ensure_match_participants_columns(conn)
 
     def _ensure_highlight_events_sequence(self) -> None:
-        """S'assure que la séquence pour highlight_events.id existe (migration)."""
+        """S'assure que highlight_events.id utilise une séquence auto-increment."""
         conn = self._connection
         if conn is None:
             return
-        try:
-            # Vérifier si la séquence existe
-            seq_check = conn.execute(
-                "SELECT sequence_name FROM information_schema.sequences "
-                "WHERE sequence_schema = 'main' AND sequence_name = 'highlight_events_id_seq'"
-            ).fetchone()
-            if not seq_check:
-                logger.info("Création de la séquence highlight_events_id_seq")
-                conn.execute("CREATE SEQUENCE highlight_events_id_seq")
-
-            # Vérifier si la table existe et si elle utilise la séquence
-            table_check = conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'main' AND table_name = 'highlight_events'"
-            ).fetchone()
-            if table_check:
-                # Vérifier si la colonne id utilise la séquence
-                col_info = conn.execute(
-                    """
-                    SELECT column_default
-                    FROM information_schema.columns
-                    WHERE table_schema = 'main' AND table_name = 'highlight_events' AND column_name = 'id'
-                    """
-                ).fetchone()
-
-                if col_info and col_info[0] and "nextval" not in str(col_info[0]).lower():
-                    logger.warning(
-                        "La colonne highlight_events.id n'utilise pas la séquence. "
-                        "Pour les nouvelles insertions, utilisez INSERT sans spécifier id. "
-                        "Une migration manuelle peut être nécessaire pour les tables existantes."
-                    )
-        except Exception as e:
-            logger.debug(f"highlight_events sequence check: {e}")
+        ensure_highlight_events_autoincrement(conn)
 
     def _load_existing_match_ids(self) -> set[str]:
         """Charge les IDs des matchs existants depuis la DB."""

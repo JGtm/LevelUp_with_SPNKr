@@ -461,12 +461,16 @@ def _apply_schema_migrations(
     """Applique les migrations de schéma nécessaires avant le backfill."""
     from src.data.sync.migrations import (
         ensure_backfill_completed_column,
+        ensure_highlight_events_autoincrement,
         ensure_match_participants_columns,
         ensure_medals_earned_bigint,
     )
 
     # Migration medals_earned INT32 → BIGINT
     ensure_medals_earned_bigint(conn)
+
+    # Migration highlight_events : séquence auto-increment pour id
+    ensure_highlight_events_autoincrement(conn)
 
     # Colonne accuracy
     if accuracy:

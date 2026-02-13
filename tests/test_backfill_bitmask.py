@@ -438,3 +438,132 @@ def test_works_without_backfill_completed_column():
     result = find_matches_missing_data(c, XUID, medals=True)
     assert result == ["m1"]
     c.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests bitmask dans engine.py (sync normale)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestSyncEngineBackfillBitmask:
+    """Vérifie que le moteur de sync pose le bitmask backfill_completed."""
+
+    def test_backfill_flags_importable_from_migrations(self):
+        """Les constantes sont importables depuis src.data.sync.migrations."""
+        from src.data.sync.migrations import BACKFILL_FLAGS as FLAGS
+        from src.data.sync.migrations import compute_backfill_mask as cbm
+
+        assert FLAGS["medals"] == 1
+        assert FLAGS["aliases"] == 16384
+        assert cbm("medals", "events") == 3
+
+    def test_ensure_backfill_completed_column_migration(self):
+        """ensure_backfill_completed_column ajoute la colonne si absente."""
+        from src.data.sync.migrations import ensure_backfill_completed_column
+
+        c = duckdb.connect(":memory:")
+        c.execute("CREATE TABLE match_stats (match_id VARCHAR PRIMARY KEY)")
+        ensure_backfill_completed_column(c)
+
+        cols = {
+            r[0]
+            for r in c.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'match_stats'"
+            ).fetchall()
+        }
+        assert "backfill_completed" in cols
+        c.close()
+
+    def test_ensure_backfill_completed_column_idempotent(self):
+        """Appeler deux fois ne lève pas d'erreur."""
+        from src.data.sync.migrations import ensure_backfill_completed_column
+
+        c = duckdb.connect(":memory:")
+        c.execute("CREATE TABLE match_stats (match_id VARCHAR PRIMARY KEY)")
+        ensure_backfill_completed_column(c)
+        ensure_backfill_completed_column(c)  # 2e appel = idempotent
+        c.close()
+
+    def test_sync_bitmask_all_options_enabled(self):
+        """Simule le calcul de bitmask quand toutes les SyncOptions sont True."""
+        # Reproduit la logique de engine.py._process_single_match
+        bf_mask = 0
+        bf_mask |= BACKFILL_FLAGS["medals"]
+        bf_mask |= BACKFILL_FLAGS["personal_scores"]
+        bf_mask |= BACKFILL_FLAGS["performance_scores"]
+        bf_mask |= BACKFILL_FLAGS["accuracy"]
+        bf_mask |= BACKFILL_FLAGS["shots"]
+        # with_skill=True
+        bf_mask |= BACKFILL_FLAGS["skill"]
+        bf_mask |= BACKFILL_FLAGS["enemy_mmr"]
+        # with_highlight_events=True
+        bf_mask |= BACKFILL_FLAGS["events"]
+        # with_participants=True
+        bf_mask |= BACKFILL_FLAGS["participants"]
+        bf_mask |= BACKFILL_FLAGS["participants_scores"]
+        bf_mask |= BACKFILL_FLAGS["participants_kda"]
+        bf_mask |= BACKFILL_FLAGS["participants_shots"]
+        bf_mask |= BACKFILL_FLAGS["participants_damage"]
+        # with_aliases=True
+        bf_mask |= BACKFILL_FLAGS["aliases"]
+        # with_assets=True
+        bf_mask |= BACKFILL_FLAGS["assets"]
+
+        # Tous les 15 bits doivent être activés
+        expected_all = sum(BACKFILL_FLAGS.values())
+        assert bf_mask == expected_all, f"Mask={bf_mask}, attendu={expected_all}"
+
+    def test_sync_bitmask_prevents_backfill_detection(self, conn):
+        """Après sync avec bitmask complet, le backfill ne détecte rien."""
+        # Poser le bitmask complet sur tous les matchs (simule une sync complète)
+        full_mask = sum(BACKFILL_FLAGS.values())
+        conn.execute(
+            "UPDATE match_stats SET backfill_completed = ?",
+            [full_mask],
+        )
+
+        # Le backfill ne doit rien détecter
+        result = find_matches_missing_data(
+            conn,
+            XUID,
+            medals=True,
+            events=True,
+            skill=True,
+            personal_scores=True,
+            performance_scores=True,
+        )
+        assert result == []
+
+    def test_sync_bitmask_partial_allows_backfill(self, conn):
+        """Si la sync n'a pas activé un type, le backfill le détecte."""
+        # Poser un masque SANS le bit events
+        mask_no_events = sum(BACKFILL_FLAGS.values()) & ~BACKFILL_FLAGS["events"]
+        conn.execute(
+            "UPDATE match_stats SET backfill_completed = ?",
+            [mask_no_events],
+        )
+
+        # Le backfill doit détecter les matchs manquant d'events
+        result_events = find_matches_missing_data(conn, XUID, events=True)
+        # match-003 n'a pas d'events en DB → détecté car bitmask events=0
+        assert len(result_events) > 0
+
+        # Mais pas les medals (bit activé)
+        result_medals = find_matches_missing_data(conn, XUID, medals=True)
+        assert result_medals == []
+
+    def test_backfill_flags_reexported_from_detection(self):
+        """BACKFILL_FLAGS est toujours accessible depuis detection.py (rétro-compat)."""
+        from scripts.backfill.detection import BACKFILL_FLAGS as DET_FLAGS
+        from src.data.sync.migrations import BACKFILL_FLAGS as MIG_FLAGS
+
+        assert DET_FLAGS is MIG_FLAGS
+
+    def test_compute_backfill_mask_reexported_from_detection(self):
+        """compute_backfill_mask est toujours accessible depuis detection.py."""
+        from scripts.backfill.detection import compute_backfill_mask as det_cbm
+        from src.data.sync.migrations import compute_backfill_mask as mig_cbm
+
+        assert det_cbm is mig_cbm
+        assert det_cbm("medals") == 1

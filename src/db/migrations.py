@@ -11,6 +11,7 @@ from src.data.sync.migrations import (  # noqa: F401
     compute_backfill_mask,
     ensure_backfill_completed_column,
     ensure_end_time_column,
+    ensure_highlight_events_autoincrement,
     ensure_match_participants_columns,
     ensure_match_stats_columns,
     ensure_medals_earned_bigint,
