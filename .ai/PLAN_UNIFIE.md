@@ -1,7 +1,7 @@
 # Plan Unifié — LevelUp v4.5
 
 > **Date** : 2026-02-12
-> **Sources** : `SUPER_PLAN.md` (features P1-P8) + `CODE_REVIEW_CLEANUP_PLAN.md` (nettoyage 8 axes) + **Sprint 12 (P9 — Heatmap Impact)** + **Programme v4.5 (S13-S18)**
+> **Sources** : `SUPER_PLAN.md` (features P1-P8) + `CODE_REVIEW_CLEANUP_PLAN.md` (nettoyage 8 axes) + **Sprint 12 (P9 — Heatmap Impact)** + **Programme v4.5 (S13-S19)**
 > **Statut** : Plan consolidé + Sprints 13-18 (roadmap v4.5) ajoutés — aucune modification de code métier dans ce document
 >
 > **IMPORTANT pour agents IA** : Avant de travailler sur un sprint >= 6, consulter **`.ai/SPRINT_EXPLORATION.md`** qui contient l'exploration complète du codebase : catalogue de données disponibles, fonctions réutilisables, audit Pandas (35 fichiers avec lignes exactes), audit SQLite (5 fichiers), carte des dépendants `src/db/` (33 fichiers), et estimation d'effort par sprint.
@@ -98,7 +98,7 @@ Objectif : éviter les confusions multi-shell (PowerShell vs Git Bash/MSYS2) et 
 
 1. [Stratégie de fusion](#1-stratégie-de-fusion)
 2. [Analyse des interactions entre les deux plans](#2-analyse-des-interactions)
-3. [Sprints unifiés](#3-sprints-unifiés) (S0-S18)
+3. [Sprints unifiés](#3-sprints-unifiés) (S0-S19)
 4. [Protocole de revue par sprint](#4-protocole-de-revue-par-sprint)
 5. [Récapitulatif des fichiers impactés](#5-récapitulatif-des-fichiers-impactés)
 6. [Matrice de risques combinée](#6-matrice-de-risques-combinée)
@@ -144,11 +144,12 @@ S12 (2.5j)  🆕 Heatmap d'Impact & Cercle d'Amis
 S13 (1j)    Audit baseline v4.5 + cadrage exécutable
 S14 (1.5j)  Séparation Backend/UI + contrat Data API
 S15 (1.5j)  Ingestion DuckDB-first (sans Parquet) + typage
-S16 (2j)    Accélération Timeseries (sans changement UX, sans réduction de points)
-S17 (2j)    Accélération Coéquipiers + filtres DB-driven (sans réduction de points)
-S18 (1.5j)  Clôture migration Pandas + hardening release v4.5
+S16 (2j)    Migration Pandas vague A (UI/visualization)
+S17 (2j)    Migration Pandas vague B + perf Arrow/Polars
+S18 (1.5j)  Stabilisation finale, doc complète, release v4.5
+S19 (1.5j)  Optimisation post-refacto UI (Timeseries + Coéquipiers) sans changement UX
 ─────────────────────────────────────────────────────────
-Total estimé : ~40-44 jours ouvrés (~35j en parallélisant S3/S4 et S14/S15)
+Total estimé : ~41.5-45.5 jours ouvrés (~36.5j en parallélisant S3/S4 et S14/S15)
 ```
 
 ---
@@ -1102,167 +1103,273 @@ python -m pytest tests/test_duckdb_repository_schema_contract.py -v
 
 ---
 
-### Sprint 16 — Accélération Timeseries (sans changement UX, sans réduction de points) (2 jours)
+### Sprint 16 — Migration Pandas vague A (UI + visualization) (2 jours)
 
-**Objectif** : Éliminer les coûts majeurs sur l'onglet Timeseries en conservant **exactement** le même niveau de détail (point par match) et la même UX.
+**Objectif** : Réduire fortement la dette Pandas dans les couches de rendu (hors frontières Plotly/Streamlit autorisées).
 
 **Prérequis** : Sprint 15 livré
 
-> **Contraintes strictes S16** :
-> 1) Interdiction de réduire l'échantillonnage (pas d'agrégation jour/semaine imposée)
-> 2) Même contenu visuel/fonctionnel (seuls moteur de calcul et perfs changent)
-> 3) Priorité à la suppression des conversions Polars→Pandas inutiles
-> 4) Toute optimisation doit être mesurée (avant/après) sur Timeseries
+> **Audit sévère obligatoire avant implémentation S16** :
+> 1) Inventaire précis fichiers/fonctions Pandas restants
+> 2) Confirmation factuelle SQLite/sqlite_master (code + commentaires)
+> 3) Liste des fonctions >80 lignes et fichiers >600 lignes à traiter en priorité
+> 4) Rapport d'entrée `/.ai/reports/V4_5_LEGACY_AUDIT_S16.md`
 
-#### Tâches détaillées
+#### Tâches
 
 | # | Tâche | Source | Fichier(s) |
 |---|-------|--------|-----------|
-| 16.1 | [U] Basculer le chargement principal vers lecture DuckDB directe en Polars (`load_match_stats_as_polars`) dans `load_df_optimized` (fast path v4) | Performance critique | `src/ui/cache.py`, `src/data/repositories/duckdb_repo.py` |
-| 16.2 | [U] Supprimer la conversion globale `df.to_pandas()` au niveau app ; convertir uniquement au point de frontière strictement nécessaire | Dette Pandas | `streamlit_app.py`, `src/app/page_router.py` |
-| 16.3 | [U] Introduire contrat DataFrame explicite par page (Timeseries accepte `pl.DataFrame`) | Architecture | `src/ui/pages/timeseries.py`, `src/data/services/timeseries_service.py` |
-| 16.4 | [U] Migrer opérations Timeseries Pandas (`sort_values`, `.dt`, rolling, nettoyage) vers Polars natif côté service | Performance CPU | `src/data/services/timeseries_service.py` |
-| 16.5 | [U] Refactor visualisation Timeseries pour consommer listes/Series Polars (sans dépendance Pandas implicite) | Dette Pandas | `src/visualization/timeseries.py`, `src/visualization/performance.py` |
-| 16.6 | [U] Ajouter mode rendu auto WebGL (`Scattergl`) pour grands volumes, avec fallback transparent | Rendu Plotly | `src/visualization/timeseries.py` |
-| 16.7 | [U] Ajouter instrumentation fine (sections: load, filter, compute, build_fig) sur Timeseries | Observabilité | `src/ui/perf.py`, `src/ui/pages/timeseries.py` |
-| 16.8 | [U] Produire rapport perfs Timeseries (CPU, RAM, temps total rerun, temps fig) | Traçabilité | `.ai/reports/V4_5_TIMESERIES_PERF_S16.md` |
+| 16.1 | [U] Migrer `src/visualization/distributions.py`, `timeseries.py`, `maps.py`, `match_bars.py`, `trio.py` | Dette Pandas | `src/visualization/` |
+| 16.2 | [U] Migrer `src/ui/pages/timeseries.py`, `win_loss.py`, `teammates.py`, `teammates_charts.py` | Dette Pandas | `src/ui/pages/` |
+| 16.3 | [U] Éliminer patterns lents Pandas (`.apply`, `iterrows`, transformations row-by-row) au profit de Polars/SQL | Performance | fichiers ci-dessus |
+| 16.4 | [U] Uniformiser helper frontière `to_pandas()` centralisé (pas dispersé) | Qualité | utilitaires viz |
+| 16.5 | [U] Refactoriser les fonctions >120 lignes touchées en sous-fonctions testables | Clean code | `src/ui/pages/*`, `src/visualization/*` |
+| 16.6 | [U] Produire rapport de migration vague A (fichiers migrés + dette restante) | Traçabilité | `/.ai/reports/V4_5_MIGRATION_PANDAS_WAVE_A.md` |
 
 #### Tests
 
-- Étendre `tests/test_new_timeseries_sections.py` (entrée Polars native)
-- Étendre `tests/test_visualizations.py` (figures Timeseries sans Pandas obligatoire)
-- Créer `tests/test_timeseries_polars_contract.py` (contrats service/page en Polars)
-- Créer `tests/test_timeseries_webgl_threshold.py` (activation `Scattergl` sans changement fonctionnel)
-- Étendre `tests/test_app_phase2.py` (absence de conversion globale non justifiée)
+- Étendre `tests/test_visualizations.py`
+- Étendre `tests/test_new_timeseries_sections.py`
+- Étendre `tests/test_teammates_new_comparisons.py`
+- Étendre `tests/test_teammates_impact_tab.py`
+- Créer `tests/test_legacy_free_ui_viz_wave_a.py` (assertions anti-régression Pandas/SQLite sur périmètre S16)
+- Créer `tests/test_refactor_wave_a_contracts.py` (contrats des nouvelles sous-fonctions)
 
 #### Gate de livraison
 
-- [ ] Plus de conversion globale `df.to_pandas()` dans le flux principal
-- [ ] Timeseries fonctionne de bout en bout avec `pl.DataFrame`
-- [ ] Aucun changement UX observé (mêmes sections, mêmes métriques, mêmes points)
-- [ ] Aucun mécanisme de réduction de points introduit
-- [ ] Gains mesurés sur profil réel (objectif: -30% temps onglet Timeseries)
-- [ ] Rapport S16 archivé (`.ai/reports/V4_5_TIMESERIES_PERF_S16.md`)
+- [ ] Rapport d'audit sévère S16 généré et archivé (`/.ai/reports/V4_5_LEGACY_AUDIT_S16.md`)
+- [ ] Aucun `import pandas` résiduel dans la vague A (hors frontière documentée et justifiée)
+- [ ] 0 occurrence `import sqlite3` et 0 `sqlite_master` (code exécutable)
+- [ ] Toutes les visualisations cibles passent avec `pl.DataFrame`
+- [ ] Aucun crash sur dataset vide/partiel
+- [ ] Non-régression UX confirmée
+- [ ] Toute fonction modifiée >120 lignes a été découpée
+- [ ] Refactoring réel validé : logique effectivement déplacée, lisible et modulaire ; stubs/placeholders (`pass`, `TODO`, `NotImplementedError`) autorisés **uniquement à titre exceptionnel** avec justification + ticket de dette + date cible, et jamais sur un chemin runtime critique
 
 #### Commandes de validation
 
 ```bash
-python -m pytest tests/test_timeseries_polars_contract.py tests/test_new_timeseries_sections.py -v
-python -m pytest tests/test_visualizations.py tests/test_timeseries_webgl_threshold.py -v
-python -m pytest tests/test_app_phase2.py -v
-grep -n "to_pandas\(" streamlit_app.py src/ui/pages/timeseries.py src/data/services/timeseries_service.py
+grep -r "import pandas" src/visualization src/ui/pages --include="*.py"
+grep -r "import sqlite3|sqlite_master" src/ --include="*.py"
+python -m pytest tests/test_legacy_free_ui_viz_wave_a.py tests/test_refactor_wave_a_contracts.py -v
+python -m pytest tests/test_visualizations.py tests/test_new_timeseries_sections.py -v
+python -m pytest tests/test_teammates_new_comparisons.py tests/test_teammates_impact_tab.py -v
 ```
 
 #### 🔍 Revue Sprint 16
 
-→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue performance Timeseries + non-régression UX stricte**
+→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue migration Pandas vague A + refactorisation obligatoire**
 
 ---
 
-### Sprint 17 — Accélération Coéquipiers + filtres DB-driven (sans réduction de points) (2 jours)
+### Sprint 17 — Migration Pandas vague B + optimisation Arrow/Polars (2 jours)
 
-**Objectif** : Traiter le 2e hotspot (Coéquipiers) et supprimer les coûts de filtres en mémoire en priorisant DuckDB/Polars.
+**Objectif** : Finaliser la migration Pandas restante et fiabiliser les transferts Data à coût mémoire réduit.
 
 **Prérequis** : Sprint 16 livré
 
-> **Contraintes strictes S17** :
-> 1) Aucune simplification fonctionnelle des sections Coéquipiers
-> 2) Pas de réduction de granularité des données affichées
-> 3) Limiter Pandas à des frontières explicitement documentées
+> **Audit sévère obligatoire avant implémentation S17** :
+> 1) Confirmation factuelle du reliquat Pandas global (`src/`)
+> 2) Vérification des reliquats legacy `src.db` / wrappers de compat
+> 3) Cartographie des hotspots de complexité (fichiers >800 lignes, fonctions >80 lignes)
+> 4) Rapport d'entrée `/.ai/reports/V4_5_LEGACY_AUDIT_S17.md`
 
-#### Tâches détaillées
+#### Tâches
 
 | # | Tâche | Source | Fichier(s) |
 |---|-------|--------|-----------|
-| 17.1 | [U] Migrer chaîne Coéquipiers (`teammates.py`, `teammates_charts.py`, service) en flux Polars prioritaire | Dette Pandas | `src/ui/pages/teammates.py`, `src/ui/pages/teammates_charts.py`, `src/data/services/teammates_service.py` |
-| 17.2 | [U] Remplacer patterns Pandas coûteux (`apply`, boucles row-by-row, conversions multiples) par Polars/SQL | Performance CPU | périmètre coéquipiers |
-| 17.3 | [U] Refondre filtres sidebar en mode DB-driven (`DISTINCT`/bornes période/cascade) pour éviter copie DF globale | Performance architecture | `src/app/filters_render.py`, `src/app/filters.py`, `src/ui/cache.py` |
-| 17.4 | [U] Introduire requêtes ciblées par page (colonnes minimales nécessaires) au lieu d'un DF monolithique partagé | I/O + RAM | `src/app/main_helpers.py`, `src/app/page_router.py`, `src/ui/cache.py` |
-| 17.5 | [U] Ajouter helper officiel DuckDB -> Polars “query_columns_for_page” pour Timeseries/Coéquipiers | Standardisation | `src/data/repositories/duckdb_repo.py`, `src/data/repositories/factory.py` |
-| 17.6 | [U] Sécuriser invalidation cache liée aux refresh fréquents (`db_key` + `cache_buster` + paramètres de filtre) | Cohérence | `src/ui/cache.py`, `streamlit_app.py` |
-| 17.7 | [U] Mesurer gains sur Coéquipiers + filtres (cold/warm run) | Benchmark | `.ai/reports/V4_5_TEAMMATES_PERF_S17.md` |
-| 17.8 | [U] Produire inventaire résiduel Pandas global (fichier/fonction/justification frontière) | Gouvernance technique | `.ai/reports/V4_5_PANDAS_REMAINING_S17.md` |
+| 17.1 | [U] Migrer Pandas résiduel `src/app/` (`helpers`, `kpis`, `kpis_render`, `page_router`, `filters*`) | Dette Pandas | `src/app/` |
+| 17.2 | [U] Migrer Pandas résiduel `src/ui/` (`cache`, `formatting`, `perf`, `commendations`) | Dette Pandas | `src/ui/` |
+| 17.3 | [U] Migrer Pandas résiduel `src/analysis/` (`stats`, `maps`) | Dette Pandas | `src/analysis/` |
+| 17.4 | [U] Ajouter helper officiel DuckDB → Arrow → Polars (zéro copie quand possible) | Performance | `src/data/repositories/duckdb_repo.py` |
+| 17.5 | [U] Refactoriser les monolithes : extractions modules/fonctions sur fichiers critiques (`duckdb_repo.py`, `cache.py`, `teammates.py`, `session_compare.py`) | Clean code | `src/data/repositories/`, `src/ui/` |
+| 17.6 | [U] Définir et appliquer standards v4.5 (taille fonction/fichier + complexité) | Qualité | `pyproject.toml`, `docs/ARCHITECTURE.md` |
+| 17.7 | [U] Mesurer gains CPU/RAM sur 3 parcours (timeseries, teammates, carrière) | Benchmark | `.ai/reports/benchmark_v4_5.json` |
+| 17.8 | [U] Produire rapport d'assainissement legacy final (fichiers/fonctions supprimés ou refactorés) | Traçabilité | `/.ai/reports/V4_5_LEGACY_CLOSURE.md` |
 
 #### Tests
 
-- Étendre `tests/test_teammates_new_comparisons.py`
-- Étendre `tests/test_teammates_impact_tab.py`
-- Étendre `tests/test_cross_page_filter_persistence.py`
-- Créer `tests/test_filters_db_driven_contract.py`
-- Créer `tests/test_page_column_projection.py` (projection de colonnes par page)
-- Créer `tests/test_cache_invalidation_refresh.py`
+- Étendre `tests/test_analysis.py`
+- Étendre `tests/test_app_phase2.py`
+- Étendre `tests/test_duckdb_repo_regressions.py`
+- Créer `tests/test_arrow_polars_bridge.py`
+- Créer `tests/test_legacy_free_global.py` (assertions globales anti-Pandas/SQLite suivant politique v4.5)
+- Créer `tests/test_refactor_hotspots.py` (contrats API après découpage)
 
 #### Gate de livraison
 
-- [ ] Coéquipiers opère sans conversion Pandas globale
-- [ ] Filtres ne dépendent plus d'un DF complet en mémoire
-- [ ] Aucune régression fonctionnelle sur onglet Coéquipiers
-- [ ] Aucune réduction de points / granularité
-- [ ] Gains mesurés sur parcours Coéquipiers (objectif: -35% temps onglet)
-- [ ] Rapport S17 archivé (`.ai/reports/V4_5_TEAMMATES_PERF_S17.md`)
-- [ ] Inventaire Pandas résiduel archivé (`.ai/reports/V4_5_PANDAS_REMAINING_S17.md`)
+- [ ] Rapport d'audit sévère S17 généré et archivé (`/.ai/reports/V4_5_LEGACY_AUDIT_S17.md`)
+- [ ] Politique Pandas v4.5 atteinte globalement (exceptions frontière explicitement listées)
+- [ ] Aucune référence active à `src.db` dans le runtime applicatif (hors module migration justifié)
+- [ ] Helper Arrow/Polars couvert par tests
+- [ ] Gains perf documentés (avant/après) sur scénarios cibles
+- [ ] Aucun import SQLite réintroduit
+- [ ] Standards clean code respectés sur périmètre modifié :
+  - fonctions <= 80 lignes (tolérance temporaire <= 120 avec ticket de dette)
+  - fichiers <= 800 lignes (tolérance temporaire <= 1200 avec plan de découpage)
+- [ ] Refactoring réel validé sur hotspots S17 : baisse mesurable de complexité, interfaces compréhensibles pour humains, tests de contrats ; stubs tolérés seulement en exception documentée (ticket + échéance)
 
 #### Commandes de validation
 
 ```bash
-python -m pytest tests/test_teammates_new_comparisons.py tests/test_teammates_impact_tab.py -v
-python -m pytest tests/test_filters_db_driven_contract.py tests/test_cache_invalidation_refresh.py -v
-python -m pytest tests/test_cross_page_filter_persistence.py tests/test_page_column_projection.py -v
-grep -r "import pandas" src/app src/ui/pages src/data/services --include="*.py"
+grep -r "import pandas|import sqlite3" src/ --include="*.py"
+grep -r "from src\.db|import src\.db" src/ --include="*.py"
+python -m pytest tests/test_legacy_free_global.py tests/test_refactor_hotspots.py -v
+python -m pytest tests/test_analysis.py tests/test_app_phase2.py tests/test_arrow_polars_bridge.py -v
+python -m pytest tests/test_duckdb_repo_regressions.py -v
 ```
 
 #### 🔍 Revue Sprint 17
 
-→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue performance Coéquipiers + architecture filtres**
+→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue perf + refactorisation structurelle + clôture legacy**
 
 ---
 
-### Sprint 18 — Clôture migration Pandas + hardening release v4.5 (1.5 jour)
+### Sprint 18 — Finalisation v4.5 (docs, QA, release) (1.5 jour)
 
-**Objectif** : Finaliser la trajectoire “DuckDB + Polars first”, verrouiller la non-régression et livrer v4.5 stabilisé.
+**Objectif** : Livrer un package v4.5 prêt production avec documentation à jour, couverture de tests, revue finale complète et checklist cochée.
 
 **Prérequis** : Sprint 17 livré
 
-#### Tâches détaillées
+#### Tâches
 
 | # | Tâche | Source | Fichier(s) |
 |---|-------|--------|-----------|
-| 18.1 | [U] Fermer les reliquats Pandas restants (ou documenter exceptions frontière minimales) | Dette technique | `src/` |
-| 18.2 | [U] Vérifier absence de résurgence legacy (`sqlite3`, `sqlite_master`, `src.db`) dans runtime | Legacy closure | `src/`, `scripts/` |
-| 18.3 | [U] Exécuter campagne perf complète (Timeseries, Coéquipiers, Carrière) avec protocole reproductible | QA perf | `.ai/reports/benchmark_v4_5.json` |
-| 18.4 | [U] Finaliser documentation architecture/perf (décisions, compromis, limites) | Documentation | `docs/ARCHITECTURE.md`, `docs/PERFORMANCE_SCORE.md`, `README.md` |
-| 18.5 | [U] Finaliser docs AI + plan unifié (statuts, dette restante, décisions) | Traçabilité | `.ai/thought_log.md`, `.ai/PLAN_UNIFIE.md` |
-| 18.6 | [U] Exécuter QA release (tests, couverture, smoke UI, checklist) | Release | `tests/`, docs release |
-| 18.7 | [U] Produire release notes v4.5 orientées perfs UI et migration data path | Release | `.ai/RELEASE_NOTES_2026_Q1.md` |
+| 18.1 | [U] Exécuter campagne de tests complète (unitaires + intégration + E2E) | Qualité | `tests/` |
+| 18.2 | [U] Exécuter couverture et combler trous critiques | Qualité | `src/`, `tests/` |
+| 18.3 | [U] Mettre à jour docs finales **utilisateur** (README obligatoire + architecture + data + sync) | Documentation | `README.md`, `docs/*.md` |
+| 18.4 | [U] Mettre à jour docs **AI** (`.ai/thought_log.md` + rapport revue final + plans `.ai/features/`) | Traçabilité | `.ai/` |
+| 18.5 | [U] Produire release notes v4.5 + checklist de clôture | Release | `.ai/RELEASE_NOTES_2026_Q1.md` (ou v4.5 dédié) |
+| 18.6 | [U] Tagger release `v4.5` après validation | Release | Git |
+| 18.7 | [S] Mettre à jour tous les plans `.ai/features/` avec statut final (report de 11.7) | S9 SUPER_PLAN (report) | `.ai/features/` |
 
 #### Tests
 
 - Exécuter `python -m pytest tests/ -v`
 - Exécuter `python -m pytest tests/ -v --cov=src --cov-report=html`
-- Exécuter la suite ciblée perf/contrats S16-S17
-- Exécuter smoke manuel Streamlit sur Timeseries + Coéquipiers
+- Exécuter E2E navigateur strict (zéro skip en run dédié)
 
 #### Gate de livraison
 
-- [ ] Politique Pandas v4.5 atteinte (ou exceptions frontière documentées et acceptées)
-- [ ] 0 réintroduction SQLite legacy dans runtime
-- [ ] Objectifs perf atteints ou écart justifié avec plan correctif
-- [ ] `pytest` vert sur périmètre release
-- [ ] Documentation utilisateur et technique alignée sur l'implémentation réelle
-- [ ] Rapport final de clôture v4.5 publié
+- [ ] `pytest tests/ -v` : 0 failure, 0 error
+- [ ] Couverture cible réaliste atteinte (palier v4.5 : >= 75% global + >= 85% modules critiques)
+- [ ] **README.md mis à jour** (installation, usage, nouveautés v4.5, limitations connues)
+- [ ] Docs utilisateur à jour (`docs/*.md`) et alignées sur le comportement réel
+- [ ] Docs AI à jour (`.ai/thought_log.md`, rapport final, plans `.ai/features/`)
+- [ ] Plans `.ai/features/` mis à jour avec statut final (reprise 11.7)
+- [ ] Rapport de revue finale ✅
+- [ ] Tag `v4.5` créé
 
 #### Commandes de validation
 
 ```bash
 python -m pytest tests/ -v
 python -m pytest tests/ -v --cov=src --cov-report=html
-grep -r "import sqlite3|sqlite_master|from src\.db|import src\.db" src/ --include="*.py"
-grep -r "import pandas" src/ --include="*.py"
+python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser
+git tag -l | grep "v4.5" || true
 ```
 
 #### 🔍 Revue Sprint 18
 
-→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue finale perf + clôture migration + readiness release**
+→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue finale complète avant livraison v4.5**
+
+---
+
+### Addendum S16-S18 — Plan d'exécution ultra détaillé Performance UI (additif, ne remplace pas la roadmap)
+
+**But** : Détailler l'exécution pratique des sprints 16-18 sur les hotspots réels (Timeseries, Coéquipiers), **sans réduction de points** et sans changement UX.
+
+#### Addendum S16 — Exécution détaillée Timeseries
+
+- **Périmètre prioritaire**
+  - `src/ui/cache.py` : lecture DuckDB → Polars directe (éviter reconstruction row-by-row)
+  - `streamlit_app.py` : suppression conversion globale `df.to_pandas()`
+  - `src/ui/pages/timeseries.py` + `src/data/services/timeseries_service.py` : contrat Polars-first
+  - `src/visualization/timeseries.py` : frontière Plotly explicitée
+- **Séquence d'implémentation**
+  1. Ajouter fast-path `load_match_stats_as_polars` et fallback actuel.
+  2. Garder `df` en Polars tant que possible ; convertir localement uniquement si strictement nécessaire.
+  3. Migrer les calculs Timeseries en Polars (tri, rolling, enrichissements).
+  4. Passer en `Scattergl` conditionnel sur volume, avec fallback transparent.
+  5. Instrumenter les sections (`load`, `filter`, `compute`, `build_fig`).
+- **Critères d'acceptation spécifiques**
+  - Aucune régression de sections/graphes affichés.
+  - Aucune réduction de granularité des points.
+  - Gain cible initial: `-30%` sur temps d'ouverture Timeseries.
+
+#### Addendum S17 — Exécution détaillée Coéquipiers + filtres
+
+- **Périmètre prioritaire**
+  - `src/ui/pages/teammates.py`, `src/ui/pages/teammates_charts.py`, `src/data/services/teammates_service.py`
+  - `src/app/filters_render.py`, `src/app/filters.py` (mode DB-driven)
+  - `src/app/main_helpers.py`, `src/app/page_router.py` (projection colonnes par page)
+- **Séquence d'implémentation**
+  1. Migrer les agrégations Coéquipiers vers Polars/SQL (supprimer `.apply`/boucles lignes).
+  2. Remplacer les listes d'options filtres calculées depuis un DF complet par requêtes `DISTINCT` ciblées.
+  3. Charger uniquement les colonnes nécessaires par page.
+  4. Durcir invalidation cache (`db_key`, `cache_buster`, paramètres filtres).
+  5. Mesurer cold/warm run sur Coéquipiers.
+- **Critères d'acceptation spécifiques**
+  - Même UX et même richesse fonctionnelle Coéquipiers.
+  - Pas de réduction de points.
+  - Gain cible initial: `-35%` sur temps d'ouverture Coéquipiers.
+
+#### Addendum S18 — Exécution détaillée Clôture
+
+- **Objectif de fermeture technique**
+  - Cartographier reliquats Pandas (tolérance uniquement aux frontières justifiées).
+  - Vérifier zéro résurgence `sqlite3/sqlite_master/src.db` dans le runtime.
+  - Lancer benchmark final comparatif (avant/après S16-S17).
+- **Livrables finaux**
+  - Rapport benchmark: `.ai/reports/benchmark_v4_5.json`
+  - Rapport de clôture migration: `.ai/reports/V4_5_LEGACY_CLOSURE.md`
+  - Mise à jour docs `README.md`, `docs/ARCHITECTURE.md`, `docs/PERFORMANCE_SCORE.md`
+
+---
+
+### Sprint 19 — Optimisation post-refacto UI (Timeseries + Coéquipiers) (1.5 jour)
+
+**Objectif** : Appliquer l'optimisation ciblée **après** la refactorisation/migration S16-S18, en conservant strictement l'UX (pas de réduction de points ni de granularité).
+
+**Prérequis** : Sprint 18 livré
+
+#### Tâches
+
+| # | Tâche | Source | Fichier(s) |
+|---|-------|--------|-----------|
+| 19.1 | [U] Activer data path DuckDB -> Polars direct pour Timeseries/Coéquipiers (zéro reconstruction Python inutile) | Perf post-refacto | `src/ui/cache.py`, `src/data/repositories/duckdb_repo.py` |
+| 19.2 | [U] Éliminer les conversions Pandas résiduelles sur chemins chauds de rendu | Perf post-refacto | `streamlit_app.py`, `src/ui/pages/timeseries.py`, `src/ui/pages/teammates.py` |
+| 19.3 | [U] Durcir la projection de colonnes par page (chargement minimal requis) | RAM + CPU | `src/app/main_helpers.py`, `src/app/page_router.py`, `src/ui/cache.py` |
+| 19.4 | [U] Stabiliser invalidation cache pour refresh fréquents (`db_key`/`cache_buster`/filtres) | Cohérence data | `src/ui/cache.py`, `streamlit_app.py` |
+| 19.5 | [U] Finaliser rendu Plotly haute volumétrie sans changer la narration visuelle | Rendu | `src/visualization/timeseries.py`, `src/ui/pages/teammates_charts.py` |
+| 19.6 | [U] Exécuter benchmark ciblé (cold/warm) et publier rapport avant/après | Validation | `.ai/reports/V4_5_POST_REFACTOR_PERF_S19.md` |
+
+#### Tests
+
+- Étendre `tests/test_new_timeseries_sections.py`
+- Étendre `tests/test_teammates_new_comparisons.py`
+- Créer `tests/test_post_refactor_perf_contracts.py`
+- Créer `tests/test_hotpath_no_global_pandas_conversion.py`
+
+#### Gate de livraison
+
+- [ ] Aucun changement UX (mêmes graphes, mêmes points, mêmes sections)
+- [ ] Aucune réduction de granularité de données
+- [ ] Temps d'ouverture Timeseries et Coéquipiers amélioré de façon mesurable (objectif combiné: `-25%` minimum)
+- [ ] Pas de régression fonctionnelle sur filtres et navigation inter-pages
+- [ ] Rapport S19 publié (`.ai/reports/V4_5_POST_REFACTOR_PERF_S19.md`)
+
+#### Commandes de validation
+
+```bash
+python -m pytest tests/test_new_timeseries_sections.py tests/test_teammates_new_comparisons.py -v
+python -m pytest tests/test_post_refactor_perf_contracts.py tests/test_hotpath_no_global_pandas_conversion.py -v
+python -m pytest -q --ignore=tests/integration
+```
+
+#### 🔍 Revue Sprint 19
+
+→ Exécuter le [protocole de revue](#4-protocole-de-revue-par-sprint) — **revue performance post-refacto + conformité UX stricte**
 
 ---
 
@@ -1993,5 +2100,5 @@ Objectif : compléter la campagne 9.4 avec des parcours navigateur orientés mé
 ---
 
 > **Document généré le** : 2026-02-12
-> **Sources** : `SUPER_PLAN.md` (2026-02-09), `CODE_REVIEW_CLEANUP_PLAN.md` (2026-02-09), **Sprint 12 ajouté par demande utilisateur** (2026-02-12), **Programme v4.5 (S13-S18) ajouté après audit tests/codebase** (2026-02-12)
+> **Sources** : `SUPER_PLAN.md` (2026-02-09), `CODE_REVIEW_CLEANUP_PLAN.md` (2026-02-09), **Sprint 12 ajouté par demande utilisateur** (2026-02-12), **Programme v4.5 (S13-S19) ajouté après audit tests/codebase** (2026-02-12)
 > **Auteur** : Claude Code (analyse et compilation) + **P9 Heatmap Impact** + **Roadmap v4.5**
