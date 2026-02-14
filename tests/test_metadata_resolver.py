@@ -8,7 +8,6 @@ Ce module teste :
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import duckdb
@@ -18,10 +17,9 @@ from src.data.sync.metadata_resolver import MetadataResolver, create_metadata_re
 
 
 @pytest.fixture
-def temp_metadata_db() -> Path:
+def temp_metadata_db(tmp_path: Path) -> Path:
     """Crée une base metadata.duckdb temporaire pour les tests."""
-    temp_dir = Path(tempfile.mkdtemp())
-    db_path = temp_dir / "metadata.duckdb"
+    db_path = tmp_path / "metadata.duckdb"
     conn = duckdb.connect(str(db_path))
 
     # Créer les tables

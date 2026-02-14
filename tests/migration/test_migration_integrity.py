@@ -12,7 +12,6 @@ Valide que :
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -139,10 +138,9 @@ CREATE TABLE xuid_aliases (
 
 
 @pytest.fixture
-def tmp_dir():
-    """Répertoire temporaire pour les DBs de test."""
-    with tempfile.TemporaryDirectory() as d:
-        yield Path(d)
+def tmp_dir(tmp_path: Path):
+    """Répertoire temporaire pour les DBs de test (utilise tmp_path pytest)."""
+    return tmp_path
 
 
 @pytest.fixture

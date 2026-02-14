@@ -7,6 +7,39 @@
 
 ## Journal
 
+### [2025-07-15] - Sprint 7 : Tests & Couverture v5
+
+**Statut** : Terminé ✅
+
+**Objectif** : Implémenter Sprint 7 du PLAN_V5_SHARED_MATCHES — améliorer la couverture de tests pour les composants v5.
+
+**Résultats** :
+- **+188 nouveaux tests** répartis sur 6 fichiers de test
+- Suite complète : **1802 passed**, 0 failed, 38 skipped (88s)
+- Couverture globale : **44.3%** (vs 41% baseline v4)
+
+**Fichiers créés** :
+1. `tests/test_batch_insert.py` — 48 tests (module précédemment non testé)
+2. `tests/test_repository_shared_v5.py` — 29 tests (ATTACH, shared queries, factory)
+3. `tests/migration/test_migration_v5.py` — 10 tests (idempotence, edge cases)
+4. `tests/test_sync_shared_v5.py` — 22 tests (backfill mask, extract, options)
+5. `tests/ui/test_all_pages_v5.py` — 71 tests (smoke import + helpers purs)
+6. `tests/performance/test_load_v5.py` — 8 tests @slow (1000+ matchs)
+7. `scripts/check_coverage_threshold.py` — outil CLI vérification couverture
+8. `docs/TESTING_V5.md` — documentation complète
+
+**Fixes appliqués** :
+- `test_migration_integrity.py` : `tmp_dir` → `tmp_path` (WinError 32 DuckDB locking)
+- `test_metadata_resolver.py` : idem
+- Résultat : les 2 tests flaky passent maintenant systématiquement
+
+**Décision** : Couverture 44.3% < 65% objectif
+- Goulot : pages UI Streamlit (70+ fichiers entre 5-15%)
+- Les modules métier (sync, repositories, analysis) > 70% individuellement
+- Atteindre 65% nécessiterait un framework de mock Streamlit (hors scope S7)
+
+---
+
 ### [2026-02-15] - Post-Sprint : Colonne enabled + V5-readiness CitationEngine
 
 **Statut** : Terminé ✅
