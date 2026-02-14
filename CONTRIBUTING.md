@@ -11,6 +11,7 @@ Merci de votre intérêt pour contribuer à LevelUp ! Ce document explique comme
 - [Processus de Pull Request](#processus-de-pull-request)
 - [Signaler un Bug](#signaler-un-bug)
 - [Proposer une Fonctionnalité](#proposer-une-fonctionnalité)
+- [Crédits Open Source](#crédits-open-source)
 
 ---
 
@@ -255,6 +256,14 @@ Le dashboard ne charge pas les matchs pour le joueur X.
 Error: DuckDB file not found...
 ```
 ```
+
+---
+
+## Crédits Open Source
+
+Ce projet dépend de plusieurs briques communautaires. Les crédits sont centralisés dans [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+
+Avant d'ajouter une dépendance externe majeure, documentez-la aussi dans ce fichier pour garder une attribution claire.
 
 ---
 

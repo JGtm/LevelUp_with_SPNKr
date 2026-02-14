@@ -147,7 +147,22 @@ streamlit run streamlit_app.py
 
 ### Prérequis
 - Docker Desktop installé
-- Docker Compose disponible
+- Docker Compose v2 disponible (`docker compose version`)
+- Fichier `db_profiles.json` à la racine du projet (créé automatiquement si absent)
+
+### Prérequis : fichiers de configuration
+
+Avant le premier `docker compose up`, assurez-vous que ces fichiers existent. Sinon, créez-les :
+
+```bash
+# Si db_profiles.json n'existe pas encore
+echo '{"profiles": {}}' > db_profiles.json
+
+# Si app_settings.json n'existe pas encore
+echo '{}' > app_settings.json
+```
+
+> **Pourquoi ?** Docker bind-mount crée un *dossier* (pas un fichier) si la source n'existe pas, ce qui crasherait l'app.
 
 ### Lancer avec Docker Compose
 
@@ -158,23 +173,47 @@ docker compose up --build
 # En arrière-plan
 docker compose up -d
 
+# Voir les logs
+docker compose logs -f
+
 # Arrêter
 docker compose down
 ```
 
+### Architecture de l'image
+
+L'image Docker :
+- Installe les dépendances via `pip install -e ".[spnkr]"` (pyproject.toml), incluant SPNKr + aiohttp pour la synchronisation API
+- Embarque les données de référence minimales (traductions playlists, wiki commendations)
+- Tourne en utilisateur non-root (`appuser`, UID 10001)
+- Expose le healthcheck Streamlit sur `/_stcore/health`
+
 ### Configuration Docker
 
-Le fichier `docker-compose.yml` monte les volumes suivants :
-- `./data:/data:ro` : Données en lecture seule
-- `./appdata:/appdata` : Configuration persistante
+`docker-compose.yml` monte les volumes suivants :
+
+| Volume hôte | Chemin conteneur | Description |
+|-------------|-----------------|-------------|
+| `./data` | `/app/data` | Données DuckDB v4 (lecture/écriture) |
+| `./db_profiles.json` | `/app/db_profiles.json` | Profils joueurs |
+| `./app_settings.json` | `/app/app_settings.json` | Paramètres applicatifs |
 
 ### Variables d'Environnement Docker
 
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `OPENSPARTAN_ROOT` | `/app` | Racine du projet (détection pyproject.toml) |
+| `OPENSPARTAN_DB` | *(vide)* | Forcer un chemin DB (optionnel) |
+| `OPENSPARTAN_DEFAULT_GAMERTAG` | *(vide)* | Gamertag par défaut pour mode headless |
+
+Exemple pour forcer une base :
+
 ```yaml
 environment:
-  - OPENSPARTAN_DB=/data/players/MonGamertag/stats.duckdb
-  - OPENSPARTAN_DB_READONLY=1
+  - OPENSPARTAN_DB=/app/data/players/MonGamertag/stats.duckdb
 ```
+
+`OPENSPARTAN_DB` est optionnelle : si non définie, l'application utilise la sélection via profils/UI.
 
 ---
 

@@ -212,12 +212,40 @@ python -m pytest tests/e2e/test_streamlit_browser_e2e.py -v --run-e2e-browser
 ## Docker
 
 ```bash
-# Démarrer avec Docker Compose
+# Construire et démarrer
 docker compose up --build
 
-# Accéder au dashboard
-open http://localhost:8501
+# En arrière-plan
+docker compose up -d
+
+# Arrêter
+docker compose down
 ```
+
+Le dashboard est accessible sur `http://localhost:8501`.
+
+L'image installe toutes les dépendances via `pyproject.toml` (y compris SPNKr pour la synchronisation API). Au runtime, `docker-compose.yml` monte :
+- `./data` → `/app/data` — données DuckDB v4 (lecture/écriture)
+- `./db_profiles.json` → `/app/db_profiles.json` — profils joueurs
+- `./app_settings.json` → `/app/app_settings.json` — paramètres
+
+Pour forcer une base précise, décommentez dans `docker-compose.yml` :
+
+```yaml
+environment:
+  - OPENSPARTAN_DB=/app/data/players/MonGamertag/stats.duckdb
+```
+
+**Documentation Docker détaillée** : [docs/INSTALL.md](docs/INSTALL.md#installation-docker)
+
+---
+
+## Remerciements
+
+- **Andy Curtis** ([acurtis166](https://github.com/acurtis166)) pour [SPNKr](https://github.com/acurtis166/SPNKr)
+- **Den Delimarsky** ([dend](https://github.com/dend)) pour [Grunt](https://github.com/dend/grunt) et [OpenSpartan](https://github.com/OpenSpartan)
+
+Voir aussi [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 ---
 
