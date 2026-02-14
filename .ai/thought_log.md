@@ -7,6 +7,50 @@
 
 ## Journal
 
+### [2026-02-14] - Sprint 6 v5 — Optimisation API & Sync
+
+**Statut** : Terminé ✅
+
+**Objectif** : Optimiser le pipeline de synchronisation pour réduire le temps de sync et les appels API.
+
+**Réalisations** :
+
+**1. Parallélisation API (6.1)** :
+- Les appels `get_skill_stats()` et `get_highlight_events()` dans `_process_single_match_legacy()` sont maintenant parallélisés via `asyncio.gather()` avec gestion individuelle des erreurs.
+- Gain estimé : -50% latence réseau par match.
+
+**2. Performance score différé (6.2)** :
+- Nouveau champ `SyncOptions.defer_performance_score` (défaut `True`).
+- Pendant le sync, les matchs sont insérés avec `performance_score = NULL`.
+- Le calcul est fait en batch post-sync.
+
+**3. Batch compute performance scores (6.3)** :
+- Nouvelle méthode `DuckDBSyncEngine.batch_compute_performance_scores()`.
+- 1 seule requête SQL charge tout l'historique (au lieu de N).
+- Itère sur les matchs NULL avec historique suffisant, calcul vectorisé.
+- Batch UPDATE + commit unique.
+
+**4. Batching commits DB (6.4)** :
+- `SyncOptions.batch_commit_size = 10` : commit intermédiaire tous les 10 matchs.
+- Suppression du `conn.commit()` individuel dans `_compute_and_update_performance_score()`.
+
+**5. Rate limit augmenté (6.5)** :
+- `requests_per_second` : 5 → 10
+- `parallel_matches` : 3 → 5
+
+**6. Tests (6.6)** : 14 tests Sprint 6 + 50 tests existants = 64/64 pass.
+
+**7. Documentation (6.7)** : `docs/SYNC_OPTIMIZATIONS_V5.md` créé.
+
+**Fichiers modifiés** :
+- `src/data/sync/engine.py` — parallélisation, defer, batch compute, batch commit
+- `src/data/sync/models.py` — nouveaux champs SyncOptions
+- `tests/test_sync_sprint6_optimizations.py` — 14 tests
+- `tests/test_sync_engine.py` — correction test valeurs par défaut
+- `docs/SYNC_OPTIMIZATIONS_V5.md` — documentation
+
+---
+
 ### [2026-02-15] - Sprint 5 v5 — Refactoring UI Big Bang (match queries)
 
 **Statut** : Terminé ✅

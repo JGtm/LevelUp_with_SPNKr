@@ -584,6 +584,15 @@ class DuckDBSyncEngine:
             if result.matches_inserted > 0:
                 await self._refresh_aggregates_async()
 
+            # Sprint 6 : Calcul batch des performance scores post-sync
+            if (
+                result.matches_inserted > 0
+                and options.defer_performance_score
+                and _PERF_SCORE_AVAILABLE
+            ):
+                perf_count = self.batch_compute_performance_scores()
+                logger.info(f"Performance scores calculés en batch : {perf_count}")
+
             # Mettre à jour les métadonnées
             self._update_sync_meta("last_sync_at", datetime.now(timezone.utc).isoformat())
             self._update_sync_meta("last_sync_mode", "delta" if delta_mode else "full")
@@ -665,6 +674,15 @@ class DuckDBSyncEngine:
                     result.skill_records_inserted += match_result.get("skill", 0)
                     result.aliases_updated += match_result.get("aliases", 0)
                     existing_ids.add(match_id)
+
+                    # Sprint 6 : Commit intermédiaire tous les N matchs
+                    if (
+                        options.batch_commit_size > 0
+                        and result.matches_inserted % options.batch_commit_size == 0
+                    ):
+                        conn = self._get_connection()
+                        conn.commit()
+                        logger.debug(f"Commit intermédiaire après {result.matches_inserted} matchs")
 
                 if match_result.get("error"):
                     result.warnings.append(match_result["error"])
@@ -773,15 +791,30 @@ class DuckDBSyncEngine:
             # Extraire les XUIDs pour l'appel skill
             xuids = extract_xuids_from_match(stats_json)
 
-            # Récupérer skill et events en parallèle
+            # Récupérer skill et events en parallèle (Sprint 6 — asyncio.gather)
             skill_json = None
             highlight_events: list = []
 
-            if options.with_skill and xuids:
-                skill_json = await client.get_skill_stats(match_id, xuids)
+            api_tasks: list = []
+            task_keys: list[str] = []
 
+            if options.with_skill and xuids:
+                api_tasks.append(client.get_skill_stats(match_id, xuids))
+                task_keys.append("skill")
             if options.with_highlight_events:
-                highlight_events = await client.get_highlight_events(match_id)
+                api_tasks.append(client.get_highlight_events(match_id))
+                task_keys.append("events")
+
+            if api_tasks:
+                api_results = await asyncio.gather(*api_tasks, return_exceptions=True)
+                for key, res in zip(task_keys, api_results, strict=False):
+                    if isinstance(res, Exception):
+                        logger.warning(f"Erreur API {key} pour {match_id}: {res}")
+                        continue
+                    if key == "skill":
+                        skill_json = res
+                    elif key == "events":
+                        highlight_events = res if res else []
 
             # Transformer les données
             match_row = transform_match_stats(
@@ -853,8 +886,10 @@ class DuckDBSyncEngine:
                     result["aliases"] = len(alias_rows)
 
                 # Calculer et mettre à jour le score de performance
-                # (après toutes les insertions pour avoir les données complètes)
-                self._compute_and_update_performance_score(match_id, match_row)
+                # Sprint 6 : si defer_performance_score, on skip le calcul inline
+                # (sera fait en batch post-sync via batch_compute_performance_scores)
+                if not options.defer_performance_score:
+                    self._compute_and_update_performance_score(match_id, match_row)
 
                 # ── Bitmask backfill_completed ──────────────────────────
                 # Marquer les types de données effectivement traités lors
@@ -1523,7 +1558,8 @@ class DuckDBSyncEngine:
                     "UPDATE match_stats SET performance_score = ? WHERE match_id = ?",
                     (score, match_id),
                 )
-                conn.commit()
+                # Sprint 6 : pas de commit individuel ici, le commit est géré
+                # par le batching dans _process_matches ou le commit final
                 logger.debug(f"Score de performance calculé pour {match_id}: {score:.1f}")
             else:
                 logger.debug(f"Impossible de calculer le score pour {match_id}")
@@ -1531,6 +1567,99 @@ class DuckDBSyncEngine:
         except Exception as e:
             # Ne pas bloquer la synchronisation si le calcul échoue
             logger.warning(f"Erreur calcul score performance pour {match_id}: {e}")
+
+    def batch_compute_performance_scores(self) -> int:
+        """Calcule les performance_score pour tous les matchs où il est NULL.
+
+        Exécuté post-sync pour ne pas bloquer l'insertion des matchs.
+        Utilise le calcul vectorisé de compute_relative_performance_score()
+        avec un chargement unique de l'historique complet.
+
+        Returns:
+            Nombre de matchs mis à jour.
+        """
+        if not _PERF_SCORE_AVAILABLE:
+            logger.debug("Modules de calcul de performance non disponibles, skip batch")
+            return 0
+
+        try:
+            conn = self._get_connection()
+            self._ensure_performance_score_column()
+
+            # 1. Charger TOUS les matchs triés par date
+            all_matches_df = conn.execute(
+                """
+                SELECT
+                    match_id, start_time, kills, deaths, assists, kda, accuracy,
+                    time_played_seconds, avg_life_seconds,
+                    personal_score, damage_dealt,
+                    rank, team_mmr, enemy_mmr,
+                    performance_score
+                FROM match_stats
+                WHERE start_time IS NOT NULL
+                ORDER BY start_time ASC
+                """
+            ).pl()
+
+            if all_matches_df.is_empty():
+                return 0
+
+            # 2. Identifier les matchs sans score
+            null_mask = all_matches_df["performance_score"].is_null()
+            if not null_mask.any():
+                logger.info("Tous les matchs ont déjà un performance_score")
+                return 0
+
+            # 3. Calculer le score pour chaque match NULL
+            #    en utilisant l'historique des matchs précédents
+            updates: list[tuple[float, str]] = []
+            match_ids = all_matches_df["match_id"].to_list()
+
+            for i in range(len(all_matches_df)):
+                if not null_mask[i]:
+                    continue
+
+                # Pas assez d'historique ?
+                if i < MIN_MATCHES_FOR_RELATIVE:
+                    continue
+
+                # Historique = tous les matchs AVANT l'index i
+                history_df = all_matches_df.slice(0, i).drop("performance_score")
+
+                # Match courant en dict
+                row = all_matches_df.row(i, named=True)
+                match_dict = {
+                    "kills": row.get("kills") or 0,
+                    "deaths": row.get("deaths") or 0,
+                    "assists": row.get("assists") or 0,
+                    "kda": row.get("kda"),
+                    "accuracy": row.get("accuracy"),
+                    "time_played_seconds": row.get("time_played_seconds") or 600.0,
+                    "personal_score": row.get("personal_score"),
+                    "damage_dealt": row.get("damage_dealt"),
+                    "rank": row.get("rank"),
+                    "team_mmr": row.get("team_mmr"),
+                    "enemy_mmr": row.get("enemy_mmr"),
+                }
+
+                score = compute_relative_performance_score(match_dict, history_df)
+                if score is not None:
+                    updates.append((score, match_ids[i]))
+
+            # 4. Batch UPDATE
+            if updates:
+                conn.executemany(
+                    "UPDATE match_stats SET performance_score = ? WHERE match_id = ?",
+                    updates,
+                )
+                conn.commit()
+                logger.info(f"Performance scores batch : {len(updates)} matchs mis à jour")
+
+            return len(updates)
+
+        except Exception as e:
+            logger.warning(f"Erreur batch calcul performance scores : {e}")
+            return 0
 
     def _insert_match_row(self, row: MatchStatsRow) -> None:
         """Insère une ligne match_stats."""

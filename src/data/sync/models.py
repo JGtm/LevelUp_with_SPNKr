@@ -32,6 +32,8 @@ class SyncOptions:
         with_assets: Récupérer les assets (maps, playlists).
         requests_per_second: Rate limiting API (requêtes/seconde).
         parallel_matches: Nombre de matchs traités en parallèle.
+        defer_performance_score: Différer le calcul du score de performance en batch post-sync.
+        batch_commit_size: Nombre de matchs entre chaque commit intermédiaire (0 = commit final uniquement).
     """
 
     match_type: str = "matchmaking"
@@ -41,8 +43,10 @@ class SyncOptions:
     with_aliases: bool = True
     with_participants: bool = True  # Sprint Gamertag Roster Fix
     with_assets: bool = True
-    requests_per_second: int = 5
-    parallel_matches: int = 3
+    requests_per_second: int = 10  # Sprint 6: augmenté de 5 à 10
+    parallel_matches: int = 5  # Sprint 6: augmenté de 3 à 5
+    defer_performance_score: bool = True  # Sprint 6: calcul batch post-sync
+    batch_commit_size: int = 10  # Sprint 6: commit tous les 10 matchs
 
 
 @dataclass
