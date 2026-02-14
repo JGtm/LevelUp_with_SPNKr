@@ -2577,7 +2577,7 @@ python scripts/validate_optimizations.py
 
 ---
 
-### Sprint 7bis — Tests UI Streamlit (2 jours)
+### Sprint 7bis — Tests UI Streamlit (2 jours) ✅ COMPLÉTÉ
 
 **Objectif** : Créer un framework de mock Streamlit réutilisable et couvrir les pages UI
 prioritaires pour passer la couverture globale de 44% à ≥ 55%.
@@ -2725,15 +2725,155 @@ def mock_st(monkeypatch):
 - Sprint 7 terminé ✅
 - Pattern `_patch_streamlit` validé sur `teammates_impact.py` (87%) ✅
 
+#### Résultats Sprint 7bis
+
+- **Nouveaux tests** : +147 tests, tous passent
+- **Suite totale** : 1957 passed, 38 skipped, 0 failures (110s)
+- **Couverture globale** : 48% (vs 44.3% avant, soit +3.7 points)
+
+| Fichier | Avant | Après |
+|---------|-------|-------|
+| `timeseries.py` | 12% | **84%** |
+| `settings.py` | 7% | **72%** |
+| `antagonist_charts.py` | ~30% | **60%** |
+| `objective_charts.py` | ~30% | **65%** |
+| `win_loss.py` | 8% | **49%** |
+
 #### Gate de livraison
 
-- [ ] Fixture `MockStreamlit` dans conftest.py
-- [ ] ≥ 6 pages UI testées (render function appelée avec succès)
-- [ ] Couverture globale ≥ 55%
-- [ ] Tous les tests passent (0 failure)
-- [ ] Aucune dépendance à un serveur Streamlit (tout en mode headless)
+- [x] Fixture `MockStreamlit` dans conftest.py
+- [x] ≥ 6 pages UI testées (render function appelée avec succès) — 8 pages couvertes
+- [ ] Couverture globale ≥ 55% — 48% (modules volumineux restants → Sprint 7ter)
+- [x] Tous les tests passent (0 failure)
+- [x] Aucune dépendance à un serveur Streamlit (tout en mode headless)
 
 **Estimation** : 2 jours (13-15h effectives)
+
+---
+
+### Sprint 7ter — Couverture modules volumineux (optionnel, 2 jours)
+
+**Objectif** : Cibler les modules volumineux restant sous 35% de couverture pour
+passer la couverture globale de 48% à ≥ 58%.
+
+> **Contexte** : Après Sprint 7bis, la couverture est à 48%. L'écart par rapport
+> aux 55% visés provient de ~15 modules volumineux (> 100 stmts chacun) sous 35%.
+> Ce sprint optionnel vise ces modules par ordre de ratio stmts/effort.
+
+#### Diagnostic – Modules faiblement couverts (≤ 35%, > 50 stmts)
+
+| Module | Stmts | Couverture | Stmts à gagner | Complexité |
+|--------|-------|-----------|---------------|------------|
+| `src/ui/sync.py` | 337 | 23% | ~180 | Moyenne (mocks API) |
+| `src/ui/player_assets.py` | 275 | 9% | ~200 | Haute (assets réseau) |
+| `src/ui/path_picker.py` | 264 | 3% | ~200 | Haute (UI complex) |
+| `src/ui/profile_api.py` | 246 | 5% | ~180 | Haute (API externe) |
+| `src/ui/pages/teammates_helpers.py` | 161 | 13% | ~100 | Moyenne |
+| `src/visualization/participation_charts.py` | 117 | 11% | ~80 | Faible (pur Plotly) |
+| `src/visualization/participation_radar.py` | 155 | 46% | ~50 | Faible (pur Plotly) |
+| `src/utils/xuid.py` | 124 | 33% | ~50 | Faible (fonctions pures) |
+| `src/ui/profile_api_urls.py` | 103 | 10% | ~70 | Faible (URL builders) |
+| `src/ui/profile_api_tokens.py` | 111 | 31% | ~50 | Moyenne (tokens) |
+| `src/utils/profiles.py` | 69 | 16% | ~40 | Faible (parsing) |
+| `src/utils/paths.py` | 56 | 35% | ~20 | Faible (chemins) |
+| `src/ui/perf.py` | 45 | 33% | ~20 | Faible |
+| `src/ui/sections/source.py` | 70 | 11% | ~50 | Moyenne |
+| `src/ui/pages/teammates_synergy.py` | 89 | 36% | ~40 | Moyenne |
+| **Total stmts récupérables** | | | **~1 330** | |
+
+#### Stratégie
+
+1. **Quick wins d'abord** : Fonctions pures sans dépendance Streamlit/API
+   (`xuid.py`, `paths.py`, `profiles.py`, `profile_api_urls.py`, viz Plotly)
+2. **Modules moyens ensuite** : Pages UI avec mock_st existant
+   (`teammates_helpers.py`, `teammates_synergy.py`, `perf.py`, `source.py`)
+3. **Gros modules en dernier** : Modules nécessitant des mocks réseau/API
+   (`sync.py`, `profile_api.py`, `player_assets.py`)
+4. **Exclure** `path_picker.py` (264 stmts, UI très complexe, faible ROI)
+
+#### Tâches
+
+| # | Tâche | Fichier(s) cible | Tests | Gain estimé |
+|---|-------|-----------------|-------|-------------|
+| 7t.1 | **Tests utils purs** (`xuid`, `paths`, `profiles`) | `tests/test_utils_coverage.py` | ~25 | +110 stmts (~0.5%) |
+| 7t.2 | **Tests profile_api_urls** (URL builders purs) | `tests/test_profile_api_urls.py` | ~15 | +70 stmts (~0.3%) |
+| 7t.3 | **Tests viz participation** (charts + radar) | `tests/test_viz_participation.py` | ~20 | +130 stmts (~0.6%) |
+| 7t.4 | **Tests teammates_helpers + synergy** (mock_st) | `tests/ui/test_teammates_helpers.py` | ~15 | +140 stmts (~0.7%) |
+| 7t.5 | **Tests ui/sync.py** (sync indicators, mocks API) | `tests/test_ui_sync.py` | ~20 | +180 stmts (~0.9%) |
+| 7t.6 | **Tests profile_api + tokens** (mocks HTTP) | `tests/test_profile_api.py` | ~20 | +230 stmts (~1.1%) |
+| 7t.7 | **Tests perf + sections/source** (mock_st) | `tests/test_ui_misc.py` | ~10 | +70 stmts (~0.3%) |
+| 7t.8 | **Tests player_assets** (mocks réseau) | `tests/test_player_assets.py` | ~15 | +200 stmts (~1.0%) |
+| 7t.9 | **Rapport couverture + mise à jour seuil** | Coverage | — | Validation |
+
+#### Détail par tâche
+
+**7t.1 — Utils purs** (quick win, aucun mock Streamlit)
+- `xuid.py` : `parse_xuid_input`, `guess_xuid_from_db_path`, `resolve_xuid_from_db`
+- `paths.py` : `find_db_file`, `get_player_db_path`, fonctions de résolution
+- `profiles.py` : `load_profiles`, `get_profile_by_gamertag`, parsing JSON
+- Tout pur Python, pas de dépendance externe
+
+**7t.2 — Profile API URLs** (quick win)
+- `profile_api_urls.py` : Fonctions de construction d'URLs Xbox/Waypoint
+- Purement déterministe, testable sans réseau
+- Vérifier les formats d'URL et les paramètres encodés
+
+**7t.3 — Viz participation** (Plotly pur, pas de Streamlit)
+- `participation_charts.py` : `plot_participation_*` → retournent `go.Figure`
+- `participation_radar.py` : `plot_radar_*` → retournent `go.Figure`
+- Même pattern que Sprint 7b.9 : DataFrames synthétiques + assert `go.Figure`
+
+**7t.4 — Teammates helpers + synergy** (mock_st)
+- `teammates_helpers.py` : Fonctions de calcul + rendu pour coéquipiers
+- `teammates_synergy.py` : Analyse de synergie avec mock_st
+- Réutiliser `MockStreamlit` de 7b.1
+
+**7t.5 — UI sync** (mocks API SPNKr)
+- `sync.py` : `render_sync_indicator`, `sync_all_players_duckdb`
+- Mocker les appels SPNKr + les accès DB
+- Vérifier le flux de contrôle (succès/erreur/partiel)
+
+**7t.6 — Profile API + tokens**
+- `profile_api.py` : Requêtes HTTP Xbox/Waypoint
+- `profile_api_tokens.py` : Gestion tokens d'authentification
+- Mocker `requests.get/post` + fichiers tokens locaux
+
+**7t.7 — Perf + sections/source**
+- `perf.py` : Métriques de performance UI
+- `sections/source.py` : Sélection de la source de données
+- Petits modules, mock_st suffisant
+
+**7t.8 — Player assets** (complexe)
+- `player_assets.py` : Téléchargement/cache d'assets (avatars, emblèmes)
+- Mocker les requêtes réseau + filesystem
+- Vérifier les chemins de cache et les fallbacks
+
+#### Couverture cible
+
+| Module | Avant S7ter | Objectif S7ter | Stmts gagnés |
+|--------|-------------|----------------|-------------|
+| `src/utils/` | 33% | **65%** | +120 stmts |
+| `src/ui/sync.py` | 23% | **55%** | +180 stmts |
+| `src/ui/profile_api*.py` | 10% | **40%** | +300 stmts |
+| `src/ui/player_assets.py` | 9% | **40%** | +200 stmts |
+| `src/ui/pages/teammates_*.py` | 20% | **45%** | +140 stmts |
+| `src/visualization/participation_*.py` | 28% | **60%** | +130 stmts |
+| **Global** | **48%** | **≥ 58%** | **+1 070 stmts** |
+
+#### Prérequis
+
+- Sprint 7bis terminé ✅
+- Fixture `MockStreamlit` disponible dans `conftest.py` ✅
+
+#### Gate de livraison
+
+- [ ] ≥ 8 modules cibles testés (couverture individuelle > 35%)
+- [ ] Couverture globale ≥ 55% (objectif ambitieux : 58%)
+- [ ] Tous les tests passent (0 failure)
+- [ ] Aucune régression sur les 1957 tests existants
+- [ ] `path_picker.py` exclu (trop complexe, faible ROI)
+
+**Estimation** : 2 jours (12-14h effectives)
 
 ---
 

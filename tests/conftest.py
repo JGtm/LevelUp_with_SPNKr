@@ -201,3 +201,169 @@ def df_with_nans_polars(sample_match_df_polars: pl.DataFrame) -> pl.DataFrame:
         .alias("kda")
     )
     return df
+
+
+# =============================================================================
+# FIXTURE MOCK STREAMLIT (Sprint 7bis)
+# =============================================================================
+
+
+class MockStreamlit:
+    """Mock Streamlit réutilisable pour tests UI.
+
+    Fournit un ensemble de MagicMock pour tous les widgets Streamlit courants,
+    injectés via monkeypatch dans le module cible.
+
+    Usage::
+
+        def test_my_page(mock_st, sample_match_df_polars):
+            from src.ui.pages import win_loss as mod
+            ms = mock_st(mod)
+            mod.render_win_loss_page(sample_match_df_polars, ...)
+            ms.calls["plotly_chart"].assert_called()
+    """
+
+    def __init__(self, monkeypatch, module):
+        from contextlib import contextmanager
+        from unittest.mock import MagicMock
+
+        self.calls: dict[str, MagicMock] = {}
+        self._module = module
+        self._monkeypatch = monkeypatch
+
+        # Widgets de base — chaque appel est un MagicMock
+        for name in [
+            "write",
+            "markdown",
+            "title",
+            "header",
+            "subheader",
+            "caption",
+            "info",
+            "warning",
+            "error",
+            "success",
+            "metric",
+            "plotly_chart",
+            "dataframe",
+            "table",
+            "image",
+            "button",
+            "toggle",
+            "checkbox",
+            "slider",
+            "selectbox",
+            "multiselect",
+            "radio",
+            "text_input",
+            "number_input",
+            "tabs",
+            "expander",
+            "container",
+            "spinner",
+            "progress",
+            "divider",
+            "html",
+            "download_button",
+            "line_chart",
+            "rerun",
+        ]:
+            mock = MagicMock(name=f"st.{name}")
+            self.calls[name] = mock
+            monkeypatch.setattr(module.st, name, mock)
+
+        # st.columns → retourne des MagicMock avec les mêmes attrs
+        self._setup_columns()
+
+        # st.session_state → dict partagé
+        self.session_state: dict = {}
+        monkeypatch.setattr(module.st, "session_state", self.session_state)
+
+        # st.spinner → context manager
+        @contextmanager
+        def _fake_spinner(*_a, **_kw):
+            yield
+
+        self.calls["spinner"] = MagicMock(side_effect=_fake_spinner)
+        monkeypatch.setattr(module.st, "spinner", self.calls["spinner"])
+
+        # st.expander → context manager retournant un MagicMock
+        @contextmanager
+        def _fake_expander(*_a, **_kw):
+            col = MagicMock(name="expander_ctx")
+            yield col
+
+        self.calls["expander"] = MagicMock(side_effect=_fake_expander)
+        monkeypatch.setattr(module.st, "expander", self.calls["expander"])
+
+        # st.sidebar → MagicMock context manager
+        sidebar_mock = MagicMock(name="st.sidebar")
+
+        @contextmanager
+        def _sidebar_ctx():
+            yield
+
+        sidebar_mock.__enter__ = lambda _s: None
+        sidebar_mock.__exit__ = lambda _s, *_a: None
+        self.calls["sidebar"] = sidebar_mock
+        monkeypatch.setattr(module.st, "sidebar", sidebar_mock)
+
+        # st.column_config (namespace pour NumberColumn etc.)
+        col_config = MagicMock(name="st.column_config")
+        self.calls["column_config"] = col_config
+        with suppress(AttributeError):
+            monkeypatch.setattr(module.st, "column_config", col_config)
+
+    def _setup_columns(self, default_n: int = 3):
+        from unittest.mock import MagicMock
+
+        cols = [MagicMock(name=f"col_{i}") for i in range(default_n)]
+        # Chaque colonne est un context manager
+        for c in cols:
+            c.__enter__ = lambda s: s
+            c.__exit__ = lambda _s, *_a: None
+        self.calls["columns"] = MagicMock(return_value=cols)
+        self._monkeypatch.setattr(self._module.st, "columns", self.calls["columns"])
+        self.columns = cols
+
+    def set_columns(self, n: int):
+        """Reconfigure le nombre de colonnes retournées."""
+        self._setup_columns(n)
+
+    def set_columns_dynamic(self):
+        """Configure columns pour retourner dynamiquement N cols selon l'argument."""
+        from unittest.mock import MagicMock
+
+        def _dynamic_cols(n, *_a, **_kw):
+            if isinstance(n, int):
+                count = n
+            elif isinstance(n, list | tuple):
+                count = len(n)
+            else:
+                count = 3
+            cols = [MagicMock(name=f"col_{i}") for i in range(count)]
+            for c in cols:
+                c.__enter__ = lambda s: s
+                c.__exit__ = lambda _s, *_a: None
+            return cols
+
+        self.calls["columns"] = MagicMock(side_effect=_dynamic_cols)
+        self._monkeypatch.setattr(self._module.st, "columns", self.calls["columns"])
+
+
+@pytest.fixture
+def mock_st(monkeypatch):
+    """Factory fixture : mock_st(module) → MockStreamlit.
+
+    Exemple::
+
+        def test_page(mock_st):
+            from src.ui.pages import win_loss as mod
+            ms = mock_st(mod)
+            # ... appeler la render function ...
+    """
+
+    def _factory(module):
+        return MockStreamlit(monkeypatch, module)
+
+    return _factory
