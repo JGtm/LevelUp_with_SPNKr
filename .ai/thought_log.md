@@ -7,6 +7,110 @@
 
 ## Journal
 
+### [2026-02-14] - Analyse Contexte Préliminaire v5.0 (Sprints 3-8)
+
+**Statut** : Terminé ✅
+
+**Objectif** : Créer des analyses de contexte préliminaires détaillées pour les Sprints 3 à 8 du plan v5.0, afin de réduire le temps de recherche et de compréhension au démarrage de chaque sprint.
+
+**Réalisations** :
+
+**1. Exploration exhaustive du codebase** :
+- Analysé `src/data/sync/engine.py` (1249 lignes) — Pattern async, locks DB, insertions
+- Analysé `src/data/repositories/duckdb_repo.py` (1114 lignes) — Pattern ATTACH metadata, mixins
+- Analysé `src/data/sync/transformers.py` (1469 lignes) — Fonctions d'extraction existantes
+- Inventorié 24 pages UI et leurs dépendances
+- Recensé 101 tests repository existants à adapter
+- Identifié fonctions réutilisables : `extract_participants()`, `extract_xuids_from_match()`, etc.
+
+**2. Ajout section "2bis. Analyses de Contexte Préliminaires (Sprints 3-8)"** :
+
+Chaque sprint dispose maintenant de :
+
+**Sprint 3 (Refactoring Sync Engine)** :
+- Fichiers principaux concernés (4 fichiers, tailles documentées)
+- Fonctions existantes réutilisables avec numéros de ligne exacts
+- Points d'attention critiques (parallélisation API, gestion locks, connexion shared)
+- Pattern code avant/après pour la parallélisation `asyncio.gather`
+- Dépendances sprints 1 & 2 identifiées
+- Estimation complexité détaillée par tâche (Total : ~16h sur 20-22h prévues)
+
+**Sprint 4 (Refactoring DuckDBRepository)** :
+- 4 fichiers concernés + mixins identifiés
+- Pattern ATTACH existant réutilisable (déjà implémenté pour metadata)
+- 3 queries critiques à adapter (avant/après SQL documenté)
+- Points d'attention : DB absentes, performances ATTACH, migration tests
+- Impact sur 4 mixins documenté
+- Estimation : ~11.5h sur 13-15h prévues
+
+**Sprint 5 (Refactoring UI Big Bang)** :
+- Inventaire complet : 24 fichiers UI (12 pages + 10 modules helpers)
+- 3 patterns de refactoring type (simple/roster/médailles)
+- Changements de colonnes documentés (my_team_score → team_0_score/team_1_score)
+- Rappel règle `st.plotly_chart(width="stretch")` au lieu de `use_container_width=True`
+- VIEWs de compatibilité à supprimer listées
+- Tests UI existants à adapter (5 fichiers)
+- Estimation : ~22h réaliste (au lieu de 31.5h brut) avec parallélisation
+
+**Sprint 6 (Optimisation API)** :
+- 4 optimisations identifiées avec code avant/après
+- Nouvelle fonction `batch_compute_performance_scores()` spécifiée
+- Gains attendus calculés (Temps/match : -33% nouveaux, -50% partagés)
+- Tests benchmark spécifiés
+- Estimation : ~11.5h sur 11-13h prévues
+
+**Sprint 7 (Tests & Couverture)** :
+- État actuel couverture estimé par module (Global : 41% → Objectif : 65%)
+- Tests existants à adapter inventoriés (7 catégories)
+- 5 nouvelles suites de tests spécifiées (migration, sync shared, repository, UI, charge)
+- ~150 tests à créer/adapter documentés
+- Estimation : ~17h sur 15-17h prévues
+
+**Sprint 8 (Finalisation & Release)** :
+- Code mort à nettoyer inventorié (VIEWs, fonctions legacy, imports inutilisés)
+- 5 documents obligatoires listés avec contenu attendu
+- Script benchmark final spécifié (4 fonctions)
+- Checklist revue de code complète (7 étapes)
+- Procédure tag + merge + release GitHub
+- Estimation : ~14h sur 14-16h prévues
+
+**3. Bénéfices attendus** :
+
+- ✅ **Gain de temps** : ~2-4h par sprint économisées en recherches/compréhension
+- ✅ **Réduction erreurs** : Points d'attention critiques identifiés à l'avance
+- ✅ **Meilleure estimation** : Complexité réelle validée par exploration code
+- ✅ **Réutilisation code** : Fonctions existantes identifiées (pas de réinvention)
+- ✅ **Tests préparés** : Suites de tests spécifiées à l'avance
+
+**4. Métriques** :
+
+| Métrique | Valeur |
+|----------|--------|
+| Lignes ajoutées au plan | ~800 lignes |
+| Fichiers analysés | 35+ fichiers source |
+| Fonctions réutilisables identifiées | 15+ fonctions |
+| Tests à créer/adapter recensés | ~150 tests |
+| Temps exploration total | ~3h |
+| Temps économisé estimé (sur 6 sprints) | ~12-24h |
+
+**Décisions** :
+
+1. ✅ Analyses intégrées directement dans `PLAN_V5_SHARED_MATCHES.md` (section 2bis)
+2. ✅ Format structuré : Fichiers → Fonctions → Points d'attention → Estimation
+3. ✅ Code snippets avant/après pour clarity maximale
+4. ✅ Inventaires exhaustifs (pages UI, tests, fichiers migration)
+5. ✅ Estimations de complexité validées par exploration réelle du code
+
+**Fichiers modifiés** :
+- `.ai/PLAN_V5_SHARED_MATCHES.md` : +800 lignes (section 2bis ajoutée)
+- `.ai/thought_log.md` : Cette entrée
+
+**Prochaines étapes** :
+- Sprint 3 peut démarrer immédiatement avec contexte complet
+- Réviser les estimations après Sprint 3 pour valider la méthodologie
+
+---
+
 ### [2026-02-14] - Sprint 18 — Stabilisation, benchmark, docs, release v4.5
 
 **Statut** : Livré ✅

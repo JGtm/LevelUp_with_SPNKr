@@ -162,7 +162,17 @@ Plans à incorporer dans le sprint approprié :
 - Tests passent localement ET en CI
 - Pas de `# TODO` ou `# FIXME` sans ticket associé
 
-### 1.4 Migration de Données
+### 1.4 Suivi de Progression
+
+#### Marquage des tâches terminées
+
+- **OBLIGATOIRE** : Chaque tâche terminée DOIT être marquée `[x]` dans ce plan
+- Les tableaux de tâches utilisent ✅ en préfixe pour les tâches complétées
+- Les livrables et gates de livraison utilisent `[x]` au lieu de `[ ]`
+- Mettre à jour ce fichier **immédiatement** après chaque sprint terminé
+- Un sprint n'est considéré terminé que quand TOUTES ses gates sont `[x]`
+
+### 1.5 Migration de Données
 
 #### Sécurité
 
@@ -243,11 +253,902 @@ Uniquement ce qui **NE PEUT PAS** être obtenu collectivement :
 
 ---
 
+## 2bis. Analyses de Contexte Préliminaires (Sprints 3-8)
+
+> **Objectif** : Accélérer le démarrage de chaque sprint en documentant à l'avance les fichiers concernés, les fonctions réutilisables, les dépendances et les points d'attention.
+
+---
+
+### Sprint 3 — Contexte Préliminaire : Refactoring Sync Engine
+
+#### Fichiers Principaux Concernés
+
+| Fichier | Taille | Rôle | Modifications Prévues |
+|---------|--------|------|----------------------|
+| `src/data/sync/engine.py` | 1249 lignes | Moteur de sync principal | Ajouter détection shared, méthodes `_process_known_match()` et `_process_new_match()` |
+| `src/data/sync/transformers.py` | 1469 lignes | Transformations JSON→DuckDB | Créer/adapter `extract_all_medals()` pour TOUS les joueurs |
+| `src/data/sync/batch_insert.py` | ~300 lignes | Insertions batch DuckDB | Nouvelles fonctions d'insertion vers shared |
+| `src/data/sync/models.py` | ~200 lignes | Modèles Pydantic | Possiblement ajouter `SharedMatchStatus` model |
+
+#### Fonctions Existantes Réutilisables
+
+```python
+# src/data/sync/engine.py
+async def _process_single_match(self, client, match_id, options) -> dict
+    # Ligne 654 - À splitter en _process_known_match() et _process_new_match()
+    # Actuellement séquentiel : stats → skill → events
+
+# src/data/sync/transformers.py (ligne 1095)
+def extract_participants(match_json: dict) -> list[MatchParticipantRow]
+    # DÉJÀ FONCTIONNEL - Extrait TOUS les joueurs depuis Players[]
+    # Parfait pour peupler shared.match_participants
+
+def extract_xuids_from_match(match_json: dict) -> list[int]  # ligne 1044
+    # Utilisé pour les appels skill - À conserver
+
+def extract_medals(stats_json: dict, xuid: str) -> list[MedalEarnedRow]  # ligne 1243
+    # ACTUEL : 1 seul joueur
+    # À CRÉER : extract_all_medals() pour TOUS les joueurs
+```
+
+#### Points d'Attention Critiques
+
+**1. Parallélisation API (actuellement séquentiel)**
+
+```python
+# AVANT (ligne 685-691 engine.py)
+if options.with_skill and xuids:
+    skill_json = await client.get_skill_stats(match_id, xuids)
+
+if options.with_highlight_events:
+    highlight_events = await client.get_highlight_events(match_id)
+
+# À REMPLACER PAR (asyncio.gather)
+tasks = []
+if options.with_skill and xuids:
+    tasks.append(client.get_skill_stats(match_id, xuids))
+else:
+    tasks.append(asyncio.sleep(0))
+    
+if options.with_highlight_events:
+    tasks.append(client.get_highlight_events(match_id))
+else:
+    tasks.append(asyncio.sleep(0))
+
+results = await asyncio.gather(*tasks, return_exceptions=True)
+skill_json = results[0] if not isinstance(results[0], Exception) else None
+highlight_events = results[1] if not isinstance(results[1], Exception) else []
+```
+
+**2. Gestion du Lock DB (_db_lock)**
+
+- `async with self._db_lock:` — Ligne 730  
+- ⚠️ Faudra un second lock pour shared_matches ou partager le même ?  
+- **Décision** : Lock séparé `_shared_db_lock` pour éviter contention
+
+**3. Connexion Shared**
+
+```python
+# Ajouter dans __init__ (ligne 250)
+self._shared_db_path: Path | None = None
+self._shared_connection: duckdb.DuckDBPyConnection | None = None
+self._shared_db_lock = asyncio.Lock()
+
+# Nouvelle méthode
+def _get_shared_connection(self) -> duckdb.DuckDBPyConnection:
+    if self._shared_connection is None:
+        self._shared_connection = duckdb.connect(str(self._shared_db_path))
+        self._shared_connection.execute("SET enable_object_cache = true")
+    return self._shared_connection
+```
+
+#### Dépendances Sprint 1 & 2
+
+- ✅ `shared_matches.duckdb` créée (Sprint 1)
+- ✅ Schema validé (6 tables) (Sprint 1)
+- ⚠️ Données migrées pour 4 joueurs (Sprint 2) — **Blocker si non terminé**
+
+#### Estimation de Complexité
+
+| Tâche | Complexité | Risque | Temps estimé |
+|-------|-----------|--------|--------------|
+| Détection match partagé | Faible | Faible | 1h |
+| `_process_known_match()` | Moyenne | Moyen | 3h |
+| `_process_new_match()` | Moyenne | Moyen | 3h |
+| `extract_all_medals()` | Faible | Faible | 2h |
+| Insertions vers shared | Moyenne | Moyen | 4h |
+| Tests unitaires | Moyenne | Faible | 3h |
+
+**Total** : ~16h (sur 20-22h prévues)
+
+---
+
+### Sprint 4 — Contexte Préliminaire : Refactoring DuckDBRepository
+
+#### Fichiers Principaux Concernés
+
+| Fichier | Taille | Rôle | Modifications Prévues |
+|---------|--------|------|----------------------|
+| `src/data/repositories/duckdb_repo.py` | 1114 lignes | Repository principal | Ajouter ATTACH shared, refactorer queries |
+| `src/data/repositories/_match_queries.py` | ~400 lignes | Queries matchs | Adapter pour lire depuis `shared.*` |
+| `src/data/repositories/_roster_loader.py` | ~250 lignes | Chargement rosters | Modifier pour lire `shared.match_participants` |
+| `src/data/repositories/_antagonists_repo.py` | ~200 lignes | Chargement antagonistes | Possiblement adapter si dépend du roster |
+
+#### Pattern ATTACH Existant (Réutilisable)
+
+```python
+# DÉJÀ IMPLÉMENTÉ pour metadata (ligne 122-144)
+def _get_connection(self) -> duckdb.DuckDBPyConnection:
+    if self._connection is None:
+        self._connection = duckdb.connect(str(self._player_db_path), read_only=self._read_only)
+        
+        # ATTACH metadata (existant)
+        if self._metadata_db_path.exists() and "meta" not in self._attached_dbs:
+            try:
+                self._connection.execute(
+                    f"ATTACH '{self._metadata_db_path}' AS meta (READ_ONLY)"
+                )
+                self._attached_dbs.add("meta")
+            except Exception as e:
+                # Gestion erreur "already attached"
+                pass
+    return self._connection
+
+# À AJOUTER : ATTACH shared_matches (même pattern)
+if self._shared_db_path.exists() and "shared" not in self._attached_dbs:
+    self._connection.execute(
+        f"ATTACH '{self._shared_db_path}' AS shared (READ_ONLY)"
+    )
+    self._attached_dbs.add("shared")
+```
+
+#### Queries Critiques à Adapter
+
+**1. load_matches() — Ligne ~200**
+
+```sql
+-- AVANT (v4) : Tout depuis match_stats local
+SELECT 
+    match_id, xuid, kills, deaths, assists, accuracy,
+    outcome, team_id, rank, score AS personal_score,
+    start_time, map_name, playlist_name, mode_category
+FROM match_stats
+WHERE xuid = ?
+ORDER BY start_time DESC
+
+-- APRÈS (v5) : JOIN shared + enrichment
+SELECT 
+    -- Données communes depuis shared.match_participants
+    p.match_id, p.xuid, p.kills, p.deaths, p.assists,
+    p.outcome, p.team_id, p.rank, p.score AS personal_score,
+    p.damage_dealt, p.damage_taken, p.shots_fired, p.shots_hit,
+    
+    -- Métadonnées depuis shared.match_registry
+    r.start_time, r.end_time, r.map_name, r.playlist_name, 
+    r.mode_category, r.is_ranked,
+    
+    -- Enrichissement personnel depuis player DB
+    e.performance_score, e.session_id, e.session_label, e.is_with_friends
+    
+FROM shared.match_participants p
+INNER JOIN shared.match_registry r ON r.match_id = p.match_id
+LEFT JOIN player_match_enrichment e ON e.match_id = p.match_id
+WHERE p.xuid = ?
+ORDER BY r.start_time DESC
+```
+
+**2. load_match_participants() — Ligne ~300**
+
+```sql
+-- AVANT : match_participants local (seulement les joueurs déjà trackés)
+SELECT * FROM match_participants WHERE match_id = ?
+
+-- APRÈS : shared.match_participants (TOUS les joueurs du match)
+SELECT 
+    p.match_id, p.xuid, p.team_id, p.outcome, p.rank,
+    p.score, p.kills, p.deaths, p.assists,
+    COALESCE(a.gamertag, 'Unknown') as gamertag
+FROM shared.match_participants p
+LEFT JOIN shared.xuid_aliases a ON a.xuid = p.xuid
+WHERE p.match_id = ?
+ORDER BY p.rank ASC
+```
+
+**3. load_highlight_events()**
+
+```sql
+-- AVANT : highlight_events local
+SELECT * FROM highlight_events WHERE match_id = ?
+
+-- APRÈS : shared.highlight_events
+SELECT * FROM shared.highlight_events WHERE match_id = ?
+```
+
+#### Points d'Attention Critiques
+
+**1. Gestion des DB Absentes**
+
+```python
+# Cas où shared_matches.duckdb n'existe pas encore
+# (transition progressive ou environnement de test)
+if not self._shared_db_path.exists():
+    logger.warning(f"shared_matches.duckdb absent : {self._shared_db_path}")
+    # Fallback sur les queries v4 ? Ou erreur explicite ?
+    # Décision : Erreur explicite (pas de fallback hybride)
+```
+
+**2. Performances ATTACH**
+
+- DuckDB 1.4.4+ : 1 fichier = 1 connexion exclusive
+- ATTACH en READ_ONLY économise la RAM
+- `SET enable_object_cache = true` déjà utilisé (ligne ~130)
+
+**3. Migration des Tests**
+
+Tous les tests `test_duckdb_repository.py` (101 tests) devront être adaptés :
+- Mocker `shared_matches.duckdb`
+- Créer fixtures avec données partagées
+- Valider les JOINs
+
+#### Mixins Impactés
+
+| Mixin | Fichier | Impact | Action |
+|-------|---------|--------|--------|
+| `MatchQueriesMixin` | `_match_queries.py` | ⭐ Fort | Refactorer toutes les queries |
+| `RosterLoaderMixin` | `_roster_loader.py` | ⭐ Fort | Lire depuis `shared.match_participants` |
+| `MaterializedViewsMixin` | `_materialized_views.py` | Moyen | Vérifier compatibilité |
+| `AntagonistsMixin` | `_antagonists_repo.py` | Faible | Possiblement adapter |
+
+#### Estimation de Complexité
+
+| Tâche | Complexité | Risque | Temps estimé |
+|-------|-----------|--------|--------------|
+| ATTACH shared_matches | Faible | Faible | 1h |
+| Adapter load_matches() | Moyenne | Moyen | 2h |
+| Adapter load_participants() | Faible | Faible | 1h |
+| Adapter load_events() | Faible | Faible | 30min |
+| Adapter load_medals() | Faible | Faible | 1h |
+| Tests repository | Moyenne | Moyen | 3h |
+| Tests intégration UI | Forte | Élevé | 3h |
+
+**Total** : ~11.5h (sur 13-15h prévues)
+
+---
+
+### Sprint 5 — Contexte Préliminaire : Refactoring UI Big Bang
+
+#### Pages UI Inventoriées (24 fichiers)
+
+| Page | Fichier | Taille | Utilise `repo.load_*` | Complexité |
+|------|---------|--------|----------------------|-----------|
+| Career | `career.py` | ~400 lignes | ✅ `load_career_progression()` | Faible |
+| Match History | `match_history.py` | ~600 lignes | ✅ `load_matches()` | Moyenne |
+| Match View | `match_view.py` + helpers | ~800 lignes | ✅ `load_match_participants()` | Forte |
+| Timeseries | `timeseries.py` | ~220 lignes | ✅ `load_matches()` | Faible |
+| Teammates | `teammates.py` + modules | ~1200 lignes | ✅ `load_matches_with_teammate()` | Forte |
+| Maps | `maps.py` | ~350 lignes | ✅ `load_matches()` | Faible |
+| Modes | `modes.py` | ~350 lignes | ✅ `load_matches()` | Faible |
+| Medals | `medals.py` | ~300 lignes | ✅ `load_matches()`, `load_medals_*()` | Moyenne |
+| Media Library | `media_library.py` | ~500 lignes | ✅ `load_matches()` | Moyenne |
+| Session Compare | `session_compare.py` | ~450 lignes | ✅ `load_matches()` | Moyenne |
+| Win/Loss | `win_loss.py` | ~200 lignes | ✅ `load_matches()` | Faible |
+| Objective Analysis | `objective_analysis.py` | ~400 lignes | ✅ `load_matches()` | Moyenne |
+
+**Total** : 12 pages principales + 10 modules helpers = **22 fichiers**
+
+#### Pattern de Refactoring Type
+
+**CAS 1 : Page simple (load_matches uniquement)**
+
+```python
+# AVANT (v4) - Pas de changement visible
+def show_timeseries_page(repo: DuckDBRepository):
+    df = repo.load_matches(limit=500)
+    # ... graphiques avec df
+
+# APRÈS (v5) - Aucun changement !
+def show_timeseries_page(repo: DuckDBRepository):
+    df = repo.load_matches(limit=500)  # Maintenant JOIN shared + enrichment en interne
+    # ... graphiques avec df (même structure)
+```
+
+**CAS 2 : Page avec roster (match_participants)**
+
+```python
+# AVANT (v4) - Roster partiel (seulement joueurs trackés)
+roster = repo.load_match_participants(match_id)
+# roster.shape = (2, N) si seulement 2 joueurs trackés sur 8
+
+# APRÈS (v5) - Roster complet (TOUS les joueurs du match)
+roster = repo.load_match_participants(match_id)
+# roster.shape = (8, N) systématiquement
+# ⚠️ Adapter l'UI si elle supposait roster partiel
+```
+
+**CAS 3 : Page avec médailles**
+
+```python
+# AVANT (v4) - Médailles seulement du joueur principal
+medals = repo.load_medals_for_match(match_id)
+
+# APRÈS (v5) - Besoin de filtrer par xuid explicitement
+medals = repo.load_medals_for_match(match_id, xuid=repo.xuid)
+# Ou charger TOUTES les médailles du match
+all_medals = repo.load_medals_for_match(match_id, xuid=None)  # Si implémenté
+```
+
+#### Points d'Attention Critiques
+
+**1. Changements de Colonnes**
+
+| Colonne v4 | Colonne v5 | Impact |
+|-----------|------------|--------|
+| `my_team_score` | `team_0_score` / `team_1_score` | ⚠️ Calcul à adapter |
+| `enemy_team_score` | `team_0_score` / `team_1_score` | ⚠️ Calcul à adapter |
+| `score` | `personal_score` | Renommage |
+| - | `duration_seconds` | Nouvelle (depuis registry) |
+| - | `player_count` | Nouvelle (depuis registry) |
+
+**2. Rosters Complets (8 joueurs au lieu de 1-2)**
+
+Pages impactées :
+- `match_view.py` — Affichage tableau joueurs
+- `teammates.py` — Détection coéquipiers
+- `objective_analysis.py` — Analyse contributions
+
+Action : Vérifier que les boucles et filtres gèrent bien 8+ joueurs.
+
+**3. Performance `st.plotly_chart()`**
+
+Rappel règle : **JAMAIS** `use_container_width=True` (déprécié).
+
+```python
+# ❌ INTERDIT
+st.plotly_chart(fig, use_container_width=True)
+
+# ✅ CORRECT
+st.plotly_chart(fig, width="stretch")
+```
+
+#### VIEWs de Compatibilité à Supprimer (Sprint 5.11)
+
+Si créées pendant Sprint 2-4 pour transition :
+
+```sql
+-- Exemple : VIEW match_stats pointant vers shared
+DROP VIEW IF EXISTS match_stats;
+DROP VIEW IF EXISTS match_participants;
+-- etc.
+```
+
+**Script** : `scripts/remove_compat_views.py`
+
+#### Tests UI Existants
+
+Fichiers de tests UI à adapter :
+
+| Test | Fichier | Assertions à vérifier |
+|------|---------|----------------------|
+| Career page | `test_career_page.py` | Affichage progression |
+| Match View | `test_app_phase2.py` | Roster complet (8 joueurs) |
+| Timeseries | `test_new_timeseries_sections.py` | Graphiques cumulatifs |
+| Teammates | `test_teammates_refonte.py` | Détection coéquipiers |
+| Filters | `test_cross_page_filter_persistence.py` | Filtres persistants |
+
+**Nouveaux tests** : `tests/ui/test_all_pages_v5.py` (smoke tests complets)
+
+#### Estimation de Complexité
+
+| Tâche | Nb fichiers | Temps estimé |
+|-------|-------------|--------------|
+| Audit queries existantes | 22 | 1h |
+| Refactoring pages simples (Career, Timeseries, Maps, Modes, Win/Loss) | 5 | 5×2h = 10h |
+| Refactoring pages moyennes (Match History, Medals, Media, Objective) | 4 | 4×2h = 8h |
+| Refactoring pages complexes (Match View, Teammates, Session) | 3 | 3×2.5h = 7.5h |
+| Suppression VIEWs compat | 1 script | 1h |
+| Tests UI automatisés | 1 fichier | 4h |
+
+**Total** : ~31.5h → **Optimisation possible** : Paralléliser pages simples → ~22h réaliste
+
+---
+
+### Sprint 6 — Contexte Préliminaire : Optimisation API
+
+#### Optimisations Identifiées (PLAN_OPTIMISATION_SYNC.md)
+
+**1. Parallélisation Appels API**
+
+```python
+# ACTUELLEMENT (engine.py ligne 685-691)
+# Séquentiel : skill → events (2×latence réseau)
+skill_json = await client.get_skill_stats(match_id, xuids)
+highlight_events = await client.get_highlight_events(match_id)
+
+# CIBLE (asyncio.gather)
+tasks = [
+    client.get_skill_stats(match_id, xuids) if options.with_skill else asyncio.sleep(0),
+    client.get_highlight_events(match_id) if options.with_highlight_events else asyncio.sleep(0),
+]
+results = await asyncio.gather(*tasks, return_exceptions=True)
+
+# GAIN : -50% latence sur les appels parallélisables
+```
+
+**2. Désactivation Performance Score pendant Sync**
+
+```python
+# ACTUELLEMENT (engine.py ~ligne 900)
+# Performance score calculé PENDANT le sync (bloque l'insertion)
+if _PERF_SCORE_AVAILABLE:
+    perf_score = compute_relative_performance_score(...)
+    # Requiert charger TOUT l'historique → lent
+
+# CIBLE (désactiver pendant sync)
+# Marquer performance_score = NULL pendant sync
+# Post-sync : batch_compute_performance_scores()
+```
+
+**Nouvelle fonction à créer** :
+
+```python
+async def batch_compute_performance_scores(self) -> int:
+    """Calcule performance_score pour tous les matchs où NULL.
+    
+    Exécuté POST-sync pour ne pas bloquer l'insertion.
+    Utilise Polars pour calcul vectorisé sur tout l'historique.
+    
+    Returns:
+        Nombre de matchs mis à jour.
+    """
+    # 1. Charger TOUS les matchs depuis shared + enrichment
+    # 2. Grouper par session
+    # 3. Calculer perf scores en batch (Polars)
+    # 4. UPDATE player_match_enrichment
+```
+
+**3. Batching des Insertions DB**
+
+```python
+# ACTUELLEMENT (engine.py ~ligne 730)
+# Commit APRÈS CHAQUE match
+async with self._db_lock:
+    self._insert_match_row(match_row)
+    conn.commit()  # ← Chaque match = 1 commit
+
+# CIBLE (commit tous les 10 matchs)
+batch_buffer = []
+for match in matches:
+    row = transform_match(match)
+    batch_buffer.append(row)
+    
+    if len(batch_buffer) >= 10:
+        async with self._db_lock:
+            for row in batch_buffer:
+                self._insert_match_row(row)
+            conn.commit()  # ← 1 commit pour 10 matchs
+        batch_buffer.clear()
+```
+
+**4. Rate Limit Augmenté**
+
+```python
+# ACTUELLEMENT (src/data/sync/api_client.py)
+DEFAULT_RATE_LIMIT = 5  # req/s
+parallel_matches = 3    # Matchs en parallèle
+
+# CIBLE (selon PLAN_OPTIMISATION)
+DEFAULT_RATE_LIMIT = 10  # req/s
+parallel_matches = 5     # Matchs en parallèle
+
+# Vérifier limites API Halo :
+# - Pas de limite documentée stricte
+# - Tests empiriques OK jusqu'à 10 req/s
+```
+
+#### Fichiers à Modifier
+
+| Fichier | Modifications | Risque |
+|---------|--------------|--------|
+| `src/data/sync/engine.py` | Parallélisation API, batching commits, perf score désactivé | Moyen |
+| `src/data/sync/api_client.py` | Rate limit augmenté | Faible |
+| `src/data/sync/models.py` | Nouveau champ `defer_performance_score` dans SyncOptions | Faible |
+| `src/analysis/performance_score.py` | Adapter pour calcul batch (Polars) | Faible |
+
+#### Gains Attendus (Calculés)
+
+| Métrique | v4 (avant Sprint 6) | v5 Sprint 6 | Gain |
+|----------|---------------------|-------------|------|
+| Temps/match (nouveau) | 3s | 2s | **-33%** |
+| Temps/match (partagé 95%) | 1s | 0.5s | **-50%** |
+| Sync 100 matchs nouveaux | 5 min | 3.5 min | **-30%** |
+| Commits DB/100 matchs | 100 | 10 | **-90%** (I/O disque) |
+
+#### Tests de Validation
+
+```python
+# tests/performance/test_sync_v5.py
+@pytest.mark.benchmark
+async def test_sync_100_matches_new():
+    """Benchmark sync 100 matchs nouveaux."""
+    start = time.time()
+    result = await engine.sync_full(SyncOptions(max_matches=100))
+    duration = time.time() - start
+    
+    assert duration < 180  # < 3 minutes
+    assert result.matches_inserted == 100
+
+@pytest.mark.benchmark
+async def test_sync_100_matches_shared():
+    """Benchmark re-sync 100 matchs partagés (détection économie API)."""
+    # Pré-remplir shared_matches avec 100 matchs
+    # Re-sync pour le même joueur
+    start = time.time()
+    result = await engine.sync_full(SyncOptions(max_matches=100))
+    duration = time.time() - start
+    
+    assert duration < 60  # < 1 minute (10× plus rapide)
+    assert result.api_calls_saved >= 150  # ~1.5 appels économisés par match
+```
+
+#### Estimation de Complexité
+
+| Tâche | Complexité | Temps estimé |
+|-------|-----------|--------------|
+| Parallélisation API (asyncio.gather) | Faible | 2h |
+| Désactiver perf score pendant sync | Faible | 1h |
+| Créer batch_compute_performance_scores() | Moyenne | 3h |
+| Batching commits DB | Moyenne | 2h |
+| Rate limit augmenté | Faible | 30min |
+| Tests benchmark | Moyenne | 2h |
+| Documentation optimisations | Faible | 1h |
+
+**Total** : ~11.5h (sur 11-13h prévues)
+
+---
+
+### Sprint 7 — Contexte Préliminaire : Tests & Couverture
+
+#### État Actuel de la Couverture (Estimé baseline)
+
+| Module | Fichiers | Couverture actuelle | Objectif v5 |
+|--------|----------|---------------------|-------------|
+| `src/data/sync/` | 8 fichiers | ~65% | **85%** |
+| `src/data/repositories/` | 6 fichiers | ~70% | **85%** |
+| `src/ui/pages/` | 24 fichiers | ~15% | **50%** |
+| `src/analysis/` | 12 fichiers | ~75% | **80%** |
+| `src/visualization/` | 6 fichiers | ~20% | **40%** |
+| **Global** | ~80 fichiers | **~41%** | **65%** |
+
+#### Tests Existants à Adapter (Inventaire)
+
+**Migration Tests**
+
+| Fichier | Tests | À adapter ? |
+|---------|-------|------------|
+| `test_shared_schema.py` | 45 tests | ✅ Déjà créé (Sprint 1) |
+| `test_migrations.py` | 8 tests | ⚠️ Ajouter tests migration v4→v5 |
+
+**Sync Tests**
+
+| Fichier | Tests | À adapter ? |
+|---------|-------|------------|
+| `test_sync_engine.py` | 23 tests | ✅ Adapter pour shared_matches |
+| `test_delta_sync.py` | 12 tests | ✅ Valider détection matchs partagés |
+| `test_sync_performance_score.py` | 6 tests | ✅ Adapter pour batch compute |
+
+**Repository Tests**
+
+| Fichier | Tests | À adapter ? |
+|---------|-------|------------|
+| `test_duckdb_repository.py` | 101 tests | ⚠️ **CRITIQUE** - Adapter pour ATTACH shared |
+| `test_duckdb_repository_schema_contract.py` | 15 tests | ✅ Valider nouveaux schémas |
+
+**UI Tests** (Smoke tests, peu nombreux actuellement)
+
+| Fichier | Tests | À créer/adapter ? |
+|---------|-------|-------------------|
+| `test_career_page.py` | 4 tests | ✅ Valider no regression |
+| `test_app_phase2.py` | 8 tests | ✅ Adapter pour roster complet |
+| `test_teammates_refonte.py` | 12 tests | ✅ Adapter pour shared data |
+| `test_all_pages_v5.py` | 0 (à créer) | ⭐ **NOUVEAU** - Smoke tests toutes pages |
+
+#### Nouveaux Tests à Créer
+
+**1. Tests Migration (tests/migration/test_migration_v5.py)**
+
+```python
+def test_migrate_player_to_shared_idempotent():
+    """Re-migrer un joueur ne duplique pas les données."""
+
+def test_migrate_detects_shared_matches():
+    """Migration détecte et incrémente player_count."""
+
+def test_migrate_preserves_data_integrity():
+    """Toutes les données migrées sont cohérentes."""
+
+def test_rollback_migration():
+    """Rollback restaure l'état v4 complet."""
+```
+
+**2. Tests Sync Shared (tests/test_sync_shared_v5.py)**
+
+```python
+async def test_process_known_match_saves_api_calls():
+    """Match déjà dans shared économise 1-2 appels API."""
+
+async def test_process_new_match_populates_shared():
+    """Nouveau match insère dans shared.match_registry + participants."""
+
+async def test_parallel_api_calls():
+    """Skill et events appelés en parallèle (asyncio.gather)."""
+
+async def test_batch_compute_performance_scores():
+    """Calcul batch post-sync met à jour tous les NULL."""
+```
+
+**3. Tests Repository Shared (tests/test_repository_shared_v5.py)**
+
+```python
+def test_attach_shared_matches_success():
+    """ATTACH shared_matches fonctionne."""
+
+def test_load_matches_joins_shared_and_enrichment():
+    """load_matches retourne données depuis JOIN shared + enrichment."""
+
+def test_load_participants_returns_all_players():
+    """load_match_participants retourne TOUS les joueurs (8+)."""
+
+def test_shared_db_missing_raises_error():
+    """Absence de shared_matches.duckdb lève une erreur explicite."""
+```
+
+**4. Tests UI (tests/ui/test_all_pages_v5.py)**
+
+```python
+@pytest.mark.parametrize("page_name", [
+    "career", "match_history", "match_view", "timeseries",
+    "teammates", "maps", "modes", "medals", "media_library"
+])
+def test_page_renders_without_error(page_name):
+    """Chaque page se charge sans erreur."""
+
+def test_match_view_displays_full_roster():
+    """Match view affiche 8+ joueurs (roster complet)."""
+
+def test_teammates_page_detects_shared_matches():
+    """Page teammates détecte correctement les matchs partagés."""
+```
+
+**5. Tests de Charge (tests/performance/test_load_v5.py)**
+
+```python
+@pytest.mark.slow
+def test_load_1000_matches():
+    """Repository charge 1000 matchs en < 2s."""
+
+@pytest.mark.slow
+def test_sync_500_matches():
+    """Sync 500 matchs en < 15 minutes."""
+```
+
+#### Outils de Couverture
+
+```bash
+# Couverture complète HTML
+python -m pytest --cov=src --cov-report=html --cov-report=term-missing
+
+# Couverture par module
+python -m pytest --cov=src/data/sync --cov-report=term
+
+# Vérifier seuil minimal
+python scripts/check_coverage_threshold.py --min 65
+```
+
+#### Estimation de Complexité
+
+| Tâche | Nb tests à créer/adapter | Temps estimé |
+|-------|-------------------------|--------------|
+| Tests migration v5 | ~15 tests | 3h |
+| Tests sync shared | ~20 tests | 2h |
+| Tests repository shared | ~25 tests | 2h |
+| Tests UI (smoke tests) | ~30 tests | 4h |
+| Tests de charge | ~10 tests | 2h |
+| Adapter tests existants | ~50 tests | 2h |
+| Rapport couverture final | 1 rapport | 1h |
+| Documentation tests | 1 fichier | 1h |
+
+**Total** : ~17h (sur 15-17h prévues)
+
+---
+
+### Sprint 8 — Contexte Préliminaire : Finalisation & Release
+
+#### Code Mort à Nettoyer (Inventaire Préliminaire)
+
+**1. VIEWs de Compatibilité (si créées)**
+
+```sql
+-- À supprimer si présentes dans player DBs
+DROP VIEW IF EXISTS match_stats;
+DROP VIEW IF EXISTS match_participants;
+DROP VIEW IF EXISTS highlight_events;
+DROP VIEW IF EXISTS medals_earned;
+```
+
+**Script** : `scripts/migration/remove_all_compat_views.py`
+
+**2. Fonctions Legacy à Vérifier**
+
+```python
+# src/data/sync/engine.py
+# Anciennes méthodes à vérifier si encore utilisées :
+# - _insert_match_row_v4() (si créée pour transition)
+# - _sync_without_shared() (si fallback créé)
+
+# src/data/repositories/duckdb_repo.py
+# - _load_matches_v4() (si fallback créé)
+```
+
+**3. Imports Inutilisés**
+
+```bash
+# Détecter imports inutilisés
+ruff check src/ --select F401  # Unused imports
+autoflake --remove-all-unused-imports --in-place src/**/*.py
+```
+
+**4. Code Commenté**
+
+```bash
+# Rechercher code commenté (à supprimer)
+grep -rn "^[[:space:]]*#.*def \|^[[:space:]]*#.*class " src/
+```
+
+**5. Archivage Documentation Temporaire (.ai/)**
+
+```bash
+# Archiver les documents de travail v5.0
+mkdir -p .ai/archive/v5.0/
+mv .ai/PLAN_V5_SHARED_MATCHES.md .ai/archive/v5.0/
+mv .ai/v5-*.md .ai/archive/v5.0/  # Tous les docs v5
+mv .ai/reports/v5-*.* .ai/archive/v5.0/reports/  # Rapports v5
+
+# Garder seulement les docs actifs
+# - thought_log.md (journal permanent)
+# - project_map.md (cartographie permanente)
+# - SPRINT_EXPLORATION.md (catalogue données)
+# - *.md actifs pour v6+
+```
+
+**Script** : `scripts/archive_v5_docs.sh`
+
+**Documents à archiver** :
+- `PLAN_V5_SHARED_MATCHES.md` (ce plan)
+- `v5-baseline-audit.md`
+- `v5-match-overlap-analysis.md`
+- `v5-migration-report.md`
+- `v5-retrospective.md`
+- `reports/v5-*` (tous les rapports benchmark/coverage v5)
+
+**Documents à conserver** :
+- `thought_log.md` (journal permanent)
+- `project_map.md` (mise à jour pour v5)
+- `SPRINT_EXPLORATION.md`
+- `ARCHITECTURE_ROADMAP.md`
+- Audits permanents (SQLITE_TO_DUCKDB_AUDIT.md, PANDAS_TO_POLARS_AUDIT.md)
+
+#### Documentation Obligatoire
+
+| Document | Contenu | Statut |
+|----------|---------|--------|
+| `CHANGELOG.md` | Toutes les modifications v5.0 (format Keep a Changelog) | À mettre à jour |
+| `README.md` | Section "Architecture v5" + gains de performance | À mettre à jour |
+| `docs/ARCHITECTURE_V5.md` | Schéma complet shared_matches + flux de données | À créer |
+| `docs/MIGRATION_V4_TO_V5.md` | Guide utilisateur pour migrer de v4 à v5 | À créer |
+| `.ai/v5-retrospective.md` | Leçons apprises, difficultés rencontrées, améliorations futures | À créer |
+
+#### Benchmark Final (Scripts à Créer)
+
+**Script** : `scripts/benchmark_v4_vs_v5.py`
+
+```python
+def benchmark_storage():
+    """Compare la taille des DBs v4 vs v5."""
+    # v4 : 4 joueurs × 200 MB = 800 MB
+    # v5 : shared (200 MB) + 4×30 MB = 320 MB
+    # Gain : -60%
+
+def benchmark_api_calls():
+    """Compare le nombre d'appels API pour sync initiale."""
+    # v4 : 4 joueurs × 3000 appels = 12000 appels
+    # v5 : ~3300 appels (détection partage)
+    # Gain : -72%
+
+def benchmark_sync_time():
+    """Compare le temps de sync pour 100 matchs."""
+    # v4 : ~45 minutes
+    # v5 : ~12 minutes
+    # Gain : -73%
+
+def benchmark_query_performance():
+    """Compare les temps de query load_matches(limit=500)."""
+    # v4 : ~80ms
+    # v5 : ~60ms (ATTACH optimisé)
+    # Gain : -25%
+```
+
+#### Checklist Revue de Code Complète
+
+```bash
+# 1. Formatage
+black src/ tests/ scripts/
+isort src/ tests/ scripts/
+
+# 2. Linting
+ruff check src/ tests/ scripts/ --fix
+
+# 3. Type checking
+mypy src/ --ignore-missing-imports
+
+# 4. Tests
+python -m pytest --cov=src --cov-report=html
+
+# 5. Sécurité (secrets hardcodés)
+git secrets --scan
+
+# 6. Benchmark
+python scripts/benchmark_v4_vs_v5.py --detailed
+
+# 7. Validation schémas
+python scripts/validate_all_schemas.py
+```
+
+#### Tag et Merge
+
+```bash
+# 1. Vérifier que tous les tests passent
+python -m pytest
+
+# 2. Créer le tag v5.0.0
+git tag -a v5.0.0 -m "Release v5.0.0 - Shared Matches Architecture"
+
+# 3. Push le tag
+git push origin v5.0.0
+
+# 4. Merge vers main
+git checkout main
+git merge v5/shared-matches-migration --no-ff
+git push origin main
+
+# 5. Créer la release GitHub
+gh release create v5.0.0 \
+  --title "LevelUp v5.0.0 - Shared Matches Architecture" \
+  --notes-file docs/RELEASE_NOTES_V5.md
+```
+
+#### Estimation de Complexité
+
+| Tâche | Temps estimé |
+|-------|--------------|
+| Nettoyage code mort | 2h |
+| Mise à jour CHANGELOG.md | 1h |
+| Mise à jour README.md | 1h |
+| Documentation ARCHITECTURE_V5.md | 2h |
+| Documentation MIGRATION_V4_TO_V5.md | 2h |
+| Benchmark final | 2h |
+| Revue de code complète | 3h |
+| Archivage docs `.ai/` | 30min |
+| Tag + merge + release | 1h |
+
+**Total** : ~14.5h (sur 14.5-16.5h prévues)
+
+---
+
 ## 3. Sprints Détaillés
 
 ---
 
-### Sprint 0 — Audit Baseline & Sécurisation (1 jour)
+### Sprint 0 — Audit Baseline & Sécurisation (1 jour) ✅
 
 **Objectif** : Établir l'état de référence et sécuriser les données existantes
 
@@ -255,21 +1156,21 @@ Uniquement ce qui **NE PEUT PAS** être obtenu collectivement :
 
 | # | Tâche | Fichier(s) | Durée |
 |---|-------|-----------|-------|
-| 0.1 | Créer branche `v5/shared-matches-migration` depuis `sprint14/isolation-backend-frontend` | Git | 15min |
-| 0.2 | Backup COMPLET de toutes les DBs joueur + metadata | Scripts | 30min |
-| 0.3 | Exporter schémas SQL actuels de toutes les DBs | `scripts/export_schemas.py` | 30min |
-| 0.4 | Audit des données : comptage matchs, participants, events par joueur | `scripts/audit_current_data.py` | 1h |
-| 0.5 | Documenter les taux de partage de matchs réels | `scripts/analyze_match_overlap.py` | 1h |
-| 0.6 | Créer scripts de validation post-migration | `scripts/validate_migration.py` | 2h |
-| 0.7 | Tagger commit de référence `pre-v5-migration` | Git | 10min |
+| 0.1 | ✅ Créer branche `v5/shared-matches-migration` depuis `sprint14/isolation-backend-frontend` | Git | 15min |
+| 0.2 | ✅ Backup COMPLET de toutes les DBs joueur + metadata | Scripts | 30min |
+| 0.3 | ✅ Exporter schémas SQL actuels de toutes les DBs | `scripts/export_schemas.py` | 30min |
+| 0.4 | ✅ Audit des données : comptage matchs, participants, events par joueur | `scripts/audit_current_data.py` | 1h |
+| 0.5 | ✅ Documenter les taux de partage de matchs réels | `scripts/analyze_match_overlap.py` | 1h |
+| 0.6 | ✅ Créer scripts de validation post-migration | `scripts/validate_migration.py` | 2h |
+| 0.7 | ✅ Tagger commit de référence `pre-v5-migration` | Git | 10min |
 
 #### Livrables
 
-- [ ] Fichier `.ai/v5-baseline-audit.md` (stats complètes)
-- [ ] Fichier `.ai/v5-match-overlap-analysis.md` (taux de partage)
-- [ ] Backup complet dans `backups/pre-v5-$(date)/`
-- [ ] Tag `pre-v5-migration` créé
-- [ ] Scripts de validation prêts
+- [x] Fichier `.ai/v5-baseline-audit.md` (stats complètes)
+- [x] Fichier `.ai/v5-match-overlap-analysis.md` (taux de partage)
+- [x] Backup complet dans `backups/pre-v5-$(date)/`
+- [x] Tag `pre-v5-migration` créé
+- [x] Scripts de validation prêts
 
 #### Tests de Validation
 
@@ -289,16 +1190,17 @@ python scripts/analyze_match_overlap.py --matrix
 
 #### Gate de Livraison
 
-- [ ] Backups validés (restoration testée sur 1 joueur)
-- [ ] Baseline tests passent à 100%
-- [ ] Documentation baseline complète
-- [ ] Tag `pre-v5-migration` créé
+- [x] Backups validés (restoration testée sur 1 joueur)
+- [x] Baseline tests passent à 100%
+- [x] Documentation baseline complète
+- [x] Tag `pre-v5-migration` créé
 
+**Statut** : ✅ **TERMINÉ**  
 **Estimation** : 1 jour (6-7h effectives)
 
 ---
 
-### Sprint 1 — Infrastructure shared_matches.duckdb (2 jours)
+### Sprint 1 — Infrastructure shared_matches.duckdb (2 jours) ✅
 
 **Objectif** : Créer la base de données partagée avec schéma complet et index optimisés
 
@@ -306,15 +1208,15 @@ python scripts/analyze_match_overlap.py --matrix
 
 | # | Tâche | Fichier(s) | Durée |
 |---|-------|-----------|-------|
-| 1.1 | Créer DDL `match_registry` (table centrale) | `scripts/migration/schema_v5.sql` | 1h |
-| 1.2 | Créer DDL `match_participants` (roster global) | Idem | 1h |
-| 1.3 | Créer DDL `highlight_events` (events globaux) | Idem | 45min |
-| 1.4 | Créer DDL `medals_earned` (médailles tous joueurs) | Idem | 45min |
-| 1.5 | Créer DDL `xuid_aliases` (mapping global) | Idem | 30min |
-| 1.6 | Créer index optimisés (match_id, xuid, start_time) | Idem | 1h |
-| 1.7 | Script de création `create_shared_matches_db.py` | `scripts/migration/` | 2h |
-| 1.8 | Tests unitaires du schéma (contraintes, types) | `tests/migration/test_shared_schema.py` | 2h |
-| 1.9 | Documentation du schéma (diagramme ER) | `docs/SHARED_MATCHES_SCHEMA.md` | 1h |
+| 1.1 | ✅ Créer DDL `match_registry` (table centrale) | `scripts/migration/schema_v5.sql` | 1h |
+| 1.2 | ✅ Créer DDL `match_participants` (roster global) | Idem | 1h |
+| 1.3 | ✅ Créer DDL `highlight_events` (events globaux) | Idem | 45min |
+| 1.4 | ✅ Créer DDL `medals_earned` (médailles tous joueurs) | Idem | 45min |
+| 1.5 | ✅ Créer DDL `xuid_aliases` (mapping global) | Idem | 30min |
+| 1.6 | ✅ Créer index optimisés (match_id, xuid, start_time) | Idem | 1h |
+| 1.7 | ✅ Script de création `create_shared_matches_db.py` | `scripts/migration/` | 2h |
+| 1.8 | ✅ Tests unitaires du schéma (contraintes, types) | `tests/migration/test_shared_schema.py` | 2h |
+| 1.9 | ✅ Documentation du schéma (diagramme ER) | `docs/SHARED_MATCHES_SCHEMA.md` | 1h |
 
 #### Schéma SQL Principal
 
@@ -455,11 +1357,11 @@ CREATE INDEX idx_aliases_gamertag ON xuid_aliases(gamertag);
 
 #### Livrables
 
-- [ ] Fichier `scripts/migration/schema_v5.sql` complet
-- [ ] Script `scripts/migration/create_shared_matches_db.py` fonctionnel
-- [ ] `data/warehouse/shared_matches.duckdb` créée et validée
-- [ ] Tests `tests/migration/test_shared_schema.py` passent
-- [ ] Documentation `docs/SHARED_MATCHES_SCHEMA.md` complète
+- [x] Fichier `scripts/migration/schema_v5.sql` complet
+- [x] Script `scripts/migration/create_shared_matches_db.py` fonctionnel
+- [x] `data/warehouse/shared_matches.duckdb` créée et validée (via script, 45 tests passent)
+- [x] Tests `tests/migration/test_shared_schema.py` passent (45/45)
+- [x] Documentation `docs/SHARED_MATCHES_SCHEMA.md` complète
 
 #### Tests de Validation
 
@@ -479,12 +1381,13 @@ ls -lh data/warehouse/shared_matches.duckdb  # ~100-200 KB attendu
 
 #### Gate de Livraison
 
-- [ ] `shared_matches.duckdb` créée avec toutes les tables
-- [ ] Tous les index créés et validés
-- [ ] Contraintes de clés étrangères actives
-- [ ] Tests de schéma passent à 100%
-- [ ] Documentation complète avec diagramme ER
+- [x] `shared_matches.duckdb` créée avec toutes les tables (6 tables)
+- [x] Tous les index créés et validés (14 index)
+- [x] Contraintes de clés étrangères actives
+- [x] Tests de schéma passent à 100% (45/45)
+- [x] Documentation complète avec diagramme ER
 
+**Statut** : ✅ **TERMINÉ** — Commit `980df98`  
 **Estimation** : 2 jours (11-13h effectives)
 
 ---
@@ -1649,7 +2552,8 @@ python -m pytest tests/performance/test_load_v5.py -v
 | 8.5 | Guide de migration v4→v5 | `docs/MIGRATION_V4_TO_V5.md` | 2h |
 | 8.6 | Benchmark final (comparaison v4 vs v5) | `scripts/benchmark_v4_vs_v5.py` | 2h |
 | 8.7 | Revue de code complète | Tous | 3h |
-| 8.8 | Tag `v5.0.0` et merge vers `main` | Git | 1h |
+| 8.8 | Archivage documentation temporaire `.ai/` | `scripts/archive_v5_docs.sh` | 30min |
+| 8.9 | Tag `v5.0.0` et merge vers `main` | Git | 1h |
 
 #### Documentation Obligatoire
 
@@ -1673,6 +2577,7 @@ python -m pytest tests/performance/test_load_v5.py -v
 - [ ] Code nettoyé et optimisé
 - [ ] Documentation complète
 - [ ] Benchmark validé
+- [ ] Documentation temporaire `.ai/` archivée dans `.ai/archive/v5.0/`
 - [ ] Tag `v5.0.0` créé
 - [ ] Merge vers `main` effectué
 
@@ -1699,10 +2604,11 @@ python scripts/test_e2e_v5.py
 - [ ] Benchmark validé (gains >= objectifs)
 - [ ] Documentation complète
 - [ ] Aucun `# TODO` ou `# FIXME` sans ticket
+- [ ] Dossier `.ai/` nettoyé (docs v5 archivés)
 - [ ] Tag `v5.0.0` créé
 - [ ] Merge vers `main` effectué
 
-**Estimation** : 2 jours (14-16h effectives)
+**Estimation** : 2 jours (14.5-16.5h effectives)
 
 ---
 
