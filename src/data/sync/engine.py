@@ -93,6 +93,14 @@ except ImportError:
 # =============================================================================
 
 SYNC_SCHEMA_DDL = """
+-- Table medals_earned (médailles obtenues par match)
+CREATE TABLE IF NOT EXISTS medals_earned (
+    match_id VARCHAR,
+    medal_name_id BIGINT,
+    count SMALLINT,
+    PRIMARY KEY (match_id, medal_name_id)
+);
+
 -- Table player_match_stats (MMR/skill par match)
 CREATE TABLE IF NOT EXISTS player_match_stats (
     match_id VARCHAR PRIMARY KEY,

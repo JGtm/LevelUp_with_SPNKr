@@ -9,6 +9,7 @@ Ce module contient les fonctions pour :
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -631,7 +632,11 @@ async def sync_player_duckdb_async(
 
     player_db_path = get_player_duckdb_path(gamertag, repo_root)
     if player_db_path is None:
-        return False, f"DB DuckDB non trouvée pour {gamertag}"
+        # Nouveau joueur : construire le chemin attendu, DuckDBSyncEngine créera la DB
+        player_db_path = repo_root / "data" / "players" / gamertag / "stats.duckdb"
+        logging.getLogger(__name__).info(
+            f"Nouveau joueur {gamertag}, création de la DB: {player_db_path}"
+        )
 
     try:
         from src.data.sync import DuckDBSyncEngine, SyncOptions
