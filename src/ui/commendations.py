@@ -18,212 +18,12 @@ import re
 import unicodedata
 from typing import Any
 
-import polars as pl
 import streamlit as st
 
 from src.config import get_repo_root
 
-
-def _to_polars(df: pl.DataFrame | None) -> pl.DataFrame | None:
-    """Convertit un DataFrame en Polars si nécessaire (bridge transitoire)."""
-    if df is None:
-        return None
-    if isinstance(df, pl.DataFrame):
-        return df
-    return pl.from_pandas(df)
-
-
 DEFAULT_H5G_JSON_PATH = os.path.join("data", "wiki", "halo5_commendations_fr.json")
 DEFAULT_H5G_EXCLUDE_PATH = os.path.join("data", "wiki", "halo5_commendations_exclude.json")
-
-# Référentiel “suivi” (curation manuelle) : définit comment calculer la progression.
-DEFAULT_H5G_TRACKING_ASSUMED_PATH = os.path.join("out", "commendations_mapping_assumed_old.json")
-DEFAULT_H5G_TRACKING_UNMATCHED_PATH = os.path.join(
-    "out", "commendations_mapping_unmatched_old.json"
-)
-
-
-# =============================================================================
-# Règles de calcul personnalisées pour les citations
-# =============================================================================
-# Format: {normalized_name: {"type": "custom", "calc": str, ...}}
-# Types de calcul:
-# - "medal": utilise counts_by_medal[medal_id]
-# - "stat": utilise stats_totals[stat_name]
-# - "wins_mode": compte les victoires dans un mode spécifique (game_variant_name)
-# - "matches_mode_kd": compte les parties dans un mode avec KD > seuil
-#
-# Les patterns sont des regex sur game_variant_name (insensible à la casse).
-# =============================================================================
-
-CUSTOM_CITATION_RULES: dict[str, dict[str, Any]] = {
-    # Pilote - Médaille ID 3169118333
-    "pilote": {
-        "type": "medal",
-        "medal_id": 3169118333,
-    },
-    # Écrasement - Médaille ID 221693153
-    "ecrasement": {
-        "type": "medal",
-        "medal_id": 221693153,
-    },
-    # Assistant - Compter les assistances
-    "assistant": {
-        "type": "stat",
-        "stat": "assists",
-    },
-    # Bulldozer - Parties Assassin avec FDA > 8 (exclure firefight et BTB)
-    "bulldozer": {
-        "type": "matches_mode_kd",
-        "mode_pattern": r"slayer|assassin",
-        "exclude_playlist_pattern": r"firefight|baptême|btb|big team|grande bataille",
-        "kd_threshold": 8.0,
-    },
-    # Victoire au drapeau - Victoires en CTF (normal ou neutre)
-    "victoire au drapeau": {
-        "type": "wins_mode",
-        "mode_pattern": r"ctf|capture.*drapeau|drapeau.*neutre|neutral.*flag",
-    },
-    # Seul contre tous (Player vs Everything) - Victoires en Firefight/Baptême du feu
-    "seul contre tous": {
-        "type": "wins_mode",
-        "mode_pattern": r"firefight|baptême|bapteme",
-    },
-    # Victoire en Assassin - Victoires en mode Slayer/Assassin
-    "victoire en assassin": {
-        "type": "wins_mode",
-        "mode_pattern": r"slayer|assassin",
-    },
-    # Victoire en Bases - Victoires en mode Strongholds/Bases
-    "victoire en bases": {
-        "type": "wins_mode",
-        "mode_pattern": r"stronghold|bases",
-    },
-}
-
-
-def _compute_custom_citation_value(
-    rule: dict[str, Any],
-    df: pl.DataFrame | None,
-    counts_by_medal: dict[int, int],
-    stats_totals: dict[str, int],
-) -> int:
-    """Calcule la valeur d'une citation selon sa règle personnalisée.
-
-    Args:
-        rule: Règle de calcul (type, paramètres).
-        df: DataFrame des matchs (peut être None).
-        counts_by_medal: Compteurs de médailles.
-        stats_totals: Totaux des stats.
-
-    Returns:
-        Valeur calculée pour la citation.
-    """
-    calc_type = rule.get("type", "")
-
-    if calc_type == "medal":
-        medal_id = rule.get("medal_id")
-        if medal_id is not None:
-            return counts_by_medal.get(int(medal_id), 0)
-        return 0
-
-    if calc_type == "stat":
-        stat_name = rule.get("stat", "")
-        if stat_name:
-            return stats_totals.get(stat_name, 0)
-        return 0
-
-    # Convertir en Polars si nécessaire
-    df_pl = _to_polars(df)
-    if df_pl is None or df_pl.is_empty():
-        return 0
-
-    if calc_type == "wins_mode":
-        # Compter les victoires dans un mode spécifique
-        mode_pattern = rule.get("mode_pattern", "")
-        if not mode_pattern:
-            return 0
-
-        # outcome == 2 signifie victoire
-        if "outcome" not in df_pl.columns:
-            return 0
-        wins_df = df_pl.filter(pl.col("outcome") == 2)
-        if wins_df.is_empty():
-            return 0
-
-        # Filtrer par mode (game_variant_name ou pair_name)
-        pattern = re.compile(mode_pattern, re.IGNORECASE)
-
-        # Construire une expression pour filtrer
-        gv_col = "game_variant_name" if "game_variant_name" in wins_df.columns else None
-        pair_col = None
-        for col_name in ["map_mode_pair_name", "pair_name"]:
-            if col_name in wins_df.columns:
-                pair_col = col_name
-                break
-
-        # Appliquer le filtre sur les colonnes disponibles
-        matching_count = 0
-        for row in wins_df.iter_rows(named=True):
-            gv = str(row.get(gv_col) or "") if gv_col else ""
-            pair = str(row.get(pair_col) or "") if pair_col else ""
-            if pattern.search(gv) or pattern.search(pair):
-                matching_count += 1
-        return matching_count
-
-    if calc_type == "matches_mode_kd":
-        # Compter les parties dans un mode avec KD > seuil
-        mode_pattern = rule.get("mode_pattern", "")
-        exclude_pattern = rule.get("exclude_playlist_pattern", "")
-        kd_threshold = float(rule.get("kd_threshold", 0))
-
-        if not mode_pattern:
-            return 0
-
-        mode_re = re.compile(mode_pattern, re.IGNORECASE)
-        excl_re = re.compile(exclude_pattern, re.IGNORECASE) if exclude_pattern else None
-
-        # Déterminer les colonnes disponibles
-        gv_col = "game_variant_name" if "game_variant_name" in df_pl.columns else None
-        pair_col = None
-        for col_name in ["map_mode_pair_name", "pair_name"]:
-            if col_name in df_pl.columns:
-                pair_col = col_name
-                break
-        playlist_col = "playlist_name" if "playlist_name" in df_pl.columns else None
-
-        matching_count = 0
-        for row in df_pl.iter_rows(named=True):
-            # Vérifier le mode
-            gv = str(row.get(gv_col) or "") if gv_col else ""
-            pair = str(row.get(pair_col) or "") if pair_col else ""
-            if not (mode_re.search(gv) or mode_re.search(pair)):
-                continue
-
-            # Vérifier l'exclusion de playlist
-            if excl_re:
-                pl_name = str(row.get(playlist_col) or "") if playlist_col else ""
-                if excl_re.search(pl_name) or excl_re.search(pair):
-                    continue
-
-            # Vérifier le KD
-            kills = row.get("kills", 0)
-            deaths = row.get("deaths", 0)
-            try:
-                kills = float(kills) if kills is not None else 0
-                deaths = float(deaths) if deaths is not None else 0
-            except (TypeError, ValueError):
-                continue
-
-            if deaths <= 0:
-                if kills > 0:
-                    matching_count += 1
-            elif (kills / deaths) > kd_threshold:
-                matching_count += 1
-
-        return matching_count
-
-    return 0
 
 
 _H5G_TITLE_OVERRIDES_FR: dict[str, str] = {
@@ -437,58 +237,6 @@ def _image_basename_from_item(item: dict[str, Any]) -> str | None:
     return None
 
 
-_NOTE_DROP_RE = re.compile(r"\b(a|ha)\s+supprimer\b", re.IGNORECASE)
-_NOTE_MEDAL_IDS_RE = re.compile(r"\b(\d{9,})\b")
-
-
-def _is_dropped_by_notes(notes: str) -> bool:
-    s = str(notes or "").strip()
-    if not s:
-        return False
-    return bool(_NOTE_DROP_RE.search(s))
-
-
-def _medal_ids_from_notes(notes: str) -> list[int]:
-    s = str(notes or "")
-    if not s:
-        return []
-    # On ne considère ces ids que si la note parle explicitement de médaille(s).
-    low = s.lower()
-    if (
-        ("médaille" not in low)
-        and ("medaille" not in low)
-        and ("médailles" not in low)
-        and ("medailles" not in low)
-    ):
-        return []
-    out: list[int] = []
-    seen: set[int] = set()
-    for m in _NOTE_MEDAL_IDS_RE.finditer(s):
-        try:
-            nid = int(m.group(1))
-        except Exception:
-            continue
-        if nid in seen:
-            continue
-        seen.add(nid)
-        out.append(nid)
-    return out
-
-
-_SUM_COL_RE = re.compile(r"sum\(\s*(?P<col>[a-zA-Z_][a-zA-Z0-9_]*)\s*\)")
-
-
-def _stat_col_from_expression(expr: str) -> str | None:
-    s = str(expr or "").strip()
-    if not s:
-        return None
-    m = _SUM_COL_RE.search(s)
-    if not m:
-        return None
-    col = (m.group("col") or "").strip()
-    return col or None
-
-
 @st.cache_data(show_spinner=False)
 def load_h5g_commendations_exclude(
     path: str = DEFAULT_H5G_EXCLUDE_PATH,
@@ -595,117 +343,25 @@ def _img_data_uri(abs_path: str, mtime: float | None = None) -> str | None:
     return f"data:{mime};base64,{b64}"
 
 
-@st.cache_data(show_spinner=False)
-def load_h5g_commendations_tracking_rules(
-    assumed_path: str = DEFAULT_H5G_TRACKING_ASSUMED_PATH,
-    assumed_mtime: float | None = None,
-    unmatched_path: str = DEFAULT_H5G_TRACKING_UNMATCHED_PATH,
-    unmatched_mtime: float | None = None,
-) -> dict[str, dict[str, Any]]:
-    """Index {normalized citation name -> règle de suivi}.
-
-    La règle peut contenir:
-    - medal_ids: list[int]  (somme de plusieurs médailles)
-    - medal_id: int         (médaille unique)
-    - stat: str             (ex: kills)
-    - expression: str       (ex: kills = sum(kills))
-    """
-
-    def _load_one(path: str) -> list[dict[str, Any]]:
-        abs_path = _abs_from_repo(path)
-        if not os.path.exists(abs_path):
-            return []
-        try:
-            with open(abs_path, encoding="utf-8") as f:
-                data = json.load(f) or {}
-        except Exception:
-            return []
-        items = data.get("items")
-        return items if isinstance(items, list) else []
-
-    merged = _load_one(assumed_path) + _load_one(unmatched_path)
-
-    out: dict[str, dict[str, Any]] = {}
-    for it in merged:
-        if not isinstance(it, dict):
-            continue
-        name = str(it.get("name") or "").strip()
-        if not name:
-            continue
-        notes = str(it.get("notes") or "").strip()
-        if _is_dropped_by_notes(notes):
-            continue
-
-        rule: dict[str, Any] = {}
-
-        # 1) Notes explicites : "compter médailles ..." => somme d'ids.
-        medal_ids = _medal_ids_from_notes(notes)
-        if medal_ids:
-            rule["medal_ids"] = medal_ids
-
-        # 2) chosen / candidates
-        chosen = it.get("chosen")
-        candidates = it.get("candidates")
-        picks: list[dict[str, Any]] = []
-        if isinstance(chosen, dict):
-            picks.append(chosen)
-        if isinstance(candidates, list):
-            picks.extend([x for x in candidates if isinstance(x, dict)])
-
-        # Si on a déjà une règle via notes, on ne l'écrase pas.
-        if "medal_ids" not in rule:
-            for p in picks:
-                t = p.get("type")
-                if t == "medal":
-                    nid = p.get("name_id")
-                    if nid is None:
-                        continue
-                    try:
-                        rule["medal_id"] = int(nid)
-                        break
-                    except Exception:
-                        continue
-                if t == "stat":
-                    stat = str(p.get("stat") or "").strip()
-                    expr = str(p.get("expression") or "").strip()
-                    if expr:
-                        rule["expression"] = expr
-                        col = _stat_col_from_expression(expr)
-                        if col:
-                            rule["stat"] = col
-                    if stat and "stat" not in rule:
-                        rule["stat"] = stat
-                    if rule:
-                        break
-
-        # Pas de méthode => non suivie.
-        if not rule:
-            continue
-
-        out[_normalize_name(name)] = rule
-
-    return out
-
-
 def render_h5g_commendations_section(
     *,
-    counts_by_medal: dict[int, int] | None = None,
-    stats_totals: dict[str, int] | None = None,
-    counts_by_medal_full: dict[int, int] | None = None,
-    stats_totals_full: dict[str, int] | None = None,
-    df: pl.DataFrame | None = None,
-    df_full: pl.DataFrame | None = None,
+    db_path: str | None = None,
+    xuid: str | None = None,
+    filtered_match_ids: list[str] | None = None,
+    all_match_ids: list[str] | None = None,
 ) -> None:
     """Affiche la section des commendations Halo 5.
 
+    Utilise ``CitationEngine`` pour agréger les valeurs depuis ``match_citations``.
+
     Args:
-        counts_by_medal: Compteurs de médailles par ID (filtrés).
-        stats_totals: Totaux des stats (kills, deaths, etc.) filtrés.
-        counts_by_medal_full: Compteurs de médailles complets (non filtrés).
-        stats_totals_full: Totaux des stats complets (non filtrés).
-        df: DataFrame des matchs filtrés pour les calculs personnalisés.
-        df_full: DataFrame complet pour calculer les valeurs full.
+        db_path: Chemin vers la base DuckDB du joueur.
+        xuid: XUID du joueur.
+        filtered_match_ids: IDs des matchs filtrés (pour delta). ``None`` = pas de filtre.
+        all_match_ids: IDs de tous les matchs. ``None`` = agrège tout sans filtre.
     """
+    from src.analysis.citations.engine import CitationEngine
+
     abs_json = _abs_from_repo(DEFAULT_H5G_JSON_PATH)
     json_mtime = None
     try:
@@ -713,62 +369,14 @@ def render_h5g_commendations_section(
     except OSError:
         json_mtime = None
 
-    abs_excl = _abs_from_repo(DEFAULT_H5G_EXCLUDE_PATH)
-    excl_mtime = None
-    try:
-        excl_mtime = os.path.getmtime(abs_excl)
-    except OSError:
-        excl_mtime = None
-
-    abs_assumed = _abs_from_repo(DEFAULT_H5G_TRACKING_ASSUMED_PATH)
-    assumed_mtime = None
-    try:
-        assumed_mtime = os.path.getmtime(abs_assumed)
-    except OSError:
-        assumed_mtime = None
-
-    abs_unmatched = _abs_from_repo(DEFAULT_H5G_TRACKING_UNMATCHED_PATH)
-    unmatched_mtime = None
-    try:
-        unmatched_mtime = os.path.getmtime(abs_unmatched)
-    except OSError:
-        unmatched_mtime = None
-
-    tracking = load_h5g_commendations_tracking_rules(
-        DEFAULT_H5G_TRACKING_ASSUMED_PATH,
-        assumed_mtime,
-        DEFAULT_H5G_TRACKING_UNMATCHED_PATH,
-        unmatched_mtime,
-    )
-
-    counts_by_medal = counts_by_medal or {}
-    stats_totals = stats_totals or {}
-
     data = load_h5g_commendations_json(DEFAULT_H5G_JSON_PATH, json_mtime)
     items: list[dict[str, Any]] = list(data.get("items") or [])
 
-    excluded_images, excluded_names = load_h5g_commendations_exclude(
-        DEFAULT_H5G_EXCLUDE_PATH, excl_mtime
-    )
-    if items and (excluded_images or excluded_names):
-        kept: list[dict[str, Any]] = []
-        for it in items:
-            key = _image_basename_from_item(it)
-            if key and key in excluded_images:
-                continue
-            if _normalize_name(str(it.get("name") or "")) in excluded_names:
-                continue
-            kept.append(it)
-        excluded_count = len(items) - len(kept)
-        items = kept
-    else:
-        excluded_count = 0
+    # Le filtrage des citations se fait désormais via citation_mappings.enabled
+    # dans metadata.duckdb (pas besoin du JSON d'exclusion).
 
     st.subheader("Citations")
-    # Détermine si on est en mode filtré (pour afficher les deltas par citation).
-    is_filtered = (
-        counts_by_medal_full is not None and counts_by_medal != counts_by_medal_full
-    ) or (stats_totals_full is not None and stats_totals != stats_totals_full)
+
     if not items:
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -777,25 +385,40 @@ def render_h5g_commendations_section(
                 "Si le fichier JSON vient d'être créé/modifié, clique sur *Recharger* (cache Streamlit)."
             )
             st.caption(f"Chemin attendu: {abs_json}")
-            if excluded_count:
-                st.caption(
-                    f"Note: {excluded_count} citation(s) sont exclues via {abs_excl} (blacklist)."
-                )
         with c2:
             if st.button("Recharger", width="stretch"):
                 load_h5g_commendations_json.clear()
-                load_h5g_commendations_exclude.clear()
                 st.rerun()
         return
 
-    # N'affiche que les citations suivies (celles ayant une méthode de calcul via tracking OU via CUSTOM_CITATION_RULES).
-    def _has_tracking_rule(it: dict[str, Any]) -> bool:
+    # Charger les mappings et agréger les valeurs via CitationEngine
+    engine: CitationEngine | None = None
+    citation_mappings: dict[str, dict[str, Any]] = {}
+    citations_full: dict[str, int] = {}
+    citations_filtered: dict[str, int] = {}
+
+    if db_path and xuid:
+        engine = CitationEngine(db_path, xuid)
+        citation_mappings = engine.load_mappings()
+        # Agrégation complète (tous les matchs)
+        citations_full = engine.aggregate_for_display(match_ids=None)
+        # Agrégation filtrée si nécessaire
+        if filtered_match_ids is not None:
+            citations_filtered = engine.aggregate_for_display(match_ids=filtered_match_ids)
+
+    # Détermine si on est en mode filtré
+    is_filtered = filtered_match_ids is not None and all_match_ids is not None
+
+    # N'affiche que les citations ayant un mapping dans citation_mappings
+    mapped_norms = set(citation_mappings.keys())
+
+    def _has_mapping(it: dict[str, Any]) -> bool:
         norm_name = _normalize_name(str(it.get("name") or "").strip())
-        return norm_name in tracking or norm_name in CUSTOM_CITATION_RULES
+        return norm_name in mapped_norms
 
-    items = [it for it in items if _has_tracking_rule(it)]
+    items = [it for it in items if _has_mapping(it)]
 
-    # Filtres
+    # Filtres UI
     cats = sorted(
         {
             str(x.get("category") or "").strip()
@@ -822,9 +445,7 @@ def render_h5g_commendations_section(
             or (qn in str(x.get("category") or "").lower())
         ]
 
-    # Afficher TOUTES les citations (plus de limite).
-
-    # 8 colonnes au lieu de 6 ≈ -25% de largeur par vignette.
+    # Grille 8 colonnes
     cols_per_row = 8
     cols = st.columns(cols_per_row)
     for i, item in enumerate(filtered):
@@ -834,56 +455,19 @@ def render_h5g_commendations_section(
         name = _display_citation_name(name_raw)
         desc = _display_citation_desc(desc_raw, name_raw)
         img = _img_src(item)
-        key = _image_basename_from_item(item)
         tiers = item.get("tiers") or []
 
-        rule = tracking.get(_normalize_name(name_raw)) or {}
         norm_name = _normalize_name(name_raw)
-        current = 0
-        current_full = 0  # Valeur sur tous les matchs (pour le delta)
 
-        # Priorité aux règles personnalisées (CUSTOM_CITATION_RULES)
-        if norm_name in CUSTOM_CITATION_RULES:
-            custom_rule = CUSTOM_CITATION_RULES[norm_name]
-            current = _compute_custom_citation_value(custom_rule, df, counts_by_medal, stats_totals)
-            # Calculer aussi la valeur full pour le delta
-            if is_filtered and df_full is not None:
-                current_full = _compute_custom_citation_value(
-                    custom_rule, df_full, counts_by_medal_full or {}, stats_totals_full or {}
-                )
-        elif isinstance(rule.get("medal_ids"), list):
-            total = 0
-            total_full = 0
-            for mid in rule.get("medal_ids") or []:
-                try:
-                    total += int(counts_by_medal.get(int(mid), 0))
-                    if is_filtered and counts_by_medal_full:
-                        total_full += int(counts_by_medal_full.get(int(mid), 0))
-                except Exception:
-                    continue
-            current = int(total)
-            current_full = int(total_full)
-        elif rule.get("medal_id") is not None:
-            try:
-                current = int(counts_by_medal.get(int(rule.get("medal_id")), 0))
-                if is_filtered and counts_by_medal_full:
-                    current_full = int(counts_by_medal_full.get(int(rule.get("medal_id")), 0))
-            except Exception:
-                current = 0
-        elif isinstance(rule.get("stat"), str) and rule.get("stat"):
-            stat_key = str(rule.get("stat") or "").strip()
-            try:
-                current = int(stats_totals.get(stat_key, 0))
-                if is_filtered and stats_totals_full:
-                    current_full = int(stats_totals_full.get(stat_key, 0))
-            except Exception:
-                current = 0
+        # Valeurs depuis match_citations (agrégées par CitationEngine)
+        current_full = citations_full.get(norm_name, 0)
+        current_filtered = citations_filtered.get(norm_name, 0) if is_filtered else current_full
 
         # Calcul du delta pour cette citation
-        delta_citation = current if (is_filtered and current > 0) else 0
+        delta_citation = current_filtered if (is_filtered and current_filtered > 0) else 0
 
         level_label, counter_label, is_master, progress_ratio = _compute_mastery_display(
-            current_full if is_filtered else current, tiers
+            current_full, tiers
         )
 
         with col:

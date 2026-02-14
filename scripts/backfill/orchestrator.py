@@ -53,6 +53,7 @@ def _empty_result() -> dict[str, int]:
         "killer_victim_pairs_inserted": 0,
         "end_time_updated": 0,
         "sessions_updated": 0,
+        "citations_computed": 0,
     }
 
 
@@ -92,6 +93,8 @@ async def backfill_player_data(
     force_participants: bool = False,
     force_end_time: bool = False,
     force_sessions: bool = False,
+    citations: bool = False,
+    force_citations: bool = False,
     detection_mode: str = "or",
 ) -> dict[str, int]:
     """Remplit les données manquantes pour un joueur.
@@ -113,7 +116,7 @@ async def backfill_player_data(
         aliases = accuracy = enemy_mmr = assets = participants = True
         shots = participants_scores = participants_kda = True
         participants_shots = participants_damage = True
-        killer_victim = end_time = sessions = True
+        killer_victim = end_time = sessions = citations = True
 
     # Activer les dépendances force → option
     if force_accuracy and not accuracy:
@@ -261,7 +264,7 @@ async def backfill_player_data(
             return result
 
         # Cas : pas de matchs API mais backfill local à faire
-        needs_local_only = killer_victim or end_time or sessions
+        needs_local_only = killer_victim or end_time or sessions or citations
         needs_api = bool(match_ids)
 
         if not needs_api and not needs_local_only:
@@ -276,8 +279,10 @@ async def backfill_player_data(
                 killer_victim=killer_victim,
                 end_time=end_time,
                 sessions=sessions,
+                citations=citations,
                 force_end_time=force_end_time,
                 force_sessions=force_sessions,
+                force_citations=force_citations,
                 dry_run=dry_run,
             )
 
@@ -314,6 +319,8 @@ async def backfill_player_data(
             force_participants_shots=force_participants_shots,
             force_participants_damage=force_participants_damage,
             shots=shots,
+            citations=citations,
+            force_citations=force_citations,
             gamertag=gamertag,
             dry_run=dry_run,
         )
@@ -359,6 +366,8 @@ async def backfill_all_players(
     force_end_time: bool = False,
     sessions: bool = False,
     force_sessions: bool = False,
+    citations: bool = False,
+    force_citations: bool = False,
     detection_mode: str = "or",
 ) -> dict[str, Any]:
     """Backfill pour tous les joueurs DuckDB v4."""
@@ -414,6 +423,8 @@ async def backfill_all_players(
             force_participants=force_participants,
             force_end_time=force_end_time,
             force_sessions=force_sessions,
+            citations=citations,
+            force_citations=force_citations,
             detection_mode=detection_mode,
         )
 
@@ -555,9 +566,11 @@ def _backfill_local_only(
     killer_victim: bool,
     end_time: bool,
     sessions: bool,
-    force_end_time: bool,
-    force_sessions: bool,
-    dry_run: bool,
+    citations: bool = False,
+    force_end_time: bool = False,
+    force_sessions: bool = False,
+    force_citations: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, int]:
     """Backfill local uniquement (pas d'API nécessaire)."""
     logger.info("Pas de données de match à backfill via API...")
@@ -584,6 +597,13 @@ def _backfill_local_only(
     if sessions:
         n = _backfill_sessions(conn, db_path, xuid, force=force_sessions, dry_run=dry_run)
         result["sessions_updated"] = n
+
+    if citations:
+        from scripts.backfill.strategies import backfill_citations
+
+        logger.info("Backfill des citations...")
+        n = backfill_citations(conn, db_path, xuid, force=force_citations)
+        result["citations_computed"] = n
 
     return result
 
@@ -654,6 +674,8 @@ async def _backfill_with_api(
     force_participants_shots: bool,
     force_participants_damage: bool,
     shots: bool,
+    citations: bool = False,
+    force_citations: bool = False,
     gamertag: str,
     dry_run: bool,
 ) -> dict[str, int]:
@@ -875,6 +897,13 @@ async def _backfill_with_api(
     if sessions:
         n = _backfill_sessions(conn, db_path, xuid, force=force_sessions, dry_run=dry_run)
         totals["sessions_updated"] = n
+
+    if citations:
+        from scripts.backfill.strategies import backfill_citations
+
+        logger.info("Backfill des citations...")
+        n = backfill_citations(conn, db_path, xuid, force=force_citations)
+        totals["citations_computed"] = n
 
     logger.info(f"Backfill terminé pour {gamertag}")
     return totals

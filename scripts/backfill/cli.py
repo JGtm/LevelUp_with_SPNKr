@@ -217,6 +217,18 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Recalculer les sessions même si session_id déjà rempli",
     )
 
+    # ── Citations ──
+    parser.add_argument(
+        "--citations",
+        action="store_true",
+        help="Calculer et insérer les citations pour les matchs existants",
+    )
+    parser.add_argument(
+        "--force-citations",
+        action="store_true",
+        help="Recalculer les citations même si déjà présentes",
+    )
+
     return parser
 
 

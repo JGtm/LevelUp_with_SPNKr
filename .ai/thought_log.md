@@ -7,6 +7,82 @@
 
 ## Journal
 
+### [2026-02-15] - Post-Sprint : Colonne enabled + V5-readiness CitationEngine
+
+**Statut** : Terminé ✅
+
+**Objectif** : (1) Remplacer le JSON d'exclusion par une colonne `enabled` dans `citation_mappings`, (2) Rendre `CitationEngine` compatible V5 (shared_matches.duckdb).
+
+**A) Exclusions JSON → DuckDB** :
+- Ajouté `enabled BOOLEAN DEFAULT TRUE` à `citation_mappings` (ALTER TABLE + script mis à jour)
+- `load_mappings()` filtre `WHERE enabled IS NOT FALSE`
+- Supprimé la dépendance au JSON d'exclusion dans `render_h5g_commendations_section()`
+- La fonction `load_h5g_commendations_exclude()` reste disponible (utilisée par `count_displayed_citations.py`)
+- Pour désactiver une citation : `UPDATE citation_mappings SET enabled = FALSE WHERE citation_name_norm = '...'`
+
+**B) CitationEngine V5-ready** :
+- Ajouté `shared_db_path` param (auto-détecté comme `DuckDBRepository`)
+- `_read_conn()` ATTACH `shared` en READ_ONLY quand disponible
+- `load_match_medals()` : lit `shared.medals_earned WHERE xuid = ?` en priorité
+- `load_match_stats()` / `load_match_df()` : lit `shared.match_participants` + `shared.match_registry`
+- `load_match_awards()` : inchangé (`personal_score_awards` reste locale)
+- `has_shared` property + `_conn_has_shared()` / `_shared_has_table()` helpers
+- Fallback transparent V4 si shared n'existe pas
+
+**Tests** : 65/65 passent (58 existants + 7 nouveaux : 2 enabled, 5 V5 shared)
+
+**Fichiers modifiés** :
+- `src/analysis/citations/engine.py` — shared support + enabled filter
+- `src/ui/commendations.py` — suppression logique exclusion JSON
+- `scripts/create_citation_mappings_table.py` — colonne enabled
+- `docs/CITATIONS.md` — doc V5 + enabled
+- 4 fichiers de tests — colonne enabled dans fixtures + 7 nouveaux tests
+
+---
+
+### [2026-02-15] - Migration Citations DuckDB-first (Sprints 1-5)
+
+**Statut** : Terminé ✅
+
+**Objectif** : Migrer le système de citations (commendations Halo 5 Guardian) vers une architecture DuckDB-first avec stockage per-match, passer de 41 à 47 citations, et obtenir ~90% de gain de performance.
+
+**Décisions clés** :
+
+1. **medal_id en BIGINT** : Certaines valeurs (ex: 3169118333) dépassent INT32. Toutes les colonnes medal_id utilisent BIGINT.
+2. **CitationEngine avec connexion partagée** : Pour éviter les ConversionException DuckDB (même DB ouverte avec configs différentes), `CitationEngine.__init__` accepte un paramètre `conn` optionnel. La méthode `_read_conn()` retourne `(conn, owned)` — si shared, `owned=False` et on ne ferme pas.
+3. **Normalisation avec espaces** : `_normalize_name()` conserve les espaces (`unidecode + lower + strip`), contrairement à l'implémentation legacy qui les supprimait. 4 noms corrigés dans metadata.duckdb.
+4. **Tables** : `citation_mappings` (14 lignes, metadata.duckdb) et `match_citations` (par joueur, stats.duckdb).
+5. **Pandas interdit** : Tout le code utilise DuckDB SQL natif ou Polars. Pas de DataFrame Pandas.
+
+**Réalisations par sprint** :
+
+- **Sprint 1** : Tables `citation_mappings` + `match_citations` créées, 6 noms retirés de la blacklist, 11 tests
+- **Sprint 2** : `CitationEngine` (engine.py) avec 7 méthodes publiques, 26 tests
+- **Sprint 3** : Intégration backfill (`--citations`, `--force-citations`), `insert_citation()` dans DuckDBRepository, 4 tests
+- **Sprint 4** : Suppression ~370 lignes de code legacy dans commendations.py, nouvelle signature `render_h5g_commendations_section()`, 12 tests
+- **Sprint 5** : `docs/CITATIONS.md`, `CHANGELOG.md`, `scripts/diagnose_citations.py`, 5 tests d'intégration
+
+**Fichiers créés** :
+- `src/analysis/citations/engine.py` — CitationEngine
+- `scripts/create_match_citations_table.py` — Création table per-player
+- `docs/CITATIONS.md` — Documentation architecture
+- `CHANGELOG.md` — Notes de version
+- `scripts/diagnose_citations.py` — Script de diagnostic
+- 5 fichiers de tests (`test_match_citations_table.py`, `test_citation_engine.py`, `test_backfill_citations.py`, `test_commendations_ui.py`, `test_citations_integration.py`)
+
+**Fichiers modifiés** :
+- `scripts/create_citation_mappings_table.py` — BIGINT, auto-create, noms normalisés
+- `src/ui/commendations.py` — Refactoring majeur (~950 → ~580 lignes)
+- `src/ui/pages/citations.py` — Simplification (plus de pré-agrégation)
+- `scripts/backfill/strategies.py`, `cli.py`, `orchestrator.py` — Ajout backfill citations
+- `scripts/backfill_data.py` — Passage args citations
+- `src/data/repositories/duckdb_repo.py` — `insert_citation()`
+- `data/wiki/halo5_commendations_exclude.json` — 6 entrées retirées
+
+**Bilan tests** : 1618 passed (dont 53 nouveaux citations), 1 failed (pré-existant), 38 skipped
+
+---
+
 ### [2026-02-14] - Sprint 6 v5 — Optimisation API & Sync
 
 **Statut** : Terminé ✅

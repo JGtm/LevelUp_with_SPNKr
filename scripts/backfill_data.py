@@ -119,6 +119,8 @@ def main() -> int:
                     force_end_time=args.force_end_time,
                     sessions=args.sessions,
                     force_sessions=args.force_sessions,
+                    citations=args.citations,
+                    force_citations=args.force_citations,
                     detection_mode=args.detection_mode,
                 )
             )
@@ -160,6 +162,8 @@ def main() -> int:
                     force_end_time=args.force_end_time,
                     sessions=args.sessions,
                     force_sessions=args.force_sessions,
+                    citations=args.citations,
+                    force_citations=args.force_citations,
                     detection_mode=args.detection_mode,
                 )
             )
@@ -229,6 +233,8 @@ def _print_totals(totals: dict, args: object) -> None:
         logger.info(f"End time mis à jour: {totals.get('end_time_updated', 0)}")
     if getattr(args, "sessions", False):
         logger.info(f"Sessions mises à jour: {totals.get('sessions_updated', 0)}")
+    if getattr(args, "citations", False):
+        logger.info(f"Citations calculées: {totals.get('citations_computed', 0)}")
 
 
 if __name__ == "__main__":

@@ -720,6 +720,30 @@ class DuckDBRepository(
         self.close()
 
     # =========================================================================
+    # Citations (Sprint Citations)
+    # =========================================================================
+
+    def insert_citation(
+        self,
+        match_id: str,
+        citation_name_norm: str,
+        value: int,
+    ) -> None:
+        """Insère ou met à jour une citation pour un match.
+
+        Args:
+            match_id: Identifiant du match.
+            citation_name_norm: Nom normalisé de la citation.
+            value: Valeur de la citation.
+        """
+        conn = self._get_connection()
+        conn.execute(
+            "INSERT OR REPLACE INTO match_citations "
+            "(match_id, citation_name_norm, value) VALUES (?, ?, ?)",
+            [match_id, citation_name_norm, value],
+        )
+
+    # =========================================================================
     # Archives (Sprint 4.5 - Partitionnement Temporel)
     # =========================================================================
 

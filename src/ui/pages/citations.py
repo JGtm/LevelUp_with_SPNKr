@@ -49,16 +49,33 @@ def render_citations_page(
         st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
         return
 
-    # Agrège les médailles pour les matchs filtrés.
-    counts_by_medal: dict[int, int] = {}
-    stats_totals: dict[str, int] = {}
-    # Agrège les médailles pour TOUS les matchs (pour calculer le delta).
-    counts_by_medal_full: dict[int, int] = {}
-    stats_totals_full: dict[str, int] = {}
-
     xuid_clean = str(xuid or "").strip()
 
-    # Charger les médailles pour le DataFrame filtré.
+    # Extraire les match_ids pour les filtres et le delta
+    filtered_match_ids: list[str] | None = None
+    all_match_ids: list[str] | None = None
+    is_filtered = len(dff) < len(df_full) if not df_full.is_empty() else False
+
+    if xuid_clean:
+        all_match_ids = (
+            df_full.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
+        )
+        if is_filtered:
+            filtered_match_ids = (
+                dff.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
+            )
+
+    # 1) Commendations Halo 5 (via CitationEngine + match_citations)
+    render_h5g_commendations_section(
+        db_path=db_path,
+        xuid=xuid_clean,
+        filtered_match_ids=filtered_match_ids,
+        all_match_ids=all_match_ids,
+    )
+    st.divider()
+
+    # 2) Médailles (Halo Infinite) - Agrégation des médailles pour la grille
+    counts_by_medal: dict[int, int] = {}
     if not dff.is_empty() and xuid_clean:
         match_ids = (
             dff.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
@@ -69,65 +86,6 @@ def render_citations_page(
             counts_by_medal = {int(nid): int(cnt) for nid, cnt in (top_all or [])}
         except Exception:
             counts_by_medal = {}
-
-        # Stats agrégées (utilisées par certaines citations suivies via candidates.type=stat).
-        for col in ("kills", "deaths", "assists", "headshot_kills"):
-            if col not in dff.columns:
-                continue
-            try:
-                stats_totals[col] = int(
-                    dff.select(pl.col(col).cast(pl.Float64, strict=False).fill_null(0).sum()).item()
-                )
-            except Exception:
-                stats_totals[col] = 0
-
-    # Charger les médailles pour le DataFrame complet (pour le delta).
-    if not df_full.is_empty() and xuid_clean:
-        match_ids_full = (
-            df_full.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
-        )
-        # Utilise le cache existant si possible.
-        top_all_full = top_medals_fn(db_path, xuid_clean, match_ids_full, top_n=None, db_key=db_key)
-        try:
-            counts_by_medal_full = {int(nid): int(cnt) for nid, cnt in (top_all_full or [])}
-        except Exception:
-            counts_by_medal_full = {}
-
-        for col in ("kills", "deaths", "assists", "headshot_kills"):
-            if col not in df_full.columns:
-                continue
-            try:
-                stats_totals_full[col] = int(
-                    df_full.select(
-                        pl.col(col).cast(pl.Float64, strict=False).fill_null(0).sum()
-                    ).item()
-                )
-            except Exception:
-                stats_totals_full[col] = 0
-
-    # Calcul des deltas (conservés pour usage futur).
-    total_medals_filtered = sum(counts_by_medal.values())
-    _total_medals_full = sum(counts_by_medal_full.values())  # noqa: F841
-    _delta_medals = total_medals_filtered  # noqa: F841
-
-    total_citations_filtered = sum(stats_totals.values()) + total_medals_filtered
-    _total_citations_full = sum(stats_totals_full.values()) + _total_medals_full  # noqa: F841
-    _delta_citations = total_citations_filtered  # noqa: F841
-
-    # Détermine si on est en mode "filtré" (pas tous les matchs).
-    is_filtered = len(dff) < len(df_full) if not df_full.is_empty() else False
-
-    # 1) Commendations Halo 5 (référentiel offline)
-    # Passer les compteurs full pour afficher les deltas par citation
-    render_h5g_commendations_section(
-        counts_by_medal=counts_by_medal,
-        stats_totals=stats_totals,
-        counts_by_medal_full=counts_by_medal_full if is_filtered else None,
-        stats_totals_full=stats_totals_full if is_filtered else None,
-        df=dff,
-        df_full=df_full if is_filtered else None,
-    )
-    st.divider()
 
     # 2) Médailles (Halo Infinite) - Affiche TOUJOURS toutes les médailles.
     st.caption("Médailles sur la sélection/filtres actuels.")

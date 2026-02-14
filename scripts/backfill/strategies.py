@@ -353,3 +353,82 @@ def compute_performance_score_for_match(conn: Any, match_id: str) -> bool:
     except Exception as e:
         logger.warning(f"Erreur calcul score performance pour {match_id}: {e}")
         return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Citations
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def backfill_citations(
+    conn: Any,
+    db_path: str | Any,
+    xuid: str,
+    *,
+    force: bool = False,
+) -> int:
+    """Calcule et insère les citations pour les matchs existants.
+
+    Mode incrémental par défaut : ne traite que les matchs sans citations.
+    Mode force : recalcule pour tous les matchs.
+
+    Args:
+        conn: Connexion DuckDB (non utilisée directement, on ouvre via engine).
+        db_path: Chemin vers la DB joueur.
+        xuid: XUID du joueur.
+        force: Si True, recalcule pour tous les matchs.
+
+    Returns:
+        Nombre de matchs traités.
+    """
+    from pathlib import Path
+
+    from src.analysis.citations.engine import CitationEngine
+
+    db_path = Path(db_path) if not isinstance(db_path, Path) else db_path
+    engine = CitationEngine(str(db_path), xuid, conn=conn)
+
+    # Vérifier que les mappings existent
+    mappings = engine.load_mappings()
+    if not mappings:
+        logger.warning("Aucun mapping de citations trouvé")
+        return 0
+
+    # Récupérer les match_ids à traiter via la connexion existante
+    if force:
+        match_ids = [
+            r[0]
+            for r in conn.execute("SELECT match_id FROM match_stats ORDER BY start_time").fetchall()
+        ]
+    else:
+        # Matchs sans aucune citation dans match_citations
+        match_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT ms.match_id FROM match_stats ms "
+                "WHERE NOT EXISTS ("
+                "  SELECT 1 FROM match_citations mc WHERE mc.match_id = ms.match_id"
+                ") ORDER BY ms.start_time"
+            ).fetchall()
+        ]
+
+    if not match_ids:
+        logger.info("Aucun match à traiter pour les citations")
+        return 0
+
+    logger.info(f"Traitement de {len(match_ids)} match(s) pour les citations...")
+
+    count = 0
+    for i, match_id in enumerate(match_ids, 1):
+        try:
+            n = engine.compute_and_store_for_match(match_id, conn=conn)
+            if n > 0:
+                count += 1
+            if i % 100 == 0:
+                logger.info(f"  [{i}/{len(match_ids)}] {count} matchs avec citations")
+        except Exception as e:
+            logger.warning(f"Erreur citation pour {match_id}: {e}")
+            continue
+
+    logger.info(f"✅ {count} match(s) traités pour les citations")
+    return count
