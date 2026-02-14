@@ -419,14 +419,46 @@ async def backfill_all_players(
 
 
 def _resolve_xuid_fallback(db_path: Path, gamertag: str) -> str | None:
-    """Tente de résoudre le XUID depuis highlight_events (fallback)."""
+    """Tente de résoudre le XUID via db_profiles.json puis highlight_events."""
     import duckdb
 
     logger.warning(f"XUID introuvable dans xuid_aliases pour {gamertag}")
-    logger.info("Tentative d'extraction depuis les matchs existants...")
 
+    # 1. Chercher dans db_profiles.json (source la plus fiable)
+    try:
+        from src.data.repositories.factory import load_db_profiles
+
+        profiles_data = load_db_profiles()
+        profiles = profiles_data.get("profiles", {})
+        for key, info in profiles.items():
+            if (
+                key.lower() == gamertag.lower()
+                or str(info.get("waypoint_player", "")).lower() == gamertag.lower()
+            ):
+                xuid = str(info.get("xuid", "")).strip()
+                if xuid and xuid.isdigit():
+                    logger.info(f"✅ XUID trouvé depuis db_profiles.json: {xuid}")
+                    return xuid
+    except Exception as e:
+        logger.debug(f"Lecture db_profiles.json échouée: {e}")
+
+    # 2. Fallback : chercher dans highlight_events (DB existantes)
+    logger.info("Tentative d'extraction depuis les matchs existants...")
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
+        # Vérifier que la table existe avant de la requêter
+        table_check = conn.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            "WHERE table_schema = 'main' AND table_name = 'highlight_events'"
+        ).fetchone()
+        if not table_check or table_check[0] == 0:
+            logger.error(
+                f"❌ Impossible de résoudre le XUID pour {gamertag} "
+                "(DB vide, pas encore synchronisée)"
+            )
+            logger.error(f"💡 Solution: python scripts/sync.py --player {gamertag} --delta")
+            return None
+
         result = conn.execute(
             """
             SELECT DISTINCT xuid
@@ -444,7 +476,7 @@ def _resolve_xuid_fallback(db_path: Path, gamertag: str) -> str | None:
             return xuid
 
         logger.error(f"❌ Impossible de résoudre le XUID pour {gamertag}")
-        logger.error("💡 Solution: python scripts/sync.py --gamertag {gamertag} --delta")
+        logger.error(f"💡 Solution: python scripts/sync.py --player {gamertag} --delta")
         return None
     finally:
         conn.close()
