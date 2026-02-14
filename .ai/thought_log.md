@@ -7,6 +7,61 @@
 
 ## Journal
 
+### [2026-02-14] - Ajout archivage PLAN_UNIFIE.md et scripts v5
+
+**Statut** : Terminé ✅
+
+**Objectif** : Compléter la tâche 8.8 du Sprint 8 pour inclure l'archivage de `PLAN_UNIFIE.md` (ancien plan v4.5 obsolète) et des scripts spécifiques v5.
+
+**Réalisations** :
+
+**1. Section "6. Archivage Scripts Spécifiques v5" ajoutée** :
+
+Scripts de migration v5 à archiver dans `scripts/_archive/migration_v5/` :
+- `create_shared_matches_db.py`
+- `schema_v5.sql`
+- `migrate_player_to_shared.py`
+- `validate_migration.py`
+- `validate_shared_schema.py`
+- `create_compat_views.py`
+- `remove_all_compat_views.py`
+
+Scripts benchmark v5 à archiver dans `scripts/_archive/benchmark_v5/` :
+- `benchmark_v4_vs_v5.py`
+- `benchmark_sync_v4_vs_v5.py`
+- `validate_v5_improvements.py`
+- `test_e2e_v5.py`
+
+**Raison** : Ces scripts sont spécifiques à la migration v4→v5 et n'ont plus d'utilité après. Les archiver permet de conserver l'historique sans encombrer le workspace.
+
+**2. Mise à jour tâche 8.8** :
+
+- Renommé de "Archivage documentation temporaire `.ai/`" vers "Archivage docs `.ai/` + PLAN_UNIFIE.md + scripts v5"
+- Script renommé de `archive_v5_docs.sh` vers `archive_v5_all.sh`
+- Durée augmentée de 30min à 45min (plus de fichiers à archiver)
+
+**3. Mise à jour livrables Sprint 8** :
+
+- ✅ `PLAN_UNIFIE.md` archivé (ancien plan v4.5 obsolète)
+- ✅ Scripts migration v5 archivés
+- ✅ Scripts benchmark v5 archivés
+
+**4. Mise à jour estimations** :
+
+- Contexte préliminaire : ~14.5h → ~14.75h
+- Sprint détaillé : 14.5-16.5h → 14.75-16.75h
+
+**Fichiers modifiés** :
+- `.ai/PLAN_V5_SHARED_MATCHES.md` : Section archivage enrichie avec scripts v5 + PLAN_UNIFIE.md
+- `.ai/thought_log.md` : Cette entrée
+
+**Bénéfice** :
+- Workspace propre après migration v5
+- Conservation de l'historique (scripts archivés, pas supprimés)
+- Clarification des scripts réutilisables vs ponctuels
+
+---
+
 ### [2026-02-14] - Analyse Contexte Préliminaire v5.0 (Sprints 3-8)
 
 **Statut** : Terminé ✅

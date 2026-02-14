@@ -1009,9 +1009,14 @@ grep -rn "^[[:space:]]*#.*def \|^[[:space:]]*#.*class " src/
 ```bash
 # Archiver les documents de travail v5.0
 mkdir -p .ai/archive/v5.0/
+
+# Plans de projet
 mv .ai/PLAN_V5_SHARED_MATCHES.md .ai/archive/v5.0/
-mv .ai/v5-*.md .ai/archive/v5.0/  # Tous les docs v5
-mv .ai/reports/v5-*.* .ai/archive/v5.0/reports/  # Rapports v5
+mv .ai/PLAN_UNIFIE.md .ai/archive/v5.0/  # Ancien plan v4.5 (obsolète après v5)
+
+# Rapports et analyses v5
+mv .ai/v5-*.md .ai/archive/v5.0/  # Tous les docs v5 (baseline, migration, retrospective)
+mv .ai/reports/v5-*.* .ai/archive/v5.0/reports/  # Rapports benchmark/coverage v5
 
 # Garder seulement les docs actifs
 # - thought_log.md (journal permanent)
@@ -1024,6 +1029,7 @@ mv .ai/reports/v5-*.* .ai/archive/v5.0/reports/  # Rapports v5
 
 **Documents à archiver** :
 - `PLAN_V5_SHARED_MATCHES.md` (ce plan)
+- `PLAN_UNIFIE.md` ⭐ **NOUVEAU** (ancien plan v4.5, obsolète)
 - `v5-baseline-audit.md`
 - `v5-match-overlap-analysis.md`
 - `v5-migration-report.md`
@@ -1036,6 +1042,37 @@ mv .ai/reports/v5-*.* .ai/archive/v5.0/reports/  # Rapports v5
 - `SPRINT_EXPLORATION.md`
 - `ARCHITECTURE_ROADMAP.md`
 - Audits permanents (SQLITE_TO_DUCKDB_AUDIT.md, PANDAS_TO_POLARS_AUDIT.md)
+
+**6. Archivage Scripts Spécifiques v5**
+
+```bash
+# Archiver les scripts de migration v5 (usage unique)
+mkdir -p scripts/_archive/migration_v5/
+mv scripts/migration/create_shared_matches_db.py scripts/_archive/migration_v5/
+mv scripts/migration/schema_v5.sql scripts/_archive/migration_v5/
+mv scripts/migration/migrate_player_to_shared.py scripts/_archive/migration_v5/
+mv scripts/migration/validate_migration.py scripts/_archive/migration_v5/
+mv scripts/migration/validate_shared_schema.py scripts/_archive/migration_v5/
+mv scripts/migration/create_compat_views.py scripts/_archive/migration_v5/
+mv scripts/migration/remove_all_compat_views.py scripts/_archive/migration_v5/
+
+# Archiver les scripts benchmark v5 (comparaison ponctuelle)
+mkdir -p scripts/_archive/benchmark_v5/
+mv scripts/benchmark_v4_vs_v5.py scripts/_archive/benchmark_v5/
+mv scripts/benchmark_sync_v4_vs_v5.py scripts/_archive/benchmark_v5/
+mv scripts/validate_v5_improvements.py scripts/_archive/benchmark_v5/
+mv scripts/test_e2e_v5.py scripts/_archive/benchmark_v5/
+
+# CONSERVER les scripts réutilisables
+# - scripts/backup_player.py
+# - scripts/restore_player.py
+# - scripts/diagnose_player_db.py
+# - scripts/sync.py
+# - scripts/backfill_data.py
+# - etc.
+```
+
+**Raison** : Ces scripts sont spécifiques à la migration v4→v5 et n'ont plus d'utilité après la migration. Les archiver permet de conserver l'historique sans encombrer `scripts/` et `scripts/migration/`.
 
 #### Documentation Obligatoire
 
@@ -1137,10 +1174,10 @@ gh release create v5.0.0 \
 | Documentation MIGRATION_V4_TO_V5.md | 2h |
 | Benchmark final | 2h |
 | Revue de code complète | 3h |
-| Archivage docs `.ai/` | 30min |
+| Archivage docs `.ai/` + PLAN_UNIFIE.md + scripts v5 | 45min |
 | Tag + merge + release | 1h |
 
-**Total** : ~14.5h (sur 14.5-16.5h prévues)
+**Total** : ~14.75h (sur 14.5-16.5h prévues)
 
 ---
 
@@ -2552,7 +2589,7 @@ python -m pytest tests/performance/test_load_v5.py -v
 | 8.5 | Guide de migration v4→v5 | `docs/MIGRATION_V4_TO_V5.md` | 2h |
 | 8.6 | Benchmark final (comparaison v4 vs v5) | `scripts/benchmark_v4_vs_v5.py` | 2h |
 | 8.7 | Revue de code complète | Tous | 3h |
-| 8.8 | Archivage documentation temporaire `.ai/` | `scripts/archive_v5_docs.sh` | 30min |
+| 8.8 | Archivage docs `.ai/` + PLAN_UNIFIE.md + scripts v5 | `scripts/archive_v5_all.sh` | 45min |
 | 8.9 | Tag `v5.0.0` et merge vers `main` | Git | 1h |
 
 #### Documentation Obligatoire
@@ -2578,6 +2615,9 @@ python -m pytest tests/performance/test_load_v5.py -v
 - [ ] Documentation complète
 - [ ] Benchmark validé
 - [ ] Documentation temporaire `.ai/` archivée dans `.ai/archive/v5.0/`
+- [ ] `PLAN_UNIFIE.md` archivé (ancien plan v4.5 obsolète)
+- [ ] Scripts migration v5 archivés dans `scripts/_archive/migration_v5/`
+- [ ] Scripts benchmark v5 archivés dans `scripts/_archive/benchmark_v5/`
 - [ ] Tag `v5.0.0` créé
 - [ ] Merge vers `main` effectué
 
@@ -2604,11 +2644,12 @@ python scripts/test_e2e_v5.py
 - [ ] Benchmark validé (gains >= objectifs)
 - [ ] Documentation complète
 - [ ] Aucun `# TODO` ou `# FIXME` sans ticket
-- [ ] Dossier `.ai/` nettoyé (docs v5 archivés)
+- [ ] Dossier `.ai/` nettoyé (docs v5 + PLAN_UNIFIE.md archivés)
+- [ ] Scripts v5 archivés (migration + benchmark)
 - [ ] Tag `v5.0.0` créé
 - [ ] Merge vers `main` effectué
 
-**Estimation** : 2 jours (14.5-16.5h effectives)
+**Estimation** : 2 jours (14.75-16.75h effectives)
 
 ---
 
