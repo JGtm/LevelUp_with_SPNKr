@@ -372,7 +372,8 @@ class RosterLoaderMixin:
     ) -> list[str]:
         """Retourne les match_id joués avec un coéquipier.
 
-        Utilise highlight_events pour détecter la présence dans le même match.
+        V5 : Utilise shared.match_participants si disponible.
+        Fallback : highlight_events locale.
 
         Args:
             teammate_xuid: XUID du coéquipier.
@@ -382,6 +383,27 @@ class RosterLoaderMixin:
         """
         conn = self._get_connection()
 
+        # V5 : shared.match_participants (roster complet)
+        if self._has_shared_table("match_participants"):
+            try:
+                result = conn.execute(
+                    """
+                    SELECT DISTINCT me.match_id
+                    FROM shared.match_participants me
+                    INNER JOIN shared.match_participants tm
+                        ON me.match_id = tm.match_id
+                    WHERE me.xuid = ? AND tm.xuid = ?
+                    ORDER BY me.match_id DESC
+                    """,
+                    [self._xuid, teammate_xuid],
+                )
+                match_ids = [row[0] for row in result.fetchall()]
+                if match_ids:
+                    return match_ids
+            except Exception:
+                pass
+
+        # Fallback V4 : highlight_events locale
         try:
             # Vérifier si highlight_events existe
             tables = conn.execute(
@@ -411,9 +433,8 @@ class RosterLoaderMixin:
     ) -> list[str]:
         """Retourne les match_id où les deux joueurs étaient dans la même équipe.
 
-        Sprint Gamertag Roster Fix : Utilise match_participants si disponible
-        pour une détermination précise des équipes. Sinon, fallback sur
-        highlight_events.
+        V5 : Utilise shared.match_participants si disponible (team_id fiable).
+        Fallback : match_participants locale puis highlight_events.
 
         Args:
             teammate_xuid: XUID du coéquipier.
@@ -423,7 +444,28 @@ class RosterLoaderMixin:
         """
         conn = self._get_connection()
 
-        # Essayer avec match_participants d'abord (source fiable)
+        # V5 : shared.match_participants (roster complet, team_id fiable)
+        if self._has_shared_table("match_participants"):
+            try:
+                result = conn.execute(
+                    """
+                    SELECT DISTINCT me.match_id
+                    FROM shared.match_participants me
+                    INNER JOIN shared.match_participants tm
+                        ON me.match_id = tm.match_id
+                        AND me.team_id = tm.team_id
+                    WHERE me.xuid = ? AND tm.xuid = ?
+                    ORDER BY me.match_id DESC
+                    """,
+                    [self._xuid, teammate_xuid],
+                )
+                match_ids = [row[0] for row in result.fetchall()]
+                if match_ids:
+                    return match_ids
+            except Exception as e:
+                logger.debug(f"Erreur shared.match_participants: {e}")
+
+        # Fallback V4 : match_participants locale
         if self._has_table("match_participants"):
             try:
                 result = conn.execute(
@@ -444,8 +486,7 @@ class RosterLoaderMixin:
             except Exception as e:
                 logger.debug(f"Erreur match_participants: {e}")
 
-        # Fallback: utiliser highlight_events pour trouver les matchs communs
-        # puis vérifier team_id dans match_stats (moins précis)
+        # Fallback : highlight_events
         try:
             result = conn.execute(
                 """
@@ -466,7 +507,21 @@ class RosterLoaderMixin:
             return []
 
     def has_match_participants(self) -> bool:
-        """Vérifie si la table match_participants existe et contient des données."""
+        """Vérifie si des données match_participants existent (shared ou locale)."""
+        # V5 : vérifier shared d'abord
+        if self._has_shared_table("match_participants"):
+            conn = self._get_connection()
+            try:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM shared.match_participants WHERE xuid = ?",
+                    [self._xuid],
+                ).fetchone()[0]
+                if count > 0:
+                    return True
+            except Exception:
+                pass
+
+        # Fallback V4 : table locale
         conn = self._get_connection()
         try:
             count = conn.execute("SELECT COUNT(*) FROM match_participants").fetchone()[0]
@@ -485,11 +540,13 @@ class RosterLoaderMixin:
         Sprint Gamertag Roster Fix : Fonction centralisée pour obtenir un
         gamertag propre à partir d'un XUID, en utilisant plusieurs sources.
 
-        Priorité des sources:
-        1. match_participants (pour ce match spécifique) - gamertags API propres
-        2. xuid_aliases (source officielle API)
-        3. teammates_aggregate (historique des coéquipiers)
-        4. highlight_events (nettoyé avec extraction ASCII)
+        Priorité des sources (v5 = shared d'abord):
+        1. shared.match_participants (roster complet, v5)
+        2. shared.xuid_aliases (source officielle API, v5)
+        3. match_participants locale (fallback v4)
+        4. xuid_aliases locale
+        5. teammates_aggregate (historique des coéquipiers)
+        6. highlight_events (nettoyé avec extraction ASCII)
 
         Args:
             xuid: XUID du joueur à résoudre.
@@ -501,7 +558,31 @@ class RosterLoaderMixin:
         conn = self._get_connection()
         xuid = str(xuid).strip()
 
-        # 1. match_participants (si match_id fourni et table existe)
+        # 1. shared.match_participants (v5 — roster complet)
+        if match_id and self._has_shared_table("match_participants"):
+            try:
+                result = conn.execute(
+                    "SELECT gamertag FROM shared.match_participants WHERE match_id = ? AND xuid = ?",
+                    [match_id, xuid],
+                ).fetchone()
+                if result and result[0]:
+                    return result[0]
+            except Exception:
+                pass
+
+        # 2. shared.xuid_aliases (v5)
+        if self._has_shared_table("xuid_aliases"):
+            try:
+                result = conn.execute(
+                    "SELECT gamertag FROM shared.xuid_aliases WHERE xuid = ?",
+                    [xuid],
+                ).fetchone()
+                if result and result[0]:
+                    return result[0]
+            except Exception:
+                pass
+
+        # 3. match_participants locale (si match_id fourni et table existe)
         if match_id and self._has_table("match_participants"):
             try:
                 result = conn.execute(
@@ -513,7 +594,7 @@ class RosterLoaderMixin:
             except Exception:
                 pass
 
-        # 2. xuid_aliases
+        # 4. xuid_aliases locale
         try:
             result = conn.execute(
                 "SELECT gamertag FROM xuid_aliases WHERE xuid = ?",
@@ -524,7 +605,7 @@ class RosterLoaderMixin:
         except Exception:
             pass
 
-        # 3. teammates_aggregate
+        # 5. teammates_aggregate
         try:
             result = conn.execute(
                 "SELECT teammate_gamertag FROM teammates_aggregate WHERE teammate_xuid = ?",
@@ -535,7 +616,7 @@ class RosterLoaderMixin:
         except Exception:
             pass
 
-        # 4. highlight_events avec extraction ASCII
+        # 6. highlight_events avec extraction ASCII
         if match_id:
             try:
                 result = conn.execute(
@@ -602,7 +683,8 @@ class RosterLoaderMixin:
     def load_match_player_gamertags(self, match_id: str) -> dict[str, str]:
         """Retourne un mapping XUID → Gamertag pour un match.
 
-        Équivalent DuckDB de src.db.loaders.load_match_player_gamertags().
+        Utilise shared.match_participants (v5) si disponible, sinon la table locale.
+        Complète avec shared.xuid_aliases et les sources locales.
 
         Args:
             match_id: ID du match.
@@ -617,7 +699,21 @@ class RosterLoaderMixin:
         result: dict[str, str] = {}
 
         try:
-            # 1. Depuis match_participants (prioritaire)
+            # 1. Depuis shared.match_participants (v5, prioritaire — roster complet)
+            if self._has_shared_table("match_participants"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT xuid, gamertag
+                    FROM shared.match_participants
+                    WHERE match_id = ? AND xuid IS NOT NULL AND gamertag IS NOT NULL
+                    """,
+                    [match_id],
+                ).fetchall()
+                for xuid, gt in rows:
+                    if xuid and gt:
+                        result[str(xuid)] = str(gt)
+
+            # 2. Compléter depuis match_participants locale (fallback v4)
             if self._has_table("match_participants"):
                 rows = conn.execute(
                     """
@@ -628,10 +724,10 @@ class RosterLoaderMixin:
                     [match_id],
                 ).fetchall()
                 for xuid, gt in rows:
-                    if xuid and gt:
+                    if xuid and gt and str(xuid) not in result:
                         result[str(xuid)] = str(gt)
 
-            # 2. Compléter depuis highlight_events
+            # 3. Compléter depuis highlight_events (local)
             if self._has_table("highlight_events"):
                 rows = conn.execute(
                     """
@@ -645,14 +741,29 @@ class RosterLoaderMixin:
                     if xuid and gt and str(xuid) not in result:
                         result[str(xuid)] = str(gt)
 
-            # 3. Compléter depuis xuid_aliases
-            if self._has_table("xuid_aliases"):
-                missing = [x for x in result if not result.get(x)]
-                if missing:
+            # 4. Compléter depuis shared.xuid_aliases (v5) puis xuid_aliases locale
+            all_xuids_in_result = list(result.keys())
+            missing = [x for x in all_xuids_in_result if not result.get(x)]
+
+            if missing:
+                # Essayer shared.xuid_aliases d'abord
+                if self._has_shared_table("xuid_aliases"):
                     placeholders = ", ".join(["?" for _ in missing])
                     rows = conn.execute(
-                        f"SELECT xuid, gamertag FROM xuid_aliases WHERE xuid IN ({placeholders})",
+                        f"SELECT xuid, gamertag FROM shared.xuid_aliases WHERE xuid IN ({placeholders})",
                         missing,
+                    ).fetchall()
+                    for xuid, gt in rows:
+                        if xuid and gt:
+                            result[str(xuid)] = str(gt)
+
+                # Fallback xuid_aliases locale
+                still_missing = [x for x in missing if not result.get(x)]
+                if still_missing and self._has_table("xuid_aliases"):
+                    placeholders = ", ".join(["?" for _ in still_missing])
+                    rows = conn.execute(
+                        f"SELECT xuid, gamertag FROM xuid_aliases WHERE xuid IN ({placeholders})",
+                        still_missing,
                     ).fetchall()
                     for xuid, gt in rows:
                         if xuid and gt:
@@ -666,8 +777,8 @@ class RosterLoaderMixin:
     def load_match_players_stats(self, match_id: str) -> list[dict[str, Any]]:
         """Charge les statistiques officielles de tous les joueurs d'un match.
 
-        Utilisé pour valider la cohérence des frags reconstitués via les
-        highlight events, et pour le tie-breaker némésis/souffre-douleur.
+        Utilise shared.match_participants (v5) si disponible, sinon la table locale.
+        Le schéma shared est garanti d'avoir toutes les colonnes (rank, score, kda).
 
         Args:
             match_id: ID du match.
@@ -679,11 +790,53 @@ class RosterLoaderMixin:
             return []
 
         conn = self._get_connection()
+
+        # Stratégie : tenter shared.match_participants d'abord (roster complet)
+        # sinon fallback sur la table locale match_participants
         try:
+            # ---- V5 : shared.match_participants (roster complet, toutes colonnes) ----
+            if self._has_shared_table("match_participants"):
+                rows = conn.execute(
+                    """
+                    SELECT
+                        p.xuid,
+                        COALESCE(p.gamertag, a.gamertag, p.xuid) AS gamertag,
+                        p.team_id,
+                        p.rank,
+                        p.score,
+                        p.kills,
+                        p.deaths,
+                        p.assists
+                    FROM shared.match_participants p
+                    LEFT JOIN shared.xuid_aliases a ON a.xuid = p.xuid
+                    WHERE p.match_id = ?
+                    ORDER BY p.rank ASC NULLS LAST
+                    """,
+                    [match_id],
+                ).fetchall()
+
+                if rows:
+                    result = []
+                    for idx, row in enumerate(rows):
+                        result.append(
+                            {
+                                "xuid": str(row[0] or "").strip(),
+                                "gamertag": str(row[1] or row[0] or "").strip(),
+                                "team_id": int(row[2]) if row[2] is not None else None,
+                                "rank": int(row[3]) if row[3] is not None else idx + 1,
+                                "score": int(row[4]) if row[4] is not None else None,
+                                "kills": int(row[5]) if row[5] is not None else 0,
+                                "deaths": int(row[6]) if row[6] is not None else 0,
+                                "assists": int(row[7]) if row[7] is not None else 0,
+                            }
+                        )
+                    return result
+
+            # ---- Fallback V4 : match_participants locale ----
             if not self._has_table("match_participants"):
                 return []
 
-            # Vérifier les colonnes disponibles
+            # Vérifier les colonnes disponibles (schéma local peut être incomplet)
             has_rank = self._has_column(conn, "match_participants", "rank")
             has_score = self._has_column(conn, "match_participants", "score")
             has_kda = (
@@ -692,7 +845,6 @@ class RosterLoaderMixin:
                 and self._has_column(conn, "match_participants", "assists")
             )
 
-            # Construire la requête selon les colonnes disponibles
             columns = ["xuid", "gamertag", "team_id"]
             if has_rank:
                 columns.append("rank")

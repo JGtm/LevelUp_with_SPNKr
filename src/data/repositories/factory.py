@@ -56,6 +56,7 @@ def get_repository(
     *,
     mode: RepositoryMode | str = RepositoryMode.DUCKDB,
     warehouse_path: str | Path | None = None,  # @deprecated - ignoré
+    shared_db_path: str | Path | None = None,
     gamertag: str | None = None,
 ) -> DataRepository:
     """
@@ -69,6 +70,7 @@ def get_repository(
         xuid: XUID du joueur principal
         mode: Mode de repository (seul DUCKDB est supporté)
         warehouse_path: @deprecated - Ignoré depuis v4
+        shared_db_path: Chemin vers shared_matches.duckdb (auto-détecté si None)
         gamertag: Gamertag du joueur (optionnel)
 
     Returns:
@@ -102,6 +104,7 @@ def get_repository(
     return DuckDBRepository(
         player_db_path=db_path,
         xuid=xuid,
+        shared_db_path=shared_db_path,
         gamertag=gamertag,
     )
 
@@ -132,6 +135,7 @@ def get_repository_from_profile(
     *,
     mode: RepositoryMode | str | None = None,  # @deprecated - ignoré, toujours DUCKDB
     profiles_path: str | Path | None = None,
+    shared_db_path: str | Path | None = None,
 ) -> DataRepository:
     """
     Crée un repository à partir du profil d'un joueur.
@@ -143,6 +147,7 @@ def get_repository_from_profile(
         gamertag: Gamertag du joueur
         mode: @deprecated - Ignoré depuis v4, toujours DUCKDB
         profiles_path: Chemin vers db_profiles.json
+        shared_db_path: Chemin vers shared_matches.duckdb (auto-détecté si None)
 
     Returns:
         Instance de DuckDBRepository configurée
@@ -161,6 +166,7 @@ def get_repository_from_profile(
     return DuckDBRepository(
         player_db_path=profile["db_path"],
         xuid=xuid,
+        shared_db_path=shared_db_path,
         gamertag=gamertag,
     )
 

@@ -54,6 +54,7 @@ class DuckDBRepository(
         xuid: str,
         *,
         metadata_db_path: str | Path | None = None,
+        shared_db_path: str | Path | None = None,
         gamertag: str | None = None,
         read_only: bool = True,
         memory_limit: str = "512MB",
@@ -66,6 +67,7 @@ class DuckDBRepository(
             player_db_path: Chemin vers stats.duckdb du joueur
             xuid: XUID du joueur
             metadata_db_path: Chemin vers metadata.duckdb (auto-détecté si None)
+            shared_db_path: Chemin vers shared_matches.duckdb (auto-détecté si None)
             gamertag: Gamertag du joueur (optionnel, pour logging)
             read_only: Si True, connexion en lecture seule
             memory_limit: Limite mémoire DuckDB
@@ -84,6 +86,13 @@ class DuckDBRepository(
         else:
             self._metadata_db_path = Path(metadata_db_path)
 
+        # Auto-détection du chemin shared_matches.duckdb (v5)
+        if shared_db_path is None:
+            data_dir = self._player_db_path.parent.parent.parent
+            self._shared_db_path = data_dir / "warehouse" / "shared_matches.duckdb"
+        else:
+            self._shared_db_path = Path(shared_db_path)
+
         # Connexion DuckDB (lazy loading)
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._attached_dbs: set[str] = set()
@@ -97,6 +106,33 @@ class DuckDBRepository(
     def db_path(self) -> str:
         """Chemin vers la base de données joueur."""
         return str(self._player_db_path)
+
+    @property
+    def has_shared(self) -> bool:
+        """Indique si shared_matches.duckdb est attaché et disponible."""
+        return "shared" in self._attached_dbs
+
+    def _has_shared_table(self, table_name: str) -> bool:
+        """Vérifie si une table existe dans shared_matches.duckdb.
+
+        Args:
+            table_name: Nom de la table à vérifier (sans préfixe 'shared.').
+
+        Returns:
+            True si la table existe dans le schema shared.
+        """
+        conn = self._get_connection()
+        if not self.has_shared:
+            return False
+        try:
+            result = conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_catalog = 'shared' AND table_name = ?",
+                [table_name],
+            ).fetchone()
+            return result is not None
+        except Exception:
+            return False
 
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
         """
@@ -142,6 +178,28 @@ class DuckDBRepository(
                         )
                     else:
                         logger.warning(f"Impossible d'attacher metadata.duckdb: {e}")
+
+            # Attacher shared_matches.duckdb en lecture seule (v5)
+            if self._shared_db_path.exists() and "shared" not in self._attached_dbs:
+                try:
+                    self._connection.execute(
+                        f"ATTACH '{self._shared_db_path}' AS shared (READ_ONLY)"
+                    )
+                    self._attached_dbs.add("shared")
+                    logger.debug(f"Shared matches DB attachée: {self._shared_db_path}")
+                except Exception as e:
+                    err_str = str(e)
+                    if (
+                        "already exists" in err_str.lower()
+                        or "unique file handle conflict" in err_str.lower()
+                        or "already attached" in err_str.lower()
+                    ):
+                        logger.debug(
+                            "shared_matches.duckdb déjà ouvert par une autre connexion, "
+                            "lecture partagée désactivée pour cette instance"
+                        )
+                    else:
+                        logger.warning(f"Impossible d'attacher shared_matches.duckdb: {e}")
 
         return self._connection
 
@@ -287,22 +345,43 @@ class DuckDBRepository(
         *,
         top_n: int | None = 25,
     ) -> list[tuple[int, int]]:
-        """Charge les médailles les plus fréquentes."""
+        """Charge les médailles les plus fréquentes.
+
+        V5 : Utilise shared.medals_earned si disponible (filtré par xuid).
+        """
         if not match_ids:
             return []
 
         conn = self._get_connection()
+        placeholders = ", ".join(["?" for _ in match_ids])
+        limit_sql = f"LIMIT {top_n}" if top_n else ""
 
-        # Vérifier si la table medals_earned a des données
+        # V5 : shared.medals_earned
+        if self._has_shared_table("medals_earned"):
+            try:
+                sql = f"""
+                    SELECT medal_name_id, SUM(count) as total
+                    FROM shared.medals_earned
+                    WHERE match_id IN ({placeholders})
+                      AND xuid = ?
+                    GROUP BY medal_name_id
+                    ORDER BY total DESC
+                    {limit_sql}
+                """
+                result = conn.execute(sql, [*match_ids, self._xuid])
+                rows = [(row[0], row[1]) for row in result.fetchall()]
+                if rows:
+                    return rows
+            except Exception:
+                pass
+
+        # Fallback V4 : medals_earned locale (pas de colonne xuid)
         try:
             count = conn.execute("SELECT COUNT(*) FROM medals_earned").fetchone()[0]
             if count == 0:
                 return []
         except Exception:
             return []
-
-        placeholders = ", ".join(["?" for _ in match_ids])
-        limit_sql = f"LIMIT {top_n}" if top_n else ""
 
         sql = f"""
             SELECT medal_name_id, SUM(count) as total
@@ -317,9 +396,26 @@ class DuckDBRepository(
         return [(row[0], row[1]) for row in result.fetchall()]
 
     def load_match_medals(self, match_id: str) -> list[dict[str, int]]:
-        """Charge les médailles pour un match spécifique."""
+        """Charge les médailles pour un match spécifique.
+
+        V5 : Utilise shared.medals_earned (filtré par xuid du joueur principal).
+        """
         conn = self._get_connection()
 
+        # V5 : shared.medals_earned
+        if self._has_shared_table("medals_earned"):
+            try:
+                result = conn.execute(
+                    "SELECT medal_name_id, count FROM shared.medals_earned WHERE match_id = ? AND xuid = ?",
+                    [match_id, self._xuid],
+                )
+                rows = [{"name_id": row[0], "count": row[1]} for row in result.fetchall()]
+                if rows:
+                    return rows
+            except Exception:
+                pass
+
+        # Fallback V4 : medals_earned locale
         try:
             result = conn.execute(
                 "SELECT medal_name_id, count FROM medals_earned WHERE match_id = ?",
@@ -336,6 +432,8 @@ class DuckDBRepository(
     ) -> dict[str, int]:
         """Compte une médaille spécifique pour chaque match.
 
+        V5 : Utilise shared.medals_earned si disponible.
+
         Args:
             match_ids: Liste des IDs de matchs.
             medal_name_id: ID de la médaille à compter (ex: 1512363953 pour Perfect).
@@ -347,9 +445,29 @@ class DuckDBRepository(
             return {}
 
         conn = self._get_connection()
+        placeholders = ", ".join(["?" for _ in match_ids])
 
+        # V5 : shared.medals_earned
+        if self._has_shared_table("medals_earned"):
+            try:
+                result = conn.execute(
+                    f"""
+                    SELECT match_id, count
+                    FROM shared.medals_earned
+                    WHERE match_id IN ({placeholders})
+                      AND medal_name_id = ?
+                      AND xuid = ?
+                    """,
+                    [*match_ids, medal_name_id, self._xuid],
+                )
+                shared_result = {str(row[0]): row[1] for row in result.fetchall()}
+                if shared_result:
+                    return shared_result
+            except Exception:
+                pass
+
+        # Fallback V4 : medals_earned locale
         try:
-            placeholders = ", ".join(["?" for _ in match_ids])
             result = conn.execute(
                 f"""
                 SELECT match_id, count
@@ -391,6 +509,8 @@ class DuckDBRepository(
     ) -> dict[str, int | None]:
         """Charge le timestamp du premier événement par match.
 
+        V5 : Utilise shared.highlight_events si disponible.
+
         Args:
             match_ids: Liste des IDs de matchs.
             event_type: Type d'événement ("Kill" ou "Death"). Accepte toute casse.
@@ -402,20 +522,39 @@ class DuckDBRepository(
             return {}
 
         conn = self._get_connection()
+        event_type_normalized = event_type.lower()
+        placeholders = ", ".join(["?" for _ in match_ids])
 
+        # V5 : shared.highlight_events (killer_xuid/victim_xuid)
+        if self._has_shared_table("highlight_events"):
+            try:
+                # Pour un Kill, le joueur est le killer ; pour un Death, le joueur est la victime
+                xuid_column = "killer_xuid" if event_type_normalized == "kill" else "victim_xuid"
+                result = conn.execute(
+                    f"""
+                    SELECT match_id, MIN(time_ms) as first_time
+                    FROM shared.highlight_events
+                    WHERE match_id IN ({placeholders})
+                      AND LOWER(event_type) = ?
+                      AND {xuid_column} = ?
+                    GROUP BY match_id
+                    """,
+                    [*match_ids, event_type_normalized, self._xuid],
+                )
+                shared_result = {row[0]: row[1] for row in result.fetchall()}
+                if shared_result:
+                    return shared_result
+            except Exception:
+                pass
+
+        # Fallback V4 : highlight_events locale (xuid unique)
         try:
-            # Vérifier si la table existe (DuckDB utilise information_schema)
             tables = conn.execute(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'highlight_events'"
             ).fetchall()
             if not tables:
                 return {}
 
-            # Normaliser event_type pour gérer les différences de casse
-            # Les données peuvent contenir "kill"/"death" (minuscules) ou "Kill"/"Death" (majuscules)
-            event_type_normalized = event_type.lower()
-
-            placeholders = ", ".join(["?" for _ in match_ids])
             result = conn.execute(
                 f"""
                 SELECT match_id, MIN(time_ms) as first_time
@@ -527,11 +666,13 @@ class DuckDBRepository(
             "type": "duckdb",
             "player_db_path": str(self._player_db_path),
             "metadata_db_path": str(self._metadata_db_path),
+            "shared_db_path": str(self._shared_db_path),
             "xuid": self._xuid,
             "gamertag": self._gamertag,
             "file_size_mb": round(file_size_mb, 2),
             "tables": tables_info,
             "has_metadata": "meta" in self._attached_dbs,
+            "has_shared": "shared" in self._attached_dbs,
         }
 
     def is_hybrid_available(self) -> bool:
@@ -977,7 +1118,8 @@ class DuckDBRepository(
     def load_highlight_events(self, match_id: str) -> list[dict[str, Any]]:
         """Charge les highlight events pour un match.
 
-        Équivalent DuckDB de src.db.loaders.load_highlight_events_for_match().
+        V5 : Utilise shared.highlight_events si disponible (tous les events du match),
+        puis complète avec les events locaux si nécessaire.
 
         Args:
             match_id: ID du match.
@@ -989,8 +1131,37 @@ class DuckDBRepository(
             return []
 
         conn = self._get_connection()
+
+        # V5 : shared.highlight_events (structure killer_xuid/victim_xuid)
+        if self._has_shared_table("highlight_events"):
+            try:
+                result = conn.execute(
+                    """
+                    SELECT event_type, time_ms,
+                           CASE WHEN LOWER(event_type) = 'kill' THEN killer_xuid
+                                WHEN LOWER(event_type) = 'death' THEN victim_xuid
+                                ELSE COALESCE(killer_xuid, victim_xuid)
+                           END AS xuid,
+                           CASE WHEN LOWER(event_type) = 'kill' THEN killer_gamertag
+                                WHEN LOWER(event_type) = 'death' THEN victim_gamertag
+                                ELSE COALESCE(killer_gamertag, victim_gamertag)
+                           END AS gamertag,
+                           type_hint
+                    FROM shared.highlight_events
+                    WHERE match_id = ?
+                    ORDER BY time_ms ASC NULLS LAST
+                    """,
+                    [match_id],
+                )
+                columns = ["event_type", "time_ms", "xuid", "gamertag", "type_hint"]
+                rows = result.fetchall()
+                if rows:
+                    return [dict(zip(columns, row, strict=False)) for row in rows]
+            except Exception as e:
+                logger.debug(f"Erreur shared.highlight_events: {e}")
+
+        # Fallback V4 : highlight_events locale
         try:
-            # Vérifier si la table existe
             tables = conn.execute(
                 "SELECT table_name FROM information_schema.tables "
                 "WHERE table_schema = 'main' AND table_name = 'highlight_events'"
@@ -1016,7 +1187,8 @@ class DuckDBRepository(
     def list_other_player_xuids(self, limit: int = 500) -> list[str]:
         """Liste les XUIDs des autres joueurs rencontrés.
 
-        Équivalent DuckDB de src.db.loaders.list_other_player_xuids().
+        V5 : Utilise shared.match_participants si disponible (roster complet).
+        Complète avec les sources locales.
 
         Args:
             limit: Nombre max de XUIDs à retourner.
@@ -1028,7 +1200,21 @@ class DuckDBRepository(
         xuids: set[str] = set()
 
         try:
-            # Depuis highlight_events
+            # V5 : shared.match_participants (tous les joueurs de tous les matchs)
+            if self._has_shared_table("match_participants"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT p2.xuid
+                    FROM shared.match_participants p1
+                    INNER JOIN shared.match_participants p2 ON p1.match_id = p2.match_id
+                    WHERE p1.xuid = ? AND p2.xuid != ?
+                    LIMIT ?
+                    """,
+                    [self._xuid, self._xuid, limit],
+                ).fetchall()
+                xuids.update(str(row[0]) for row in rows if row[0])
+
+            # Depuis highlight_events locale
             if self._has_table("highlight_events"):
                 rows = conn.execute(
                     """
@@ -1041,7 +1227,7 @@ class DuckDBRepository(
                 ).fetchall()
                 xuids.update(str(row[0]) for row in rows if row[0])
 
-            # Depuis match_participants
+            # Depuis match_participants locale
             if self._has_table("match_participants"):
                 rows = conn.execute(
                     """
