@@ -411,8 +411,8 @@ def _render_media_grid(
 def _load_match_windows_from_db(db_path: str) -> pl.DataFrame:
     """Charge les fenêtres temporelles des matchs depuis la DB pour le diagnostic.
 
-    Note: Cette fonction charge depuis toutes les DBs joueurs disponibles,
-    pas seulement celle du joueur actuel, car l'association se fait multi-joueurs.
+    V5 : Utilise shared_matches.duckdb si disponible (requête unique vs N DBs).
+    Fallback v4 : Parcourt les DBs joueurs individuelles.
     """
     _empty = pl.DataFrame(
         schema={
@@ -425,9 +425,67 @@ def _load_match_windows_from_db(db_path: str) -> pl.DataFrame:
     try:
         import duckdb
 
-        from src.utils.paths import PLAYER_DB_FILENAME, PLAYERS_DIR
+        from src.utils.paths import PLAYERS_DIR
 
-        all_windows: list[dict[str, object]] = []
+        # --- V5 : requête unique via shared_matches.duckdb ---
+        shared_db = PLAYERS_DIR.parent / "warehouse" / "shared_matches.duckdb"
+        if shared_db.exists():
+            try:
+                conn = duckdb.connect(str(shared_db), read_only=True)
+                try:
+                    matches = conn.execute(
+                        """
+                        SELECT match_id, start_time, duration_seconds
+                        FROM match_registry
+                        WHERE start_time IS NOT NULL
+                        """
+                    ).fetchall()
+                finally:
+                    conn.close()
+
+                if matches:
+                    all_windows: list[dict[str, object]] = []
+                    for match_id, start_time, duration in matches:
+                        try:
+                            if isinstance(start_time, datetime):
+                                dt_start = start_time
+                            elif isinstance(start_time, str):
+                                if start_time.endswith("Z"):
+                                    dt_start = datetime.fromisoformat(start_time[:-1] + "+00:00")
+                                elif "+" in start_time or start_time.count("-") > 2:
+                                    dt_start = datetime.fromisoformat(start_time)
+                                else:
+                                    dt_start = datetime.fromisoformat(start_time + "+00:00")
+                            else:
+                                continue
+
+                            start_epoch = _epoch_seconds_paris(dt_start)
+                            if start_epoch is None:
+                                continue
+
+                            dur = float(duration or 0) if duration else 12 * 60
+                            end_epoch = start_epoch + dur
+
+                            all_windows.append(
+                                {
+                                    "match_id": str(match_id),
+                                    "start_epoch": start_epoch,
+                                    "end_epoch": end_epoch,
+                                    "start_time": dt_start,
+                                }
+                            )
+                        except Exception:
+                            continue
+
+                    if all_windows:
+                        return pl.DataFrame(all_windows).sort("start_epoch")
+            except Exception:
+                pass  # Fallback vers v4
+
+        # --- Fallback V4 : parcourir les DBs joueurs ---
+        from src.utils.paths import PLAYER_DB_FILENAME
+
+        all_windows = []
 
         # Parcourir toutes les DBs joueurs
         if PLAYERS_DIR.exists():

@@ -33,6 +33,149 @@ class MatchQueriesMixin:
     """Mixin fournissant les méthodes de requête de matchs pour DuckDBRepository."""
 
     # =========================================================================
+    # Source de données matchs (v5 shared / v4 local)
+    # =========================================================================
+
+    def _get_match_source(self, conn) -> tuple[str, list[str]]:
+        """Retourne l'expression FROM pour les matchs (v5 shared ou v4 local).
+
+        En mode v5, construit une sous-requête combinant shared.match_registry,
+        shared.match_participants et un LEFT JOIN vers match_stats local pour
+        les colonnes non disponibles dans shared (kda, spree, headshot_kills, etc.).
+        La sous-requête est aliasée ``match_stats`` pour que toutes les références
+        externes (jointures metadata, MMR, filtres) restent inchangées.
+
+        En mode v4, retourne simplement ``"match_stats"`` (table locale directe).
+
+        Returns:
+            Tuple (from_expression, params).
+        """
+        if not (
+            self.has_shared
+            and self._has_shared_table("match_registry")
+            and self._has_shared_table("match_participants")
+        ):
+            return "match_stats", []
+
+        # Vérifier si la table match_stats locale existe (période de transition)
+        has_ms = (
+            conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'match_stats'"
+            ).fetchone()[0]
+            > 0
+        )
+
+        if has_ms:
+            ms_join = "LEFT JOIN match_stats ms ON r.match_id = ms.match_id"
+            # Vérifier les colonnes optionnelles dans match_stats local
+            has_is_ranked = self._has_column(conn, "match_stats", "is_ranked")
+            has_is_firefight = self._has_column(conn, "match_stats", "is_firefight")
+
+            kda_expr = (
+                "COALESCE(ms.kda, "
+                "CASE WHEN p.deaths > 0 "
+                "THEN (CAST(p.kills AS FLOAT) + CAST(p.assists AS FLOAT) / 3.0) "
+                "/ CAST(p.deaths AS FLOAT) "
+                "ELSE CAST(p.kills AS FLOAT) + CAST(p.assists AS FLOAT) / 3.0 END)"
+            )
+            spree_expr = "COALESCE(ms.max_killing_spree, 0)"
+            hs_expr = "COALESCE(ms.headshot_kills, 0)"
+            avg_life_expr = "COALESCE(ms.avg_life_seconds, 0)"
+            mmr_team = "ms.team_mmr"
+            mmr_enemy = "ms.enemy_mmr"
+            time_expr = "COALESCE(r.duration_seconds, ms.time_played_seconds)"
+            acc_expr = (
+                "COALESCE(ms.accuracy, "
+                "CASE WHEN p.shots_fired > 0 "
+                "THEN CAST(p.shots_hit AS FLOAT) * 100.0 / CAST(p.shots_fired AS FLOAT) "
+                "ELSE NULL END)"
+            )
+            my_score = (
+                "COALESCE(ms.my_team_score, "
+                "CASE WHEN p.team_id = 0 THEN r.team_0_score ELSE r.team_1_score END)"
+            )
+            enemy_score = (
+                "COALESCE(ms.enemy_team_score, "
+                "CASE WHEN p.team_id = 0 THEN r.team_1_score ELSE r.team_0_score END)"
+            )
+            pscore = "COALESCE(ms.personal_score, p.score)"
+            map_name = "COALESCE(r.map_name, ms.map_name)"
+            playlist_name = "COALESCE(r.playlist_name, ms.playlist_name)"
+            pair_name = "COALESCE(r.pair_name, ms.pair_name)"
+            gv_name = "COALESCE(r.game_variant_name, ms.game_variant_name)"
+            is_ff = (
+                f"COALESCE(r.is_firefight, {'ms.is_firefight, ' if has_is_firefight else ''}FALSE)"
+            )
+            is_rk = f"COALESCE(r.is_ranked, {'ms.is_ranked, ' if has_is_ranked else ''}FALSE)"
+        else:
+            ms_join = ""
+            kda_expr = (
+                "CASE WHEN p.deaths > 0 "
+                "THEN (CAST(p.kills AS FLOAT) + CAST(p.assists AS FLOAT) / 3.0) "
+                "/ CAST(p.deaths AS FLOAT) "
+                "ELSE CAST(p.kills AS FLOAT) + CAST(p.assists AS FLOAT) / 3.0 END"
+            )
+            spree_expr = "0"
+            hs_expr = "0"
+            avg_life_expr = "0"
+            mmr_team = "NULL"
+            mmr_enemy = "NULL"
+            time_expr = "r.duration_seconds"
+            acc_expr = (
+                "CASE WHEN p.shots_fired > 0 "
+                "THEN CAST(p.shots_hit AS FLOAT) * 100.0 / CAST(p.shots_fired AS FLOAT) "
+                "ELSE NULL END"
+            )
+            my_score = "CASE WHEN p.team_id = 0 THEN r.team_0_score ELSE r.team_1_score END"
+            enemy_score = "CASE WHEN p.team_id = 0 THEN r.team_1_score ELSE r.team_0_score END"
+            pscore = "p.score"
+            map_name = "r.map_name"
+            playlist_name = "r.playlist_name"
+            pair_name = "r.pair_name"
+            gv_name = "r.game_variant_name"
+            is_ff = "COALESCE(r.is_firefight, FALSE)"
+            is_rk = "COALESCE(r.is_ranked, FALSE)"
+
+        source = f"""(SELECT
+            r.match_id,
+            r.start_time,
+            r.map_id,
+            {map_name} AS map_name,
+            r.playlist_id,
+            {playlist_name} AS playlist_name,
+            r.pair_id,
+            {pair_name} AS pair_name,
+            r.game_variant_id,
+            {gv_name} AS game_variant_name,
+            p.outcome,
+            p.team_id,
+            {kda_expr} AS kda,
+            {spree_expr} AS max_killing_spree,
+            {hs_expr} AS headshot_kills,
+            {avg_life_expr} AS avg_life_seconds,
+            {time_expr} AS time_played_seconds,
+            COALESCE(p.kills, 0) AS kills,
+            COALESCE(p.deaths, 0) AS deaths,
+            COALESCE(p.assists, 0) AS assists,
+            {acc_expr} AS accuracy,
+            {my_score} AS my_team_score,
+            {enemy_score} AS enemy_team_score,
+            {mmr_team} AS team_mmr,
+            {mmr_enemy} AS enemy_mmr,
+            {pscore} AS personal_score,
+            {is_ff} AS is_firefight,
+            {is_rk} AS is_ranked
+        FROM shared.match_registry r
+        JOIN shared.match_participants p
+            ON r.match_id = p.match_id AND p.xuid = ?
+        {ms_join}
+        ) AS match_stats"""
+
+        logger.debug("Mode v5 : requête via shared.match_registry + match_participants")
+        return source, [self._xuid]
+
+    # =========================================================================
     # Chargement des matchs
     # =========================================================================
 
@@ -48,13 +191,16 @@ class MatchQueriesMixin:
         offset: int | None = None,
     ) -> list[MatchRow]:
         """
-        Charge tous les matchs depuis match_stats.
-        (Load all matches from match_stats)
+        Charge tous les matchs (v5 : shared + local, v4 : local uniquement).
         """
         conn = self._get_connection()
 
+        # Source v5 (shared) ou v4 (locale)
+        source_sql, source_params = self._get_match_source(conn)
+        is_shared = bool(source_params)
+
         where_clauses = []
-        params = []
+        params: list = []
 
         if playlist_filter:
             where_clauses.append("playlist_id = ?")
@@ -92,12 +238,16 @@ class MatchQueriesMixin:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
-        personal_score_select = self._select_optional_column(
-            conn,
-            table_name="match_stats",
-            table_alias="match_stats",
-            column_name="personal_score",
-        )
+        # En mode shared, personal_score est toujours dans la sous-requête
+        if is_shared:
+            personal_score_select = "match_stats.personal_score"
+        else:
+            personal_score_select = self._select_optional_column(
+                conn,
+                table_name="match_stats",
+                table_alias="match_stats",
+                column_name="personal_score",
+            )
 
         sql = f"""
             SELECT
@@ -127,11 +277,13 @@ class MatchQueriesMixin:
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
                 {personal_score_select}
-            FROM match_stats{metadata_joins}{pms_join}
+            FROM {source_sql}{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time ASC
             {pagination_sql}
         """
+
+        all_params = source_params + params
 
         # Log de debug pour diagnostiquer les problèmes de requête
         if logger.isEnabledFor(logging.DEBUG):
@@ -142,7 +294,7 @@ class MatchQueriesMixin:
             )
 
         try:
-            result = conn.execute(sql, params) if params else conn.execute(sql)
+            result = conn.execute(sql, all_params) if all_params else conn.execute(sql)
         except Exception as e:
             # Si la requête avec jointures échoue, essayer sans jointures
             logger.warning(
@@ -178,12 +330,14 @@ class MatchQueriesMixin:
                     {team_mmr_expr} as team_mmr,
                     {enemy_mmr_expr} as enemy_mmr,
                     {personal_score_select}
-                FROM match_stats{pms_join}
+                FROM {source_sql}{pms_join}
                 WHERE {where_sql}
                 ORDER BY match_stats.start_time ASC
                 {pagination_sql}
             """
-            result = conn.execute(sql_fallback, params) if params else conn.execute(sql_fallback)
+            result = (
+                conn.execute(sql_fallback, all_params) if all_params else conn.execute(sql_fallback)
+            )
         rows = result.fetchall()
         columns = [desc[0] for desc in result.description]
 
@@ -229,6 +383,10 @@ class MatchQueriesMixin:
         """Charge les matchs dans une plage de dates."""
         conn = self._get_connection()
 
+        # Source v5 (shared) ou v4 (locale)
+        source_sql, source_params = self._get_match_source(conn)
+        is_shared = bool(source_params)
+
         # Résoudre les métadonnées depuis meta.* si disponible
         metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
             self._build_metadata_resolution(conn)
@@ -237,12 +395,15 @@ class MatchQueriesMixin:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
-        personal_score_select = self._select_optional_column(
-            conn,
-            table_name="match_stats",
-            table_alias="match_stats",
-            column_name="personal_score",
-        )
+        if is_shared:
+            personal_score_select = "match_stats.personal_score"
+        else:
+            personal_score_select = self._select_optional_column(
+                conn,
+                table_name="match_stats",
+                table_alias="match_stats",
+                column_name="personal_score",
+            )
 
         sql = f"""
             SELECT
@@ -272,12 +433,13 @@ class MatchQueriesMixin:
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
                 {personal_score_select}
-            FROM match_stats{metadata_joins}{pms_join}
+            FROM {source_sql}{metadata_joins}{pms_join}
             WHERE match_stats.start_time >= ? AND match_stats.start_time <= ?
             ORDER BY match_stats.start_time ASC
         """
 
-        result = conn.execute(sql, [start_date, end_date])
+        all_params = source_params + [start_date, end_date]
+        result = conn.execute(sql, all_params)
         rows = result.fetchall()
         columns = [desc[0] for desc in result.description]
 
@@ -316,9 +478,23 @@ class MatchQueriesMixin:
         ]
 
     def get_match_count(self) -> int:
-        """Retourne le nombre total de matchs."""
+        """Retourne le nombre total de matchs.
+
+        En mode v5, compte depuis shared.match_participants pour le xuid.
+        En mode v4, compte depuis match_stats locale.
+        """
         conn = self._get_connection()
-        result = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+        if (
+            self.has_shared
+            and self._has_shared_table("match_registry")
+            and self._has_shared_table("match_participants")
+        ):
+            result = conn.execute(
+                "SELECT COUNT(*) FROM shared.match_participants WHERE xuid = ?",
+                [self._xuid],
+            ).fetchone()
+        else:
+            result = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
         return result[0] if result else 0
 
     # =========================================================================
@@ -345,6 +521,10 @@ class MatchQueriesMixin:
         """
         conn = self._get_connection()
 
+        # Source v5 (shared) ou v4 (locale)
+        source_sql, source_params = self._get_match_source(conn)
+        is_shared = bool(source_params)
+
         # Résoudre les métadonnées depuis meta.* si disponible
         metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
             self._build_metadata_resolution(conn)
@@ -353,12 +533,15 @@ class MatchQueriesMixin:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
-        personal_score_select = self._select_optional_column(
-            conn,
-            table_name="match_stats",
-            table_alias="match_stats",
-            column_name="personal_score",
-        )
+        if is_shared:
+            personal_score_select = "match_stats.personal_score"
+        else:
+            personal_score_select = self._select_optional_column(
+                conn,
+                table_name="match_stats",
+                table_alias="match_stats",
+                column_name="personal_score",
+            )
 
         where_clauses = []
         if not include_firefight:
@@ -394,13 +577,13 @@ class MatchQueriesMixin:
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
                 {personal_score_select}
-            FROM match_stats{metadata_joins}{pms_join}
+            FROM {source_sql}{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time DESC
             LIMIT {int(limit)}
         """
 
-        result = conn.execute(sql)
+        result = conn.execute(sql, source_params) if source_params else conn.execute(sql)
         rows = result.fetchall()
         columns = [desc[0] for desc in result.description]
 
@@ -467,6 +650,10 @@ class MatchQueriesMixin:
 
         conn = self._get_connection()
 
+        # Source v5 (shared) ou v4 (locale)
+        source_sql, source_params = self._get_match_source(conn)
+        is_shared = bool(source_params)
+
         # Résoudre les métadonnées depuis meta.* si disponible
         metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
             self._build_metadata_resolution(conn)
@@ -475,12 +662,15 @@ class MatchQueriesMixin:
         # Fallback MMR depuis player_match_stats si disponible
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
 
-        personal_score_select = self._select_optional_column(
-            conn,
-            table_name="match_stats",
-            table_alias="match_stats",
-            column_name="personal_score",
-        )
+        if is_shared:
+            personal_score_select = "match_stats.personal_score"
+        else:
+            personal_score_select = self._select_optional_column(
+                conn,
+                table_name="match_stats",
+                table_alias="match_stats",
+                column_name="personal_score",
+            )
 
         where_clauses = []
         if not include_firefight:
@@ -517,13 +707,13 @@ class MatchQueriesMixin:
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
                 {personal_score_select}
-            FROM match_stats{metadata_joins}{pms_join}
+            FROM {source_sql}{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time {order_dir}
             LIMIT {int(page_size)} OFFSET {int(offset)}
         """
 
-        result = conn.execute(sql)
+        result = conn.execute(sql, source_params) if source_params else conn.execute(sql)
         rows = result.fetchall()
         columns = [desc[0] for desc in result.description]
 
@@ -653,6 +843,10 @@ class MatchQueriesMixin:
         """
         conn = self._get_connection()
 
+        # Source v5 (shared) ou v4 (locale)
+        source_sql, source_params = self._get_match_source(conn)
+        is_shared = bool(source_params)
+
         where_clauses = []
         if not include_firefight:
             where_clauses.append("match_stats.is_firefight = FALSE")
@@ -663,12 +857,15 @@ class MatchQueriesMixin:
             self._build_metadata_resolution(conn)
         )
         pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
-        personal_score_select = self._select_optional_column(
-            conn,
-            table_name="match_stats",
-            table_alias="match_stats",
-            column_name="personal_score",
-        )
+        if is_shared:
+            personal_score_select = "match_stats.personal_score"
+        else:
+            personal_score_select = self._select_optional_column(
+                conn,
+                table_name="match_stats",
+                table_alias="match_stats",
+                column_name="personal_score",
+            )
 
         # Colonnes complètes avec alias standardisés
         all_select_exprs = f"""
@@ -702,13 +899,13 @@ class MatchQueriesMixin:
 
         sql = f"""
             SELECT {all_select_exprs}
-            FROM match_stats{metadata_joins}{pms_join}
+            FROM {source_sql}{metadata_joins}{pms_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time ASC
         """
 
         try:
-            result = conn.execute(sql)
+            result = conn.execute(sql, source_params) if source_params else conn.execute(sql)
             df = result_to_polars(result)
         except Exception as e:
             logger.warning(f"Requête avec jointures échouée: {e}. Fallback.")
@@ -740,11 +937,15 @@ class MatchQueriesMixin:
                     {team_mmr_expr} as team_mmr,
                     {enemy_mmr_expr} as enemy_mmr,
                     {personal_score_select}
-                FROM match_stats{pms_join}
+                FROM {source_sql}{pms_join}
                 WHERE {where_sql}
                 ORDER BY match_stats.start_time ASC
             """
-            result = conn.execute(sql_fallback)
+            result = (
+                conn.execute(sql_fallback, source_params)
+                if source_params
+                else conn.execute(sql_fallback)
+            )
             df = result_to_polars(result)
 
         if df.is_empty():
@@ -797,8 +998,11 @@ class MatchQueriesMixin:
         """
         conn = self._get_connection()
 
+        # Source v5 (shared) ou v4 (locale)
+        source_sql, source_params = self._get_match_source(conn)
+
         where_clauses = []
-        params = []
+        params: list = []
 
         if match_ids:
             placeholders = ", ".join(["?" for _ in match_ids])
@@ -838,14 +1042,15 @@ class MatchQueriesMixin:
                 enemy_team_score,
                 team_mmr,
                 enemy_mmr
-            FROM match_stats
+            FROM {source_sql}
             WHERE {where_sql}
             ORDER BY start_time ASC
             {limit_sql}
         """
 
+        all_params = source_params + params
         try:
-            result = conn.execute(sql, params) if params else conn.execute(sql)
+            result = conn.execute(sql, all_params) if all_params else conn.execute(sql)
             return result_to_polars(result)
         except Exception as e:
             logger.warning(f"Erreur chargement match_stats Polars: {e}")

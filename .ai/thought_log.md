@@ -7,6 +7,45 @@
 
 ## Journal
 
+### [2026-02-15] - Sprint 5 v5 — Refactoring UI Big Bang (match queries)
+
+**Statut** : Terminé ✅
+
+**Objectif** : Faire lire toutes les méthodes `load_matches*()` depuis `shared.match_registry` + `shared.match_participants` (v5) avec fallback v4 transparent.
+
+**Réalisations** :
+
+**1. `_get_match_source(conn)` — Cœur du Sprint 5** :
+- Nouvelle méthode dans `_match_queries.py` retournant `(source_sql, params)` :
+  - Mode v5 : sous-requête combinant `shared.match_registry r`, `shared.match_participants p`, et `LEFT JOIN match_stats ms` (enrichissement local). Aliasée `match_stats` pour compatibilité.
+  - Mode v4 : retourne `"match_stats"` directement.
+- Gère les colonnes optionnelles (`is_ranked`, `is_firefight`) via `_has_column()`.
+- Calculs KDA, accuracy, scores à la volée si match_stats locale absente.
+
+**2. 6 méthodes refactorées** :
+- `load_matches()`, `load_matches_in_range()`, `load_recent_matches()`, `load_matches_paginated()`, `load_matches_as_polars()`, `load_match_stats_as_polars()`, `get_match_count()`.
+
+**3. `media_library.py`** — Optimisation pour shared :
+- `_load_match_windows_from_db()` interroge directement `shared_matches.duckdb` au lieu d'itérer les DB joueurs.
+
+**4. `remove_compat_views.py`** — Script de suppression des VIEWs :
+- CLI : `python scripts/migration/remove_compat_views.py [gamertag] [--all] [--dry-run]`
+- Supprime `v_match_stats`, `v_medals_earned`, `v_highlight_events`, `v_match_participants`.
+
+**5. Tests** :
+- `test_v5_match_queries.py` : 35 tests couvrant shared, v4 fallback, no-local-ms, pagination, Polars, remove_compat_views.
+- `test_lazy_loading.py` : 5 tests mock corrigés (forcé mode v4 pour les mocks MagicMock).
+- **1581 tests passent** (1 échec pré-existant non lié : taille `cache_loaders.py`).
+
+**6. Validation live** : 247 matchs chargés via shared (vs 241 en v4 local) — correct.
+
+**Décisions clés** :
+- Sous-requête aliasée `match_stats` plutôt que réécriture de toutes les références externes → changement minimal, risque réduit.
+- LEFT JOIN vers match_stats local pour enrichissement (kda, spree, headshot_kills, avg_life, mmr) → migration progressive possible.
+- COALESCE systématique : priorité aux données locales enrichies, fallback sur calculs partagés.
+
+---
+
 ### [2026-02-14] - Ajout archivage PLAN_UNIFIE.md et scripts v5
 
 **Statut** : Terminé ✅

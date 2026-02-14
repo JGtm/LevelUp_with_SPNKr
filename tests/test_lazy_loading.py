@@ -123,6 +123,9 @@ class TestLoadMatchesPagination:
             # Créer un repo avec un path qui "existe"
             with patch.object(Path, "exists", return_value=True):
                 repo = DuckDBRepository(Path("/fake/path.duckdb"), "12345")
+                # Forcer mode v4 : connexion déjà établie, sans shared attaché
+                repo._connection = mock_conn
+                repo._attached_dbs = set()
                 repo.load_matches(limit=10)
 
             # Vérifier que LIMIT est dans la requête
@@ -144,6 +147,8 @@ class TestLoadMatchesPagination:
 
             with patch.object(Path, "exists", return_value=True):
                 repo = DuckDBRepository(Path("/fake/path.duckdb"), "12345")
+                repo._connection = mock_conn
+                repo._attached_dbs = set()
                 repo.load_matches(limit=10, offset=20)
 
             calls = mock_conn.execute.call_args_list
@@ -164,6 +169,8 @@ class TestLoadMatchesPagination:
 
             with patch.object(Path, "exists", return_value=True):
                 repo = DuckDBRepository(Path("/fake/path.duckdb"), "12345")
+                repo._connection = mock_conn
+                repo._attached_dbs = set()
                 repo.load_matches()
 
             # La requête ne devrait pas contenir LIMIT (sauf si None est interpolé)
@@ -199,6 +206,8 @@ class TestLoadRecentMatches:
 
             with patch.object(Path, "exists", return_value=True):
                 repo = DuckDBRepository(Path("/fake/path.duckdb"), "12345")
+                repo._connection = mock_conn
+                repo._attached_dbs = set()
                 repo.load_recent_matches()
 
             calls = mock_conn.execute.call_args_list
@@ -231,6 +240,8 @@ class TestLoadRecentMatches:
                 ),
             ):
                 repo = DuckDBRepository(Path("/fake/path.duckdb"), "12345")
+                repo._connection = mock_conn
+                repo._attached_dbs = set()
                 repo.load_recent_matches(limit=10)
 
             calls = mock_conn.execute.call_args_list
