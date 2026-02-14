@@ -1464,7 +1464,7 @@ git tag -l | grep "v4.5" || true
 - [x] Temps d'ouverture Timeseries et Coéquipiers amélioré de façon mesurable (objectif combiné: `-25%` minimum vs baseline S16.0b) — **résultat : -61.2%** 🚀
 - [x] Pas de régression fonctionnelle sur filtres et navigation inter-pages
 - [x] Rapport S19 publié (`.ai/reports/V4_5_POST_OPTIM_PERF_S19.md`)
-- [ ] Tag `v4.5.1` créé si modifications substantielles post-release
+- [x] Tag `v4.5.1` créé si modifications substantielles post-release
 
 #### Commandes de validation
 
