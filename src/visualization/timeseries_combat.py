@@ -12,7 +12,7 @@ from plotly.subplots import make_subplots
 from src.analysis.performance_config import SCORE_THRESHOLDS
 from src.config import HALO_COLORS, PLOT_CONFIG
 from src.ui.components.chart_annotations import add_extreme_annotations  # noqa: F401
-from src.visualization._compat import DataFrameLike, ensure_polars  # noqa: F401
+from src.visualization._compat import DataFrameLike, ensure_polars, smart_scatter  # noqa: F401
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 from src.visualization.timeseries import _normalize_df, _rolling_mean
 
@@ -64,7 +64,7 @@ def plot_average_life(df: DataFrameLike, title: str = "Durée de vie moyenne") -
     )
 
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
             y=_rolling_mean(y, window=10).to_list(),
             mode="lines",
@@ -275,7 +275,7 @@ def plot_performance_timeseries(
     if show_smooth:
         smooth = _rolling_mean(performance, window=10)
         fig.add_trace(
-            go.Scatter(
+            smart_scatter(
                 x=x_idx,
                 y=smooth.to_list(),
                 mode="lines",
@@ -439,7 +439,7 @@ def plot_damage_dealt_taken(
             )
         )
         fig.add_trace(
-            go.Scatter(
+            smart_scatter(
                 x=x_idx,
                 y=_rolling_mean(dealt, window=10).to_list(),
                 mode="lines",
@@ -462,7 +462,7 @@ def plot_damage_dealt_taken(
             )
         )
         fig.add_trace(
-            go.Scatter(
+            smart_scatter(
                 x=x_idx,
                 y=_rolling_mean(taken, window=10).to_list(),
                 mode="lines",
@@ -553,7 +553,7 @@ def plot_shots_accuracy(
     if "accuracy" in d.columns:
         accuracy = d["accuracy"].cast(pl.Float64, strict=False)
         fig.add_trace(
-            go.Scatter(
+            smart_scatter(
                 x=x_idx,
                 y=accuracy.to_list(),
                 mode="lines",
@@ -632,7 +632,7 @@ def plot_rank_score(
     if "rank" in d.columns:
         rank = d["rank"].cast(pl.Float64, strict=False)
         fig.add_trace(
-            go.Scatter(
+            smart_scatter(
                 x=x_idx,
                 y=rank.to_list(),
                 mode="lines+markers",

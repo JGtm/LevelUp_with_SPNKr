@@ -13,6 +13,7 @@ Principe :
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any, Union
 
 import polars as pl
@@ -72,3 +73,43 @@ def ensure_polars_series(s: Any) -> pl.Series:
         return s
     # pd.Series → pl.Series
     return pl.from_pandas(s)
+
+
+# ---------------------------------------------------------------------------
+# Plotly Scattergl conditionnel (Sprint 19 — tâche 19.5)
+# ---------------------------------------------------------------------------
+
+# Seuil de points au-delà duquel on bascule en WebGL (Scattergl).
+# En dessous, go.Scatter (SVG) est privilégié pour meilleure qualité.
+_SCATTERGL_THRESHOLD: int = 500
+
+
+def smart_scatter(**kwargs: Any) -> go.BaseTraceType:  # noqa: F821
+    """Retourne ``go.Scattergl`` si le nombre de points dépasse le seuil, sinon ``go.Scatter``.
+
+    Même signature et même rendu visuel que ``go.Scatter``.
+    Le basculement est transparent : Scattergl supporte les mêmes paramètres.
+
+    Le seuil est défini par ``_SCATTERGL_THRESHOLD`` (500 points par défaut).
+
+    Args:
+        **kwargs: Paramètres identiques à ``go.Scatter`` / ``go.Scattergl``.
+
+    Returns:
+        Trace Plotly (Scatter ou Scattergl).
+    """
+    import plotly.graph_objects as _go
+
+    n_points = 0
+    x = kwargs.get("x")
+    y = kwargs.get("y")
+    if x is not None:
+        with contextlib.suppress(TypeError):
+            n_points = len(x)
+    elif y is not None:
+        with contextlib.suppress(TypeError):
+            n_points = len(y)
+
+    if n_points >= _SCATTERGL_THRESHOLD:
+        return _go.Scattergl(**kwargs)
+    return _go.Scatter(**kwargs)

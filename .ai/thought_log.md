@@ -1715,6 +1715,35 @@ docs/DATA_ARCHITECTURE.md        # MAJ
 
 ---
 
+### 2026-02-14 - Sprint 19 : Optimisation post-release (zero-copy Arrow)
+
+**Contexte** : Le benchmark post-S18 montrait un gain combiné modeste (~3%) car le baseline DuckDB était déjà performant. S19 était conditionnel (activé si gain < -25%), mais le gain n'atteignait pas le seuil. Décision : activer S19 manuellement pour optimiser plus en profondeur.
+
+**Raisonnement** : Le bottleneck identifié était la reconstruction Python — `fetchall()` → `MatchRow(...)` × N → DataFrame — un chemin O(N) en Python pur. En utilisant le bridge Arrow natif de DuckDB (`result.fetch_arrow_table()`), on peut transférer les données directement en mémoire zero-copy vers Polars.
+
+**Décision** : 6 tâches implémentées :
+1. **19.1** : Chemin zero-copy `DuckDB → Arrow → Polars` via `load_matches_as_polars()` + `_load_matches_duckdb_v4_polars()`
+2. **19.2** : Élimination `.to_pandas()` dans teammates_impact.py (remplacé par `.rename()` Polars natif)
+3. **19.3** : Constantes `COLUMNS_COMMON`/`COLUMNS_COMPUTED` + paramètre `columns` pour projection
+4. **19.4** : Unification `get_db_cache_key()` → délégation vers `db_cache_key()` (plus de duplication)
+5. **19.5** : `smart_scatter()` dans `_compat.py` — `go.Scattergl` (WebGL) si > 500 points, sinon `go.Scatter` (SVG). 12 appels remplacés
+6. **19.6** : Benchmark + rapport publié
+
+**Résultats benchmark** :
+- Cold load : 161.5ms → **42.2ms** (**-73.9%**) via zero-copy
+- Warm load : 21.5ms → **15.4ms** (**-28.4%**) via zero-copy
+- Gain combiné Timeseries+Coéquipiers : **-61.2%** (objectif -25% largement dépassé)
+- 36 nouveaux tests (20 perf contracts + 16 hot-path), 0 régression
+
+**Suivi** :
+- [x] 19.1-19.6 : Toutes les tâches ✅
+- [x] Tests : 83 existants + 36 nouveaux = 119 tests, 0 failure ✅
+- [x] Rapport : `.ai/reports/V4_5_POST_OPTIM_PERF_S19.md` ✅
+- [x] PLAN_UNIFIE.md mis à jour ✅
+- [ ] Tag `v4.5.1` à créer (optionnel)
+
+---
+
 ## Format des Entrées
 
 ```

@@ -281,7 +281,8 @@ def load_df_hybrid(
             if not df_pd.is_empty():
                 return df_pd
         elif hasattr(df_pd, "empty") and not df_pd.empty:
-            # Pandas DataFrame — convertir en Polars
+            # Pandas DataFrame — convertir en Polars (bridge résiduel, mode intégration legacy)
+            logger.debug("load_df_hybrid: conversion Pandas→Polars (mode intégration)")
             return pl.from_pandas(df_pd)
 
         # Fallback sur legacy si vide (pas de données Parquet)

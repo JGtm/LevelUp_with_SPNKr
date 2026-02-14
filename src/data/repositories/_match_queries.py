@@ -18,6 +18,8 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from src.data.domain.models.stats import MatchRow
 from src.data.repositories._arrow_bridge import result_to_polars
 
@@ -620,7 +622,158 @@ class MatchQueriesMixin:
         return {row[0]: (row[1], row[2]) for row in result.fetchall()}
 
     # =========================================================================
-    # Export Polars
+    # Chargement Polars zero-copy (Sprint 19 — hot path optimisé)
+    # =========================================================================
+
+    def load_matches_as_polars(
+        self,
+        *,
+        include_firefight: bool = True,
+        columns: list[str] | None = None,
+    ) -> pl.DataFrame:
+        """Charge les matchs en DataFrame Polars via Arrow zero-copy.
+
+        Chemin optimisé S19 : DuckDB → Arrow → Polars sans intermédiaire
+        MatchRow ni reconstruction Python. ~3× moins de copies mémoire
+        que load_matches() + reconstruction DataFrame.
+
+        Args:
+            include_firefight: Inclure les matchs PvE.
+            columns: Liste de colonnes à projeter (None = toutes).
+                     Colonnes disponibles : match_id, start_time, map_id,
+                     map_name, playlist_id, playlist_name, pair_id,
+                     pair_name, game_variant_id, game_variant_name,
+                     outcome, team_id, kda, max_killing_spree,
+                     headshot_kills, avg_life_seconds, time_played_seconds,
+                     kills, deaths, assists, accuracy, my_team_score,
+                     enemy_team_score, team_mmr, enemy_mmr, personal_score.
+
+        Returns:
+            DataFrame Polars avec les colonnes demandées.
+        """
+        conn = self._get_connection()
+
+        where_clauses = []
+        if not include_firefight:
+            where_clauses.append("match_stats.is_firefight = FALSE")
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+        # Résoudre les métadonnées
+        metadata_joins, map_name_expr, playlist_name_expr, pair_name_expr = (
+            self._build_metadata_resolution(conn)
+        )
+        pms_join, team_mmr_expr, enemy_mmr_expr = self._build_mmr_fallback(conn)
+        personal_score_select = self._select_optional_column(
+            conn,
+            table_name="match_stats",
+            table_alias="match_stats",
+            column_name="personal_score",
+        )
+
+        # Colonnes complètes avec alias standardisés
+        all_select_exprs = f"""
+                match_stats.match_id,
+                match_stats.start_time,
+                match_stats.map_id,
+                {map_name_expr} as map_name,
+                match_stats.playlist_id,
+                {playlist_name_expr} as playlist_name,
+                match_stats.pair_id,
+                {pair_name_expr} as pair_name,
+                match_stats.game_variant_id,
+                match_stats.game_variant_name,
+                match_stats.outcome,
+                match_stats.team_id,
+                match_stats.kda,
+                match_stats.max_killing_spree,
+                match_stats.headshot_kills,
+                match_stats.avg_life_seconds,
+                match_stats.time_played_seconds,
+                COALESCE(match_stats.kills, 0) as kills,
+                COALESCE(match_stats.deaths, 0) as deaths,
+                COALESCE(match_stats.assists, 0) as assists,
+                match_stats.accuracy,
+                match_stats.my_team_score,
+                match_stats.enemy_team_score,
+                {team_mmr_expr} as team_mmr,
+                {enemy_mmr_expr} as enemy_mmr,
+                {personal_score_select}
+        """
+
+        sql = f"""
+            SELECT {all_select_exprs}
+            FROM match_stats{metadata_joins}{pms_join}
+            WHERE {where_sql}
+            ORDER BY match_stats.start_time ASC
+        """
+
+        try:
+            result = conn.execute(sql)
+            df = result_to_polars(result)
+        except Exception as e:
+            logger.warning(f"Requête avec jointures échouée: {e}. Fallback.")
+            sql_fallback = f"""
+                SELECT
+                    match_stats.match_id,
+                    match_stats.start_time,
+                    match_stats.map_id,
+                    match_stats.map_name,
+                    match_stats.playlist_id,
+                    match_stats.playlist_name,
+                    match_stats.pair_id,
+                    match_stats.pair_name,
+                    match_stats.game_variant_id,
+                    match_stats.game_variant_name,
+                    match_stats.outcome,
+                    match_stats.team_id,
+                    match_stats.kda,
+                    match_stats.max_killing_spree,
+                    match_stats.headshot_kills,
+                    match_stats.avg_life_seconds,
+                    match_stats.time_played_seconds,
+                    COALESCE(match_stats.kills, 0) as kills,
+                    COALESCE(match_stats.deaths, 0) as deaths,
+                    COALESCE(match_stats.assists, 0) as assists,
+                    match_stats.accuracy,
+                    match_stats.my_team_score,
+                    match_stats.enemy_team_score,
+                    {team_mmr_expr} as team_mmr,
+                    {enemy_mmr_expr} as enemy_mmr,
+                    {personal_score_select}
+                FROM match_stats{pms_join}
+                WHERE {where_sql}
+                ORDER BY match_stats.start_time ASC
+            """
+            result = conn.execute(sql_fallback)
+            df = result_to_polars(result)
+
+        if df.is_empty():
+            return df
+
+        # Calculer le ratio en Polars (COALESCE kills/deaths déjà fait en SQL)
+        df = df.with_columns(
+            pl.when(pl.col("deaths") > 0)
+            .then(
+                (pl.col("kills").cast(pl.Float64) + pl.col("assists").cast(pl.Float64) / 2.0)
+                / pl.col("deaths").cast(pl.Float64)
+            )
+            .otherwise(pl.lit(float("nan")))
+            .alias("ratio")
+        )
+
+        # Renommer avg_life_seconds → average_life_seconds pour compat avec le code existant
+        if "avg_life_seconds" in df.columns:
+            df = df.rename({"avg_life_seconds": "average_life_seconds"})
+
+        # Projection de colonnes si demandée (tâche 19.3)
+        if columns is not None:
+            available = [c for c in columns if c in df.columns]
+            df = df.select(available)
+
+        return df
+
+    # =========================================================================
+    # Export Polars (legacy — préférer load_matches_as_polars)
     # =========================================================================
 
     def load_match_stats_as_polars(

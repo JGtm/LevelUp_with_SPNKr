@@ -12,6 +12,7 @@ from src.visualization._compat import (
     DataFrameLike,
     ensure_polars,
     ensure_polars_series,
+    smart_scatter,
 )
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
@@ -104,7 +105,7 @@ def _add_kda_traces(
         secondary_y=False,
     )
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
             y=d["ratio"].to_list(),
             mode="lines",
@@ -232,7 +233,7 @@ def plot_assists_timeseries(df: DataFrameLike, title: str = "Assistances") -> go
     assists_series = d["assists"].cast(pl.Float64, strict=False)
     smooth = _rolling_mean(assists_series, window=10)
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
             y=smooth.to_list(),
             mode="lines",
@@ -279,7 +280,7 @@ def _add_permin_rolling_lines(
         colors: Dict de couleurs HALO.
     """
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
             y=_rolling_mean(kpm, window=10).to_list(),
             mode="lines",
@@ -289,7 +290,7 @@ def _add_permin_rolling_lines(
         )
     )
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
             y=_rolling_mean(dpm, window=10).to_list(),
             mode="lines",
@@ -299,7 +300,7 @@ def _add_permin_rolling_lines(
         )
     )
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
             y=_rolling_mean(apm, window=10).to_list(),
             mode="lines",
@@ -430,7 +431,7 @@ def plot_accuracy_last_n(df: DataFrameLike, n: int) -> go.Figure:
 
     fig = go.Figure(
         data=[
-            go.Scatter(
+            smart_scatter(
                 x=d["start_time"].to_list(),
                 y=d["accuracy"].to_list(),
                 mode="lines",

@@ -264,6 +264,50 @@ def bench_to_pandas_conversion(db_path: str, xuid: str, runs: int) -> BenchResul
     return result
 
 
+def bench_zero_copy_polars(db_path: str, xuid: str, runs: int) -> BenchResult:
+    """Benchmark Sprint 19: chargement DuckDB → Polars via Arrow zero-copy.
+
+    Mesure le chemin optimisé load_matches_as_polars() sans intermédiaire
+    MatchRow, par rapport au chemin legacy load_matches() + reconstruction.
+    """
+    result = BenchResult(name="zero_copy_polars_load")
+    try:
+        for _ in range(runs):
+            repo = DuckDBRepository(db_path, xuid)
+            try:
+                t0 = time.perf_counter()
+                df = repo.load_matches_as_polars(include_firefight=True)
+                elapsed = (time.perf_counter() - t0) * 1000
+                result.times_ms.append(elapsed)
+                result.rows_returned = len(df)
+            finally:
+                repo.close()
+    except Exception as e:
+        result.success = False
+        result.error = str(e)
+    return result
+
+
+def bench_zero_copy_warm(db_path: str, xuid: str, runs: int) -> BenchResult:
+    """Benchmark Sprint 19: chargement Arrow zero-copy avec connexion réutilisée."""
+    result = BenchResult(name="zero_copy_polars_warm")
+    try:
+        repo = DuckDBRepository(db_path, xuid)
+        try:
+            for _ in range(runs):
+                t0 = time.perf_counter()
+                df = repo.load_matches_as_polars(include_firefight=True)
+                elapsed = (time.perf_counter() - t0) * 1000
+                result.times_ms.append(elapsed)
+                result.rows_returned = len(df)
+        finally:
+            repo.close()
+    except Exception as e:
+        result.success = False
+        result.error = str(e)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Orchestrateur
 # ---------------------------------------------------------------------------
@@ -277,6 +321,8 @@ def run_all_benchmarks(db_path: str, xuid: str, runs: int = 5) -> dict:
     benchmarks = [
         ("cold_load", bench_cold_load),
         ("warm_load", bench_warm_load),
+        ("zero_copy_cold", bench_zero_copy_polars),
+        ("zero_copy_warm", bench_zero_copy_warm),
         ("medals_100", bench_medals_load),
         ("teammates_top", bench_teammates_load),
         ("polars_filter", bench_polars_filtering),

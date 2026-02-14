@@ -26,6 +26,47 @@ logger = logging.getLogger(__name__)
 # Timezone Paris pour les conversions
 PARIS_TZ_NAME = "Europe/Paris"
 
+# ─── Constantes de projection par page (Sprint 19 — tâche 19.3) ────────────
+# Colonnes effectivement utilisées par les pages principales.
+# Permet de réduire la mémoire en ne chargeant que le nécessaire.
+# Note : game_variant_id, game_variant_name, team_id ne sont utilisés par aucune
+# page hot-path et sont exclus du set commun.
+
+COLUMNS_COMMON: list[str] = [
+    "match_id",
+    "start_time",
+    "map_id",
+    "map_name",
+    "playlist_id",
+    "playlist_name",
+    "pair_id",
+    "pair_name",
+    "outcome",
+    "kda",
+    "kills",
+    "deaths",
+    "assists",
+    "accuracy",
+    "average_life_seconds",
+    "time_played_seconds",
+    "max_killing_spree",
+    "headshot_kills",
+    "personal_score",
+    "my_team_score",
+    "enemy_team_score",
+    "team_mmr",
+    "enemy_mmr",
+]
+
+# Colonnes calculées ajoutées par _enrich_matches_df
+COLUMNS_COMPUTED: list[str] = [
+    "ratio",
+    "date",
+    "kills_per_min",
+    "deaths_per_min",
+    "assists_per_min",
+]
+
 
 def _to_polars(df: object) -> pl.DataFrame:
     """Convertit un DataFrame Pandas en Polars si nécessaire (pont de sécurité)."""
@@ -58,7 +99,10 @@ def _is_duckdb_v4_path(db_path: str) -> bool:
 
 
 def _load_matches_duckdb_v4(db_path: str, include_firefight: bool = True) -> list:
-    """Charge les matchs depuis une DB DuckDB v4."""
+    """Charge les matchs depuis une DB DuckDB v4 (legacy — retourne MatchRow).
+
+    Préférer _load_matches_duckdb_v4_polars() pour le chemin optimisé.
+    """
     try:
         from src.data.repositories.duckdb_repo import DuckDBRepository
 
@@ -72,6 +116,40 @@ def _load_matches_duckdb_v4(db_path: str, include_firefight: bool = True) -> lis
             repo.close()
     except Exception:
         return []
+
+
+def _load_matches_duckdb_v4_polars(
+    db_path: str,
+    include_firefight: bool = True,
+    columns: list[str] | None = None,
+) -> pl.DataFrame:
+    """Charge les matchs depuis une DB DuckDB v4 en Polars via Arrow zero-copy.
+
+    Chemin optimisé Sprint 19 : DuckDB → Arrow → Polars sans intermédiaire
+    MatchRow. ~3× plus rapide que _load_matches_duckdb_v4 + reconstruction.
+
+    Args:
+        db_path: Chemin vers la DB DuckDB.
+        include_firefight: Inclure les matchs PvE.
+        columns: Liste de colonnes à projeter (None = toutes).
+
+    Returns:
+        DataFrame Polars. Vide en cas d'erreur.
+    """
+    try:
+        from src.data.repositories.duckdb_repo import DuckDBRepository
+
+        repo = DuckDBRepository(db_path, xuid="", read_only=True)
+        try:
+            return repo.load_matches_as_polars(
+                include_firefight=include_firefight,
+                columns=columns,
+            )
+        finally:
+            repo.close()
+    except Exception:
+        logger.debug("load_matches_as_polars échoué, fallback MatchRow", exc_info=True)
+        return pl.DataFrame()
 
 
 @st.cache_data(show_spinner=False, ttl=30)
@@ -522,6 +600,87 @@ def cached_get_cache_stats(db_path: str, xuid: str, db_key: tuple[int, int] | No
     return {}
 
 
+def _enrich_matches_df(df: pl.DataFrame) -> pl.DataFrame:
+    """Enrichit un DataFrame Polars de matchs avec timezone et colonnes calculées.
+
+    Applique les transformations standard :
+    - Conversion timezone UTC → Paris → naïf
+    - Extraction colonne date
+    - Calcul kills/deaths/assists par minute
+
+    Args:
+        df: DataFrame Polars brut avec au minimum start_time, kills, deaths, assists,
+            time_played_seconds.
+
+    Returns:
+        DataFrame enrichi.
+    """
+    if df.is_empty():
+        return df
+
+    # Conversion timezone start_time
+    if "start_time" in df.columns:
+        start_time_dtype = df.schema.get("start_time")
+        if start_time_dtype in (
+            pl.Datetime,
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+            pl.Datetime("ms"),
+        ):
+            try:
+                df = df.with_columns(
+                    pl.col("start_time")
+                    .dt.convert_time_zone(PARIS_TZ_NAME)
+                    .dt.replace_time_zone(None)
+                    .alias("start_time")
+                )
+            except Exception:
+                df = df.with_columns(
+                    pl.col("start_time")
+                    .dt.replace_time_zone("UTC")
+                    .dt.convert_time_zone(PARIS_TZ_NAME)
+                    .dt.replace_time_zone(None)
+                    .alias("start_time")
+                )
+        elif start_time_dtype == pl.Utf8:
+            df = df.with_columns(
+                pl.col("start_time")
+                .str.to_datetime(time_zone="UTC")
+                .dt.convert_time_zone(PARIS_TZ_NAME)
+                .dt.replace_time_zone(None)
+                .alias("start_time")
+            )
+
+        # Extraire la date
+        df = df.with_columns(pl.col("start_time").dt.date().alias("date"))
+
+    # Stats par minute
+    if "time_played_seconds" in df.columns:
+        df = df.with_columns(
+            (pl.col("time_played_seconds").cast(pl.Float64) / 60.0)
+            .clip(lower_bound=0.0)
+            .alias("minutes")
+        )
+        per_min_cols = []
+        if "kills" in df.columns:
+            per_min_cols.append(
+                (pl.col("kills").cast(pl.Float64) / pl.col("minutes")).alias("kills_per_min")
+            )
+        if "deaths" in df.columns:
+            per_min_cols.append(
+                (pl.col("deaths").cast(pl.Float64) / pl.col("minutes")).alias("deaths_per_min")
+            )
+        if "assists" in df.columns:
+            per_min_cols.append(
+                (pl.col("assists").cast(pl.Float64) / pl.col("minutes")).alias("assists_per_min")
+            )
+        if per_min_cols:
+            df = df.with_columns(per_min_cols)
+        df = df.drop("minutes")
+
+    return df
+
+
 @st.cache_data(show_spinner=False)
 def load_df_optimized(
     db_path: str,
@@ -536,12 +695,20 @@ def load_df_optimized(
     - DuckDB v4: data/players/{gamertag}/stats.duckdb
     - Legacy SQLite: MatchCache puis MatchStats
 
+    Mécanisme d'invalidation du cache (Sprint 19 — tâche 19.4) :
+    - db_key (mtime_ns, size) : détecte les modifications du fichier DB
+      (sync externe, modification directe). Invalidation automatique.
+    - cache_buster (int) : incrémenté dans session_state après un sync réussi.
+      Force le rechargement même si db_key n'a pas encore changé (race condition).
+    Les deux paramètres sont passés à @st.cache_data comme clés de hash,
+    et ne sont pas lus dans le corps de la fonction.
+
     Args:
         db_path: Chemin vers la DB.
         xuid: XUID du joueur (ignoré pour DuckDB v4).
-        db_key: Clé de cache (mtime, size).
+        db_key: Clé de cache (mtime, size) — None si fichier inexistant.
         include_firefight: Inclure les matchs PvE.
-        cache_buster: Token pour forcer l'invalidation du cache.
+        cache_buster: Token pour forcer l'invalidation du cache après sync.
 
     Returns:
         DataFrame Polars enrichi avec toutes les colonnes calculées.
@@ -549,11 +716,16 @@ def load_df_optimized(
     _ = db_key  # Utilisé pour invalidation du cache Streamlit
     _ = cache_buster  # Utilisé pour forcer le rechargement après sync
 
-    matches = []
-
     # Détecter le type de DB
     if _is_duckdb_v4_path(db_path):
-        # DuckDB v4: utiliser le repository dédié
+        # Sprint 19 : chemin optimisé DuckDB → Arrow → Polars (zero-copy)
+        df = _load_matches_duckdb_v4_polars(db_path, include_firefight=include_firefight)
+        if not df.is_empty():
+            # Enrichissement standard (timezone, colonnes calculées)
+            df = _enrich_matches_df(df)
+            return df
+
+        # Fallback legacy : MatchRow → reconstruction DataFrame
         matches = _load_matches_duckdb_v4(db_path, include_firefight=include_firefight)
     else:
         # Legacy SQLite non supporté depuis v4.8
@@ -563,7 +735,7 @@ def load_df_optimized(
     if not matches:
         return pl.DataFrame()
 
-    # Construire le DataFrame Polars directement
+    # Construire le DataFrame Polars depuis MatchRow (fallback legacy)
     df = pl.DataFrame(
         {
             "match_id": [m.match_id for m in matches],
@@ -594,62 +766,7 @@ def load_df_optimized(
         }
     )
 
-    # Conversions standard avec Polars
-    # Convertir start_time en datetime UTC puis en timezone Paris
-    # Gérer les deux cas : start_time peut être déjà datetime (DuckDB) ou string (legacy)
-    start_time_dtype = df.schema.get("start_time")
-    if start_time_dtype in (pl.Datetime, pl.Datetime("us"), pl.Datetime("ns"), pl.Datetime("ms")):
-        # Déjà un datetime : gérer timezone-aware et naïf
-        # Polars convert_time_zone peut échouer sur datetime naïf selon la version
-        try:
-            # Essayer de convertir directement (fonctionne si timezone-aware)
-            df = df.with_columns(
-                pl.col("start_time")
-                .dt.convert_time_zone(PARIS_TZ_NAME)
-                .dt.replace_time_zone(None)
-                .alias("start_time")
-            )
-        except Exception:
-            # Si échec, c'est probablement un datetime naïf : ajouter UTC puis convertir
-            df = df.with_columns(
-                pl.col("start_time")
-                .dt.replace_time_zone("UTC")
-                .dt.convert_time_zone(PARIS_TZ_NAME)
-                .dt.replace_time_zone(None)
-                .alias("start_time")
-            )
-    else:
-        # String : parser puis convertir la timezone
-        df = df.with_columns(
-            pl.col("start_time")
-            .str.to_datetime(time_zone="UTC")
-            .dt.convert_time_zone(PARIS_TZ_NAME)
-            .dt.replace_time_zone(None)
-            .alias("start_time")
-        )
-
-    # Extraire la date
-    df = df.with_columns(pl.col("start_time").dt.date().alias("date"))
-
-    # Stats par minute
-    df = df.with_columns(
-        (pl.col("time_played_seconds").cast(pl.Float64) / 60.0)
-        .clip(lower_bound=0.0)
-        .alias("minutes")
-    )
-
-    df = df.with_columns(
-        [
-            (pl.col("kills").cast(pl.Float64) / pl.col("minutes")).alias("kills_per_min"),
-            (pl.col("deaths").cast(pl.Float64) / pl.col("minutes")).alias("deaths_per_min"),
-            (pl.col("assists").cast(pl.Float64) / pl.col("minutes")).alias("assists_per_min"),
-        ]
-    )
-
-    # Supprimer la colonne temporaire minutes
-    df = df.drop("minutes")
-
-    return df
+    return _enrich_matches_df(df)
 
 
 @st.cache_data(show_spinner=False)

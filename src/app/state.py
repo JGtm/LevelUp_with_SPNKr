@@ -198,8 +198,8 @@ def init_source_state(default_db: str, settings: AppSettings) -> None:
 def get_db_cache_key(db_path: str) -> tuple[int, int] | None:
     """Retourne une signature stable de la DB pour invalider les caches.
 
-    Utilise (mtime_ns, size) : rapide et suffisamment fiable pour détecter
-    les mises à jour de la DB.
+    Sprint 19 : délègue à db_cache_key() canonique (cache_loaders.py)
+    pour éviter la duplication de logique.
 
     Args:
         db_path: Chemin vers la base de données.
@@ -207,11 +207,9 @@ def get_db_cache_key(db_path: str) -> tuple[int, int] | None:
     Returns:
         Tuple (mtime_ns, size) ou None si fichier inexistant.
     """
-    try:
-        st_ = os.stat(db_path)
-    except OSError:
-        return None
-    return int(getattr(st_, "st_mtime_ns", int(st_.st_mtime * 1e9))), int(st_.st_size)
+    from src.ui.cache_loaders import db_cache_key
+
+    return db_cache_key(db_path)
 
 
 def get_aliases_cache_key() -> int | None:

@@ -115,16 +115,24 @@ def _render_ranking_table(
     )
 
     if not ranking_df.is_empty():
-        display_df = ranking_df.to_pandas()
-        display_df.columns = [
-            "Rang",
-            "Joueur",
-            "Score",
-            "🟢 FB",
-            "🟡 Clutch",
-            "🔴 Boulet",
-            "Badge",
-        ]
+        # Sprint 19 : renommer les colonnes en Polars sans conversion Pandas
+        display_df = ranking_df.rename(
+            dict(
+                zip(
+                    ranking_df.columns,
+                    [
+                        "Rang",
+                        "Joueur",
+                        "Score",
+                        "🟢 FB",
+                        "🟡 Clutch",
+                        "🔴 Boulet",
+                        "Badge",
+                    ],
+                    strict=False,
+                )
+            )
+        )
         st.dataframe(display_df, width="stretch", hide_index=True)
 
         mvp = ranking_df[0, "gamertag"] if len(ranking_df) > 0 else None

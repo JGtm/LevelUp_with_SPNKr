@@ -22,8 +22,10 @@ from src.ui.cache_filters import (  # noqa: F401
 )
 from src.ui.cache_loaders import (  # noqa: F401
     PARIS_TZ_NAME,
+    _enrich_matches_df,
     _is_duckdb_v4_path,
     _load_matches_duckdb_v4,
+    _load_matches_duckdb_v4_polars,
     _to_polars,
     cached_get_cache_stats,
     cached_get_match_session_info,

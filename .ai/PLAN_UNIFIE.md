@@ -1427,41 +1427,43 @@ git tag -l | grep "v4.5" || true
 
 ---
 
-### Sprint 19 — Optimisation post-release (conditionnel) (1.5 jour)
+### Sprint 19 — Optimisation post-release (conditionnel) ✅ TERMINÉ (1.5 jour)
 
 **Objectif** : Sprint d'optimisation ciblée activé **uniquement si le benchmark S18 n'atteint pas l'objectif de -25% combiné** sur Timeseries + Coéquipiers.
 
-**Prérequis** : Sprint 18 livré
+**Prérequis** : Sprint 18 livré ✅
 
 > **Critère d'entrée (gate d'activation)** :
 > - Si le benchmark comparatif S18 montre un gain combiné **>= -25%** : **S19 est annulé** (objectif atteint) ou converti en backlog maintenance libre.
 > - Si le gain est **< -25%** : S19 est activé avec les tâches ci-dessous, ciblées sur les bottlenecks identifiés dans le rapport benchmark S18.
+>
+> **Décision** : S19 activé manuellement malgré gate non déclenchée (gains S18 modestes ~3%). Résultat : **gain combiné -61.2%** 🚀
 
 #### Tâches (activées conditionnellement)
 
-| # | Tâche | Source | Fichier(s) |
-|---|-------|--------|-----------|
-| 19.1 | [U] Activer data path DuckDB → Polars direct pour chemins chauds (zéro reconstruction Python) | Perf post-refacto | `src/ui/cache.py`, `src/data/repositories/duckdb_repo.py` |
-| 19.2 | [U] Éliminer les conversions Pandas résiduelles sur chemins chauds de rendu | Perf post-refacto | `streamlit_app.py`, `src/ui/pages/timeseries.py`, `src/ui/pages/teammates.py` |
-| 19.3 | [U] Durcir la projection de colonnes par page (chargement minimal requis) | RAM + CPU | `src/app/main_helpers.py`, `src/app/page_router.py`, `src/ui/cache.py` |
-| 19.4 | [U] Stabiliser invalidation cache pour refresh fréquents (`db_key`/`cache_buster`/filtres) | Cohérence data | `src/ui/cache.py`, `streamlit_app.py` |
-| 19.5 | [U] Finaliser rendu Plotly haute volumétrie (Scattergl conditionnel) sans changer la narration visuelle | Rendu | `src/visualization/timeseries.py`, `src/ui/pages/teammates_charts.py` |
-| 19.6 | [U] Exécuter benchmark final post-S19 et publier rapport comparatif (baseline S16.0b → post-S18 → post-S19) | Validation | `.ai/reports/V4_5_POST_OPTIM_PERF_S19.md` |
+| # | Tâche | Source | Fichier(s) | Statut |
+|---|-------|--------|-----------|--------|
+| 19.1 | [U] Activer data path DuckDB → Polars direct pour chemins chauds (zéro reconstruction Python) | Perf post-refacto | `src/data/repositories/_match_queries.py`, `src/ui/cache_loaders.py` | ✅ |
+| 19.2 | [U] Éliminer les conversions Pandas résiduelles sur chemins chauds de rendu | Perf post-refacto | `src/ui/pages/teammates_impact.py`, `src/ui/cache_filters.py` | ✅ |
+| 19.3 | [U] Durcir la projection de colonnes par page (chargement minimal requis) | RAM + CPU | `src/ui/cache_loaders.py`, `src/data/repositories/_match_queries.py` | ✅ |
+| 19.4 | [U] Stabiliser invalidation cache pour refresh fréquents (`db_key`/`cache_buster`/filtres) | Cohérence data | `src/app/state.py`, `src/ui/cache_loaders.py` | ✅ |
+| 19.5 | [U] Finaliser rendu Plotly haute volumétrie (Scattergl conditionnel) sans changer la narration visuelle | Rendu | `src/visualization/_compat.py`, `src/visualization/timeseries.py`, `src/visualization/timeseries_combat.py` | ✅ |
+| 19.6 | [U] Exécuter benchmark final post-S19 et publier rapport comparatif (baseline S16.0b → post-S18 → post-S19) | Validation | `.ai/reports/V4_5_POST_OPTIM_PERF_S19.md` | ✅ |
 
 #### Tests
 
-- Étendre `tests/test_new_timeseries_sections.py`
-- Étendre `tests/test_teammates_new_comparisons.py`
-- Créer `tests/test_post_refactor_perf_contracts.py`
-- Créer `tests/test_hotpath_no_global_pandas_conversion.py`
+- ~~Étendre `tests/test_new_timeseries_sections.py`~~ (non nécessaire — pas de changement aux sections)
+- ~~Étendre `tests/test_teammates_new_comparisons.py`~~ (non nécessaire — pas de changement aux comparaisons)
+- ✅ Créer `tests/test_post_refactor_perf_contracts.py` (20 tests)
+- ✅ Créer `tests/test_hotpath_no_global_pandas_conversion.py` (16 tests)
 
 #### Gate de livraison
 
-- [ ] Aucun changement UX (mêmes graphes, mêmes points, mêmes sections)
-- [ ] Aucune réduction de granularité de données
-- [ ] Temps d'ouverture Timeseries et Coéquipiers amélioré de façon mesurable (objectif combiné: `-25%` minimum vs baseline S16.0b)
-- [ ] Pas de régression fonctionnelle sur filtres et navigation inter-pages
-- [ ] Rapport S19 publié (`.ai/reports/V4_5_POST_OPTIM_PERF_S19.md`)
+- [x] Aucun changement UX (mêmes graphes, mêmes points, mêmes sections)
+- [x] Aucune réduction de granularité de données
+- [x] Temps d'ouverture Timeseries et Coéquipiers amélioré de façon mesurable (objectif combiné: `-25%` minimum vs baseline S16.0b) — **résultat : -61.2%** 🚀
+- [x] Pas de régression fonctionnelle sur filtres et navigation inter-pages
+- [x] Rapport S19 publié (`.ai/reports/V4_5_POST_OPTIM_PERF_S19.md`)
 - [ ] Tag `v4.5.1` créé si modifications substantielles post-release
 
 #### Commandes de validation
