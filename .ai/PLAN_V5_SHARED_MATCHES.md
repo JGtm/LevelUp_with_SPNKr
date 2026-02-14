@@ -215,7 +215,7 @@ Plans à incorporer dans le sprint approprié :
 Sprint 0  : Audit & Backups                          (1j)
 Sprint 1  : Infrastructure shared_matches.duckdb     (2j)
 Sprint 2  : Migration des données (4 joueurs)        (3j)  ✅ TERMINÉ
-Sprint 3  : Refactoring Sync Engine                  (3j)
+Sprint 3  : Refactoring Sync Engine                  (3j)  ✅ TERMINÉ
 Sprint 4  : Refactoring DuckDBRepository             (2j)
 Sprint 5  : Refactoring UI (VIEWs → Queries natives) (3j)
 Sprint 6  : Optimisation API (PLAN_OPTIMISATION)     (2j)
@@ -2084,11 +2084,12 @@ class DuckDBSyncEngine:
 
 #### Livrables
 
-- [ ] `DuckDBSyncEngine` refactoré avec détection shared
-- [ ] Méthodes `_process_known_match()` et `_process_new_match()`
-- [ ] Méthodes d'insertion vers shared (registry, participants, events, medals)
-- [ ] `extract_all_medals()` dans `transformers.py`
-- [ ] Tests `tests/test_sync_shared_matches.py` passent
+- [x] `DuckDBSyncEngine` refactoré avec détection shared
+- [x] Méthodes `_process_known_match()` et `_process_new_match()`
+- [x] Méthodes d'insertion vers shared (registry, participants, events, medals, aliases)
+- [x] `extract_all_medals()` dans `transformers.py` (déjà implémenté)
+- [x] `extract_match_registry_data()` dans `transformers.py`
+- [x] Tests `tests/test_sync_shared_matches.py` passent (33/33)
 - [ ] Documentation `docs/SYNC_SHARED_MATCHES.md`
 
 #### Tests de Validation
@@ -2109,12 +2110,12 @@ python -m pytest tests/ -v --ignore=tests/integration
 
 #### Gate de Livraison
 
-- [ ] Détection des matchs partagés fonctionne
-- [ ] Sync allégée économise 1-2 appels API par match partagé
-- [ ] Sync complète insère dans shared correctement
-- [ ] Médailles de TOUS les joueurs extraites
-- [ ] Tests passent à 100%
-- [ ] Aucune régression sur sync existant
+- [x] Détection des matchs partagés fonctionne
+- [x] Sync allégée économise 1-2 appels API par match partagé
+- [x] Sync complète insère dans shared correctement
+- [x] Médailles de TOUS les joueurs extraites
+- [x] Tests passent à 100% (76/76 : 43 v4 + 33 v5)
+- [x] Aucune régression sur sync existant
 
 **Estimation** : 3 jours (20-22h effectives)
 
@@ -2828,8 +2829,8 @@ Pendant toute la migration :
 ├─────────────┬───────────────────────────────────────────────┤
 │ Sprint 0    │ Audit & Backups                         (1j)  │
 │ Sprint 1    │ Infrastructure shared_matches           (2j)  │
-│ Sprint 2    │ Migration données                       (3j)  │
-│ Sprint 3    │ Refactoring Sync Engine                 (3j)  │
+│ Sprint 2    │ Migration données                  (3j) ✅    │
+│ Sprint 3    │ Refactoring Sync Engine            (3j) ✅    │
 │ Sprint 4    │ Refactoring DuckDBRepository            (2j)  │
 │ Sprint 5    │ Refactoring UI Big Bang                 (3j)  │
 │ Sprint 6    │ Optimisation API                        (2j)  │

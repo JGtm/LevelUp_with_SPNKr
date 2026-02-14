@@ -62,6 +62,8 @@ from src.data.sync.models import (
 from src.data.sync.transformers import (
     create_metadata_resolver,
     extract_aliases,
+    extract_all_medals,
+    extract_match_registry_data,
     extract_participants,
     extract_personal_score_awards,
     extract_xuids_from_match,
@@ -254,6 +256,7 @@ class DuckDBSyncEngine:
         xuid: str,
         gamertag: str,
         metadata_db_path: Path | str | None = None,
+        shared_db_path: Path | str | None = None,
         tokens: Tokens | None = None,
     ) -> None:
         """
@@ -262,6 +265,7 @@ class DuckDBSyncEngine:
             xuid: XUID du joueur.
             gamertag: Gamertag pour l'identification API.
             metadata_db_path: Chemin vers metadata.duckdb (auto-détecté si None).
+            shared_db_path: Chemin vers shared_matches.duckdb (auto-détecté si None).
             tokens: Tokens SPNKr pré-fournis (sinon récupérés depuis env).
         """
         self._player_db_path = Path(player_db_path)
@@ -276,8 +280,17 @@ class DuckDBSyncEngine:
         else:
             self._metadata_db_path = Path(metadata_db_path)
 
+        # Auto-détection du chemin shared_matches.duckdb (v5)
+        if shared_db_path is None:
+            data_dir = self._player_db_path.parent.parent.parent
+            self._shared_db_path: Path | None = data_dir / "warehouse" / "shared_matches.duckdb"
+        else:
+            self._shared_db_path = Path(shared_db_path)
+
         self._connection: duckdb.DuckDBPyConnection | None = None
+        self._shared_connection: duckdb.DuckDBPyConnection | None = None
         self._db_lock = asyncio.Lock()
+        self._shared_db_lock = asyncio.Lock()
         self._existing_match_ids: set[str] | None = None
 
         # Créer le resolver pour les métadonnées
@@ -303,6 +316,31 @@ class DuckDBSyncEngine:
             self._ensure_schema()
 
         return self._connection
+
+    def _get_shared_connection(self) -> duckdb.DuckDBPyConnection | None:
+        """Retourne une connexion vers shared_matches.duckdb (R/W).
+
+        Returns:
+            Connexion DuckDB ou None si la base n'existe pas.
+        """
+        if self._shared_connection is not None:
+            return self._shared_connection
+
+        if self._shared_db_path is None or not self._shared_db_path.exists():
+            logger.debug("shared_matches.duckdb absent, mode legacy v4")
+            return None
+
+        self._shared_connection = duckdb.connect(
+            str(self._shared_db_path),
+            read_only=False,
+        )
+        self._shared_connection.execute("SET enable_object_cache = true")
+        return self._shared_connection
+
+    @property
+    def shared_enabled(self) -> bool:
+        """Indique si le mode shared_matches est activé."""
+        return self._shared_db_path is not None and self._shared_db_path.exists()
 
     def _ensure_schema(self) -> None:
         """S'assure que les tables nécessaires existent."""
@@ -657,7 +695,62 @@ class DuckDBSyncEngine:
         match_id: str,
         options: SyncOptions,
     ) -> dict[str, Any]:
-        """Traite un match unique : fetch, transform, insert."""
+        """Traite un match unique : fetch, transform, insert.
+
+        Si shared_matches est activé, délègue à _process_known_match()
+        ou _process_new_match() selon que le match existe déjà dans le
+        registre partagé.
+        """
+        # ── Mode shared v5 ─────────────────────────────────────────
+        shared_conn = self._get_shared_connection()
+        if shared_conn is not None:
+            try:
+                registry = shared_conn.execute(
+                    """SELECT
+                        backfill_completed,
+                        participants_loaded,
+                        events_loaded,
+                        medals_loaded,
+                        player_count
+                    FROM match_registry
+                    WHERE match_id = ?""",
+                    (match_id,),
+                ).fetchone()
+            except Exception:
+                registry = None
+
+            if registry is not None:
+                logger.info(
+                    f"Match {match_id} déjà connu dans shared " f"(player_count={registry[4]})"
+                )
+                return await self._process_known_match(
+                    client,
+                    match_id,
+                    registry,
+                    options,
+                )
+            else:
+                logger.info(f"Nouveau match {match_id} → sync complète vers shared")
+                return await self._process_new_match(
+                    client,
+                    match_id,
+                    options,
+                )
+
+        # ── Mode legacy v4 (pas de shared_matches) ─────────────────
+        return await self._process_single_match_legacy(
+            client,
+            match_id,
+            options,
+        )
+
+    async def _process_single_match_legacy(
+        self,
+        client: SPNKrAPIClient,
+        match_id: str,
+        options: SyncOptions,
+    ) -> dict[str, Any]:
+        """Traite un match en mode legacy v4 (sans shared_matches)."""
         result: dict[str, Any] = {
             "inserted": False,
             "events": 0,
@@ -805,6 +898,533 @@ class DuckDBSyncEngine:
             logger.warning(result["error"])
 
         return result
+
+    # =====================================================================
+    # v5 Shared Matches — Process known / new match
+    # =====================================================================
+
+    async def _process_known_match(
+        self,
+        client: SPNKrAPIClient,
+        match_id: str,
+        registry: tuple,
+        options: SyncOptions,
+    ) -> dict[str, Any]:
+        """Traite un match déjà présent dans shared_matches (sync allégée).
+
+        Seules les données personnelles (match_stats, enrichment) sont
+        insérées dans la DB joueur. Les données communes manquantes sont
+        backfillées dans shared si nécessaire.
+
+        Args:
+            client: Client API SPNKr.
+            match_id: ID du match.
+            registry: Tuple (backfill_completed, participants_loaded,
+                      events_loaded, medals_loaded, player_count).
+            options: Options de sync.
+
+        Returns:
+            Dict résultat avec mode='known_match'.
+        """
+        result: dict[str, Any] = {
+            "inserted": False,
+            "mode": "known_match",
+            "events": 0,
+            "skill": 0,
+            "aliases": 0,
+            "api_calls_saved": 0,
+            "error": None,
+        }
+
+        _bf_completed, participants_loaded, events_loaded, medals_loaded, _player_count = registry
+
+        try:
+            # 1. Télécharger les stats (obligatoire pour extraire les données perso)
+            stats_json = await client.get_match_stats(match_id)
+            if stats_json is None:
+                result["error"] = f"Impossible de récupérer {match_id}"
+                return result
+
+            if options.with_assets:
+                await enrich_match_info_with_assets(client, stats_json)
+
+            # 2. Transformer en match_row pour la player DB (mode legacy)
+            xuids = extract_xuids_from_match(stats_json)
+            skill_json = None
+            highlight_events: list = []
+
+            # Skill toujours utile pour le joueur (MMR dans match_stats)
+            if options.with_skill and xuids:
+                skill_json = await client.get_skill_stats(match_id, xuids)
+
+            # Events : seulement si absent du shared
+            if options.with_highlight_events and not events_loaded:
+                highlight_events = await client.get_highlight_events(match_id)
+            elif events_loaded:
+                result["api_calls_saved"] += 1
+
+            match_row = transform_match_stats(
+                stats_json,
+                self._xuid,
+                skill_json=skill_json,
+                metadata_resolver=self._metadata_resolver,
+            )
+            if match_row is None:
+                result["error"] = f"Transformation échouée pour {match_id}"
+                return result
+
+            skill_row = None
+            if skill_json:
+                skill_row = transform_skill_stats(skill_json, match_id, self._xuid)
+
+            # Extraire les médailles perso (player DB)
+            from src.data.sync.transformers import extract_medals
+
+            medal_rows = extract_medals(stats_json, self._xuid)
+
+            # PersonalScores
+            personal_scores = extract_personal_score_awards(stats_json, self._xuid)
+            personal_score_rows = []
+            if personal_scores:
+                personal_score_rows = transform_personal_score_awards(
+                    match_id,
+                    self._xuid,
+                    personal_scores,
+                )
+
+            alias_rows = []
+            if options.with_aliases:
+                alias_rows = extract_aliases(stats_json)
+
+            participant_rows = []
+            if options.with_participants:
+                participant_rows = extract_participants(stats_json)
+
+            # 3. Insérer dans la player DB (tout comme le legacy)
+            async with self._db_lock:
+                self._insert_match_row(match_row)
+
+                if skill_row:
+                    self._insert_skill_row(skill_row)
+                    result["skill"] = 1
+
+                if medal_rows:
+                    self._insert_medal_rows(medal_rows)
+
+                if personal_score_rows:
+                    self._insert_personal_score_rows(personal_score_rows)
+
+                if participant_rows:
+                    self._insert_participant_rows(participant_rows)
+
+                if alias_rows:
+                    self._insert_alias_rows(alias_rows)
+                    result["aliases"] = len(alias_rows)
+
+                self._compute_and_update_performance_score(match_id, match_row)
+
+                # Bitmask backfill_completed
+                bf_mask = self._compute_backfill_mask(options)
+                conn = self._get_connection()
+                conn.execute(
+                    "UPDATE match_stats "
+                    "SET backfill_completed = COALESCE(backfill_completed, 0) | ? "
+                    "WHERE match_id = ?",
+                    [bf_mask, match_id],
+                )
+
+            # 4. Backfill sélectif dans shared si des données manquent
+            backfill_needed: list[str] = []
+            async with self._shared_db_lock:
+                shared_conn = self._get_shared_connection()
+                if shared_conn is None:
+                    result["error"] = "shared_connection perdue"
+                    return result
+
+                if not participants_loaded:
+                    participants = extract_participants(stats_json)
+                    self._insert_shared_participants(shared_conn, participants)
+                    shared_conn.execute(
+                        "UPDATE match_registry SET participants_loaded = TRUE WHERE match_id = ?",
+                        (match_id,),
+                    )
+                    backfill_needed.append("participants")
+
+                if not events_loaded and highlight_events:
+                    event_rows_shared = transform_highlight_events(highlight_events, match_id)
+                    self._insert_shared_events(shared_conn, event_rows_shared)
+                    shared_conn.execute(
+                        "UPDATE match_registry SET events_loaded = TRUE WHERE match_id = ?",
+                        (match_id,),
+                    )
+                    result["events"] = len(event_rows_shared)
+                    backfill_needed.append("events")
+
+                if not medals_loaded:
+                    medals_all = extract_all_medals(stats_json)
+                    self._insert_shared_medals(shared_conn, medals_all)
+                    shared_conn.execute(
+                        "UPDATE match_registry SET medals_loaded = TRUE WHERE match_id = ?",
+                        (match_id,),
+                    )
+                    backfill_needed.append("medals")
+
+                # Aliases vers shared
+                if alias_rows:
+                    self._insert_shared_aliases(shared_conn, alias_rows)
+
+                # Incrémenter player_count
+                shared_conn.execute(
+                    "UPDATE match_registry "
+                    "SET player_count = player_count + 1, "
+                    "    last_updated_at = CURRENT_TIMESTAMP "
+                    "WHERE match_id = ?",
+                    (match_id,),
+                )
+
+            if backfill_needed:
+                logger.info(f"Backfill shared pour {match_id}: {', '.join(backfill_needed)}")
+
+            result["inserted"] = True
+
+        except Exception as e:
+            result["error"] = f"Erreur traitement known {match_id}: {e}"
+            logger.warning(result["error"])
+
+        return result
+
+    async def _process_new_match(
+        self,
+        client: SPNKrAPIClient,
+        match_id: str,
+        options: SyncOptions,
+    ) -> dict[str, Any]:
+        """Traite un nouveau match (sync complète → shared + player DB).
+
+        Toutes les données communes sont insérées dans shared_matches,
+        les données personnelles dans la player DB.
+
+        Args:
+            client: Client API SPNKr.
+            match_id: ID du match.
+            options: Options de sync.
+
+        Returns:
+            Dict résultat avec mode='new_match'.
+        """
+        result: dict[str, Any] = {
+            "inserted": False,
+            "mode": "new_match",
+            "events": 0,
+            "skill": 0,
+            "aliases": 0,
+            "error": None,
+        }
+
+        try:
+            # 1. Télécharger les stats
+            stats_json = await client.get_match_stats(match_id)
+            if stats_json is None:
+                result["error"] = f"Impossible de récupérer {match_id}"
+                return result
+
+            if options.with_assets:
+                await enrich_match_info_with_assets(client, stats_json)
+
+            # 2. Télécharger events et skill
+            xuids = extract_xuids_from_match(stats_json)
+            skill_json = None
+            highlight_events: list = []
+
+            if options.with_skill and xuids:
+                skill_json = await client.get_skill_stats(match_id, xuids)
+
+            if options.with_highlight_events:
+                highlight_events = await client.get_highlight_events(match_id)
+
+            # 3. Extraire les données communes pour shared
+            registry_data = extract_match_registry_data(
+                stats_json,
+                metadata_resolver=self._metadata_resolver,
+            )
+            if registry_data is None:
+                result["error"] = f"Extraction registry échouée pour {match_id}"
+                return result
+
+            participants = extract_participants(stats_json)
+            medals_all = extract_all_medals(stats_json)
+            alias_rows = extract_aliases(stats_json) if options.with_aliases else []
+
+            event_rows_shared = []
+            if highlight_events:
+                event_rows_shared = transform_highlight_events(highlight_events, match_id)
+
+            # 4. Insérer dans shared_matches
+            async with self._shared_db_lock:
+                shared_conn = self._get_shared_connection()
+                if shared_conn is None:
+                    result["error"] = "shared_connection indisponible"
+                    return result
+
+                self._insert_shared_registry(shared_conn, registry_data)
+                self._insert_shared_participants(shared_conn, participants)
+                self._insert_shared_medals(shared_conn, medals_all)
+
+                if event_rows_shared:
+                    self._insert_shared_events(shared_conn, event_rows_shared)
+                    result["events"] = len(event_rows_shared)
+
+                if alias_rows:
+                    self._insert_shared_aliases(shared_conn, alias_rows)
+                    result["aliases"] = len(alias_rows)
+
+                # Mettre à jour les flags du registre
+                shared_conn.execute(
+                    """UPDATE match_registry SET
+                        participants_loaded = TRUE,
+                        events_loaded = ?,
+                        medals_loaded = TRUE,
+                        first_sync_by = ?,
+                        first_sync_at = CURRENT_TIMESTAMP,
+                        player_count = 1
+                    WHERE match_id = ?""",
+                    (
+                        len(event_rows_shared) > 0,
+                        self._gamertag,
+                        match_id,
+                    ),
+                )
+
+            # 5. Insérer les données personnelles dans la player DB
+            match_row = transform_match_stats(
+                stats_json,
+                self._xuid,
+                skill_json=skill_json,
+                metadata_resolver=self._metadata_resolver,
+            )
+            if match_row is None:
+                result["error"] = f"Transformation match_stats échouée pour {match_id}"
+                return result
+
+            skill_row = None
+            if skill_json:
+                skill_row = transform_skill_stats(skill_json, match_id, self._xuid)
+
+            from src.data.sync.transformers import extract_medals
+
+            medal_rows_personal = extract_medals(stats_json, self._xuid)
+
+            personal_scores = extract_personal_score_awards(stats_json, self._xuid)
+            personal_score_rows = []
+            if personal_scores:
+                personal_score_rows = transform_personal_score_awards(
+                    match_id,
+                    self._xuid,
+                    personal_scores,
+                )
+
+            participant_rows_player = []
+            if options.with_participants:
+                participant_rows_player = participants  # Réutiliser l'extraction
+
+            async with self._db_lock:
+                self._insert_match_row(match_row)
+
+                if skill_row:
+                    self._insert_skill_row(skill_row)
+                    result["skill"] = 1
+
+                if medal_rows_personal:
+                    self._insert_medal_rows(medal_rows_personal)
+
+                if personal_score_rows:
+                    self._insert_personal_score_rows(personal_score_rows)
+
+                if participant_rows_player:
+                    self._insert_participant_rows(participant_rows_player)
+
+                if alias_rows:
+                    self._insert_alias_rows(alias_rows)
+
+                self._compute_and_update_performance_score(match_id, match_row)
+
+                # Bitmask backfill_completed
+                bf_mask = self._compute_backfill_mask(options)
+                conn = self._get_connection()
+                conn.execute(
+                    "UPDATE match_stats "
+                    "SET backfill_completed = COALESCE(backfill_completed, 0) | ? "
+                    "WHERE match_id = ?",
+                    [bf_mask, match_id],
+                )
+
+            result["inserted"] = True
+
+        except Exception as e:
+            result["error"] = f"Erreur traitement new {match_id}: {e}"
+            logger.warning(result["error"])
+
+        return result
+
+    def _compute_backfill_mask(self, options: SyncOptions) -> int:
+        """Calcule le bitmask backfill_completed pour un match.
+
+        Args:
+            options: Options de sync courantes.
+
+        Returns:
+            Bitmask entier.
+        """
+        bf_mask = 0
+        bf_mask |= BACKFILL_FLAGS["medals"]
+        bf_mask |= BACKFILL_FLAGS["personal_scores"]
+        bf_mask |= BACKFILL_FLAGS["performance_scores"]
+        bf_mask |= BACKFILL_FLAGS["accuracy"]
+        bf_mask |= BACKFILL_FLAGS["shots"]
+        if options.with_skill:
+            bf_mask |= BACKFILL_FLAGS["skill"]
+            bf_mask |= BACKFILL_FLAGS["enemy_mmr"]
+        if options.with_highlight_events:
+            bf_mask |= BACKFILL_FLAGS["events"]
+        if options.with_participants:
+            bf_mask |= BACKFILL_FLAGS["participants"]
+            bf_mask |= BACKFILL_FLAGS["participants_scores"]
+            bf_mask |= BACKFILL_FLAGS["participants_kda"]
+            bf_mask |= BACKFILL_FLAGS["participants_shots"]
+            bf_mask |= BACKFILL_FLAGS["participants_damage"]
+        if options.with_aliases:
+            bf_mask |= BACKFILL_FLAGS["aliases"]
+        if options.with_assets:
+            bf_mask |= BACKFILL_FLAGS["assets"]
+        return bf_mask
+
+    # =====================================================================
+    # v5 Shared Matches — Insertions dans shared_matches.duckdb
+    # =====================================================================
+
+    def _insert_shared_registry(
+        self,
+        shared_conn: duckdb.DuckDBPyConnection,
+        data: dict[str, Any],
+    ) -> None:
+        """Insère un match dans match_registry (shared).
+
+        Args:
+            shared_conn: Connexion vers shared_matches.duckdb.
+            data: Dict retourné par extract_match_registry_data().
+        """
+        shared_conn.execute(
+            """INSERT OR IGNORE INTO match_registry (
+                match_id, start_time, end_time,
+                playlist_id, playlist_name,
+                map_id, map_name,
+                pair_id, pair_name,
+                game_variant_id, game_variant_name,
+                mode_category, is_ranked, is_firefight,
+                duration_seconds,
+                team_0_score, team_1_score,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+            (
+                data["match_id"],
+                data["start_time"],
+                data["end_time"],
+                data["playlist_id"],
+                data["playlist_name"],
+                data["map_id"],
+                data["map_name"],
+                data["pair_id"],
+                data["pair_name"],
+                data["game_variant_id"],
+                data["game_variant_name"],
+                data["mode_category"],
+                data["is_ranked"],
+                data["is_firefight"],
+                data["duration_seconds"],
+                data["team_0_score"],
+                data["team_1_score"],
+            ),
+        )
+
+    def _insert_shared_participants(
+        self,
+        shared_conn: duckdb.DuckDBPyConnection,
+        participants: list,
+    ) -> None:
+        """Insère les participants dans shared.match_participants.
+
+        Args:
+            shared_conn: Connexion vers shared_matches.duckdb.
+            participants: Liste de MatchParticipantRow.
+        """
+        if not participants:
+            return
+        from src.data.sync.batch_insert import PARTICIPANT_COLUMNS, batch_upsert_rows
+
+        batch_upsert_rows(shared_conn, "match_participants", participants, PARTICIPANT_COLUMNS)
+
+    def _insert_shared_events(
+        self,
+        shared_conn: duckdb.DuckDBPyConnection,
+        event_rows: list,
+    ) -> None:
+        """Insère les highlight events dans shared.highlight_events.
+
+        Args:
+            shared_conn: Connexion vers shared_matches.duckdb.
+            event_rows: Liste de HighlightEventRow.
+        """
+        if not event_rows:
+            return
+        from src.data.sync.batch_insert import HIGHLIGHT_EVENT_COLUMNS, batch_insert_rows
+
+        batch_insert_rows(shared_conn, "highlight_events", event_rows, HIGHLIGHT_EVENT_COLUMNS)
+
+    def _insert_shared_medals(
+        self,
+        shared_conn: duckdb.DuckDBPyConnection,
+        medals: list,
+    ) -> None:
+        """Insère les médailles de TOUS les joueurs dans shared.medals_earned.
+
+        Args:
+            shared_conn: Connexion vers shared_matches.duckdb.
+            medals: Liste de SharedMedalEarnedRow.
+        """
+        if not medals:
+            return
+        columns = ["match_id", "xuid", "medal_name_id", "count"]
+        from src.data.sync.batch_insert import batch_upsert_rows
+
+        batch_upsert_rows(shared_conn, "medals_earned", medals, columns)
+
+    def _insert_shared_aliases(
+        self,
+        shared_conn: duckdb.DuckDBPyConnection,
+        alias_rows: list,
+    ) -> None:
+        """Insère les aliases xuid→gamertag dans shared.xuid_aliases.
+
+        Args:
+            shared_conn: Connexion vers shared_matches.duckdb.
+            alias_rows: Liste de XuidAliasRow.
+        """
+        if not alias_rows:
+            return
+        from src.data.sync.batch_insert import ALIAS_COLUMNS, batch_upsert_rows
+
+        now = datetime.now(timezone.utc)
+        alias_dicts = [
+            {
+                "xuid": row.xuid,
+                "gamertag": row.gamertag,
+                "last_seen": row.last_seen,
+                "source": row.source,
+                "updated_at": now,
+            }
+            for row in alias_rows
+        ]
+        batch_upsert_rows(shared_conn, "xuid_aliases", alias_dicts, ALIAS_COLUMNS)
 
     def _ensure_performance_score_column(self) -> None:
         """S'assure que la colonne performance_score existe dans match_stats."""
@@ -1241,8 +1861,12 @@ class DuckDBSyncEngine:
         return history[0] if history else None
 
     def close(self) -> None:
-        """Ferme la connexion DuckDB."""
+        """Ferme les connexions DuckDB (player + shared)."""
         if self._connection:
             with contextlib.suppress(Exception):
                 self._connection.close()
             self._connection = None
+        if self._shared_connection:
+            with contextlib.suppress(Exception):
+                self._shared_connection.close()
+            self._shared_connection = None

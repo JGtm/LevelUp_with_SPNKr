@@ -1564,3 +1564,141 @@ def transform_personal_score_awards(
         )
 
     return rows
+
+
+# =============================================================================
+# v5 Shared Matches : Extraction données communes pour match_registry
+# =============================================================================
+
+
+def extract_match_registry_data(
+    match_json: dict[str, Any],
+    *,
+    metadata_resolver: Callable[[str, str | None], str | None] | None = None,
+) -> dict[str, Any] | None:
+    """Extrait les données communes d'un match pour match_registry (v5).
+
+    Données indépendantes du joueur : map, playlist, scores d'équipe,
+    durée, mode, etc.
+
+    Args:
+        match_json: JSON brut du match depuis l'API SPNKr.
+        metadata_resolver: Résolveur de noms depuis metadata.duckdb.
+
+    Returns:
+        Dict avec toutes les colonnes de match_registry, ou None si parsing échoue.
+    """
+    match_id = match_json.get("MatchId")
+    if not isinstance(match_id, str):
+        return None
+
+    match_info = match_json.get("MatchInfo")
+    if not isinstance(match_info, dict):
+        return None
+
+    # Parse start_time
+    start_time_raw = match_info.get("StartTime")
+    start_time = _parse_iso_utc(start_time_raw)
+    if start_time is None:
+        return None
+
+    # Extraire les identifiants d'assets
+    playlist_id = _extract_asset_id(match_info, "Playlist")
+    playlist_name = _extract_public_name(match_info, "Playlist")
+    map_id = _extract_asset_id(match_info, "MapVariant")
+    map_name = _extract_public_name(match_info, "MapVariant")
+    pair_id = _extract_asset_id(match_info, "PlaylistMapModePair")
+    pair_name = _extract_public_name(match_info, "PlaylistMapModePair")
+    game_variant_id = _extract_asset_id(match_info, "UgcGameVariant")
+    game_variant_name = _extract_public_name(match_info, "UgcGameVariant")
+
+    # Résolution depuis les référentiels
+    if metadata_resolver:
+        if playlist_id and (not playlist_name or _is_uuid(playlist_name)):
+            resolved = metadata_resolver("playlist", playlist_id)
+            if resolved:
+                playlist_name = resolved
+        if map_id and (not map_name or _is_uuid(map_name)):
+            resolved = metadata_resolver("map", map_id)
+            if resolved:
+                map_name = resolved
+        if pair_id and (not pair_name or _is_uuid(pair_name)):
+            resolved = metadata_resolver("pair", pair_id)
+            if resolved:
+                pair_name = resolved
+        if game_variant_id and (not game_variant_name or _is_uuid(game_variant_name)):
+            resolved = metadata_resolver("game_variant", game_variant_id)
+            if resolved:
+                game_variant_name = resolved
+
+    # Fallback sur les IDs si les noms sont toujours NULL
+    playlist_name = playlist_name or playlist_id
+    map_name = map_name or map_id
+    pair_name = pair_name or pair_id
+    game_variant_name = game_variant_name or game_variant_id
+
+    # Flags
+    is_ranked = _is_ranked_playlist(match_info)
+    is_firefight = _is_firefight_match(match_info)
+    mode_category = _determine_mode_category(pair_name)
+
+    # Durée : depuis MatchInfo.Duration (durée globale du match)
+    duration_seconds: int | None = None
+    duration_raw = match_info.get("Duration")
+    if isinstance(duration_raw, str):
+        duration_seconds = _parse_duration_to_seconds(duration_raw)
+
+    # Heure de fin
+    end_time = None
+    if start_time is not None and duration_seconds is not None and duration_seconds >= 0:
+        end_time = start_time + timedelta(seconds=duration_seconds)
+
+    # Scores des équipes (team_0 et team_1, indépendants du joueur)
+    team_0_score, team_1_score = _extract_team_scores_by_id(match_json)
+
+    return {
+        "match_id": match_id,
+        "start_time": start_time,
+        "end_time": end_time,
+        "playlist_id": playlist_id,
+        "playlist_name": playlist_name,
+        "map_id": map_id,
+        "map_name": map_name,
+        "pair_id": pair_id,
+        "pair_name": pair_name,
+        "game_variant_id": game_variant_id,
+        "game_variant_name": game_variant_name,
+        "mode_category": mode_category,
+        "is_ranked": is_ranked,
+        "is_firefight": is_firefight,
+        "duration_seconds": duration_seconds,
+        "team_0_score": team_0_score,
+        "team_1_score": team_1_score,
+    }
+
+
+def _extract_team_scores_by_id(
+    match_obj: dict[str, Any],
+) -> tuple[int | None, int | None]:
+    """Extrait les scores d'équipe par ID (team_0 et team_1).
+
+    Contrairement à _extract_team_scores() qui est relative au joueur,
+    cette fonction retourne les scores absolus par TeamId.
+
+    Returns:
+        (team_0_score, team_1_score)
+    """
+    teams = match_obj.get("Teams")
+    if not isinstance(teams, list):
+        return None, None
+
+    team_scores: dict[int, int | None] = {}
+    for team in teams:
+        if not isinstance(team, dict):
+            continue
+        tid = team.get("TeamId")
+        if tid is not None:
+            score = _safe_int(team.get("TotalPoints")) or _safe_int(team.get("Score"))
+            team_scores[tid] = score
+
+    return team_scores.get(0), team_scores.get(1)

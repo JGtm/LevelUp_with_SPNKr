@@ -155,6 +155,36 @@ CAST_PLAN: dict[str, dict[str, str]] = {
         "is_validated": "BOOLEAN",
         "created_at": "TIMESTAMP",
     },
+    # v5 Shared Matches — match_registry
+    "match_registry": {
+        "match_id": "VARCHAR",
+        "start_time": "TIMESTAMP",
+        "end_time": "TIMESTAMP",
+        "playlist_id": "VARCHAR",
+        "playlist_name": "VARCHAR",
+        "map_id": "VARCHAR",
+        "map_name": "VARCHAR",
+        "pair_id": "VARCHAR",
+        "pair_name": "VARCHAR",
+        "game_variant_id": "VARCHAR",
+        "game_variant_name": "VARCHAR",
+        "mode_category": "VARCHAR",
+        "is_ranked": "BOOLEAN",
+        "is_firefight": "BOOLEAN",
+        "duration_seconds": "INTEGER",
+        "team_0_score": "SMALLINT",
+        "team_1_score": "SMALLINT",
+        "backfill_completed": "INTEGER",
+        "participants_loaded": "BOOLEAN",
+        "events_loaded": "BOOLEAN",
+        "medals_loaded": "BOOLEAN",
+        "first_sync_by": "VARCHAR",
+        "first_sync_at": "TIMESTAMP",
+        "last_updated_at": "TIMESTAMP",
+        "player_count": "SMALLINT",
+        "created_at": "TIMESTAMP",
+        "updated_at": "TIMESTAMP",
+    },
 }
 
 # Tables critiques pour l'audit de typage (Sprint 15.4)
@@ -445,6 +475,9 @@ PARTICIPANT_COLUMNS = [
 ]
 
 ALIAS_COLUMNS = ["xuid", "gamertag", "last_seen", "source", "updated_at"]
+
+# v5 Shared Matches — colonnes spécifiques
+SHARED_MEDAL_COLUMNS = ["match_id", "xuid", "medal_name_id", "count"]
 
 MATCH_STATS_COLUMNS = [
     "match_id",
