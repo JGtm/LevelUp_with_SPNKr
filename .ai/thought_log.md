@@ -7,6 +7,84 @@
 
 ## Journal
 
+### [2026-02-14] - Sprint 18 — Stabilisation, benchmark, docs, release v4.5
+
+**Statut** : Livré ✅
+
+**Objectif** : Livrer le package v4.5 avec benchmark comparatif, documentation à jour, couverture de tests renforcée, et checklist cochée.
+
+**Réalisations** :
+
+**Phase A — Benchmark + audit technique** :
+
+**18.1 — Benchmark post-migration** :
+- Exécuté via `scripts/benchmark_pages.py` (5 itérations, cold/warm)
+- Résultat : cold_load -5.3%, medals -4.3%, teammates -7.5%, Polars→Pandas -28.6% 🚀
+- Temps absolus excellents : <160ms cold, <30ms warm
+- Rapport archivé : `.ai/reports/benchmark_v4_5_post_migration.json`
+
+**18.2 — Rapport comparatif** :
+- `.ai/reports/V4_5_BENCHMARK_COMPARISON.md` — gains documentés (avant/après)
+- Verdict : aucune régression, gains sur tous les parcours
+
+**18.3 — Optimisations ciblées** :
+- Non nécessaire : performances déjà sous les seuils de perception (<200ms cold, <30ms warm)
+- S19 conditionnel → non activé
+
+**18.4 — Zéro sqlite3/src.db** :
+- `grep -r "import sqlite3\|sqlite_master\|from src.db" src/` → 0 résultat ✅
+
+**18.5 — Cartographie Pandas** :
+- `.ai/reports/V4_5_PANDAS_FRONTIER_MAP.md`
+- 10 fichiers, 32 occurrences — tous justifiés (FRONTIER/BRIDGE/RAG) ou classés dette future
+- Progression S13→S18 : -72% fichiers, -49% conversions
+
+**Phase B — QA, documentation, release** :
+
+**18.6 — Tests complets** :
+- 1328 passed, 35 skipped, 0 failed, 0 errors (45.94s)
+- Fix migration highlight_events (bug CASCADE perdait les données au 2e appel)
+- Fix skipif tests DuckDB DB vide (vérification table match_stats au lieu du fichier)
+
+**18.7 — Couverture + trous critiques** :
+- 30 tests ajoutés pour `src/data/sync/migrations.py` (zéro couverture auparavant)
+- Bug réel trouvé et fixé : `_recreate_highlight_events_with_sequence()` — le `DROP SEQUENCE CASCADE` détruisait la table et ses données lors d'appels idempotents
+- Total : 1358 tests (1328 + 30 nouveaux)
+
+**18.8 — Documentation utilisateur** :
+- README.md mis à jour pour v4.5 : badges, section nouveautés, architecture Polars, limitations connues
+
+**18.9-10 — Documentation AI** :
+- `.ai/features/README.md` : statut v4.5 ajouté pour chaque fiche
+- `.ai/thought_log.md` : entrée S18 ajoutée
+
+**18.12 — Fix nommage N806** :
+- 9 violations corrigées dans `api_client.py` et `radar_chart.py`
+- `ruff check src --select N806` : 0 violation ✅
+
+**18.11 — Release notes v4.5** :
+- `.ai/RELEASE_NOTES_2026_Q1.md` mis à jour
+
+**Bugs trouvés et corrigés en S18** :
+1. `_recreate_highlight_events_with_sequence()` : `DROP SEQUENCE CASCADE` destructeur (données perdues au 2e appel)
+2. `test_duckdb_repository.py` skipif basé sur existence fichier au lieu de table → 8 false failures
+
+**Métriques clés** :
+| Indicateur | Baseline S13 | Valeur S18 | Delta |
+|------------|:---:|:---:|:---:|
+| Tests passed | 1065 | 1358 | +27% |
+| Tests failed | 0 | 0 | = |
+| `import pandas` résiduel | 36 fichiers | 10 fichiers | -72% |
+| `import sqlite3` | 0 | 0 | = |
+| `from src.db` | 3 | 0 | -100% |
+| Violations N806 | 9 | 0 | -100% |
+
+**Décisions** :
+- S19 conditionnel → **non activé** (ROI négatif, performances déjà excellentes)
+- Reliquats Pandas classés en backlog post-v4.5
+
+---
+
 ### [2026-02-13] - Sprint 13 — Lancement v4.5 : audit baseline & gouvernance
 
 **Statut** : Livré ✅

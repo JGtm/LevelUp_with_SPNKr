@@ -87,6 +87,7 @@ class TestSyncCLIWithBackfill:
                 mock_args.delta = True
                 mock_args.full = False
                 mock_args.player = "TestPlayer"
+                mock_args.add_player = None
                 mock_args.with_backfill = True
                 mock_args.backfill_performance_scores = False
                 mock_args.db = str(db_path)
@@ -139,6 +140,7 @@ class TestSyncCLIWithBackfill:
             mock_args.delta = True
             mock_args.full = False
             mock_args.player = None  # Pas de player
+            mock_args.add_player = None
             mock_args.with_backfill = True
             mock_args.backfill_performance_scores = False
             mock_args.db = str(db_path)
@@ -202,6 +204,7 @@ class TestSyncCLIBackfillPerformanceScores:
             mock_args.delta = True
             mock_args.full = False
             mock_args.player = "TestPlayer"
+            mock_args.add_player = None
             mock_args.with_backfill = False
             mock_args.backfill_performance_scores = True
             mock_args.db = str(db_path)
@@ -264,6 +267,7 @@ class TestSyncCLIIntegration:
             mock_args.delta = True
             mock_args.full = False
             mock_args.player = "TestPlayer"
+            mock_args.add_player = None
             mock_args.with_backfill = True
             mock_args.backfill_performance_scores = True
             mock_args.db = str(db_path)

@@ -1,13 +1,13 @@
-# Release Notes — LevelUp v4.1
+# Release Notes — LevelUp v4.5
 
-> **Date** : 2026-02-12
-> **Version** : 4.1.0 (`v4.1-clean`)
+> **Date** : 2026-02-14
+> **Version** : 4.5.0 (`v4.5`)
 
 ---
 
 ## 🎉 Vue d'ensemble
 
-Cette version majeure finalise la migration de l'architecture LevelUp vers DuckDB v4 unifiée avec Polars comme moteur DataFrame. Elle apporte de nouvelles fonctionnalités statistiques, une refonte complète du code legacy, et améliore significativement la qualité du code.
+Cette version majeure finalise la migration complète de l'architecture LevelUp vers DuckDB + Polars. Zéro SQLite, zéro module legacy, Polars natif dans le runtime. Benchmark validé avec gains sur tous les parcours.
 
 ---
 
@@ -46,10 +46,11 @@ Cette version majeure finalise la migration de l'architecture LevelUp vers DuckD
 - **Backfill modulaire** : Refactoring de `scripts/backfill_data.py` en modules (`scripts/backfill/`)
 
 ### Qualité du Code
-- **1065+ tests passants** (hors intégration)
-- **15 nouveaux tests d'intégration** pour les statistiques
+- **1358 tests passants** (dont 30 nouveaux pour migrations)
 - Tests de charge validés (1000-2000 matchs < 1s)
-- Suppression complète du code legacy (`src/db/loaders.py`, repositories hybrides)
+- Suppression complète du code legacy (`src/db/`, repositories hybrides)
+- Zéro `import sqlite3`, zéro `from src.db` dans le runtime
+- Benchmark post-migration : cold <160ms, warm <30ms, Polars→Pandas -28.6%
 
 ### Scripts Nettoyés
 - Consolidation de 113 scripts vers 16 actifs
@@ -74,18 +75,27 @@ Cette version majeure finalise la migration de l'architecture LevelUp vers DuckD
 | S10 | Nettoyage données + Refactoring backfill | ✅ |
 | S11 | Finalisation, tests, documentation | ✅ |
 | S12 | Heatmap d'Impact & Cercle d'Amis | ✅ |
+| S13 | Audit baseline v4.5 + gouvernance | ✅ |
+| S14 | Backfill bitmask + perf score v4 | ✅ |
+| S15 | Analyse participation objective | ✅ |
+| S16 | Refactoring UI (découpage + migration Polars vague A) | ✅ |
+| S17 | Migration Polars vague B + cache | ✅ |
+| S18 | Stabilisation, benchmark, docs, release v4.5 | ✅ |
 
 ---
 
 ## 📊 Métriques
 
-| Métrique | Avant | Après |
-|----------|-------|-------|
-| Tests passants | ~800 | 1065+ |
-| Scripts actifs | 113 | 16 |
-| Fichiers Pandas | 35 | 0 |
-| Code legacy (loaders) | Actif | Supprimé |
-| Tests d'intégration | 0 | 15 |
+| Métrique | v4.1 | v4.5 |
+|----------|-------|------|
+| Tests passants | 1065 | 1358 |
+| `import pandas` résiduel | 36 fichiers | 10 fichiers (-72%) |
+| `import sqlite3` | 0 | 0 |
+| `from src.db` | 3 | 0 |
+| Violations N806 | 9 | 0 |
+| Cold load (ms) | 161 | 153 (-5%) |
+| Warm load (ms) | 21 | 22 (stable) |
+| Polars→Pandas (ms) | 5.6 | 4.0 (-29%) |
 
 ---
 
@@ -118,10 +128,11 @@ from scripts.backfill.strategies import compute_performance_score_for_match
 
 ## 🔒 Règles Critiques Maintenues
 
-1. **Pandas interdit** dans le code métier (Polars uniquement)
+1. **Pandas uniquement aux frontières** Plotly/Streamlit (10 fichiers documentés)
 2. **SQLite interdit** (DuckDB v4 uniquement)
 3. **DuckDBRepository obligatoire** pour l'accès aux données
 4. **Environnement `.venv`** officiel (Python 3.12.10)
+5. **Conventions N806** respectées (variables locales en snake_case)
 
 ---
 
@@ -157,8 +168,9 @@ src/
 ## 🚀 Prochaines Étapes
 
 - Amélioration de la couverture de tests (objectif 80%+)
-- Optimisation des requêtes DuckDB pour gros volumes
-- Nouvelles visualisations (tendances long terme)
+- Migration Polars des reliquats legacy (win_loss_service, performance_score rétro-compat)
+- Optimisation long terme si volumes > 5000 matchs
+- Support natif Polars dans Streamlit (quand disponible upstream)
 
 ---
 
@@ -168,4 +180,4 @@ Cette release représente plusieurs semaines de travail intensif sur la qualité
 
 ---
 
-**LevelUp v4.1** — *Analyse de statistiques Halo Infinite*
+**LevelUp v4.5** — *Analyse de statistiques Halo Infinite*

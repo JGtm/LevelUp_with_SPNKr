@@ -363,6 +363,225 @@ def _get_xuid_for_gamertag(gamertag: str) -> str | None:
         return None
 
 
+def _get_profile_for_gamertag(gamertag: str) -> dict | None:
+    """Retourne le profil brut db_profiles.json pour un gamertag (case-insensitive)."""
+    import json
+
+    profiles_path = REPO_ROOT / "db_profiles.json"
+    if not profiles_path.exists():
+        return None
+
+    try:
+        with open(profiles_path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        profiles_dict = data.get("profiles", {})
+        if not isinstance(profiles_dict, dict):
+            return None
+
+        gamertag_lower = gamertag.lower()
+        for key, profile in profiles_dict.items():
+            if not isinstance(profile, dict):
+                continue
+            if key.lower() == gamertag_lower:
+                return profile
+            if str(profile.get("gamertag", "")).lower() == gamertag_lower:
+                return profile
+            if str(profile.get("waypoint_player", "")).lower() == gamertag_lower:
+                return profile
+
+        return None
+    except Exception:
+        return None
+
+
+def _load_db_profiles_json() -> dict:
+    """Charge db_profiles.json ou retourne un squelette par défaut."""
+    import json
+
+    profiles_path = REPO_ROOT / "db_profiles.json"
+    if not profiles_path.exists():
+        return {
+            "version": "2.1",
+            "warehouse_path": "data/warehouse",
+            "metadata_db": "data/warehouse/metadata.duckdb",
+            "profiles": {},
+        }
+
+    with open(profiles_path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("db_profiles.json invalide (root non-objet)")
+    if not isinstance(data.get("profiles", {}), dict):
+        data["profiles"] = {}
+    return data
+
+
+def _save_db_profiles_json(data: dict) -> None:
+    """Écrit db_profiles.json de façon déterministe (UTF-8, indent)."""
+    import json
+
+    profiles_path = REPO_ROOT / "db_profiles.json"
+    with open(profiles_path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
+def _find_profile_key_case_insensitive(profiles_dict: dict, key: str) -> str | None:
+    """Retourne la clé existante correspondant à key (case-insensitive)."""
+    target = _normalize_player_key(key)
+    if not target:
+        return None
+    for k in profiles_dict:
+        if _normalize_player_key(str(k)) == target:
+            return str(k)
+    return None
+
+
+def _run_async(coro, *, timeout_seconds: int = 20):
+    """Exécute un coroutine en contexte sync (CLI).
+
+    Sur certains environnements (ex: si déjà dans une boucle), on bascule
+    sur un thread.
+    """
+    import asyncio
+    import concurrent.futures
+
+    try:
+        return asyncio.run(coro)
+    except RuntimeError as e:
+        msg = str(e)
+        if "asyncio.run() cannot be called" not in msg:
+            raise
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(lambda: asyncio.run(coro))
+            return fut.result(timeout=float(timeout_seconds) + 30.0)
+
+
+def _resolve_gamertag_from_xuid_via_spnkr(xuid: str) -> str | None:
+    """Résout un XUID vers un gamertag via SPNKr (si tokens disponibles)."""
+
+    async def _run() -> str | None:
+        try:
+            from src.data.sync.api_client import SPNKrAPIClient
+        except ImportError:
+            return None
+
+        x = str(xuid or "").strip()
+        if not x.isdigit():
+            return None
+
+        async with SPNKrAPIClient(requests_per_second=2) as api_client:
+            resp = await api_client.client.profile.get_users_by_id([x])
+            users = resp.data if hasattr(resp, "data") else await resp.parse()
+            if not users:
+                return None
+            user = users[0]
+            gt = str(getattr(user, "gamertag", "") or "").strip()
+            return gt or None
+
+    try:
+        return _run_async(_run(), timeout_seconds=20)
+    except Exception:
+        return None
+
+
+def add_player_profile(player_input: str) -> tuple[str, str | None]:
+    """Ajoute/MAJ un joueur dans db_profiles.json.
+
+    Args:
+        player_input: Gamertag ou XUID.
+
+    Returns:
+        (profile_key, xuid)
+        - profile_key: clé utilisée dans db_profiles.json (gamertag canonique si résolu, sinon input)
+        - xuid: xuid résolu si dispo
+    """
+    raw = str(player_input or "").strip()
+    if not raw:
+        raise ValueError("--add-player: valeur vide")
+
+    # Rejeter les valeurs invalides (MagicMock, caractères spéciaux, etc.)
+    import re
+
+    if "MagicMock" in raw or not re.match(r"^[\w\s\-]{1,50}$", raw):
+        raise ValueError(
+            f"--add-player: valeur invalide '{raw[:60]}'. "
+            "Attendu : un gamertag alphanumérique ou un XUID numérique."
+        )
+
+    xuid: str | None = None
+    canonical_key: str | None = None
+
+    if raw.isdigit():
+        xuid = raw
+        canonical_key = _resolve_gamertag_from_xuid_via_spnkr(xuid) or raw
+    else:
+        # Résolution gamertag -> xuid via SPNKr (meilleur effort)
+        try:
+            from src.ui.profile_api import fetch_xuid_via_spnkr
+
+            xuid_resolved, canonical_gt = fetch_xuid_via_spnkr(gamertag=raw)
+            xuid = str(xuid_resolved or "").strip() or None
+            canonical_key = str(canonical_gt or "").strip() or raw
+        except Exception:
+            # On accepte quand même l'ajout (mais le pipeline DuckDB pourra fallback legacy)
+            canonical_key = raw
+            xuid = None
+
+    canonical_key = str(canonical_key or raw).strip()
+    if not canonical_key:
+        raise ValueError("Impossible de déterminer un identifiant joueur")
+
+    data = _load_db_profiles_json()
+    profiles = data.setdefault("profiles", {})
+    if not isinstance(profiles, dict):
+        raise ValueError("db_profiles.json invalide: profiles n'est pas un objet")
+
+    existing_key = _find_profile_key_case_insensitive(profiles, canonical_key)
+    final_key = existing_key or canonical_key
+    existing_profile = profiles.get(final_key) if isinstance(profiles.get(final_key), dict) else {}
+
+    default_db_path = f"data/players/{final_key}/stats.duckdb"
+    db_path = str(existing_profile.get("db_path") or "").strip() or default_db_path
+
+    new_profile = {
+        **(existing_profile if isinstance(existing_profile, dict) else {}),
+        "db_path": db_path,
+        "waypoint_player": str(existing_profile.get("waypoint_player") or canonical_key).strip()
+        or canonical_key,
+    }
+    if xuid:
+        new_profile["xuid"] = xuid
+    else:
+        # Ne pas écraser un xuid existant avec du vide
+        if "xuid" not in new_profile:
+            new_profile["xuid"] = ""
+
+    profiles[final_key] = new_profile
+    _save_db_profiles_json(data)
+
+    # Créer le dossier joueur + un fichier stats.duckdb vide.
+    # (Le pipeline DuckDB et src.ui.sync.sync_player_duckdb exigent que le fichier existe.)
+    try:
+        player_dir = REPO_ROOT / "data" / "players" / final_key
+        player_dir.mkdir(parents=True, exist_ok=True)
+        db_file = player_dir / "stats.duckdb"
+        if not db_file.exists():
+            try:
+                import duckdb
+
+                conn = duckdb.connect(str(db_file))
+                conn.close()
+            except Exception:
+                # Fallback minimal: créer le fichier pour satisfaire les checks d'existence.
+                db_file.touch(exist_ok=True)
+    except Exception:
+        pass
+
+    return final_key, xuid
+
+
 def rebuild_medals_aggregate(db_path: str) -> tuple[bool, str]:
     """Reconstruit la table MedalsAggregate depuis MatchStats.
 
@@ -521,8 +740,9 @@ def _try_sync_duckdb(
         player_id, resolved_xuid, display_label = _resolve_player_in_db(db_path, player)
         gamertag = display_label or player
 
-        # Vérifier si le joueur a une DB DuckDB
-        if not force and not is_duckdb_player(gamertag):
+        # Vérifier si le joueur a une DB DuckDB (ou au moins un profil v4)
+        has_duckdb_profile = _get_profile_for_gamertag(gamertag) is not None
+        if not force and not is_duckdb_player(gamertag) and not has_duckdb_profile:
             return None
 
         if not resolved_xuid:
@@ -820,6 +1040,8 @@ def main() -> int:
 Exemples:
   python scripts/sync.py --delta                    # Sync incrémentale
     python scripts/sync.py --delta --player Chocoboflor # Sync delta d'un seul joueur
+    python scripts/sync.py --add-player JGtm          # Ajoute/MAJ un profil joueur (gamertag)
+    python scripts/sync.py --add-player 2533...       # Ajoute/MAJ un profil joueur (XUID)
   python scripts/sync.py --full --max-matches 500   # Sync complète (500 matchs)
     python scripts/sync.py --full --player Madina97294 # Sync full d'un seul joueur
   python scripts/sync.py --rebuild-cache            # Reconstruit le cache
@@ -844,6 +1066,13 @@ Exemples:
         type=str,
         default=None,
         help="Sync d'un seul joueur (XUID, gamertag ou label de la table Players)",
+    )
+
+    parser.add_argument(
+        "--add-player",
+        type=str,
+        default=None,
+        help="Ajoute/MAJ un profil dans db_profiles.json (accepte XUID ou gamertag)",
     )
 
     # Modes de synchronisation
@@ -933,6 +1162,44 @@ Exemples:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    # Ajout/MAJ de joueur (db_profiles.json)
+    if args.add_player:
+        try:
+            profile_key, resolved_xuid = add_player_profile(args.add_player)
+            logger.info(
+                f"Profil joueur ajouté/MAJ: {profile_key}"
+                + (f" (xuid={resolved_xuid})" if resolved_xuid else "")
+            )
+
+            if args.player and _normalize_player_key(args.player) != _normalize_player_key(
+                profile_key
+            ):
+                logger.error(
+                    f"Conflit: --player={args.player} et --add-player={args.add_player} ne pointent pas vers le même joueur"
+                )
+                return 1
+
+            # Si on veut enchaîner un sync, on force --player sur la clé ajoutée.
+            if not args.player:
+                args.player = profile_key
+
+            # Si pas de mode sync/maintenance demandé, on s'arrête ici.
+            if not (
+                args.delta
+                or args.full
+                or args.rebuild_cache
+                or args.apply_indexes
+                or args.stats
+                or args.with_assets
+                or args.with_backfill
+                or args.backfill_performance_scores
+                or args.migrate_parquet
+            ):
+                return 0
+        except Exception as e:
+            logger.error(f"Erreur --add-player: {e}")
+            return 1
+
     # Déterminer le chemin de la DB (ou la liste des joueurs DuckDB v4)
     db_path = args.db
     duckdb_players = []
@@ -952,6 +1219,17 @@ Exemples:
                     player_db = REPO_ROOT / "data" / "players" / gt / "stats.duckdb"
                     if player_db.exists():
                         db_path = str(player_db)
+                if not db_path:
+                    # Dernier fallback: profil présent dans db_profiles.json même si DB absente
+                    profile = _get_profile_for_gamertag(gt)
+                    if isinstance(profile, dict):
+                        raw_path = str(profile.get("db_path", "")).strip()
+                        if raw_path:
+                            db_path = str((REPO_ROOT / raw_path).resolve())
+                        else:
+                            db_path = str(
+                                (REPO_ROOT / "data" / "players" / gt / "stats.duckdb").resolve()
+                            )
                 if not db_path:
                     logger.error(f"Joueur DuckDB v4 introuvable: {args.player}")
                     return 1
@@ -1014,8 +1292,14 @@ Exemples:
         return 1
 
     if not os.path.exists(db_path):
-        logger.error(f"Base de données introuvable: {db_path}")
-        return 1
+        can_bootstrap_player_db = bool(
+            args.player and (args.delta or args.full) and db_path.lower().endswith(".duckdb")
+        )
+        if can_bootstrap_player_db:
+            logger.info(f"Base joueur absente, initialisation au premier sync: {db_path}")
+        else:
+            logger.error(f"Base de données introuvable: {db_path}")
+            return 1
 
     # Refuser SQLite (.db) - uniquement DuckDB supporté
     try:

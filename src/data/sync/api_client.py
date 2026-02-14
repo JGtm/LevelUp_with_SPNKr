@@ -881,14 +881,14 @@ async def enrich_match_info_with_assets(client: SPNKrAPIClient, stats_json: dict
     if not isinstance(match_info, dict):
         return
 
-    ASSET_KEYS = [
+    asset_keys = [
         ("Playlist", "Playlists"),
         ("MapVariant", "Maps"),
         ("PlaylistMapModePair", "PlaylistMapModePairs"),
         ("UgcGameVariant", "GameVariants"),
     ]
 
-    for json_key, api_type in ASSET_KEYS:
+    for json_key, api_type in asset_keys:
         ref = match_info.get(json_key)
         if not isinstance(ref, dict):
             continue

@@ -2,11 +2,25 @@
 
 > **Analysez vos performances Halo Infinite avec des visualisations avancées et une architecture DuckDB ultra-rapide.**
 
-[![Version](https://img.shields.io/badge/Version-3.0.0-green.svg)](https://github.com/JGtm/LevelUp_with_SPNKr/releases/tag/v3.0.0)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/Version-4.5.0-green.svg)](https://github.com/JGtm/LevelUp_with_SPNKr/releases/tag/v4.5)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-FF4B4B.svg)](https://streamlit.io/)
-[![DuckDB](https://img.shields.io/badge/DuckDB-0.10%2B-FEE14E.svg)](https://duckdb.org/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-1.4%2B-FEE14E.svg)](https://duckdb.org/)
+[![Polars](https://img.shields.io/badge/Polars-1.38%2B-blue.svg)](https://pola.rs/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## Nouveautés v4.5
+
+- **Migration Polars complète** — Remplacement de Pandas par Polars dans le runtime principal (gains de 5-28% selon les parcours)
+- **Architecture DuckDB unifiée** — Zéro dépendance SQLite, zéro module legacy `src.db`
+- **Score de Performance** — Algorithme composite multi-métriques pour évaluer chaque match
+- **Analyse d'impact coéquipiers** — Heatmap et classement des synergies
+- **Sessions de jeu avancées** — Détection automatique, comparaison inter-sessions
+- **Participation objective** — Analyse des objectifs de mode (CTF, Oddball, Strongholds)
+- **Backfill incrémental avec bitmask** — Reprise sélective des données manquantes
+- **1328 tests unitaires** — Suite verte, 0 failure
 
 ---
 
@@ -26,17 +40,18 @@
 - **Corrélations** - Scatter plots durée de vie vs kills
 - **Top armes** - Statistiques par arme avec headshot rate
 
-### Architecture v4 - DuckDB Unifié
-- **Performance** - Requêtes 10-20x plus rapides
-- **Vues matérialisées** - Agrégations instantanées
-- **Lazy loading** - Chargement à la demande
-- **Backup Parquet** - Export/restore avec compression Zstd
+### Architecture v4.5 - DuckDB + Polars
+- **Performance** — Requêtes DuckDB < 30ms (warm), DataFrame Polars natifs
+- **Vues matérialisées** — Agrégations instantanées (carte, mode, global)
+- **Lazy loading** — Chargement à la demande par page
+- **Zéro legacy** — Plus de SQLite, plus de `src.db`, Pandas uniquement aux frontières Plotly/Streamlit
+- **Backup Parquet** — Export/restore avec compression Zstd
 
 ---
 
 ## Installation Rapide
 
-Note Windows: pour une installation stable de DuckDB/Polars/Numpy, utilisez de préférence Python 3.11 ou 3.12 (évitez Python 3.14 si vous constatez des crashes natifs pendant `pytest`).
+**Prérequis** : Python 3.12+ recommandé (3.10 minimum). Note Windows : évitez Python 3.14 si vous constatez des crashes natifs pendant `pytest`.
 
 ```bash
 # Cloner le projet
@@ -226,13 +241,22 @@ pytest
 
 | Technologie | Usage |
 |-------------|-------|
-| **Python 3.10+** | Langage principal |
+| **Python 3.12+** | Langage principal |
 | **Streamlit** | Interface utilisateur |
-| **DuckDB** | Moteur de requêtes OLAP |
-| **Polars** | DataFrames haute performance |
+| **DuckDB 1.4** | Moteur de requêtes OLAP |
+| **Polars 1.38** | DataFrames haute performance |
+| **PyArrow 23** | Passerelle données |
 | **Pydantic v2** | Validation des données |
 | **Plotly** | Visualisations interactives |
 | **SPNKr** | API Halo Infinite |
+
+---
+
+## Limitations connues
+
+- **Pandas résiduel** : 10 fichiers conservent Pandas aux frontières Plotly/Streamlit (conversion obligatoire) et dans le module RAG (API LanceDB). Voir `.ai/reports/V4_5_PANDAS_FRONTIER_MAP.md`.
+- **Couverture tests** : ~40% global. Les modules UI (pages, renderers) ont peu de tests unitaires (logique de rendu Streamlit).
+- **API Halo** : Dépend de l'API Grunt/SPNKr — certains endpoints peuvent être instables ou limités en débit.
 
 ---
 

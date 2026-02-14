@@ -174,9 +174,28 @@ class TestStreamlitBridge:
         assert mode == RepositoryMode.DUCKDB
 
 
+def _has_match_stats_table() -> bool:
+    """Vérifie que la DB de test contient la table match_stats."""
+    db_path = Path("data/players/XxDaemonGamerxX/stats.duckdb")
+    if not db_path.exists():
+        return False
+    try:
+        import duckdb as _ddb
+
+        c = _ddb.connect(str(db_path), read_only=True)
+        r = c.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            "WHERE table_schema='main' AND table_name='match_stats'"
+        ).fetchone()
+        c.close()
+        return bool(r and r[0] > 0)
+    except Exception:
+        return False
+
+
 @pytest.mark.skipif(
-    not Path("data/players/XxDaemonGamerxX/stats.duckdb").exists(),
-    reason="Base de données de test non disponible",
+    not _has_match_stats_table(),
+    reason="Base de données de test non disponible ou vide (pas de match_stats)",
 )
 class TestDuckDBRepositoryWithRealData:
     """Tests avec vraies données (si disponibles)."""
@@ -238,8 +257,8 @@ class TestDuckDBRepositoryWithRealData:
 
 
 @pytest.mark.skipif(
-    not Path("data/players/XxDaemonGamerxX/stats.duckdb").exists(),
-    reason="Base de données de test non disponible",
+    not _has_match_stats_table(),
+    reason="Base de données de test non disponible ou vide (pas de match_stats)",
 )
 class TestDuckDBRepositoryQueries:
     """Tests des requêtes avancées."""

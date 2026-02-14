@@ -1,5 +1,21 @@
 # .ai/features/ - Base de Connaissances Technique
 
+> **⚠️ Note v4.5** (2026-02-14) : Ces fiches ont été générées lors de la v3/v4.0 et contiennent des références à l'architecture SQLite/Parquet supprimée. L'architecture actuelle (v4.5) utilise **DuckDB unifié** + **Polars** comme moteur principal. Les modules `src/db/`, `src/data/infrastructure/` n'existent plus. Se référer à `docs/ARCHITECTURE.md` et `docs/DATA_ARCHITECTURE.md` pour la documentation à jour.
+
+## Statut par fiche (v4.5)
+
+| Fichier | Statut v4.5 | Note |
+|---------|:-----------:|------|
+| `data_storage.md` | ⚠️ Obsolète | Références SQLite/Parquet à ignorer. Voir `docs/DATA_ARCHITECTURE.md` |
+| `ingestion_scripts.md` | ⚠️ Obsolète | Scripts refactorisés dans `src/data/sync/`. Voir `docs/SYNC_GUIDE.md` |
+| `query_engine.md` | ⚠️ Obsolète | Remplacé par `DuckDBRepository`. Voir `docs/SQL_SCHEMA.md` |
+| `stats_engine.md` | ✅ Partiellement ok | Algorithmes corrects. Manque : performance score, objective participation |
+| `ui_streamlit.md` | ✅ Partiellement ok | Structure correcte. Manque : nouvelles pages v4.5 |
+| `spnkr_integration.md` | ✅ Partiellement ok | API correcte. Sync engine refactorisé dans `src/data/sync/` |
+| `test_agent.md` | ✅ Partiellement ok | Mapping `src/db/` obsolète. 1328 tests, 0 failures |
+| `cleanup_agent.md` | ✅ Correct | `src/db/` entièrement supprimé |
+| `API_COMPARISON_SPNKR_GRUNT.md` | ✅ Correct | Document de référence API |
+
 Ce dossier contient les spécifications techniques extraites automatiquement du projet par la commande `/investigate`.
 
 ## Structure

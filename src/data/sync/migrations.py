@@ -238,15 +238,8 @@ def ensure_highlight_events_autoincrement(conn: duckdb.DuckDBPyConnection) -> No
 
     if has_nextval:
         # La colonne a déjà nextval, mais la séquence peut être désynchronisée.
-        # Recréer la séquence au bon point de départ.
-        try:
-            conn.execute("DROP SEQUENCE IF EXISTS highlight_events_id_seq")
-            conn.execute(f"CREATE SEQUENCE highlight_events_id_seq START WITH {max_id + 1}")
-            logger.info(f"Séquence highlight_events_id_seq réinitialisée à {max_id + 1}")
-        except Exception as e:
-            # Si on ne peut pas drop (référence), recréer la table aussi
-            logger.debug(f"Reset séquence échoué, recreation table: {e}")
-            _recreate_highlight_events_with_sequence(conn, max_id)
+        # Recréer la table complète pour réinitialiser la séquence proprement.
+        _recreate_highlight_events_with_sequence(conn, max_id)
         return
 
     # Pas de DEFAULT → recreation complète
@@ -261,11 +254,23 @@ def _recreate_highlight_events_with_sequence(conn: duckdb.DuckDBPyConnection, ma
     """Recrée highlight_events avec id DEFAULT nextval(séquence).
 
     Copie toutes les données existantes, recrée les index.
+    Note: On sauvegarde les données AVANT de drop la séquence CASCADE
+    car le CASCADE supprime aussi la table dépendante.
     """
-    conn.execute("DROP SEQUENCE IF EXISTS highlight_events_id_seq")
+    # 1) Sauvegarder les données existantes avant tout DROP
+    conn.execute("DROP TABLE IF EXISTS highlight_events_backup")
+    if table_exists(conn, "highlight_events"):
+        conn.execute("CREATE TABLE highlight_events_backup AS SELECT * FROM highlight_events")
+        conn.execute("DROP TABLE highlight_events CASCADE")
+
+    # 2) Nettoyer séquence/table résiduelle
+    conn.execute("DROP TABLE IF EXISTS highlight_events_new")
+    conn.execute("DROP SEQUENCE IF EXISTS highlight_events_id_seq CASCADE")
+
+    # 3) Créer la nouvelle séquence et table
     conn.execute(f"CREATE SEQUENCE highlight_events_id_seq START WITH {max_id + 1}")
     conn.execute("""
-        CREATE TABLE highlight_events_new (
+        CREATE TABLE highlight_events (
             id INTEGER PRIMARY KEY DEFAULT nextval('highlight_events_id_seq'),
             match_id VARCHAR NOT NULL,
             event_type VARCHAR NOT NULL,
@@ -276,10 +281,13 @@ def _recreate_highlight_events_with_sequence(conn: duckdb.DuckDBPyConnection, ma
             raw_json VARCHAR
         )
     """)
-    conn.execute("INSERT INTO highlight_events_new SELECT * FROM highlight_events")
-    conn.execute("DROP TABLE highlight_events")
-    conn.execute("ALTER TABLE highlight_events_new RENAME TO highlight_events")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_highlight_match " "ON highlight_events(match_id)")
+
+    # 4) Restaurer les données
+    if table_exists(conn, "highlight_events_backup"):
+        conn.execute("INSERT INTO highlight_events SELECT * FROM highlight_events_backup")
+        conn.execute("DROP TABLE highlight_events_backup")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_highlight_match ON highlight_events(match_id)")
     logger.info("✅ highlight_events migrée avec séquence auto-increment " f"(start={max_id + 1})")
 
 

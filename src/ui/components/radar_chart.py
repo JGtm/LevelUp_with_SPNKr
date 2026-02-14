@@ -124,9 +124,9 @@ def create_stats_per_minute_radar(
     # Utiliser des seuils de référence FIXES pour une échelle absolue
     # Ces valeurs représentent des performances "excellentes" dans Halo Infinite
     # Ainsi, les joueurs sont comparés à une référence objective, pas entre eux
-    REF_KILLS_PER_MIN = 1.2  # Un excellent joueur fait ~1.2 kills/min
-    REF_DEATHS_PER_MIN = 1.0  # Un joueur moyen meurt ~1 fois/min
-    REF_ASSISTS_PER_MIN = 0.6  # Un bon support fait ~0.6 assists/min
+    ref_kills_per_min = 1.2  # Un excellent joueur fait ~1.2 kills/min
+    ref_deaths_per_min = 1.0  # Un joueur moyen meurt ~1 fois/min
+    ref_assists_per_min = 0.6  # Un bon support fait ~0.6 assists/min
 
     fig = go.Figure()
 
@@ -140,9 +140,9 @@ def create_stats_per_minute_radar(
         orig_assists = player.get("assists_per_min") or 0
 
         # Normaliser par rapport aux seuils de référence (avec cap à 1.0)
-        kills = min(orig_kills / REF_KILLS_PER_MIN, 1.0)
-        deaths = min(orig_deaths / REF_DEATHS_PER_MIN, 1.0)
-        assists = min(orig_assists / REF_ASSISTS_PER_MIN, 1.0)
+        kills = min(orig_kills / ref_kills_per_min, 1.0)
+        deaths = min(orig_deaths / ref_deaths_per_min, 1.0)
+        assists = min(orig_assists / ref_assists_per_min, 1.0)
 
         values = [kills, deaths, assists, kills]  # Fermer le polygone
         theta = categories + [categories[0]]
@@ -338,32 +338,32 @@ def create_participation_radar(
     # Utiliser des seuils fixes pour la normalisation au lieu de normaliser par soi-même
     # Ces seuils sont basés sur les valeurs typiques dans Halo Infinite
     # Si on a plusieurs matchs, on peut utiliser le max historique, sinon on utilise les seuils fixes
-    MAX_KILL_SCORE = 2000.0  # Score max théorique pour les kills
-    MAX_ASSIST_SCORE = 500.0  # Score max théorique pour les assists
-    MAX_OBJECTIVE_SCORE = 1000.0  # Score max théorique pour les objectifs
-    MAX_PENALTY_SCORE = 500.0  # Score max théorique pour les pénalités (en valeur absolue)
+    max_kill_score = 2000.0  # Score max théorique pour les kills
+    max_assist_score = 500.0  # Score max théorique pour les assists
+    max_objective_score = 1000.0  # Score max théorique pour les objectifs
+    max_penalty_score = 500.0  # Score max théorique pour les pénalités (en valeur absolue)
 
     # Si on a plusieurs matchs, utiliser le max réel pour une meilleure comparaison
     # Sinon, utiliser les seuils fixes pour éviter que tout soit à 100%
     if len(participation_data) > 1:
         # Plusieurs matchs : utiliser le max réel pour comparaison relative
-        max_kill = max(abs(p.get("kill_score") or 0) for p in participation_data) or MAX_KILL_SCORE
+        max_kill = max(abs(p.get("kill_score") or 0) for p in participation_data) or max_kill_score
         max_assist = (
-            max(abs(p.get("assist_score") or 0) for p in participation_data) or MAX_ASSIST_SCORE
+            max(abs(p.get("assist_score") or 0) for p in participation_data) or max_assist_score
         )
         max_obj = (
             max(abs(p.get("objective_score") or 0) for p in participation_data)
-            or MAX_OBJECTIVE_SCORE
+            or max_objective_score
         )
         max_penalty = (
-            max(abs(p.get("penalty_score") or 0) for p in participation_data) or MAX_PENALTY_SCORE
+            max(abs(p.get("penalty_score") or 0) for p in participation_data) or max_penalty_score
         )
     else:
         # Un seul match : utiliser les seuils fixes pour éviter que tout soit à 100%
-        max_kill = MAX_KILL_SCORE
-        max_assist = MAX_ASSIST_SCORE
-        max_obj = MAX_OBJECTIVE_SCORE
-        max_penalty = MAX_PENALTY_SCORE
+        max_kill = max_kill_score
+        max_assist = max_assist_score
+        max_obj = max_objective_score
+        max_penalty = max_penalty_score
 
     fig = go.Figure()
 
