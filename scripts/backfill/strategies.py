@@ -18,8 +18,12 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def backfill_killer_victim_pairs(conn: Any, me_xuid: str) -> int:
+def backfill_killer_victim_pairs(conn: Any, me_xuid: str, *, force: bool = False) -> int:
     """Extrait les paires killer/victim depuis highlight_events.
+
+    Mode incrémental par défaut : ne traite que les matchs qui n'ont pas
+    encore de paires dans killer_victim_pairs.
+    Mode force : DROP + recréation complète de la table.
 
     Utilise l'algorithme de pairing de src/analysis/killer_victim.py
     pour apparier les events kill/death par timestamp.
@@ -27,16 +31,21 @@ def backfill_killer_victim_pairs(conn: Any, me_xuid: str) -> int:
     Args:
         conn: Connexion DuckDB.
         me_xuid: XUID du joueur principal (pour référence).
+        force: Si True, reconstruit toute la table.
 
     Returns:
         Nombre de paires insérées.
     """
     from src.analysis.killer_victim import KVPair, compute_killer_victim_pairs
 
-    # Recréer la table pour garantir la structure
-    conn.execute("DROP TABLE IF EXISTS killer_victim_pairs")
+    if force:
+        # Mode destructif : tout reconstruire
+        conn.execute("DROP TABLE IF EXISTS killer_victim_pairs")
+        logger.info("Table killer_victim_pairs supprimée (mode --force)")
+
+    # Créer la table si elle n'existe pas
     conn.execute("""
-        CREATE TABLE killer_victim_pairs (
+        CREATE TABLE IF NOT EXISTS killer_victim_pairs (
             match_id VARCHAR NOT NULL,
             killer_xuid VARCHAR NOT NULL,
             killer_gamertag VARCHAR,
@@ -48,29 +57,34 @@ def backfill_killer_victim_pairs(conn: Any, me_xuid: str) -> int:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    logger.info("Table killer_victim_pairs (re)créée")
-
     with contextlib.suppress(Exception):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_match ON killer_victim_pairs(match_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_killer ON killer_victim_pairs(killer_xuid)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_victim ON killer_victim_pairs(victim_xuid)")
 
-    # Charger tous les matchs avec highlight events de type kill/death
+    # Charger les matchs avec highlight events kill/death
+    # qui n'ont PAS encore de paires (mode incrémental)
     try:
         matches = conn.execute("""
-            SELECT DISTINCT match_id
-            FROM highlight_events
-            WHERE LOWER(event_type) IN ('kill', 'death')
+            SELECT DISTINCT he.match_id
+            FROM highlight_events he
+            WHERE LOWER(he.event_type) IN ('kill', 'death')
+              AND NOT EXISTS (
+                  SELECT 1 FROM killer_victim_pairs kvp
+                  WHERE kvp.match_id = he.match_id
+              )
         """).fetchall()
     except Exception as e:
         logger.warning(f"Erreur lecture highlight_events: {e}")
         return 0
 
     if not matches:
-        logger.info("Aucun match avec highlight events kill/death trouvé")
+        logger.info(
+            "Aucun nouveau match à traiter pour killer/victim (incrémental, tous déjà traités)"
+        )
         return 0
 
-    logger.info(f"Trouvé {len(matches)} matchs avec highlight events kill/death")
+    logger.info(f"Trouvé {len(matches)} matchs à traiter pour paires killer/victim")
     total_pairs = 0
     skipped_no_pairs = 0
     logged_debug = False
