@@ -196,6 +196,19 @@ async def backfill_player_data(
     conn = duckdb.connect(str(db_path), read_only=False)
 
     try:
+        # Vérifier que la DB a été synchronisée au moins une fois
+        has_match_stats = conn.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            "WHERE table_schema = 'main' AND table_name = 'match_stats'"
+        ).fetchone()
+        if not has_match_stats or has_match_stats[0] == 0:
+            logger.warning(
+                f"⏭️ {gamertag}: DB vide (jamais synchronisée). "
+                f"Lancer d'abord: python scripts/sync.py --player {gamertag} --delta"
+            )
+            conn.close()
+            return _empty_result()
+
         # Migrations de schéma
         _apply_schema_migrations(
             conn,
