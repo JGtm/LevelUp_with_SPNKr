@@ -95,8 +95,10 @@ CREATE TABLE match_participants (
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    PRIMARY KEY (match_id, xuid),
-    FOREIGN KEY (match_id) REFERENCES match_registry(match_id)
+    PRIMARY KEY (match_id, xuid)
+    -- FK logique : match_id → match_registry(match_id)
+    -- Pas de FOREIGN KEY DuckDB : le moteur OLAP traite UPDATE comme DELETE+INSERT,
+    -- violant la contrainte. L'intégrité est assurée par la logique de migration.
 );
 
 CREATE INDEX idx_participants_xuid ON match_participants(xuid);
@@ -128,7 +130,7 @@ CREATE TABLE highlight_events (
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (match_id) REFERENCES match_registry(match_id)
+    -- FK logique : match_id → match_registry(match_id)
 );
 
 CREATE INDEX idx_events_match ON highlight_events(match_id);
@@ -151,8 +153,8 @@ CREATE TABLE medals_earned (
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    PRIMARY KEY (match_id, xuid, medal_name_id),
-    FOREIGN KEY (match_id) REFERENCES match_registry(match_id)
+    PRIMARY KEY (match_id, xuid, medal_name_id)
+    -- FK logique : match_id → match_registry(match_id)
 );
 
 CREATE INDEX idx_medals_match ON medals_earned(match_id);

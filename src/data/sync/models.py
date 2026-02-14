@@ -260,6 +260,20 @@ class MedalEarnedRow:
     count: int
 
 
+@dataclass
+class SharedMedalEarnedRow:
+    """Ligne pour la table medals_earned dans shared_matches.duckdb (v5).
+
+    Identique à MedalEarnedRow mais avec colonne xuid obligatoire
+    pour identifier quel joueur a obtenu la médaille.
+    """
+
+    match_id: str
+    xuid: str
+    medal_name_id: int
+    count: int
+
+
 # =============================================================================
 # Sprint 8 : Nouvelles tables pour backfill
 # =============================================================================
