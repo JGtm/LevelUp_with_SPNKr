@@ -318,12 +318,19 @@ class TestMatchParticipants:
         )
 
     def test_foreign_key_to_registry(self, rw_conn: duckdb.DuckDBPyConnection) -> None:
-        """La clé étrangère vers match_registry est respectée."""
-        with pytest.raises(duckdb.ConstraintException):
-            rw_conn.execute(
-                "INSERT INTO match_participants (match_id, xuid) "
-                "VALUES ('match-inexistant', 'xuid-fk')"
-            )
+        """FK logique (non enforced) : l'INSERT sans parent réussit.
+
+        Les FK ont été retirées du schéma v5 car DuckDB traite UPDATE
+        comme DELETE+INSERT, ce qui empêche la mise à jour de player_count.
+        L'intégrité référentielle est assurée par la logique de migration.
+        """
+        # Pas de ConstraintException attendue — FK non enforced
+        rw_conn.execute(
+            "INSERT INTO match_participants (match_id, xuid) "
+            "VALUES ('match-inexistant', 'xuid-fk')"
+        )
+        # Nettoyage
+        rw_conn.execute("DELETE FROM match_participants WHERE match_id = 'match-inexistant'")
 
     def test_multi_players_per_match(self, rw_conn: duckdb.DuckDBPyConnection) -> None:
         """Plusieurs joueurs peuvent participer au même match."""
@@ -395,12 +402,14 @@ class TestHighlightEvents:
         assert rows[0][0] < rows[1][0]  # IDs croissants
 
     def test_foreign_key_to_registry(self, rw_conn: duckdb.DuckDBPyConnection) -> None:
-        """La clé étrangère vers match_registry est respectée."""
-        with pytest.raises(duckdb.ConstraintException):
-            rw_conn.execute(
-                "INSERT INTO highlight_events (match_id, event_type) "
-                "VALUES ('match-ghost', 'kill')"
-            )
+        """FK logique (non enforced) : l'INSERT sans parent réussit.
+
+        Les FK ont été retirées du schéma v5 (DuckDB UPDATE = DELETE+INSERT).
+        """
+        rw_conn.execute(
+            "INSERT INTO highlight_events (match_id, event_type) " "VALUES ('match-ghost', 'kill')"
+        )
+        rw_conn.execute("DELETE FROM highlight_events WHERE match_id = 'match-ghost'")
 
     def test_killer_victim_separation(self, rw_conn: duckdb.DuckDBPyConnection) -> None:
         """Les colonnes killer/victim sont bien distinctes."""
@@ -481,12 +490,15 @@ class TestMedalsEarned:
         assert rows[0].upper() == "BIGINT"
 
     def test_foreign_key_to_registry(self, rw_conn: duckdb.DuckDBPyConnection) -> None:
-        """La clé étrangère vers match_registry est respectée."""
-        with pytest.raises(duckdb.ConstraintException):
-            rw_conn.execute(
-                "INSERT INTO medals_earned (match_id, xuid, medal_name_id, count) "
-                "VALUES ('match-fantome', 'xuid-X', 999, 1)"
-            )
+        """FK logique (non enforced) : l'INSERT sans parent réussit.
+
+        Les FK ont été retirées du schéma v5 (DuckDB UPDATE = DELETE+INSERT).
+        """
+        rw_conn.execute(
+            "INSERT INTO medals_earned (match_id, xuid, medal_name_id, count) "
+            "VALUES ('match-fantome', 'xuid-X', 999, 1)"
+        )
+        rw_conn.execute("DELETE FROM medals_earned WHERE match_id = 'match-fantome'")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

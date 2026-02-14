@@ -214,7 +214,7 @@ Plans à incorporer dans le sprint approprié :
 ```
 Sprint 0  : Audit & Backups                          (1j)
 Sprint 1  : Infrastructure shared_matches.duckdb     (2j)
-Sprint 2  : Migration des données (4 joueurs)        (3j)
+Sprint 2  : Migration des données (4 joueurs)        (3j)  ✅ TERMINÉ
 Sprint 3  : Refactoring Sync Engine                  (3j)
 Sprint 4  : Refactoring DuckDBRepository             (2j)
 Sprint 5  : Refactoring UI (VIEWs → Queries natives) (3j)
@@ -1429,7 +1429,7 @@ ls -lh data/warehouse/shared_matches.duckdb  # ~100-200 KB attendu
 
 ---
 
-### Sprint 2 — Migration des Données (3 jours)
+### Sprint 2 — Migration des Données (3 jours) ✅ TERMINÉ
 
 **Objectif** : Migrer les données des 4 joueurs vers `shared_matches.duckdb` avec validation incrémentale
 
@@ -1446,15 +1446,15 @@ Migration **séquentielle** avec validation à chaque joueur :
 
 | # | Tâche | Fichier(s) | Durée |
 |---|-------|-----------|-------|
-| 2.1 | Script de migration générique `migrate_player_to_shared.py` | `scripts/migration/` | 3h |
-| 2.2 | Fonction `extract_all_medals()` (TOUS les joueurs) | `src/data/sync/transformers.py` | 2h |
-| 2.3 | Migration Chocoboflor + validation | Script | 2h |
-| 2.4 | Migration Madina97294 + validation taux partage | Script | 1.5h |
-| 2.5 | Migration JGtm + validation | Script | 1.5h |
-| 2.6 | Migration xxdameongamerxx + validation 100% partage | Script | 1h |
-| 2.7 | Validation croisée (cohérence des données) | `scripts/migration/validate_migration.py` | 2h |
-| 2.8 | Audit post-migration (comptage, doublons, etc.) | Script | 1h |
-| 2.9 | Création VIEWs de compatibilité dans player DBs | `scripts/migration/create_compat_views.py` | 2h |
+| 2.1 | ✅ Script de migration générique `migrate_player_to_shared.py` | `scripts/migration/` | 3h |
+| 2.2 | ✅ Fonction `extract_all_medals()` (TOUS les joueurs) | `src/data/sync/transformers.py` | 2h |
+| 2.3 | ✅ Migration Chocoboflor + validation | Script | 2h |
+| 2.4 | ✅ Migration Madina97294 + validation taux partage | Script | 1.5h |
+| 2.5 | ✅ Migration JGtm + validation | Script | 1.5h |
+| 2.6 | ✅ Migration XxDaemonGamerxX + validation 100% partage | Script | 1h |
+| 2.7 | ✅ Validation croisée (cohérence des données) | Script intégré | 2h |
+| 2.8 | ✅ Audit post-migration (comptage, doublons, orphelins) | Script intégré | 1h |
+| 2.9 | ✅ Création VIEWs de compatibilité dans player DBs | `scripts/migration/create_compat_views.py` | 2h |
 
 #### Script de Migration Principal
 
