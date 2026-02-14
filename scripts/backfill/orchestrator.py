@@ -139,6 +139,8 @@ async def backfill_player_data(
         participants_shots = True
     if force_participants_damage and not participants_damage:
         participants_damage = True
+    if force_citations and not citations:
+        citations = True
 
     # Vérifier qu'au moins une option est activée
     if not any(
@@ -161,6 +163,7 @@ async def backfill_player_data(
             killer_victim,
             end_time,
             sessions,
+            citations,
             force_aliases,
         ]
     ):
