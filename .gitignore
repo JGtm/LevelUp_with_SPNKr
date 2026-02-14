@@ -42,6 +42,12 @@ MANIFEST
 .DS_Store
 Thumbs.db
 
+# Tests & Coverage
+.coverage
+coverage.json
+htmlcov/
+.pytest_cache/
+
 # Secrets & Configuration
 .env
 .env.local
