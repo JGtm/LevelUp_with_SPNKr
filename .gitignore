@@ -47,6 +47,13 @@ Thumbs.db
 coverage.json
 htmlcov/
 .pytest_cache/
+test_*.log
+test_results.txt
+skipped_tests.txt
+
+# Scripts de diagnostic temporaires
+check_*.py
+diagnose_*.py
 
 # Secrets & Configuration
 .env

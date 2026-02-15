@@ -545,8 +545,7 @@ class RosterLoaderMixin:
         2. shared.xuid_aliases (source officielle API, v5)
         3. match_participants locale (fallback v4)
         4. xuid_aliases locale
-        5. teammates_aggregate (historique des coéquipiers)
-        6. highlight_events (nettoyé avec extraction ASCII)
+        5. highlight_events (nettoyé avec extraction ASCII)
 
         Args:
             xuid: XUID du joueur à résoudre.
@@ -605,18 +604,7 @@ class RosterLoaderMixin:
         except Exception:
             pass
 
-        # 5. teammates_aggregate
-        try:
-            result = conn.execute(
-                "SELECT teammate_gamertag FROM teammates_aggregate WHERE teammate_xuid = ?",
-                [xuid],
-            ).fetchone()
-            if result and result[0]:
-                return result[0]
-        except Exception:
-            pass
-
-        # 6. highlight_events avec extraction ASCII
+        # 5. highlight_events avec extraction ASCII
         if match_id:
             try:
                 result = conn.execute(
