@@ -183,29 +183,14 @@ class TestSprintTargetsCacheFacade:
 
 
 class TestSprintTargetsMigrationShim:
-    """Vérification que le shim src/db/migrations.py fonctionne."""
+    """Vérification que le shim src/db/migrations.py a été supprimé en v5."""
 
-    def test_shim_reexports_all_functions(self):
-        """Le shim src.db.migrations ré-exporte les fonctions de migration."""
-        from src.db.migrations import (
-            column_exists,
-            ensure_end_time_column,
-            ensure_match_participants_columns,
-            ensure_match_stats_columns,
-            ensure_medals_earned_bigint,
-            ensure_performance_score_column,
-            get_table_columns,
-            table_exists,
-        )
+    def test_shim_removed(self):
+        """Le shim src.db.migrations a été supprimé en v5.0."""
+        import importlib
 
-        assert callable(ensure_match_stats_columns)
-        assert callable(ensure_performance_score_column)
-        assert callable(get_table_columns)
-        assert callable(table_exists)
-        assert callable(column_exists)
-        assert callable(ensure_end_time_column)
-        assert callable(ensure_match_participants_columns)
-        assert callable(ensure_medals_earned_bigint)
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("src.db.migrations")
 
     def test_canonical_location_works(self):
         """L'import depuis le nouvel emplacement canonique fonctionne."""

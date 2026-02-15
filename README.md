@@ -1,8 +1,8 @@
 # LevelUp - Dashboard Halo Infinite
 
-> **Analysez vos performances Halo Infinite avec des visualisations avancées et une architecture DuckDB ultra-rapide.**
+> **Analysez vos performances Halo Infinite avec des visualisations avancées et une architecture DuckDB v5 ultra-rapide.**
 
-[![Version](https://img.shields.io/badge/Version-4.5.0-green.svg)](https://github.com/JGtm/LevelUp_with_SPNKr/releases/tag/v4.5)
+[![Version](https://img.shields.io/badge/Version-5.0.0-green.svg)](https://github.com/JGtm/LevelUp_with_SPNKr/releases/tag/v5.0.0)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-FF4B4B.svg)](https://streamlit.io/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-1.4%2B-FEE14E.svg)](https://duckdb.org/)
@@ -11,16 +11,14 @@
 
 ---
 
-## Nouveautés v4.5
+## Nouveautés v5.0
 
-- **Migration Polars complète** — Remplacement de Pandas par Polars dans le runtime principal (gains de 5-28% selon les parcours)
-- **Architecture DuckDB unifiée** — Zéro dépendance SQLite, zéro module legacy `src.db`
-- **Score de Performance** — Algorithme composite multi-métriques pour évaluer chaque match
-- **Analyse d'impact coéquipiers** — Heatmap et classement des synergies
-- **Sessions de jeu avancées** — Détection automatique, comparaison inter-sessions
-- **Participation objective** — Analyse des objectifs de mode (CTF, Oddball, Strongholds)
-- **Backfill incrémental avec bitmask** — Reprise sélective des données manquantes
-- **1328 tests unitaires** — Suite verte, 0 failure
+- **Architecture Shared Matches** — Base partagée `shared_matches.duckdb` centralisant les matchs de tous les joueurs (-69% stockage, -72% appels API, -73% temps de sync)
+- **Sync Engine v5** — Détection des matchs partagés, sync allégée pour les matchs connus, parallélisation API
+- **ATTACH multi-DB** — Lecture transparente depuis la base partagée via DuckDB ATTACH
+- **Citations DuckDB-first** — Moteur SQL de calcul et agrégation des citations (14 règles, +6 objectives réintégrées)
+- **Optimisations Sync** — Parallélisation `asyncio.gather`, batching DB, performance scores en batch post-sync
+- **2768 tests unitaires** — Suite verte, 0 failure, modules métier couverts à 70%+
 
 ---
 
@@ -40,7 +38,9 @@
 - **Corrélations** - Scatter plots durée de vie vs kills
 - **Top armes** - Statistiques par arme avec headshot rate
 
-### Architecture v4.5 - DuckDB + Polars
+### Architecture v5.0 - DuckDB Shared Matches
+- **Shared Matches** — Base partagée `shared_matches.duckdb` centralisant tous les matchs
+- **ATTACH multi-DB** — DuckDB ATTACH pour lecture transparente cross-DB
 - **Performance** — Requêtes DuckDB < 30ms (warm), DataFrame Polars natifs
 - **Vues matérialisées** — Agrégations instantanées (carte, mode, global)
 - **Lazy loading** — Chargement à la demande par page
@@ -141,17 +141,27 @@ python scripts/restore_player.py --gamertag MonGamertag --backup ./backups/MonGa
 
 ## Architecture
 
-### Structure des Données (v4)
+### Structure des Données (v5)
 
 ```
 data/
-├── players/                    # Données par joueur
-│   └── {gamertag}/
-│       ├── stats.duckdb       # Base DuckDB persistée
-│       └── archive/           # Archives Parquet temporelles
 ├── warehouse/
-│   └── metadata.duckdb        # Référentiels partagés
-└── backups/                   # Backups Parquet
+│   ├── metadata.duckdb            # Référentiels partagés
+│   └── shared_matches.duckdb      # Base partagée (tous les matchs)
+│       ├── match_registry         # Registre central (1 ligne/match)
+│       ├── match_participants     # Tous les joueurs de tous les matchs
+│       ├── highlight_events       # Tous les événements filmés
+│       ├── medals_earned          # Médailles de tous les joueurs
+│       └── xuid_aliases           # Mapping xuid→gamertag
+├── players/                       # Données par joueur
+│   └── {gamertag}/
+│       ├── stats.duckdb           # Enrichissements personnels
+│       │   ├── player_match_enrichment  # performance_score, session_id
+│       │   ├── teammates_aggregate      # Stats coéquipiers (POV joueur)
+│       │   ├── antagonists              # Rivalités (POV joueur)
+│       │   └── match_citations          # Citations par match
+│       └── archive/               # Archives Parquet temporelles
+└── backups/                       # Backups Parquet
 ```
 
 ### Tables DuckDB
@@ -178,11 +188,16 @@ data/
 |----------|---------|
 | [INSTALL.md](docs/INSTALL.md) | Guide d'installation détaillé |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Configuration des tokens et profils |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique (v4 legacy) |
+| [ARCHITECTURE_V5.md](docs/ARCHITECTURE_V5.md) | Architecture v5 (shared matches) |
 | [DATA_ARCHITECTURE.md](docs/DATA_ARCHITECTURE.md) | Architecture des données |
+| [SHARED_MATCHES_SCHEMA.md](docs/SHARED_MATCHES_SCHEMA.md) | Schéma shared_matches.duckdb |
 | [SQL_SCHEMA.md](docs/SQL_SCHEMA.md) | Schémas DuckDB complets |
 | [SYNC_GUIDE.md](docs/SYNC_GUIDE.md) | Guide de synchronisation |
+| [SYNC_OPTIMIZATIONS_V5.md](docs/SYNC_OPTIMIZATIONS_V5.md) | Optimisations sync v5 |
+| [MIGRATION_V4_TO_V5.md](docs/MIGRATION_V4_TO_V5.md) | Guide de migration v4→v5 |
 | [BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) | Backup et restauration |
+| [TESTING_V5.md](docs/TESTING_V5.md) | Stratégie de tests v5 |
 | [FAQ.md](docs/FAQ.md) | Questions fréquentes |
 
 ---
@@ -282,8 +297,8 @@ pytest
 
 ## Limitations connues
 
-- **Pandas résiduel** : 10 fichiers conservent Pandas aux frontières Plotly/Streamlit (conversion obligatoire) et dans le module RAG (API LanceDB). Voir `.ai/reports/V4_5_PANDAS_FRONTIER_MAP.md`.
-- **Couverture tests** : ~40% global. Les modules UI (pages, renderers) ont peu de tests unitaires (logique de rendu Streamlit).
+- **Pandas résiduel** : ~10 fichiers conservent Pandas aux frontières Plotly/Streamlit (conversion obligatoire). Polars est le standard pour tout le code métier.
+- **Couverture tests** : ~43% global — les modules UI Streamlit (pages, renderers) tirent la moyenne vers le bas. Les modules métier (sync, repositories, analysis) dépassent individuellement 70%.
 - **API Halo** : Dépend de l'API Grunt/SPNKr — certains endpoints peuvent être instables ou limités en débit.
 
 ---

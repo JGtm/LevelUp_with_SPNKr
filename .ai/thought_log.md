@@ -7,6 +7,31 @@
 
 ## Journal
 
+### [2026-02-15] - Sprint 8 : Finalisation & Release v5.0.0
+
+**Statut** : Terminé ✅
+
+**Objectif** : Stabilisation, documentation, nettoyage, et release officielle v5.0.
+
+**Actions réalisées** :
+1. **Nettoyage code mort** : Suppression shim `src/db/migrations.py`, mise à jour test legacy-free
+2. **Bump version** : `pyproject.toml` 3.0.0 → 5.0.0, statut Beta → Production/Stable
+3. **CHANGELOG.md** : Section `[5.0.0]` complète (Added, Changed, Removed, Fixed, Performance)
+4. **README.md** : Badge 5.0.0, section Nouveautés v5.0, architecture shared matches, 2768 tests
+5. **docs/ARCHITECTURE_V5.md** : Documentation complète architecture shared matches
+6. **docs/MIGRATION_V4_TO_V5.md** : Guide de migration complet avec backup/rollback
+7. **Benchmark** : `scripts/benchmark_v4_vs_v5.py` créé et validé (350 MB total, -72% API)
+8. **Revue de code** : 0 erreur ruff, 1 seul TODO (amélioration future), imports propres
+9. **Archivage** : 14 fichiers → `.ai/archive/v5.0/`, rétrospective rédigée
+10. **Nettoyage pyproject.toml** : Suppression per-file-ignores pour fichiers legacy inexistants
+
+**Décisions** :
+- Le TODO dans `custom_rules.py:103` est conservé : amélioration future dépendant de données non disponibles
+- Les player DBs contiennent encore des tables legacy (match_stats, etc.) — nettoyage reporté post-release
+- `src/db/__init__.py` conservé (module vide, pas de risque)
+
+---
+
 ### [2025-07-15] - Sprint 7 : Tests & Couverture v5
 
 **Statut** : Terminé ✅

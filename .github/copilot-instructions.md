@@ -10,7 +10,7 @@ Ce fichier définit les conventions et règles à suivre lors de modifications s
 
 - **Stack** : Python 3.10+, Streamlit, DuckDB, SPNKr (API Halo)
 - **Langue UI** : Français (traductions dans `src/ui/translations.py`)
-- **Architecture** : DuckDB unifié (v4)
+- **Architecture** : DuckDB v5 (shared matches)
 
 ---
 
@@ -35,24 +35,37 @@ Healthcheck (à lancer avant de diagnostiquer un souci d'environnement) :
 
 ---
 
-## Architecture des Données (v4)
+## Architecture des Données (v5)
 
 | Données | Stockage | Chemin |
 |---------|----------|--------|
 | Référentiels | DuckDB | `data/warehouse/metadata.duckdb` |
-| Matchs joueur | DuckDB | `data/players/{gamertag}/stats.duckdb` |
+| Matchs partagés | DuckDB | `data/warehouse/shared_matches.duckdb` |
+| Enrichissements joueur | DuckDB | `data/players/{gamertag}/stats.duckdb` |
 | Archives | Parquet | `data/players/{gamertag}/archive/` |
 | Config | JSON | `db_profiles.json` |
 
 ### Tables Principales
 
+#### shared_matches.duckdb (centralisée)
+
 | Table | Description |
 |-------|-------------|
-| `match_stats` | Statistiques des matchs |
-| `medals_earned` | Médailles par match |
-| `teammates_aggregate` | Stats coéquipiers |
+| `match_registry` | Registre central (1 ligne par match unique) |
+| `match_participants` | Stats de tous les joueurs de tous les matchs |
+| `highlight_events` | Événements filmés de tous les matchs |
+| `medals_earned` | Médailles de tous les joueurs |
+| `xuid_aliases` | Mapping global xuid→gamertag |
+
+#### stats.duckdb (par joueur)
+
+| Table | Description |
+|-------|-------------|
+| `player_match_enrichment` | performance_score, session_id, is_with_friends |
+| `teammates_aggregate` | Stats coéquipiers (POV joueur) |
 | `antagonists` | Rivalités (killers/victimes) |
-| `highlight_events` | Événements marquants |
+| `match_citations` | Citations calculées par match |
+| `career_progression` | Historique rangs |
 | `mv_*` | Vues matérialisées |
 
 ---

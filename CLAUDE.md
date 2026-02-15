@@ -4,7 +4,7 @@
 
 ## Contexte Projet
 
-**LevelUp** - Dashboard de statistiques Halo Infinite avec architecture DuckDB unifiée (v4).
+**LevelUp** - Dashboard de statistiques Halo Infinite avec architecture DuckDB v5 (shared matches).
 
 ## Workflow Agentique
 
@@ -12,30 +12,43 @@
 - `.ai/project_map.md` : Cartographie du projet
 - `.ai/thought_log.md` : Journal des décisions
 - `.ai/data_lineage.md` : Flux de données
-- `.ai/ARCHITECTURE_ROADMAP.md` : Roadmap des phases
-- `.ai/PLAN_UNIFIE.md` : Plan unifié des sprints (S0-S11)
-- `.ai/SPRINT_EXPLORATION.md` : **Exploration codebase pour Sprints 6-11** — catalogue de données, fonctions réutilisables, audit Pandas/SQLite/src/db, blockers par sprint. **Consulter impérativement avant de travailler sur un sprint >= 6.**
+- `.ai/SPRINT_EXPLORATION.md` : Exploration codebase
 
 **APRÈS CHAQUE MODIFICATION SIGNIFICATIVE** : Mettre à jour ces fichiers.
 
-## Architecture des Données (v4)
+**Documentation architecture** : `docs/ARCHITECTURE_V5.md`
+**Plans archivés** : `.ai/archive/v5.0/` (plans, audits, rapports de migration)
+
+## Architecture des Données (v5)
 
 | Type | Stockage | Chemin |
 |------|----------|--------|
 | Référentiels | DuckDB | `data/warehouse/metadata.duckdb` |
-| Matchs joueur | DuckDB | `data/players/{gamertag}/stats.duckdb` |
+| Matchs partagés | DuckDB | `data/warehouse/shared_matches.duckdb` |
+| Enrichissements joueur | DuckDB | `data/players/{gamertag}/stats.duckdb` |
 | Archives | Parquet | `data/players/{gamertag}/archive/` |
 | Config | JSON | `db_profiles.json`, `app_settings.json` |
 
 ## Tables DuckDB Principales
 
+### shared_matches.duckdb (centralisée)
+
 | Table | Description |
 |-------|-------------|
-| `match_stats` | Faits des matchs |
-| `medals_earned` | Médailles par match |
-| `teammates_aggregate` | Stats coéquipiers |
+| `match_registry` | Registre central (1 ligne par match unique) |
+| `match_participants` | Stats de tous les joueurs de tous les matchs |
+| `highlight_events` | Événements filmés de tous les matchs |
+| `medals_earned` | Médailles de tous les joueurs |
+| `xuid_aliases` | Mapping global xuid→gamertag |
+
+### stats.duckdb (par joueur)
+
+| Table | Description |
+|-------|-------------|
+| `player_match_enrichment` | performance_score, session_id, is_with_friends |
+| `teammates_aggregate` | Stats coéquipiers (POV joueur) |
 | `antagonists` | Top killers/victimes |
-| `highlight_events` | Événements film |
+| `match_citations` | Citations calculées par match |
 | `career_progression` | Historique rangs |
 | `mv_*` | Vues matérialisées |
 
