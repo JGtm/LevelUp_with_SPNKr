@@ -196,6 +196,7 @@ data/
 | [SYNC_GUIDE.md](docs/SYNC_GUIDE.md) | Guide de synchronisation |
 | [SYNC_OPTIMIZATIONS_V5.md](docs/SYNC_OPTIMIZATIONS_V5.md) | Optimisations sync v5 |
 | [MIGRATION_V4_TO_V5.md](docs/MIGRATION_V4_TO_V5.md) | Guide de migration v4→v5 |
+| [CLEANUP_V5.md](docs/CLEANUP_V5.md) | Nettoyage post-migration v5 |
 | [BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) | Backup et restauration |
 | [TESTING_V5.md](docs/TESTING_V5.md) | Stratégie de tests v5 |
 | [FAQ.md](docs/FAQ.md) | Questions fréquentes |
@@ -255,15 +256,6 @@ environment:
 
 ---
 
-## Remerciements
-
-- **Andy Curtis** ([acurtis166](https://github.com/acurtis166)) pour [SPNKr](https://github.com/acurtis166/SPNKr)
-- **Den Delimarsky** ([dend](https://github.com/dend)) pour [Grunt](https://github.com/dend/grunt) et [OpenSpartan](https://github.com/OpenSpartan)
-
-Voir aussi [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
-
----
-
 ## Contribution
 
 Les contributions sont les bienvenues ! Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour les guidelines.
@@ -306,6 +298,15 @@ pytest
 ## Licence
 
 Ce projet est sous licence MIT. Voir [LICENSE](LICENSE) pour plus de détails.
+
+---
+
+## Remerciements
+
+- **Andy Curtis** ([acurtis166](https://github.com/acurtis166)) pour [SPNKr](https://github.com/acurtis166/SPNKr)
+- **Den Delimarsky** ([dend](https://github.com/dend)) pour [Grunt](https://github.com/dend/grunt) et [OpenSpartan](https://github.com/OpenSpartan)
+
+Voir aussi [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 ---
 

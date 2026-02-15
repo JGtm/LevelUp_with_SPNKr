@@ -43,7 +43,14 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
   - Documentation : `docs/CITATIONS.md`
 - **Framework de test MockStreamlit** — Fixture `MockStreamlit` dans `conftest.py` pour tester les pages UI en mode headless
 - **+946 tests** ajoutés (S1→S7ter) — total 2768 passed, 0 failed, 38 skipped
-- **Documentation** : `docs/SHARED_MATCHES_SCHEMA.md`, `docs/SYNC_OPTIMIZATIONS_V5.md`, `docs/TESTING_V5.md`, `docs/ARCHITECTURE_V5.md`, `docs/MIGRATION_V4_TO_V5.md`
+- **Script de nettoyage post-migration** — `scripts/cleanup_player_dbs_v5.py`
+  - Supprime les tables redondantes des player DBs après migration v5 (match_stats, match_participants, highlight_events, medals_earned)
+  - Mode --dry-run pour simulation sans modification
+  - Backup optionnel avant nettoyage
+  - Validation automatique de l'existence de shared_matches.duckdb
+  - VACUUM automatique pour récupération d'espace disque (-85% de taille en moyenne)
+  - Documentation : `docs/CLEANUP_V5.md`
+- **Documentation** : `docs/SHARED_MATCHES_SCHEMA.md`, `docs/SYNC_OPTIMIZATIONS_V5.md`, `docs/TESTING_V5.md`, `docs/ARCHITECTURE_V5.md`, `docs/MIGRATION_V4_TO_V5.md`, `docs/CLEANUP_V5.md`
 
 ### Changed
 
