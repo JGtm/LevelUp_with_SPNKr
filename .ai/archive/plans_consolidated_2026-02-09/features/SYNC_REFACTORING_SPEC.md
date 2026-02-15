@@ -90,7 +90,7 @@ data/warehouse/metadata.duckdb
 
 ## 2. Points d'Intégration Existants
 
-### 2.1 openspartan_launcher.py
+### 2.1 launcher.py
 
 Le launcher utilise actuellement :
 
@@ -720,7 +720,7 @@ Raisons :
 |-------|---------|----------|
 | Adapter `scripts/sync.py` | CLI → DuckDBSyncEngine | P0 |
 | Adapter `src/ui/sync.py` | Wrapper simplifié | P0 |
-| Adapter `openspartan_launcher.py` | Import direct (plus de subprocess) | P0 |
+| Adapter `launcher.py` | Import direct (plus de subprocess) | P0 |
 | Tests d'intégration | `tests/test_sync_integration.py` | P1 |
 
 ### Sprint 4.5.3 : Migration Historique (1 jour)
@@ -765,7 +765,7 @@ ok, msg = sync_all_players(db_path=..., delta=True, ...)
 # L'implémentation interne change, pas l'interface
 ```
 
-### 7.3 Launcher (openspartan_launcher.py)
+### 7.3 Launcher (launcher.py)
 
 ```python
 # Avant (subprocess)

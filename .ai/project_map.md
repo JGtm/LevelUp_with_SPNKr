@@ -140,7 +140,7 @@ data/
 ## Points d'Entrée
 
 - `streamlit_app.py` : Application principale
-- `openspartan_launcher.py` : Lanceur CLI
+- `launcher.py` : Lanceur CLI
 
 ## Documentation
 

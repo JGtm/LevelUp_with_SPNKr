@@ -562,7 +562,7 @@ Exploration exhaustive du codebase pour vérifier l'adoption de l'architecture D
 **Fichiers legacy à conserver** (rétrocompatibilité) :
 - `src/db/loaders.py`, `loaders_cached.py` — Legacy repository
 - `scripts/sync.py`, `merge_databases.py`, `spnkr_import_db.py` — Scripts legacy
-- `openspartan_launcher.py` — Support des anciennes DBs
+- `launcher.py` — Support des anciennes DBs
 
 ##### 2. Redondances de Code Identifiées
 
@@ -749,7 +749,7 @@ data/players/{gamertag}/stats.duckdb
 |---|-------|------------|--------|
 | S4.7.2.1 | Adapter `scripts/sync.py` CLI | `scripts/sync.py` | ✅ |
 | S4.7.2.2 | Adapter `src/ui/sync.py` | `src/ui/sync.py` | ✅ |
-| S4.7.2.3 | Adapter `openspartan_launcher.py` | `openspartan_launcher.py` | ⏳ (Optionnel) |
+| S4.7.2.3 | Adapter `launcher.py` | `launcher.py` | ⏳ (Optionnel) |
 | S4.7.2.4 | Tests d'intégration | `tests/test_sync_integration.py` | ⏳ (Optionnel) |
 
 **Implémentations réalisées** :
@@ -1139,7 +1139,7 @@ CREATE TABLE weapon_match_stats (
 | S6.3.1 | Renommer références "OpenSpartan Graph" → "LevelUp" | Global | ✅ |
 | S6.3.2 | Renommer streamlit_app.py si nécessaire | `streamlit_app.py` | ⏳ (Non requis) |
 | S6.3.3 | MAJ sidebar brand "LevelUp" | `src/app/sidebar.py` | ✅ Déjà fait |
-| S6.3.4 | MAJ launcher "LevelUp" | `openspartan_launcher.py` | ✅ Déjà fait |
+| S6.3.4 | MAJ launcher "LevelUp" | `launcher.py` | ✅ Déjà fait |
 | S6.3.5 | MAJ pyproject.toml (name, description) | `pyproject.toml` | ✅ |
 | S6.3.6 | Création logo LevelUp | `static/logo.png` | ⏳ (Optionnel) |
 

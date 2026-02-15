@@ -11,4 +11,4 @@ if [ ! -f "$VENV_PYTHON" ]; then
     exit 1
 fi
 
-exec "$VENV_PYTHON" "$SCRIPT_DIR/openspartan_launcher.py" "$@"
+exec "$VENV_PYTHON" "$SCRIPT_DIR/launcher.py" "$@"

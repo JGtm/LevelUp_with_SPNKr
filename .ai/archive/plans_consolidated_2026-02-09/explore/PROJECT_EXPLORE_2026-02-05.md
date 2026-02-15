@@ -15,7 +15,7 @@
 | **Python** | >=3.10 |
 | **Stack** | DuckDB, Polars, Pydantic v2, Streamlit, SPNKr API |
 | **Point d’entrée** | `streamlit run streamlit_app.py` |
-| **Lanceur CLI** | `openspartan_launcher.py` |
+| **Lanceur CLI** | `launcher.py` |
 
 **Règles critiques** (voir CLAUDE.md) :
 - SQLite **interdit** en applicatif ; DuckDB v4 uniquement (sauf scripts de migration qui lisent l’ancien SQLite).

@@ -37,7 +37,7 @@ Backups créés dans : `backups/v5_cleanup/{gamertag}_{timestamp}.duckdb`
 
 ```bash
 # Lancer l'app pour vérifier que tout fonctionne
-python openspartan_launcher.py run
+python launcher.py run
 
 # Test sync
 python scripts/sync.py --delta --gamertag MonGamertag

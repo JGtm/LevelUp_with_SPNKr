@@ -8,7 +8,7 @@
 
 ```bash
 # Lancer le dashboard
-python openspartan_launcher.py run
+python launcher.py run
 
 # Lancer en mode debug
 streamlit run streamlit_app.py --server.runOnSave true

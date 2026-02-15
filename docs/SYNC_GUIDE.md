@@ -115,7 +115,7 @@ Le dashboard affiche :
 
 ```bash
 # Lancer le dashboard avec sync
-python openspartan_launcher.py run+refresh --player MonGamertag --delta
+python launcher.py run+refresh --player MonGamertag --delta
 ```
 
 ---

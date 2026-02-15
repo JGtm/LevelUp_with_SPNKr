@@ -63,7 +63,7 @@ spnkr = [
 ]
 
 [project.scripts]
-openspartan = "openspartan_launcher:main"
+openspartan = "launcher:main"
 
 [project.urls]
 Homepage = "https://github.com/username/levelup-halo"

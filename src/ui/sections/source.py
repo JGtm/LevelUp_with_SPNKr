@@ -85,7 +85,7 @@ def render_source_section(
             get_local_dbs.clear()  # st.cache_data wrapper
         st.rerun()
 
-    # DuckDB v4 : la DB est sélectionnée via openspartan_launcher ou session_state
+    # DuckDB v4 : la DB est sélectionnée via launcher ou session_state
 
     # Récupérer le db_path depuis session_state (pas d'UI manuelle)
     db_path = str(st.session_state.get("db_path", "") or "").strip()

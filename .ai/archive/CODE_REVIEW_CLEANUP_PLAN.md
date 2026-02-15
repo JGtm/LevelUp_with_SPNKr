@@ -496,7 +496,7 @@ Fichiers à mettre à jour après relocalisation :
 
 | Fichier | Action |
 |---------|--------|
-| `openspartan_launcher.py` | Garder (CLI launcher principal) |
+| `launcher.py` | Garder (CLI launcher principal) |
 | `.cursorrules` | Évaluer si encore nécessaire (doublon avec CLAUDE.md ?) |
 | `activate_env.sh` | Garder |
 | `run.sh` | Garder |

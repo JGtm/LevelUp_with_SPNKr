@@ -5,12 +5,12 @@ Architecture v4 DuckDB unifiée avec stockage par joueur.
 Usage
 -----
 Mode interactif (recommandé):
-  python openspartan_launcher.py
+  python launcher.py
 
 Commandes CLI:
-  python openspartan_launcher.py run              # Dashboard seul
-  python openspartan_launcher.py sync             # Sync tous les joueurs
-  python openspartan_launcher.py sync --run       # Sync + lance le dashboard
+  python launcher.py run              # Dashboard seul
+  python launcher.py sync             # Sync tous les joueurs
+  python launcher.py sync --run       # Sync + lance le dashboard
 
 Configuration:
   - Données joueurs: data/players/{gamertag}/stats.duckdb
@@ -149,7 +149,7 @@ def _preferred_python_executable() -> Path | None:
 
 def _maybe_reexec_into_venv(argv: list[str]) -> None:
     """Re-exécute dans le venv si nécessaire."""
-    if os.environ.get("OPENSPARTAN_LAUNCHER_NO_REEXEC"):
+    if os.environ.get("LEVELUP_LAUNCHER_NO_REEXEC"):
         return
 
     preferred = _preferred_python_executable()
@@ -165,7 +165,7 @@ def _maybe_reexec_into_venv(argv: list[str]) -> None:
     if current == preferred_r:
         return
 
-    os.environ["OPENSPARTAN_LAUNCHER_NO_REEXEC"] = "1"
+    os.environ["LEVELUP_LAUNCHER_NO_REEXEC"] = "1"
     os.execv(str(preferred_r), [str(preferred_r), str(Path(__file__).resolve()), *argv])
 
 
@@ -518,7 +518,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if not players:
         print("❌ Aucune donnée joueur trouvée")
         print("\n   Tu dois d'abord synchroniser les données:")
-        print("   python openspartan_launcher.py sync")
+        print("   python launcher.py sync")
         return 2
 
     # Afficher les infos
@@ -704,7 +704,7 @@ def _interactive() -> int:
         print("  Pour d'autres actions, utilise la CLI: run / sync / info")
         choice = "1" if players else ""
         if not choice:
-            print("  Aucun joueur trouvé. Lance: python openspartan_launcher.py sync")
+            print("  Aucun joueur trouvé. Lance: python launcher.py sync")
             return 2
     else:
         try:
@@ -712,9 +712,9 @@ def _interactive() -> int:
         except EOFError:
             print("\n⚠ stdin fermé ou non connecté (terminal/IDE).")
             print("  Utilise les arguments CLI:")
-            print("    python openspartan_launcher.py run    # option 1")
-            print("    python openspartan_launcher.py sync   # option 3")
-            print("    python openspartan_launcher.py info   # option 4")
+            print("    python launcher.py run    # option 1")
+            print("    python launcher.py sync   # option 3")
+            print("    python launcher.py info   # option 4")
             return 2
 
     if choice in {"q", "quit", "exit"}:
@@ -763,11 +763,11 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemples:
-  python openspartan_launcher.py           # Mode interactif
-  python openspartan_launcher.py run       # Dashboard seul
-  python openspartan_launcher.py sync      # Sync tous les joueurs
-  python openspartan_launcher.py sync --run  # Sync + dashboard
-  python openspartan_launcher.py info      # Affiche les infos
+  python launcher.py           # Mode interactif
+  python launcher.py run       # Dashboard seul
+  python launcher.py sync      # Sync tous les joueurs
+  python launcher.py sync --run  # Sync + dashboard
+  python launcher.py info      # Affiche les infos
 
 Architecture v4:
   - Données joueurs: data/players/{gamertag}/stats.duckdb

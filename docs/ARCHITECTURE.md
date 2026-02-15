@@ -9,7 +9,7 @@ LevelUp utilise une architecture DuckDB unifiée pour des performances optimales
 ```
 levelup-halo/
 ├── streamlit_app.py              # Point d'entrée Streamlit
-├── openspartan_launcher.py       # Launcher CLI
+├── launcher.py       # Launcher CLI
 │
 ├── src/
 │   ├── app/                      # Orchestration application

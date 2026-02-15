@@ -135,7 +135,7 @@ Voir [CONFIGURATION.md](CONFIGURATION.md) pour la configuration des tokens Azure
 
 ```bash
 # Lancer le dashboard
-python openspartan_launcher.py run
+python launcher.py run
 
 # Ou directement avec Streamlit
 streamlit run streamlit_app.py

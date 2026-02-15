@@ -20,7 +20,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 COPY src /app/src
 COPY static /app/static
 COPY scripts /app/scripts
-COPY streamlit_app.py openspartan_launcher.py /app/
+COPY streamlit_app.py launcher.py /app/
 
 # Données de référence embarquées (petits fichiers nécessaires à l'UI)
 COPY data/Playlist_modes_translations.json /app/data/

@@ -108,13 +108,13 @@ python scripts/spnkr_get_refresh_token.py
 
 ```bash
 # Mode interactif
-python openspartan_launcher.py
+python launcher.py
 
 # Lancer directement
-python openspartan_launcher.py run
+python launcher.py run
 
 # Avec synchronisation
-python openspartan_launcher.py run+refresh --player MonGamertag --delta
+python launcher.py run+refresh --player MonGamertag --delta
 ```
 
 ### Synchronisation des Données

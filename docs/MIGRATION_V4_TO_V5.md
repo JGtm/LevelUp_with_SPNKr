@@ -94,7 +94,7 @@ python scripts/migration/remove_compat_views.py --gamertag MonGamertag
 python scripts/validate_migration.py
 
 # Lancer l'application pour vérifier
-python openspartan_launcher.py run
+python launcher.py run
 ```
 
 ### Points de validation

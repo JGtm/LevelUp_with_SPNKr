@@ -1612,7 +1612,7 @@ Avant de passer à la Phase 5 (API Grunt), l'utilisateur demande une analyse com
    | `src/data/repositories/shadow.py` | Bridge legacy→hybrid | **OBSOLÈTE** |
 
 2. **Points d'intégration identifiés** :
-   - `openspartan_launcher.py` : Appelle `spnkr_import_db.py` via subprocess
+   - `launcher.py` : Appelle `spnkr_import_db.py` via subprocess
    - `src/ui/sync.py` : Bridge UI → subprocess
    - `src/app/sidebar.py` : Bouton "Synchroniser" → `sync_all_players()`
 

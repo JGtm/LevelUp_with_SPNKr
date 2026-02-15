@@ -215,7 +215,7 @@ Le script effectue plusieurs vérifications automatiques :
 
 ```bash
 # Lancer l'application
-python openspartan_launcher.py run
+python launcher.py run
 ```
 
 Vérifier que :
@@ -286,7 +286,7 @@ Si vous avez assez d'espace, vous pouvez garder ces tables indéfiniment.
 python scripts/cleanup_player_dbs_v5.py --gamertag Joueur1 --backup
 
 # Valider que tout fonctionne
-python openspartan_launcher.py run
+python launcher.py run
 
 # Nettoyer les autres
 python scripts/cleanup_player_dbs_v5.py --all --backup

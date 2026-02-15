@@ -39,11 +39,11 @@ def cached_load_highlight_events_for_match(..., db_key: tuple[int, int] | None =
 
 ### 1.2 Centraliser les chemins (M4, M5)
 
-**Fichiers** : `openspartan_launcher.py`, `src/ui/multiplayer.py`  
+**Fichiers** : `launcher.py`, `src/ui/multiplayer.py`  
 **Problème** : Chemins définis localement au lieu d'utiliser `src/utils/paths`  
 **Impact** : Duplication, risque d'incohérence si chemins changent
 
-**Action openspartan_launcher.py** :
+**Action launcher.py** :
 ```python
 # AVANT (lignes 53-56)
 PLAYERS_DIR = REPO_ROOT / "data" / "players"
@@ -72,7 +72,7 @@ _PLAYERS_DIR = PLAYERS_DIR
 
 ### 1.3 Connexions DuckDB directes (M2, M3)
 
-**Fichiers** : `openspartan_launcher.py:239,283`, `src/app/data_loader.py:155`  
+**Fichiers** : `launcher.py:239,283`, `src/app/data_loader.py:155`  
 **Problème** : Utilise `duckdb.connect()` directement au lieu de `DuckDBRepository`  
 **Impact** : Incohérence architecturale, connexions potentiellement non fermées
 
@@ -155,7 +155,7 @@ finally:
 
 ### 2.3 Refactoring fonctions longues (m3)
 
-**Fichier** : `openspartan_launcher.py`  
+**Fichier** : `launcher.py`  
 **Lignes** : 507 (`_cmd_sync`), 627 (`_interactive`)  
 **Problème** : ~80 lignes chacune
 
@@ -168,7 +168,7 @@ finally:
 
 ### 2.4 Extraire magic number (m4)
 
-**Fichier** : `openspartan_launcher.py:464`  
+**Fichier** : `launcher.py:464`  
 **Problème** : `time.sleep(1.2)` sans constante nommée
 
 **Action** :
