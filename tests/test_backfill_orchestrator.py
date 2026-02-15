@@ -347,15 +347,17 @@ class TestBackfillLocalOnly:
         from scripts.backfill.orchestrator import _backfill_local_only
 
         # No events → 0 pairs
-        result = _backfill_local_only(
-            conn,
-            Path("/fake"),
-            "xuid1",
-            killer_victim=True,
-            end_time=False,
-            sessions=False,
-            citations=False,
-        )
+        # Mock _get_shared_connection pour éviter d'accéder à la vraie shared DB
+        with patch("scripts.backfill.orchestrator._get_shared_connection", return_value=None):
+            result = _backfill_local_only(
+                conn,
+                Path("/fake"),
+                "xuid1",
+                killer_victim=True,
+                end_time=False,
+                sessions=False,
+                citations=False,
+            )
         assert result["killer_victim_pairs_inserted"] == 0
 
 

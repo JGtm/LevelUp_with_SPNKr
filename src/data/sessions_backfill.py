@@ -83,6 +83,9 @@ def get_friends_xuids_for_backfill(
             s = str(ident or "").strip()
             if not s:
                 continue
+            # ~prefix = ami inactif, exclu des sessions par défaut
+            if s.startswith("~"):
+                continue
             if s.isdigit() and s in known_xuids:
                 xuids.add(s)
                 continue
@@ -102,9 +105,14 @@ def get_top_two_teammate_xuids(
     *,
     conn: duckdb.DuckDBPyConnection | None = None,
 ) -> frozenset[str]:
-    """Fallback : top N coéquipiers depuis teammates_aggregate."""
+    """Top N coéquipiers depuis shared.match_participants."""
     path = Path(db_path)
     if not path.exists():
+        return frozenset()
+
+    # Trouver shared_matches.duckdb
+    shared_db = path.parent.parent.parent / "warehouse" / "shared_matches.duckdb"
+    if not shared_db.exists():
         return frozenset()
 
     own_conn = False
@@ -112,16 +120,32 @@ def get_top_two_teammate_xuids(
         conn = duckdb.connect(str(path), read_only=True)
         own_conn = True
     try:
+        # Attacher shared en read-only
+        with contextlib.suppress(Exception):
+            conn.execute(
+                "ATTACH ? AS shared_tmp (READ_ONLY)",
+                [str(shared_db)],
+            )
+
         result = conn.execute(
             """
-            SELECT teammate_xuid, match_count
-            FROM teammates_aggregate
-            WHERE teammate_xuid IS NOT NULL AND teammate_xuid != ?
+            SELECT mp2.xuid, COUNT(DISTINCT mp2.match_id) AS match_count
+            FROM shared_tmp.match_participants mp1
+            JOIN shared_tmp.match_participants mp2
+              ON mp1.match_id = mp2.match_id
+             AND mp1.xuid != mp2.xuid
+             AND mp1.team_id = mp2.team_id
+            WHERE mp1.xuid = ?
+            GROUP BY mp2.xuid
             ORDER BY match_count DESC
             LIMIT ?
             """,
             [str(self_xuid).strip(), limit],
         ).fetchall()
+
+        with contextlib.suppress(Exception):
+            conn.execute("DETACH shared_tmp")
+
         return frozenset(str(r[0]).strip() for r in result if r[0])
     except Exception:
         return frozenset()

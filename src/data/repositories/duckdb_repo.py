@@ -594,22 +594,36 @@ class DuckDBRepository(
         self,
         limit: int = 20,
     ) -> list[tuple[str, int]]:
-        """Liste les coéquipiers les plus fréquents."""
+        """Liste les coéquipiers les plus fréquents.
+
+        Calcule dynamiquement depuis shared.match_participants :
+        compte le nombre de matchs en commun avec chaque autre joueur.
+        """
         conn = self._get_connection()
 
-        try:
-            result = conn.execute(
-                """
-                SELECT teammate_xuid, matches_together
-                FROM teammates_aggregate
-                ORDER BY matches_together DESC
-                LIMIT ?
-                """,
-                [limit],
-            )
-            return [(row[0], row[1]) for row in result.fetchall()]
-        except Exception:
-            return []
+        # Utiliser shared.match_participants (v5) pour calculer dynamiquement
+        if self._has_shared_table("match_participants"):
+            try:
+                result = conn.execute(
+                    """
+                    SELECT mp2.xuid AS teammate_xuid,
+                           COUNT(DISTINCT mp2.match_id) AS matches_together
+                    FROM shared.match_participants mp1
+                    JOIN shared.match_participants mp2
+                      ON mp1.match_id = mp2.match_id
+                     AND mp1.xuid != mp2.xuid
+                     AND mp1.team_id = mp2.team_id
+                    WHERE mp1.xuid = ?
+                    GROUP BY mp2.xuid
+                    ORDER BY matches_together DESC
+                    LIMIT ?
+                    """,
+                    [self._xuid, limit],
+                )
+                return [(row[0], row[1]) for row in result.fetchall()]
+            except Exception:
+                pass
+        return []
 
     # =========================================================================
     # Métadonnées
@@ -650,7 +664,7 @@ class DuckDBRepository(
 
         # Taille des tables
         tables_info = {}
-        for table in ["match_stats", "teammates_aggregate", "medals_earned", "antagonists"]:
+        for table in ["match_stats", "medals_earned", "antagonists"]:
             try:
                 count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 tables_info[table] = count

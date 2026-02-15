@@ -29,6 +29,28 @@ from scripts.backfill.strategies import (
 
 logger = logging.getLogger(__name__)
 
+# Répertoire racine du projet
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _get_shared_connection(db_path: Path) -> Any | None:
+    """Ouvre une connexion vers shared_matches.duckdb (v5).
+
+    Le chemin est dérivé depuis la racine du projet.
+    Retourne None si la base n'existe pas.
+    """
+    import duckdb
+
+    shared_path = _PROJECT_ROOT / "data" / "warehouse" / "shared_matches.duckdb"
+    if not shared_path.exists():
+        logger.warning(f"shared_matches.duckdb introuvable: {shared_path}")
+        return None
+    try:
+        return duckdb.connect(str(shared_path), read_only=False)
+    except Exception as e:
+        logger.warning(f"Impossible d'ouvrir shared_matches.duckdb: {e}")
+        return None
+
 
 def _empty_result() -> dict[str, int]:
     """Retourne un dict de résultat vide."""
@@ -581,7 +603,11 @@ def _backfill_local_only(
 
     if killer_victim:
         logger.info("Backfill des paires killer/victim depuis highlight_events...")
-        n = backfill_killer_victim_pairs(conn, xuid)
+        # Ouvrir une connexion vers shared_matches.duckdb (v5)
+        shared_conn = _get_shared_connection(db_path)
+        n = backfill_killer_victim_pairs(conn, xuid, shared_conn=shared_conn)
+        if shared_conn is not None:
+            shared_conn.close()
         result["killer_victim_pairs_inserted"] = n
         if n > 0:
             logger.info(f"✅ {n} paires killer/victim insérées")
@@ -885,7 +911,10 @@ async def _backfill_with_api(
     # ── Backfill local post-API ──
     if killer_victim:
         logger.info("Backfill des paires killer/victim depuis highlight_events...")
-        n = backfill_killer_victim_pairs(conn, xuid)
+        shared_conn = _get_shared_connection(db_path)
+        n = backfill_killer_victim_pairs(conn, xuid, shared_conn=shared_conn)
+        if shared_conn is not None:
+            shared_conn.close()
         totals["killer_victim_pairs_inserted"] = n
         if n > 0:
             logger.info(f"✅ {n} paires killer/victim insérées")

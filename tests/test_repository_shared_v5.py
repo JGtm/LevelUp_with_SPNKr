@@ -55,13 +55,6 @@ def _create_player_db(db_path: Path) -> None:
         )
     """)
     conn.execute("""
-        CREATE TABLE teammates_aggregate (
-            teammate_xuid VARCHAR PRIMARY KEY,
-            teammate_gamertag VARCHAR,
-            matches_together INTEGER DEFAULT 0
-        )
-    """)
-    conn.execute("""
         CREATE TABLE antagonists (
             opponent_xuid VARCHAR PRIMARY KEY,
             opponent_gamertag VARCHAR,
@@ -141,12 +134,6 @@ def _create_player_db(db_path: Path) -> None:
             ),
         )
 
-    # Coéquipiers
-    conn.execute("""
-        INSERT INTO teammates_aggregate (teammate_xuid, teammate_gamertag, matches_together)
-        VALUES ('xuid_team1', 'Teammate1', 10), ('xuid_team2', 'Teammate2', 5)
-    """)
-
     # Antagonists
     conn.execute("""
         INSERT INTO antagonists (opponent_xuid, opponent_gamertag, kills_dealt, deaths_suffered, matches_fought)
@@ -224,6 +211,19 @@ def _create_shared_db(db_path: Path) -> None:
         )
     """)
     conn.execute("""
+        CREATE TABLE killer_victim_pairs (
+            match_id VARCHAR NOT NULL,
+            killer_xuid VARCHAR NOT NULL,
+            killer_gamertag VARCHAR,
+            victim_xuid VARCHAR NOT NULL,
+            victim_gamertag VARCHAR,
+            kill_count INTEGER DEFAULT 1,
+            time_ms INTEGER,
+            is_validated BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
         CREATE TABLE schema_version (
             version INTEGER PRIMARY KEY,
             description VARCHAR NOT NULL,
@@ -241,7 +241,7 @@ def _create_shared_db(db_path: Path) -> None:
                 mode_category, duration_seconds, team_0_score, team_1_score,
                 player_count
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (mid, base_time, "Ranked Arena", f"Map{i}", "Arena", 600, 50, 48, 2),
+            (mid, base_time, "Ranked Arena", f"Map{i}", "Arena", 600, 50, 48, 3),
         )
         # Joueur principal + un adversaire
         conn.execute(
@@ -271,6 +271,13 @@ def _create_shared_db(db_path: Path) -> None:
             )""",
             (mid, "xuid_enemy1", "Enemy1", 1, 3, 2, 1800, 8, 12, 2, 180, 80, 2500.0, 3000.0),
         )
+        # Coéquipier (même team_id=0 que le joueur principal)
+        conn.execute(
+            """INSERT INTO match_participants VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+            )""",
+            (mid, "xuid_team1", "Teammate1", 0, 2, 2, 1500, 7, 6, 4, 150, 70, 2200.0, 2400.0),
+        )
 
     # Médailles
     conn.execute("""
@@ -284,7 +291,8 @@ def _create_shared_db(db_path: Path) -> None:
     conn.execute("""
         INSERT INTO xuid_aliases VALUES
         ('xuid_test_s7', 'TestPlayer', NULL, 'test', CURRENT_TIMESTAMP),
-        ('xuid_enemy1', 'Enemy1', NULL, 'test', CURRENT_TIMESTAMP)
+        ('xuid_enemy1', 'Enemy1', NULL, 'test', CURRENT_TIMESTAMP),
+        ('xuid_team1', 'Teammate1', NULL, 'test', CURRENT_TIMESTAMP)
     """)
 
     conn.close()
@@ -466,10 +474,10 @@ class TestTeammatesAndAntagonists:
         assert len(teammates) > 0
         # Retourne list[tuple[xuid, matches_together]]
         assert teammates[0][0] == "xuid_team1"  # premier coéquipier par matches_together
-        assert teammates[0][1] == 10
+        assert teammates[0][1] == 5  # 5 matchs en commun (un par match_id)
 
     def test_list_top_teammates_empty(self, tmp_path: Path) -> None:
-        """Repo sans coéquipiers → liste vide."""
+        """Repo sans coéquipiers dans shared → liste vide."""
         player_db = tmp_path / "empty" / "stats.duckdb"
         player_db.parent.mkdir(parents=True, exist_ok=True)
         conn = duckdb.connect(str(player_db))
@@ -477,13 +485,6 @@ class TestTeammatesAndAntagonists:
             CREATE TABLE match_stats (match_id VARCHAR PRIMARY KEY, start_time TIMESTAMP NOT NULL,
             kills INTEGER, deaths INTEGER, assists INTEGER, outcome INTEGER,
             is_firefight BOOLEAN DEFAULT FALSE)
-        """)
-        conn.execute("""
-            CREATE TABLE teammates_aggregate (
-                teammate_xuid VARCHAR PRIMARY KEY,
-                teammate_gamertag VARCHAR,
-                matches_together INTEGER DEFAULT 0
-            )
         """)
         conn.close()
         repo = DuckDBRepository(player_db, "xuid_empty", gamertag="Empty")

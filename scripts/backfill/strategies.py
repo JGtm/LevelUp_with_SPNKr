@@ -18,33 +18,55 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def backfill_killer_victim_pairs(conn: Any, me_xuid: str, *, force: bool = False) -> int:
-    """Extrait les paires killer/victim depuis highlight_events.
+def backfill_killer_victim_pairs(
+    conn: Any,
+    me_xuid: str,
+    *,
+    force: bool = False,
+    shared_conn: Any | None = None,
+) -> int:
+    """Extrait les paires killer/victim depuis highlight_events vers shared.
+
+    En v5, cette table est mutualisée dans shared_matches.duckdb car les
+    paires sont identiques quel que soit le joueur POV.
 
     Mode incrémental par défaut : ne traite que les matchs qui n'ont pas
     encore de paires dans killer_victim_pairs.
     Mode force : DROP + recréation complète de la table.
 
-    Utilise l'algorithme de pairing de src/analysis/killer_victim.py
-    pour apparier les events kill/death par timestamp.
-
     Args:
-        conn: Connexion DuckDB.
+        conn: Connexion DuckDB joueur (utilisée comme fallback pour highlight_events).
         me_xuid: XUID du joueur principal (pour référence).
         force: Si True, reconstruit toute la table.
+        shared_conn: Connexion vers shared_matches.duckdb (v5).
+            Si fourni, lit/écrit depuis shared. Sinon, fallback local.
 
     Returns:
         Nombre de paires insérées.
     """
     from src.analysis.killer_victim import KVPair, compute_killer_victim_pairs
 
+    # Déterminer la connexion cible (shared ou locale)
+    target_conn = shared_conn if shared_conn is not None else conn
+    events_source = "highlight_events"  # même nom dans les deux DBs
+
+    # Déterminer le mapping colonnes pour highlight_events
+    # En v5 (shared), le schéma utilise killer_xuid/victim_xuid
+    # En v4 (local), le schéma utilise xuid/gamertag
+    # COALESCE permet de mapper vers le format attendu par compute_killer_victim_pairs
+    if shared_conn is not None:
+        events_xuid_expr = "COALESCE(killer_xuid, victim_xuid) AS xuid"
+        events_gt_expr = "COALESCE(killer_gamertag, victim_gamertag) AS gamertag"
+    else:
+        events_xuid_expr = "xuid"
+        events_gt_expr = "gamertag"
+
     if force:
-        # Mode destructif : tout reconstruire
-        conn.execute("DROP TABLE IF EXISTS killer_victim_pairs")
+        target_conn.execute("DROP TABLE IF EXISTS killer_victim_pairs")
         logger.info("Table killer_victim_pairs supprimée (mode --force)")
 
     # Créer la table si elle n'existe pas
-    conn.execute("""
+    target_conn.execute("""
         CREATE TABLE IF NOT EXISTS killer_victim_pairs (
             match_id VARCHAR NOT NULL,
             killer_xuid VARCHAR NOT NULL,
@@ -58,16 +80,24 @@ def backfill_killer_victim_pairs(conn: Any, me_xuid: str, *, force: bool = False
         )
     """)
     with contextlib.suppress(Exception):
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_match ON killer_victim_pairs(match_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_killer ON killer_victim_pairs(killer_xuid)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_kv_victim ON killer_victim_pairs(victim_xuid)")
+        target_conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kv_match ON killer_victim_pairs(match_id)"
+        )
+        target_conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kv_killer ON killer_victim_pairs(killer_xuid)"
+        )
+        target_conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kv_victim ON killer_victim_pairs(victim_xuid)"
+        )
 
     # Charger les matchs avec highlight events kill/death
     # qui n'ont PAS encore de paires (mode incrémental)
+    # highlight_events et killer_victim_pairs sont dans la même connexion (target_conn)
+    read_conn = target_conn
     try:
-        matches = conn.execute("""
+        matches = read_conn.execute(f"""
             SELECT DISTINCT he.match_id
-            FROM highlight_events he
+            FROM {events_source} he
             WHERE LOWER(he.event_type) IN ('kill', 'death')
               AND NOT EXISTS (
                   SELECT 1 FROM killer_victim_pairs kvp
@@ -91,10 +121,10 @@ def backfill_killer_victim_pairs(conn: Any, me_xuid: str, *, force: bool = False
 
     for (match_id,) in matches:
         try:
-            events = conn.execute(
-                """
-                SELECT event_type, time_ms, xuid, gamertag
-                FROM highlight_events
+            events = read_conn.execute(
+                f"""
+                SELECT event_type, time_ms, {events_xuid_expr}, {events_gt_expr}
+                FROM {events_source}
                 WHERE match_id = ?
                   AND LOWER(event_type) IN ('kill', 'death')
                 ORDER BY time_ms
@@ -155,7 +185,7 @@ def backfill_killer_victim_pairs(conn: Any, me_xuid: str, *, force: bool = False
         insert_errors = 0
         for p in pairs:
             try:
-                conn.execute(
+                target_conn.execute(
                     """
                     INSERT INTO killer_victim_pairs
                     (match_id, killer_xuid, killer_gamertag, victim_xuid,

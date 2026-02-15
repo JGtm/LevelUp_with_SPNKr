@@ -89,16 +89,22 @@ class RosterLoaderMixin:
 
             # ======================================================================
             # MÉTHODE 1 : Utiliser killer_victim_pairs si disponible (source fiable)
+            # Cherche dans shared (v5) puis locale (compat)
             # ======================================================================
             has_kvp = False
-            try:
-                kvp_check = conn.execute(
-                    "SELECT 1 FROM information_schema.tables "
-                    "WHERE table_schema = 'main' AND table_name = 'killer_victim_pairs'"
-                ).fetchone()
-                has_kvp = kvp_check is not None
-            except Exception:
-                pass
+            kvp_table_ref = "killer_victim_pairs"
+            if self._has_shared_table("killer_victim_pairs"):
+                has_kvp = True
+                kvp_table_ref = "shared.killer_victim_pairs"
+            else:
+                try:
+                    kvp_check = conn.execute(
+                        "SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema = 'main' AND table_name = 'killer_victim_pairs'"
+                    ).fetchone()
+                    has_kvp = kvp_check is not None
+                except Exception:
+                    pass
 
             team_by_xuid: dict[str, int | None] = {}
             gamertag_by_xuid: dict[str, str | None] = {}
@@ -109,9 +115,9 @@ class RosterLoaderMixin:
                 # Si quelqu'un tue mes adversaires → coéquipier
                 try:
                     kvp_result = conn.execute(
-                        """
+                        f"""
                         SELECT killer_xuid, killer_gamertag, victim_xuid, victim_gamertag, kill_count
-                        FROM killer_victim_pairs
+                        FROM {kvp_table_ref}
                         WHERE match_id = ?
                         """,
                         [match_id],

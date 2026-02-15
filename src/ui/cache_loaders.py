@@ -503,7 +503,7 @@ def cached_list_other_xuids(
 ) -> list[str]:
     """Version cachée de list_other_player_xuids.
 
-    DuckDB v4 utilise xuid_aliases ou teammates_aggregate.
+    DuckDB v4 utilise xuid_aliases. En v5, shared.match_participants.
     """
     # DuckDB v4 : utiliser la table xuid_aliases ou teammates
     if _is_duckdb_v4_path(db_path):

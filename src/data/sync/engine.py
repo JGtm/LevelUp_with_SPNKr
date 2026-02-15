@@ -133,24 +133,6 @@ CREATE TABLE IF NOT EXISTS highlight_events (
 );
 CREATE INDEX IF NOT EXISTS idx_highlight_match ON highlight_events(match_id);
 
--- Table killer_victim_pairs (Sprint 8 - Paires killer→victim par match)
--- Permet de calculer némésis/souffre-douleur sans recalculer depuis highlight_events
-CREATE TABLE IF NOT EXISTS killer_victim_pairs (
-    id INTEGER PRIMARY KEY,
-    match_id VARCHAR NOT NULL,
-    killer_xuid VARCHAR NOT NULL,
-    killer_gamertag VARCHAR,
-    victim_xuid VARCHAR NOT NULL,
-    victim_gamertag VARCHAR,
-    kill_count INTEGER DEFAULT 1,
-    time_ms INTEGER,
-    is_validated BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_kv_match ON killer_victim_pairs(match_id);
-CREATE INDEX IF NOT EXISTS idx_kv_killer ON killer_victim_pairs(killer_xuid);
-CREATE INDEX IF NOT EXISTS idx_kv_victim ON killer_victim_pairs(victim_xuid);
-
 -- Table personal_score_awards (Sprint 8 - Décomposition du score personnel)
 -- Stocke les awards individuels pour analyse de la contribution aux objectifs
 CREATE SEQUENCE IF NOT EXISTS personal_score_awards_id_seq;
@@ -1814,7 +1796,6 @@ class DuckDBSyncEngine:
 
         Met à jour :
         - Vues matérialisées (mv_*)
-        - teammates_aggregate (à implémenter)
 
         Returns:
             Dict table_name → rows_affected.

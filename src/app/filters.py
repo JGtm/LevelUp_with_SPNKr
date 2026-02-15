@@ -67,6 +67,10 @@ def _load_local_friends_defaults() -> dict[str, list[str]]:
 
     Fichier local (ignoré git): .streamlit/friends_defaults.json
     Valeurs: gamertags OU XUIDs.
+
+    Convention: préfixer un nom avec ``~`` pour le garder dans le fichier
+    mais l'exclure de la sélection par défaut (ami inactif/occasionnel).
+    Exemple: ``"~XxDaemonGamerxX"``
     """
     try:
         p = Path(__file__).resolve().parents[2] / ".streamlit" / "friends_defaults.json"
@@ -89,7 +93,11 @@ def _load_local_friends_defaults() -> dict[str, list[str]]:
         vals: list[str] = []
         for it in v:
             if isinstance(it, str) and it.strip():
-                vals.append(it.strip())
+                raw = it.strip()
+                # ~prefix = ami inactif, on l'ignore pour les defaults
+                if raw.startswith("~"):
+                    continue
+                vals.append(raw)
         if vals:
             out[k.strip()] = vals
     return out

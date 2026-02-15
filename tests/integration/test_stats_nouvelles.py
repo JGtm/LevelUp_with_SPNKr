@@ -87,21 +87,6 @@ def integration_db(tmp_path: Path) -> tuple[Path, str]:
         """)
 
         conn.execute("""
-            CREATE TABLE teammates_aggregate (
-                teammate_gamertag VARCHAR PRIMARY KEY,
-                teammate_xuid VARCHAR,
-                matches_together INTEGER,
-                wins_together INTEGER,
-                total_kills INTEGER,
-                total_deaths INTEGER,
-                win_rate FLOAT,
-                avg_kda FLOAT,
-                first_seen TIMESTAMP,
-                last_seen TIMESTAMP
-            )
-        """)
-
-        conn.execute("""
             CREATE TABLE antagonists (
                 opponent_gamertag VARCHAR PRIMARY KEY,
                 kills_against INTEGER,
@@ -232,28 +217,56 @@ def integration_db(tmp_path: Path) -> tuple[Path, str]:
                     ),
                 )
 
-        # Coéquipiers
-        teammates = ["Teammate_A", "Teammate_B", "Teammate_C", "Teammate_D", "Teammate_E"]
-        for idx, tm in enumerate(teammates):
-            matches_together = random.randint(10, 30)
-            wins_together = random.randint(3, matches_together)  # wins <= matches
-            conn.execute(
-                """
-                INSERT INTO teammates_aggregate VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    tm,
-                    f"xuid_{idx}",
-                    matches_together,
-                    wins_together,
-                    random.randint(50, 200),
-                    random.randint(40, 150),
-                    round(wins_together / matches_together, 3),  # win_rate cohérent
-                    round(random.uniform(1.0, 2.5), 2),
-                    base_time,
-                    base_time.replace(day=25),
-                ),
-            )
+            # Participants (joueur principal + coéquipier + adversaire)
+            with contextlib.suppress(Exception):
+                conn.execute(
+                    "INSERT INTO match_participants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        f"match-{i:04d}",
+                        "TestPlayer",
+                        "1234567890123456",
+                        True,
+                        kills,
+                        deaths,
+                        assists,
+                        round(kda, 2),
+                        accuracy,
+                        random.randint(1000, 5000),
+                        random.randint(800, 4000),
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO match_participants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        f"match-{i:04d}",
+                        f"Teammate{random.randint(1, 3)}",
+                        f"xuid_team_{random.randint(1, 3)}",
+                        True,
+                        random.randint(5, 20),
+                        random.randint(3, 15),
+                        random.randint(1, 8),
+                        round(random.uniform(0.8, 2.0), 2),
+                        round(random.uniform(0.30, 0.60), 3),
+                        random.randint(800, 4000),
+                        random.randint(800, 4000),
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO match_participants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        f"match-{i:04d}",
+                        f"Opponent{random.randint(1, 5)}",
+                        f"xuid_opp_{random.randint(1, 5)}",
+                        False,
+                        random.randint(5, 20),
+                        random.randint(3, 15),
+                        random.randint(1, 8),
+                        round(random.uniform(0.8, 2.0), 2),
+                        round(random.uniform(0.30, 0.60), 3),
+                        random.randint(800, 4000),
+                        random.randint(800, 4000),
+                    ),
+                )
 
         # Sessions quotidiennes
         for day in range(1, 26):
@@ -375,37 +388,39 @@ class TestTimeseriesIntegration:
 
 
 class TestTeammatesIntegration:
-    """Tests d'intégration des fonctionnalités coéquipiers."""
+    """Tests d'intégration des fonctionnalités coéquipiers.
 
-    def test_teammates_data_available(self, integration_db: tuple[Path, str]):
-        """Vérifie que les données coéquipiers sont disponibles."""
+    Note: teammates_aggregate a été supprimée en v5.
+    Les coéquipiers sont désormais calculés dynamiquement depuis
+    shared.match_participants. Ces tests vérifient que match_participants
+    contient les données nécessaires.
+    """
+
+    def test_match_participants_data_available(self, integration_db: tuple[Path, str]):
+        """Vérifie que les données participants sont disponibles."""
         db_path, xuid = integration_db
         conn = duckdb.connect(str(db_path), read_only=True)
 
-        result = conn.execute("SELECT COUNT(*) FROM teammates_aggregate").fetchone()
+        result = conn.execute("SELECT COUNT(*) FROM match_participants").fetchone()
 
         conn.close()
 
-        assert result[0] >= 3, "Au moins 3 coéquipiers enregistrés"
+        assert result[0] >= 3, "Au moins 3 participants enregistrés"
 
-    def test_teammates_win_rate_calculation(self, integration_db: tuple[Path, str]):
-        """Vérifie que le win rate est dans une plage valide."""
+    def test_match_participants_team_data(self, integration_db: tuple[Path, str]):
+        """Vérifie que les participants ont des données d'équipe."""
         db_path, xuid = integration_db
         conn = duckdb.connect(str(db_path), read_only=True)
 
         result = conn.execute("""
-            SELECT teammate_gamertag, win_rate, matches_together, wins_together
-            FROM teammates_aggregate
-            WHERE matches_together > 0
+            SELECT DISTINCT player_gamertag
+            FROM match_participants
+            WHERE player_gamertag IS NOT NULL
         """).fetchall()
 
         conn.close()
 
-        for row in result:
-            gamertag, win_rate, matches, wins = row
-            assert 0 <= win_rate <= 1, f"Win rate valide pour {gamertag}"
-            assert matches > 0, f"Matchs ensemble > 0 pour {gamertag}"
-            assert wins <= matches, f"Wins <= matches pour {gamertag}"
+        assert len(result) >= 1, "Au moins 1 joueur avec gamertag"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

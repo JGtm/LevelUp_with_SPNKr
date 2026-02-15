@@ -215,6 +215,9 @@ class AntagonistsMixin:
     ):
         """Charge les paires killer→victim en DataFrame Polars.
 
+        Lit depuis shared.killer_victim_pairs (v5) avec fallback
+        sur la table locale killer_victim_pairs (compat v4).
+
         Args:
             match_id: Filtrer par un match spécifique.
             match_ids: Filtrer par une liste de matchs.
@@ -242,6 +245,11 @@ class AntagonistsMixin:
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
         limit_sql = f"LIMIT {int(limit)}" if limit else ""
 
+        # Déterminer la source : shared (v5) ou locale (compat)
+        table_ref = "killer_victim_pairs"
+        if self._has_shared_table("killer_victim_pairs"):
+            table_ref = "shared.killer_victim_pairs"
+
         sql = f"""
             SELECT
                 match_id,
@@ -251,7 +259,7 @@ class AntagonistsMixin:
                 victim_gamertag,
                 kill_count,
                 time_ms
-            FROM killer_victim_pairs
+            FROM {table_ref}
             WHERE {where_sql}
             ORDER BY match_id, time_ms
             {limit_sql}
@@ -323,15 +331,26 @@ class AntagonistsMixin:
         }
 
     def has_killer_victim_pairs(self) -> bool:
-        """Vérifie si la table killer_victim_pairs existe et contient des données.
+        """Vérifie si killer_victim_pairs existe et contient des données.
+
+        Cherche dans shared (v5) puis locale (compat).
 
         Returns:
             True si des paires sont disponibles.
         """
         conn = self._get_connection()
 
+        # Vérifier shared d'abord (v5)
+        if self._has_shared_table("killer_victim_pairs"):
+            try:
+                row = conn.execute("SELECT 1 FROM shared.killer_victim_pairs LIMIT 1").fetchone()
+                return row is not None
+            except Exception:
+                pass
+
+        # Fallback locale
         try:
-            count = conn.execute("SELECT COUNT(*) FROM killer_victim_pairs").fetchone()[0]
-            return count > 0
+            row = conn.execute("SELECT 1 FROM killer_victim_pairs LIMIT 1").fetchone()
+            return row is not None
         except Exception:
             return False

@@ -137,7 +137,7 @@ class DataRepository(Protocol):
     ) -> list[tuple[str, int]]:
         """
         Liste les coéquipiers les plus fréquents.
-        (List most frequent teammates)
+        Calculé dynamiquement depuis shared.match_participants (v5).
 
         Returns:
             Liste de tuples (xuid, match_count)

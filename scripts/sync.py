@@ -246,14 +246,12 @@ def rebuild_match_cache(db_path: str, xuid: str | None = None) -> tuple[bool, st
 
 
 def rebuild_teammates_aggregate(db_path: str) -> tuple[bool, str]:
-    """Reconstruit la table TeammatesAggregate depuis MatchStats.
+    """Stub déprécié : teammates_aggregate a été supprimée en v5.
 
-    DuckDB v4 n'utilise pas TeammatesAggregate (table legacy). Refuse .db (SQLite).
+    Les données de coéquipiers sont désormais calculées dynamiquement
+    depuis shared.match_participants.
     """
-    _refuse_sqlite_path(db_path)
-    if _is_duckdb_path(db_path):
-        return True, "DuckDB: ignoré (n'utilise pas TeammatesAggregate)"
-    return False, "Seuls les fichiers .duckdb sont supportés"
+    return True, "teammates_aggregate supprimée en v5 (shared.match_participants)"
 
 
 def refresh_duckdb_materialized_views(gamertag: str | None = None) -> tuple[bool, str]:

@@ -139,6 +139,32 @@ CREATE INDEX idx_events_victim ON highlight_events(victim_xuid);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Table : killer_victim_pairs
+-- Description : Paires killer→victim calculées depuis highlight_events.
+--   Chaque ligne représente un kill individuel dans un match.
+--   Permet de calculer némésis/souffre-douleur sans recalculer depuis
+--   highlight_events à chaque fois.
+--   Table mutualisée : identique quel que soit le joueur POV.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE killer_victim_pairs (
+    match_id VARCHAR NOT NULL,
+    killer_xuid VARCHAR NOT NULL,
+    killer_gamertag VARCHAR,
+    victim_xuid VARCHAR NOT NULL,
+    victim_gamertag VARCHAR,
+    kill_count INTEGER DEFAULT 1,
+    time_ms INTEGER,
+    is_validated BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    -- FK logique : match_id → match_registry(match_id)
+);
+
+CREATE INDEX idx_kv_match ON killer_victim_pairs(match_id);
+CREATE INDEX idx_kv_killer ON killer_victim_pairs(killer_xuid);
+CREATE INDEX idx_kv_victim ON killer_victim_pairs(victim_xuid);
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Table : medals_earned
 -- Description : Médailles de TOUS les joueurs de TOUS les matchs.
 --   Clé primaire composite (match_id, xuid, medal_name_id) pour stocker

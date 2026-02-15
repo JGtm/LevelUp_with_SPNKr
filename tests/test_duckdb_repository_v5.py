@@ -115,13 +115,6 @@ def _create_player_db(db_path: Path) -> None:
         )
     """)
     conn.execute("""
-        CREATE TABLE teammates_aggregate (
-            teammate_xuid VARCHAR PRIMARY KEY,
-            teammate_gamertag VARCHAR,
-            matches_together INTEGER DEFAULT 0
-        )
-    """)
-    conn.execute("""
         CREATE TABLE antagonists (
             opponent_xuid VARCHAR PRIMARY KEY,
             opponent_gamertag VARCHAR,

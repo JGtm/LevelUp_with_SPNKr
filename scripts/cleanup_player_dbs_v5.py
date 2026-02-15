@@ -10,15 +10,16 @@ Ce script supprime ces tables en toute sécurité avec plusieurs vérifications 
 3. Sauvegarde optionnelle avant nettoyage
 4. Validation post-nettoyage
 
-Tables SUPPRIMÉES (maintenant dans shared) :
+Tables SUPPRIMÉES (maintenant dans shared ou obsolètes) :
 - match_stats (remplacée par vue/sous-requête _get_match_source)
 - match_participants (maintenant dans shared.match_participants)
 - highlight_events (maintenant dans shared.highlight_events)
 - medals_earned (maintenant dans shared.medals_earned)
+- killer_victim_pairs (maintenant dans shared.killer_victim_pairs)
+- teammates_aggregate (obsolète — calculée dynamiquement depuis shared.match_participants)
 
 Tables CONSERVÉES (données personnelles) :
 - player_match_enrichment (performance_score, session_id, is_with_friends)
-- teammates_aggregate (stats coéquipiers)
 - antagonists (rivalités)
 - match_citations (citations calculées)
 - career_progression (historique rangs)
@@ -63,12 +64,14 @@ BACKUP_DIR = PROJECT_ROOT / "backups" / "v5_cleanup"
 logger = logging.getLogger(__name__)
 
 
-# Tables à supprimer (maintenant dans shared_matches.duckdb)
+# Tables à supprimer (maintenant dans shared_matches.duckdb ou obsolètes)
 TABLES_TO_REMOVE = [
     "match_stats",
     "match_participants",
     "highlight_events",
     "medals_earned",
+    "killer_victim_pairs",
+    "teammates_aggregate",
 ]
 
 # Views de compatibilité créées pendant la migration (optionnelles)
@@ -82,7 +85,6 @@ COMPAT_VIEWS = [
 # Tables à CONSERVER (données personnelles)
 TABLES_TO_KEEP = [
     "player_match_enrichment",
-    "teammates_aggregate",
     "antagonists",
     "match_citations",
     "career_progression",
