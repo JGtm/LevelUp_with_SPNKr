@@ -15,13 +15,14 @@ de DuckDB pour des calculs efficaces sur de grands volumes.
 Exemple:
     engine = QueryEngine("data/warehouse")
     trends = TrendAnalyzer(engine, xuid="1234567890")
-    
+
     # KDA sur les 500 derniers matchs avec moyenne mobile sur 20 matchs
     kda_trend = trends.get_rolling_kda(window_size=20, last_n=500)
-    
+
     # Évolution mensuelle
     monthly = trends.get_monthly_evolution()
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ class TrendPoint:
     Point de données pour une tendance.
     (Data point for a trend)
     """
+
     timestamp: datetime
     value: float
     rolling_avg: float | None = None
@@ -49,6 +51,7 @@ class PeriodComparison:
     Comparaison entre deux périodes.
     (Comparison between two periods)
     """
+
     current_value: float
     previous_value: float
     change: float
@@ -60,23 +63,23 @@ class TrendAnalyzer:
     """
     Analyseur de tendances temporelles.
     (Temporal trend analyzer)
-    
+
     Fournit des méthodes pour calculer des évolutions
     et des moyennes mobiles sur les statistiques de jeu.
     """
-    
+
     def __init__(self, engine: QueryEngine, xuid: str) -> None:
         """
         Initialise l'analyseur de tendances.
         (Initialize trend analyzer)
-        
+
         Args:
             engine: Instance de QueryEngine
             xuid: XUID du joueur à analyser
         """
         self.engine = engine
         self.xuid = xuid
-    
+
     def get_rolling_kda(
         self,
         *,
@@ -86,20 +89,20 @@ class TrendAnalyzer:
         """
         Calcule l'évolution du KDA avec moyenne mobile.
         (Calculate KDA evolution with rolling average)
-        
-        C'est l'exemple demandé : "Évolution du ratio K/D moyen 
+
+        C'est l'exemple demandé : "Évolution du ratio K/D moyen
         sur les 500 derniers matchs".
-        
+
         Args:
             window_size: Taille de la fenêtre pour la moyenne mobile
             last_n: Nombre de matchs à considérer
-            
+
         Returns:
             Liste de dicts avec match_id, start_time, kda, rolling_avg_kda
         """
         sql = f"""
             WITH ranked_matches AS (
-                SELECT 
+                SELECT
                     match_id,
                     start_time,
                     kda,
@@ -111,28 +114,28 @@ class TrendAnalyzer:
             last_n_matches AS (
                 SELECT * FROM ranked_matches WHERE rn <= {last_n}
             )
-            SELECT 
+            SELECT
                 match_id,
                 start_time,
                 kda,
                 kills,
                 deaths,
                 AVG(kda) OVER (
-                    ORDER BY start_time 
+                    ORDER BY start_time
                     ROWS BETWEEN {window_size - 1} PRECEDING AND CURRENT ROW
                 ) as rolling_avg_kda,
                 -- Ratio K/D simple (sans assists)
                 CASE WHEN deaths > 0 THEN kills * 1.0 / deaths ELSE kills END as kd_ratio,
                 AVG(CASE WHEN deaths > 0 THEN kills * 1.0 / deaths ELSE kills END) OVER (
-                    ORDER BY start_time 
+                    ORDER BY start_time
                     ROWS BETWEEN {window_size - 1} PRECEDING AND CURRENT ROW
                 ) as rolling_avg_kd
             FROM last_n_matches
             ORDER BY start_time ASC
         """
-        
+
         return self.engine.execute_with_parquet(sql, "match_facts", self.xuid)  # type: ignore
-    
+
     def get_rolling_accuracy(
         self,
         *,
@@ -145,7 +148,7 @@ class TrendAnalyzer:
         """
         sql = f"""
             WITH ranked_matches AS (
-                SELECT 
+                SELECT
                     match_id,
                     start_time,
                     accuracy,
@@ -156,20 +159,20 @@ class TrendAnalyzer:
             last_n_matches AS (
                 SELECT * FROM ranked_matches WHERE rn <= {last_n}
             )
-            SELECT 
+            SELECT
                 match_id,
                 start_time,
                 accuracy,
                 AVG(accuracy) OVER (
-                    ORDER BY start_time 
+                    ORDER BY start_time
                     ROWS BETWEEN {window_size - 1} PRECEDING AND CURRENT ROW
                 ) as rolling_avg_accuracy
             FROM last_n_matches
             ORDER BY start_time ASC
         """
-        
+
         return self.engine.execute_with_parquet(sql, "match_facts", self.xuid)  # type: ignore
-    
+
     def get_rolling_win_rate(
         self,
         *,
@@ -182,7 +185,7 @@ class TrendAnalyzer:
         """
         sql = f"""
             WITH ranked_matches AS (
-                SELECT 
+                SELECT
                     match_id,
                     start_time,
                     outcome,
@@ -194,21 +197,21 @@ class TrendAnalyzer:
             last_n_matches AS (
                 SELECT * FROM ranked_matches WHERE rn <= {last_n}
             )
-            SELECT 
+            SELECT
                 match_id,
                 start_time,
                 outcome,
                 is_win,
                 AVG(is_win) OVER (
-                    ORDER BY start_time 
+                    ORDER BY start_time
                     ROWS BETWEEN {window_size - 1} PRECEDING AND CURRENT ROW
                 ) as rolling_win_rate
             FROM last_n_matches
             ORDER BY start_time ASC
         """
-        
+
         return self.engine.execute_with_parquet(sql, "match_facts", self.xuid)  # type: ignore
-    
+
     def get_daily_evolution(
         self,
         *,
@@ -217,17 +220,17 @@ class TrendAnalyzer:
         """
         Calcule les statistiques agrégées par jour.
         (Calculate daily aggregated statistics)
-        
+
         Args:
             last_days: Nombre de jours à considérer
-            
+
         Returns:
             Liste de dicts avec date, matches, avg_kda, win_rate, etc.
         """
         cutoff = datetime.now() - timedelta(days=last_days)
-        
+
         sql = f"""
-            SELECT 
+            SELECT
                 DATE_TRUNC('day', start_time) as date,
                 COUNT(*) as matches,
                 SUM(kills) as total_kills,
@@ -237,16 +240,16 @@ class TrendAnalyzer:
                 AVG(accuracy) as avg_accuracy,
                 SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN outcome = 3 THEN 1 ELSE 0 END) as losses,
-                SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) * 1.0 / 
+                SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) * 1.0 /
                     NULLIF(SUM(CASE WHEN outcome IN (2, 3) THEN 1 ELSE 0 END), 0) as win_rate
             FROM {{table}}
             WHERE start_time >= '{cutoff.isoformat()}'
             GROUP BY DATE_TRUNC('day', start_time)
             ORDER BY date ASC
         """
-        
+
         return self.engine.execute_with_parquet(sql, "match_facts", self.xuid)  # type: ignore
-    
+
     def get_weekly_evolution(
         self,
         *,
@@ -257,9 +260,9 @@ class TrendAnalyzer:
         (Calculate weekly aggregated statistics)
         """
         cutoff = datetime.now() - timedelta(weeks=last_weeks)
-        
+
         sql = f"""
-            SELECT 
+            SELECT
                 DATE_TRUNC('week', start_time) as week_start,
                 COUNT(*) as matches,
                 SUM(kills) as total_kills,
@@ -268,16 +271,16 @@ class TrendAnalyzer:
                 AVG(accuracy) as avg_accuracy,
                 SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN outcome = 3 THEN 1 ELSE 0 END) as losses,
-                SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) * 1.0 / 
+                SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) * 1.0 /
                     NULLIF(SUM(CASE WHEN outcome IN (2, 3) THEN 1 ELSE 0 END), 0) as win_rate
             FROM {{table}}
             WHERE start_time >= '{cutoff.isoformat()}'
             GROUP BY DATE_TRUNC('week', start_time)
             ORDER BY week_start ASC
         """
-        
+
         return self.engine.execute_with_parquet(sql, "match_facts", self.xuid)  # type: ignore
-    
+
     def get_monthly_evolution(
         self,
         *,
@@ -288,9 +291,9 @@ class TrendAnalyzer:
         (Calculate monthly aggregated statistics)
         """
         cutoff = datetime.now() - timedelta(days=last_months * 30)
-        
+
         sql = f"""
-            SELECT 
+            SELECT
                 DATE_TRUNC('month', start_time) as month_start,
                 COUNT(*) as matches,
                 SUM(kills) as total_kills,
@@ -301,16 +304,16 @@ class TrendAnalyzer:
                 AVG(accuracy) as avg_accuracy,
                 SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN outcome = 3 THEN 1 ELSE 0 END) as losses,
-                SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) * 1.0 / 
+                SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) * 1.0 /
                     NULLIF(SUM(CASE WHEN outcome IN (2, 3) THEN 1 ELSE 0 END), 0) as win_rate
             FROM {{table}}
             WHERE start_time >= '{cutoff.isoformat()}'
             GROUP BY DATE_TRUNC('month', start_time)
             ORDER BY month_start ASC
         """
-        
+
         return self.engine.execute_with_parquet(sql, "match_facts", self.xuid)  # type: ignore
-    
+
     def compare_periods(
         self,
         metric: str = "kda",
@@ -319,26 +322,31 @@ class TrendAnalyzer:
         """
         Compare les performances entre deux périodes consécutives.
         (Compare performance between two consecutive periods)
-        
+
         Args:
             metric: Métrique à comparer (kda, accuracy, win_rate)
             period_days: Durée de chaque période en jours
-            
+
         Returns:
             PeriodComparison avec les valeurs et le changement
         """
+        # SECURITY: Validation stricte du paramètre metric pour éviter injection SQL
+        VALID_METRICS = {"kda", "accuracy", "win_rate", "kills", "deaths", "assists"}
+        if metric not in VALID_METRICS:
+            raise ValueError(f"Métrique invalide : {metric}. Valeurs autorisées : {VALID_METRICS}")
+
         now = datetime.now()
         current_start = now - timedelta(days=period_days)
         previous_start = current_start - timedelta(days=period_days)
-        
+
         if metric == "win_rate":
             agg = "SUM(CASE WHEN outcome = 2 THEN 1.0 ELSE 0 END) / NULLIF(COUNT(*), 0)"
         else:
             agg = f"AVG({metric})"
-        
+
         sql = f"""
-            SELECT 
-                CASE 
+            SELECT
+                CASE
                     WHEN start_time >= '{current_start.isoformat()}' THEN 'current'
                     ELSE 'previous'
                 END as period,
@@ -348,28 +356,28 @@ class TrendAnalyzer:
             WHERE start_time >= '{previous_start.isoformat()}'
             GROUP BY period
         """
-        
+
         results = self.engine.execute_with_parquet(sql, "match_facts", self.xuid)
-        
+
         current_value = 0.0
         previous_value = 0.0
-        
+
         for r in results:
             if r["period"] == "current":
                 current_value = r["value"] or 0.0
             else:
                 previous_value = r["value"] or 0.0
-        
+
         change = current_value - previous_value
         change_percent = (change / previous_value * 100) if previous_value != 0 else 0.0
-        
+
         if abs(change_percent) < 2:
             trend = "stable"
         elif change > 0:
             trend = "up"
         else:
             trend = "down"
-        
+
         return PeriodComparison(
             current_value=current_value,
             previous_value=previous_value,
@@ -377,26 +385,26 @@ class TrendAnalyzer:
             change_percent=change_percent,
             trend=trend,
         )
-    
+
     def get_performance_trend_summary(self) -> dict[str, Any]:
         """
         Génère un résumé des tendances de performance.
         (Generate performance trend summary)
-        
+
         Calcule les tendances pour plusieurs métriques clés
         et identifie les points forts et faibles.
-        
+
         Returns:
             Dict avec les tendances pour KDA, accuracy, win_rate
         """
         kda_trend = self.compare_periods("kda", 7)
         accuracy_trend = self.compare_periods("accuracy", 7)
         win_rate_trend = self.compare_periods("win_rate", 7)
-        
+
         # Calculer les moyennes récentes
         recent_stats = self.engine.execute_with_parquet(
             """
-            SELECT 
+            SELECT
                 AVG(kda) as recent_kda,
                 AVG(accuracy) as recent_accuracy,
                 SUM(CASE WHEN outcome = 2 THEN 1.0 ELSE 0 END) / NULLIF(COUNT(*), 0) as recent_win_rate,
@@ -407,9 +415,9 @@ class TrendAnalyzer:
             "match_facts",
             self.xuid,
         )
-        
+
         recent = recent_stats[0] if recent_stats else {}
-        
+
         return {
             "kda": {
                 "current": kda_trend.current_value,
@@ -432,7 +440,7 @@ class TrendAnalyzer:
             "recent_matches": recent.get("match_count", 0),
             "period_days": 7,
         }
-    
+
     def get_mmr_evolution(
         self,
         *,
@@ -444,7 +452,7 @@ class TrendAnalyzer:
         """
         sql = f"""
             WITH ranked AS (
-                SELECT 
+                SELECT
                     match_id,
                     start_time,
                     team_mmr,
@@ -454,7 +462,7 @@ class TrendAnalyzer:
                 FROM {{table}}
                 WHERE team_mmr IS NOT NULL
             )
-            SELECT 
+            SELECT
                 match_id,
                 start_time,
                 team_mmr,
@@ -465,58 +473,66 @@ class TrendAnalyzer:
             WHERE rn <= {last_n}
             ORDER BY start_time ASC
         """
-        
+
         return self.engine.execute_with_parquet(sql, "match_facts", self.xuid)  # type: ignore
-    
+
     def detect_improvement_areas(self) -> list[dict[str, Any]]:
         """
         Identifie les domaines nécessitant une amélioration.
         (Identify areas needing improvement)
-        
+
         Compare les performances actuelles aux performances historiques
         et identifie les régressions ou stagnations.
-        
+
         Returns:
             Liste de domaines avec des suggestions
         """
         areas = []
-        
+
         # Comparer KDA
         kda_comparison = self.compare_periods("kda", 14)
         if kda_comparison.trend == "down" and kda_comparison.change_percent < -5:
-            areas.append({
-                "area": "KDA",
-                "status": "regression",
-                "change_percent": kda_comparison.change_percent,
-                "suggestion": "Votre KDA a baissé. Essayez de jouer plus prudemment.",
-            })
-        
+            areas.append(
+                {
+                    "area": "KDA",
+                    "status": "regression",
+                    "change_percent": kda_comparison.change_percent,
+                    "suggestion": "Votre KDA a baissé. Essayez de jouer plus prudemment.",
+                }
+            )
+
         # Comparer accuracy
         acc_comparison = self.compare_periods("accuracy", 14)
         if acc_comparison.trend == "down" and acc_comparison.change_percent < -3:
-            areas.append({
-                "area": "Précision",
-                "status": "regression",
-                "change_percent": acc_comparison.change_percent,
-                "suggestion": "Votre précision a baissé. Prenez votre temps pour viser.",
-            })
-        
+            areas.append(
+                {
+                    "area": "Précision",
+                    "status": "regression",
+                    "change_percent": acc_comparison.change_percent,
+                    "suggestion": "Votre précision a baissé. Prenez votre temps pour viser.",
+                }
+            )
+
         # Comparer win rate
         wr_comparison = self.compare_periods("win_rate", 14)
         if wr_comparison.trend == "down" and wr_comparison.change_percent < -5:
-            areas.append({
-                "area": "Taux de victoire",
-                "status": "regression",
-                "change_percent": wr_comparison.change_percent,
-                "suggestion": "Votre taux de victoire a baissé. Essayez de jouer avec des amis.",
-            })
-        
+            areas.append(
+                {
+                    "area": "Taux de victoire",
+                    "status": "regression",
+                    "change_percent": wr_comparison.change_percent,
+                    "suggestion": "Votre taux de victoire a baissé. Essayez de jouer avec des amis.",
+                }
+            )
+
         # Si tout est stable ou en hausse
         if not areas:
-            areas.append({
-                "area": "Global",
-                "status": "stable",
-                "suggestion": "Vos performances sont stables. Continuez ainsi !",
-            })
-        
+            areas.append(
+                {
+                    "area": "Global",
+                    "status": "stable",
+                    "suggestion": "Vos performances sont stables. Continuez ainsi !",
+                }
+            )
+
         return areas

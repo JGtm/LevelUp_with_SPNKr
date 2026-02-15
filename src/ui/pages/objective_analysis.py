@@ -82,24 +82,26 @@ def render_objective_analysis_page(
     # ══════════════════════════════════════════════════════════════════════════
     with st.spinner("Chargement des données..."):
         # Charger les personal_score_awards
-        if match_ids:
-            match_ids_str = ", ".join(f"'{m}'" for m in match_ids)
-            awards_query = f"""
-                SELECT * FROM personal_score_awards
-                WHERE match_id IN ({match_ids_str})
-            """
-            match_query = f"""
-                SELECT * FROM match_stats
-                WHERE match_id IN ({match_ids_str})
-                ORDER BY start_time ASC
-            """
-        else:
-            awards_query = "SELECT * FROM personal_score_awards"
-            match_query = "SELECT * FROM match_stats ORDER BY start_time ASC"
-
         try:
-            awards_df = repo.query_df(awards_query)
-            match_stats_df = repo.query_df(match_query)
+            if match_ids:
+                # Paramétrage SQL sécurisé avec placeholders
+                placeholders = ", ".join("?" * len(match_ids))
+                awards_query = f"""
+                    SELECT * FROM personal_score_awards
+                    WHERE match_id IN ({placeholders})
+                """
+                match_query = f"""
+                    SELECT * FROM match_stats
+                    WHERE match_id IN ({placeholders})
+                    ORDER BY start_time ASC
+                """
+                awards_df = repo.query_df(awards_query, match_ids)
+                match_stats_df = repo.query_df(match_query, match_ids)
+            else:
+                awards_query = "SELECT * FROM personal_score_awards"
+                match_query = "SELECT * FROM match_stats ORDER BY start_time ASC"
+                awards_df = repo.query_df(awards_query)
+                match_stats_df = repo.query_df(match_query)
         except Exception as e:
             st.error(f"Erreur lors du chargement des données: {e}")
             st.info(
@@ -452,7 +454,7 @@ def render_objective_analysis_page_from_session_state() -> None:
     from src.data.repositories.duckdb_repo import DuckDBRepository
 
     try:
-        repo = DuckDBRepository(db_path)
+        repo = DuckDBRepository(db_path, xuid)
         render_objective_analysis_page(repo, xuid)
     except Exception as e:
         st.error(f"Erreur lors de l'ouverture de la base: {e}")

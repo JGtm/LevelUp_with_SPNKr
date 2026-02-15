@@ -91,13 +91,26 @@ class DuckDBEngine:
 
     def attach_sqlite(self, db_path: str | Path, alias: str = "meta") -> None:
         """
-        Attache une base SQLite pour les jointures.
+        [DEPRECATED] Attache une base SQLite pour les jointures.
         (Attach a SQLite database for joins)
+
+        AVERTISSEMENT: Cette méthode est dépréciée depuis la migration v4.
+        SQLite n'est plus supporté en runtime applicatif.
+        Utiliser uniquement pour scripts de migration/legacy explicites.
 
         Args:
             db_path: Chemin vers le fichier SQLite
             alias: Alias pour accéder aux tables (ex: meta.players)
         """
+        import warnings
+
+        warnings.warn(
+            "attach_sqlite est dépréciée. SQLite n'est plus supporté en runtime (migration v4+). "
+            "Utiliser DuckDB uniquement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         db_path = Path(db_path)
         if not db_path.exists():
             raise FileNotFoundError(f"SQLite database not found: {db_path}")

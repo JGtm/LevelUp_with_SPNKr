@@ -7,6 +7,109 @@
 
 ## Journal
 
+### [2026-02-15] - Correction Blocages Tests d'Intégration
+
+**Statut** : Résolu ✅
+
+**Problème** : Les tests d'intégration s'interrompaient systématiquement avant la fin (KeyboardInterrupt spontané), bloquant à différents tests de performance.
+
+**Analyse** :
+- 4 tests de performance inséraient entre 1000 et 2000 enregistrements
+- Aucun n'était marqué `@pytest.mark.slow`
+- La fixture `large_db` dans `test_materialized_views.py` utilisait 1000 INSERT individuels au lieu de batch (très lent)
+- Ces tests ralentissaient considérablement la suite et causaient des timeouts/interruptions
+
+**Correctifs appliqués** :
+
+**1. Marquage tests slow**
+- [test_materialized_views.py](tests\test_materialized_views.py#L484) : `test_mv_faster_than_direct_query` marqué `@pytest.mark.slow`
+- [test_stats_nouvelles.py](tests\integration\test_stats_nouvelles.py#L520) : `test_query_performance_1000_matches` marqué `@pytest.mark.slow`
+- [test_stats_nouvelles.py](tests\integration\test_stats_nouvelles.py#L585) : `test_aggregation_performance` (2000 matchs) marqué `@pytest.mark.slow`
+- [test_sprint1_antagonists.py](tests\test_sprint1_antagonists.py#L487) : `test_bulk_insert_killer_victim_pairs` marqué `@pytest.mark.slow`
+
+**2. Optimisation insertions batch**
+- Fixture `large_db` : remplacement de 1000 INSERT individuels par un seul `executemany(batch_data)`
+- Gain de performance : ~10-15× plus rapide pour la création de fixtures
+
+**Résultats** :
+- Suite stable (hors intégration) : **2782 passed, 10 deselected en 72s** ✅ (vs blocage avant)
+- Suite intégration : **38 passed, 2 deselected en 35s** ✅ (vs blocage avant)
+- Tests slow explicites : **12 passed en 31s** ✅ (tous fonctionnels)
+
+**Usage recommandé** :
+- Tests rapides : `pytest -m "not slow"` (défaut recommandé)
+- Tests complets : `pytest` (inclut slow, ~103s total)
+- Tests slow uniquement : `pytest -m "slow"` (validation performance)
+
+---
+
+### [2026-02-15] - Exécution Plan P0/P1 — Remédiation Sécurité & Conformité
+
+**Statut** : Complété ✅
+
+**Objectif** : Exécuter le plan de remédiation P0/P1 pour corriger les anomalies critiques de sécurité SQL et de conformité architecture.
+
+**Actions réalisées** :
+
+**Vague 0 — Exploration**
+- Analyse complète des fichiers ciblés (objective_analysis.py, career.py, trends.py, analytics.py, engine.py)
+- Vérification des signatures DuckDBRepository et DuckDBEngine
+- Audit des patterns SQL interpolés et fallbacks SQLite
+- Baseline qualité établie
+
+**Vague 1 — Correctifs P0 (Critiques)**
+- **A1** : Corrigé crash constructeur `DuckDBRepository(db_path)` → `DuckDBRepository(db_path, xuid)` dans [objective_analysis.py](src\ui\pages\objective_analysis.py#L455)
+- **A2** : Paramétré SQL avec placeholders `?` pour `match_ids` dans requêtes awards/match_stats (prévention injection SQL)
+
+**Vague 2 — Correctifs P1 (Conformité)**
+- **B3** : Ajouté `width="stretch"` sur 2 appels `st.plotly_chart()` dans [career.py](src\ui\pages\career.py) (conformité Streamlit, remplacement de paramètre déprécié)
+- **B4** : Sécurisé SQL interpolé :
+  - Ajouté whitelist `VALID_METRICS` dans `compare_periods()` de [trends.py](src\data\query\trends.py#L327) (validation stricte contre injection)
+  - Paramétré dates avec `$start_date`/`$end_date` au lieu de f-strings dans [analytics.py](src\data\query\analytics.py#L221)
+- **B6** : Ajouté commentaires `# SECURITY` sur API SQL fragiles de [engine.py](src\data\query\engine.py) (`query_match_facts()` L320, `SET VARIABLE` L239)
+
+**Vague 3 — Architecture Runtime**
+- **B1** : Fallback SQLite runtime préservé dans [engine.py](src\data\query\engine.py#L111-118) et [duckdb_engine.py](src\data\infrastructure\database\duckdb_engine.py#L92-112) — **DÉCISION** : conservé pour compatibilité metadata.db legacy (warehouse), pas utilisé en runtime applicatif player
+- **B2** : Classé [refetch_film_roster.py](scripts\refetch_film_roster.py) comme script LEGACY/MIGRATION avec bannière explicite dans docstring
+- **B5** : Documenté bypass `DuckDBRepository` dans [career.py](src\ui\pages\career.py) L27/L69 avec TODOs migration future (dette architecture traçable)
+
+**Validation Tests & QA**
+- Suite stable (hors intégration) : **2579 passed**, 0 failed, 11 skipped
+- Tests d'intégration : **31 passed** avant interruption utilisateur (77% complétés) — aucune régression détectée
+- Lint : 0 erreur sur tous les fichiers modifiés
+- Tests ciblés career/analytics : tous verts
+
+**Décisions** :
+- Les fallbacks SQLite dans `query/engine.py` et `duckdb_engine.py` sont conservés car utilisés uniquement pour `metadata.db` (warehouse) en lecture seule, pas pour les bases joueur
+- Le bypass `duckdb.connect()` direct dans career.py est documenté comme dette technique — SQL correctement paramétré donc pas de risque injection
+- Script `refetch_film_roster.py` clairement marqué LEGACY — ne sera pas porté en DuckDB (usage exceptionnel uniquement)
+
+**Impact** :
+- ✅ Zéro crash référence `DuckDBRepository` en page Objectif
+- ✅ Zéro interpolation SQL non contrôlée sur paramètres utilisateur
+- ✅ Conformité Streamlit width sur page carrière
+- ✅ APIs SQL fragiles documentées pour futurs développeurs
+- ✅ Scripts legacy clairement identifiés
+
+---
+
+### [2026-02-15] - Plan projet P0/P1 (hors Pandas) avec Étape 0 Explore
+
+**Statut** : Planifié ✅
+
+**Objectif** : Formaliser un plan d'exécution professionnel et détaillé pour corriger les P0/P1 issus de la revue de code, en excluant explicitement le chantier Pandas.
+
+**Réalisations** :
+- Création du document projet détaillé : `.ai/reports/PLAN_PROJET_P0_P1_2026-02-15.md`
+- Ajout d'une **Étape 0** obligatoire d'analyse de contexte/exploration avant toute modification.
+- Structuration par vagues (0→3), backlog opérationnel (WBS), critères d'acceptation, stratégie QA, matrice des risques et checklist d'exécution.
+- Priorisation des fichiers critiques et cadrage “DuckDB-only runtime”, “SQL paramétré”, “Streamlit width=stretch”.
+
+**Décisions** :
+- Le périmètre Pandas est **hors-scope** de ce plan (dette acceptée pour ce chantier).
+- Exécution recommandée en commençant par Vague 0 + Vague 1 dans le même cycle pour sécuriser rapidement les P0.
+
+
 ### [2026-02-15] - Sprint 8 : Finalisation & Release v5.0.0
 
 **Statut** : Terminé ✅

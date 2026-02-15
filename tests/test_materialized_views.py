@@ -437,16 +437,15 @@ class TestPerformanceComparison:
 
             base_time = datetime.now() - timedelta(days=365)
 
+            # Optimisation: insertion batch au lieu de 1000 INSERT individuels
+            batch_data = []
             for i in range(1000):
                 map_id, map_name = random.choice(maps)
                 mode_name, pair_name = random.choice(modes)
                 outcome = random.choice([1, 2, 3])
 
-                conn.execute(
-                    """
-                    INSERT INTO match_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    [
+                batch_data.append(
+                    (
                         f"match_{i:06d}",
                         base_time + timedelta(hours=i),
                         map_id,
@@ -472,8 +471,14 @@ class TestPerformanceComparison:
                         random.randint(35, 65),
                         random.uniform(1000, 1500),
                         random.uniform(1000, 1500),
-                    ],
+                    )
                 )
+
+            conn.executemany(
+                """INSERT INTO match_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                batch_data,
+            )
+            conn.commit()
         finally:
             conn.close()
             del conn
@@ -481,8 +486,12 @@ class TestPerformanceComparison:
 
         return db_path
 
+    @pytest.mark.slow
     def test_mv_faster_than_direct_query(self, large_db: Path):
-        """Test que les vues matérialisées sont plus rapides que les requêtes directes."""
+        """Test que les vues matérialisées sont plus rapides que les requêtes directes.
+
+        Note: Test marqué slow car il insère 1000 enregistrements.
+        """
         import time
 
         DuckDBRepository = _get_duckdb_repository_class()

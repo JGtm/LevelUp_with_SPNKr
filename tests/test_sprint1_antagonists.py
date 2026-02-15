@@ -485,8 +485,12 @@ class TestRepositoryIntegration:
 class TestPerformance:
     """Tests de performance avec volumes de données."""
 
+    @pytest.mark.slow
     def test_bulk_insert_killer_victim_pairs(self, temp_duckdb):
-        """Test insertion en masse de paires."""
+        """Test insertion en masse de paires.
+
+        Note: Test marqué slow car il insère 1000 enregistrements.
+        """
         conn = duckdb.connect(str(temp_duckdb))
 
         # Préparer des données en masse

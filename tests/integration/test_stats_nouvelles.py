@@ -517,8 +517,12 @@ class TestDuckDBRepositoryIntegration:
 class TestLoadPerformance:
     """Tests de charge pour vérifier les performances."""
 
+    @pytest.mark.slow
     def test_query_performance_1000_matches(self, tmp_path: Path):
-        """Vérifie la performance avec 1000 matchs."""
+        """Vérifie la performance avec 1000 matchs.
+
+        Note: Test marqué slow car il insère 1000 enregistrements.
+        """
         import time
 
         db_path = tmp_path / "load_test_player" / "stats.duckdb"
@@ -582,8 +586,12 @@ class TestLoadPerformance:
             query_time < 1.0
         ), f"Lecture 1000 matchs doit prendre < 1s (actual: {query_time:.3f}s)"
 
+    @pytest.mark.slow
     def test_aggregation_performance(self, tmp_path: Path):
-        """Vérifie la performance des agrégations sur 1000+ matchs."""
+        """Vérifie la performance des agrégations sur 1000+ matchs.
+
+        Note: Test marqué slow car il insère 2000 enregistrements.
+        """
         import time
         from datetime import timedelta
 

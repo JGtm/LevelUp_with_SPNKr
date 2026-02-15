@@ -1,5 +1,15 @@
 """Refetch "from scratch" le roster (XUID -> Gamertag) depuis les fichiers film Halo Infinite.
 
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ STATUT: SCRIPT LEGACY/MIGRATION                                              ║
+║ Ce script utilise SQLite et est destiné uniquement à la migration de        ║
+║ données ou à des opérations de maintenance exceptionnelles.                  ║
+║ SQLite n'est plus supporté en runtime applicatif depuis la migration v4.    ║
+║                                                                              ║
+║ Alternative recommandée: Utiliser DuckDB pour toutes les nouvelles          ║
+║ opérations sur les données.                                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
 Objectif
 - Obtenir des gamertags fiables même quand `HighlightEvents.gamertag` est corrompu.
 - Optionnel: patcher `HighlightEvents.ResponseBody` dans la DB pour remplacer `gamertag`.

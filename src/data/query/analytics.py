@@ -220,12 +220,15 @@ class AnalyticsQueries:
             Liste de dicts avec medal_name_id, total_count
         """
         where_clause = ""
+        query_params = {}
         if start_date or end_date:
             conditions = []
             if start_date:
-                conditions.append(f"start_time >= '{start_date.isoformat()}'")
+                conditions.append("start_time >= $start_date")
+                query_params["start_date"] = start_date.isoformat()
             if end_date:
-                conditions.append(f"start_time <= '{end_date.isoformat()}'")
+                conditions.append("start_time <= $end_date")
+                query_params["end_date"] = end_date.isoformat()
             where_clause = "WHERE " + " AND ".join(conditions)
 
         sql = f"""
@@ -242,7 +245,9 @@ class AnalyticsQueries:
         if not self.engine.has_data("medals", self.xuid):
             return []
 
-        return self.engine.execute_with_parquet(sql, "medals", self.xuid)  # type: ignore
+        return self.engine.execute_with_parquet(
+            sql, "medals", self.xuid, params=query_params if query_params else None
+        )  # type: ignore
 
     def get_top_medals_with_names(
         self,

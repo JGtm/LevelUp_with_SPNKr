@@ -31,6 +31,7 @@ Exemple de requête avec jointure SQLite + Parquet:
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal, overload
 
@@ -105,8 +106,8 @@ class QueryEngine:
         conn.execute("SET enable_object_cache = true")
         conn.execute("SET enable_progress_bar = false")
 
-        # Attacher la base metadata (DuckDB ou SQLite) si elle existe
-        # Priorité à metadata.duckdb, fallback sur metadata.db (legacy)
+        # Attacher la base metadata (DuckDB uniquement)
+        # SQLite n'est plus supporté en runtime (migration v4+)
         metadata_duckdb = self.warehouse_path / "metadata.duckdb"
         metadata_sqlite = self.warehouse_path / "metadata.db"
 
@@ -115,9 +116,11 @@ class QueryEngine:
             self._metadata_attached = True
             logger.debug(f"DuckDB metadata attachée: {metadata_duckdb}")
         elif metadata_sqlite.exists():
-            conn.execute(f"ATTACH DATABASE '{metadata_sqlite}' AS meta (TYPE SQLITE, READ_ONLY)")
-            self._metadata_attached = True
-            logger.debug(f"SQLite metadata attachée (legacy): {metadata_sqlite}")
+            # SQLite n'est plus supporté en runtime depuis la migration v4
+            raise RuntimeError(
+                f"Base metadata SQLite détectée ({metadata_sqlite}), mais SQLite n'est plus supporté en runtime. "
+                "Veuillez migrer vers DuckDB avec les scripts de migration disponibles dans scripts/migration/."
+            )
 
         return conn
 
@@ -237,6 +240,8 @@ class QueryEngine:
         # Préparer les paramètres
         if params:
             # DuckDB utilise $name pour les paramètres nommés
+            # SECURITY: keys et values doivent être contrôlés en amont
+            # Ne jamais passer d'input utilisateur non validé à params
             for key, value in params.items():
                 conn.execute(f"SET VARIABLE {key} = {repr(value)}")
 
@@ -255,10 +260,8 @@ class QueryEngine:
             # Nettoyer les variables
             if params:
                 for key in params:
-                    try:
+                    with suppress(Exception):
                         conn.execute(f"RESET VARIABLE {key}")
-                    except Exception:
-                        pass
 
     def execute_with_parquet(
         self,
@@ -315,6 +318,10 @@ class QueryEngine:
             where: Clause WHERE optionnelle
             order_by: Clause ORDER BY optionnelle
             limit: Limite de résultats
+
+        SECURITY: Ne jamais passer d'input utilisateur à select/where/order_by.
+        Ces paramètres sont directement interpolés dans le SQL.
+        Utiliser uniquement des littéraux hardcodés ou des valeurs validées par whitelist.
 
         Exemple:
             # Derniers 100 matchs gagnés

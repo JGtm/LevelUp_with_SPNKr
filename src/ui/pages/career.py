@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 def _load_career_data(db_path: str, xuid: str) -> dict | None:
     """Charge les dernières données de rang carrière depuis DuckDB.
 
+    # TODO: Migrer vers DuckDBRepository au lieu de duckdb.connect() direct
+    # Dette architecture connue - le SQL est correctement paramétré donc pas de risque injection
+
     Returns:
         Dict avec rank, rank_name, rank_tier, current_xp, etc. ou None.
     """
@@ -67,6 +70,9 @@ def _load_career_data(db_path: str, xuid: str) -> dict | None:
 
 def _load_career_history(db_path: str, xuid: str, limit: int = 50) -> list[dict]:
     """Charge l'historique de progression depuis DuckDB.
+
+    # TODO: Migrer vers DuckDBRepository au lieu de duckdb.connect() direct
+    # Dette architecture connue - le SQL est correctement paramétré donc pas de risque injection
 
     Returns:
         Liste de dicts ordonnés par date croissante.
@@ -257,7 +263,7 @@ def render_career_page(
                 is_max_rank=is_max,
             )
             if gauge_fig is not None:
-                st.plotly_chart(gauge_fig, key="career_gauge")
+                st.plotly_chart(gauge_fig, key="career_gauge", width="stretch")
             else:
                 st.info("Impossible de générer la jauge de progression.")
         except Exception as e:
@@ -272,7 +278,7 @@ def render_career_page(
         try:
             history_fig = _create_xp_history_chart(history)
             if history_fig:
-                st.plotly_chart(history_fig, key="career_xp_history")
+                st.plotly_chart(history_fig, key="career_xp_history", width="stretch")
             else:
                 st.info("Pas assez de données pour afficher l'historique.")
         except Exception as e:
