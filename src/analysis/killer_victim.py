@@ -163,7 +163,7 @@ def validate_and_adjust_pairs(
         return [], True  # Pas de validation possible, on considère OK
 
     # Construire un mapping xuid → stats officielles
-    stats_by_xuid: dict[str, MatchPlayerStats] = {s.xuid: s for s in official_stats}
+    stats_by_xuid: dict[str, MatchPlayerStats] = {s["xuid"]: s for s in official_stats}
 
     # Compter les kills/deaths reconstitués par joueur
     kills_reconstituted: dict[str, int] = Counter()
@@ -214,8 +214,8 @@ def get_player_rank(xuid: str, official_stats: list[MatchPlayerStats]) -> int:
         Rang du joueur (1 = meilleur), ou 999 si non trouvé.
     """
     for s in official_stats:
-        if s.xuid == xuid:
-            return s.rank
+        if s["xuid"] == xuid:
+            return s["rank"]
     return 999  # Non trouvé → rang très bas
 
 
@@ -380,7 +380,7 @@ def compute_personal_antagonists(
     rank_by_xuid: dict[str, int] = {}
     if official_stats:
         for s in official_stats:
-            rank_by_xuid[s.xuid] = s.rank
+            rank_by_xuid[s["xuid"]] = s["rank"]
 
     kills: list[tuple[int, str, str]] = []
     deaths: list[tuple[int, str, str]] = []
@@ -609,11 +609,11 @@ def compute_personal_antagonists(
 
     if official_stats:
         # Trouver mes stats officielles
-        my_official = next((s for s in official_stats if s.xuid == me), None)
+        my_official = next((s for s in official_stats if s["xuid"] == me), None)
         if my_official:
             # Comparer mes kills/deaths reconstitués vs officiels
-            kills_diff = my_kills_assigned_total - my_official.kills
-            deaths_diff = my_deaths_assigned_total - my_official.deaths
+            kills_diff = my_kills_assigned_total - my_official["kills"]
+            deaths_diff = my_deaths_assigned_total - my_official["deaths"]
 
             if kills_diff == 0 and deaths_diff == 0:
                 is_validated = True

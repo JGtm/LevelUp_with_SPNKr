@@ -66,6 +66,27 @@ def render_citations_page(
             )
 
     # 1) Commendations Halo 5 (via CitationEngine + match_citations)
+    st.subheader("Citations (Commendations Halo 5)")
+
+    # Compter les citations totales
+    total_citations_count = 0
+    if xuid_clean and db_path:
+        try:
+            from src.analysis.citations.engine import CitationEngine
+
+            engine = CitationEngine(db_path, xuid_clean)
+            citations_full = engine.aggregate_for_display(match_ids=None)
+            total_citations_count = sum(citations_full.values())
+        except Exception:
+            total_citations_count = 0
+
+    # Afficher les metrics
+    cols_metrics = st.columns(3)
+    with cols_metrics[0]:
+        st.metric("Citations obtenues", f"{total_citations_count:,}")
+    with cols_metrics[1]:
+        st.metric("Matchs analysés", len(dff) if not dff.is_empty() else 0)
+
     render_h5g_commendations_section(
         db_path=db_path,
         xuid=xuid_clean,
@@ -88,6 +109,21 @@ def render_citations_page(
             counts_by_medal = {}
 
     # 2) Médailles (Halo Infinite) - Affiche TOUJOURS toutes les médailles.
+    st.subheader("Médailles (Halo Infinite)")
+
+    # Calculer les totaux pour les médailles
+    total_medals_distinct = len(counts_by_medal)
+    total_medals_count = sum(counts_by_medal.values())
+
+    # Afficher les metrics
+    cols_medals = st.columns(3)
+    with cols_medals[0]:
+        st.metric("Médailles distinctes", total_medals_distinct)
+    with cols_medals[1]:
+        st.metric("Total médailles", f"{total_medals_count:,}")
+    with cols_medals[2]:
+        st.metric("Matchs analysés", len(dff) if not dff.is_empty() else 0)
+
     st.caption("Médailles sur la sélection/filtres actuels.")
     if dff.is_empty():
         st.info("Aucun match disponible avec les filtres actuels.")
@@ -126,7 +162,7 @@ def render_citations_page(
                 st.warning(f"Impossible d'afficher la distribution des médailles : {e}")
 
             st.divider()
-            st.subheader("Toutes les médailles")
+            st.subheader("Grille de médailles")
 
             # Passer les deltas par médaille si filtré
             deltas = None

@@ -518,7 +518,7 @@ def _render_sprint7_sections(dff: pl.DataFrame) -> None:
             "rang 1 en haut). Un bon score associé à un rang élevé confirme l'impact."
         )
         try:
-            fig_rank = plot_rank_score(dff, title=None)
+            fig_rank = plot_rank_score(dff, title="Rang et score personnel")
             if fig_rank is not None:
                 st.plotly_chart(fig_rank, width="stretch")
             else:

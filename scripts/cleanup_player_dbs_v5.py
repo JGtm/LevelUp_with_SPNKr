@@ -11,19 +11,24 @@ Ce script supprime ces tables en toute sécurité avec plusieurs vérifications 
 4. Validation post-nettoyage
 
 Tables SUPPRIMÉES (maintenant dans shared ou obsolètes) :
-- match_stats (remplacée par vue/sous-requête _get_match_source)
+- match_stats (remplacée par shared.match_participants + match_registry)
 - match_participants (maintenant dans shared.match_participants)
 - highlight_events (maintenant dans shared.highlight_events)
 - medals_earned (maintenant dans shared.medals_earned)
 - killer_victim_pairs (maintenant dans shared.killer_victim_pairs)
 - teammates_aggregate (obsolète — calculée dynamiquement depuis shared.match_participants)
+- player_match_stats (MMR/skill → colonnes dans shared.match_participants)
+- xuid_aliases (mapping xuid→gamertag → maintenant dans shared.xuid_aliases)
 
 Tables CONSERVÉES (données personnelles) :
 - player_match_enrichment (performance_score, session_id, is_with_friends)
+- personal_score_awards (awards objectifs)
 - antagonists (rivalités)
 - match_citations (citations calculées)
 - career_progression (historique rangs)
 - media_files, media_match_associations
+- sessions
+- sync_meta
 - mv_* (vues matérialisées)
 
 Usage :
@@ -38,6 +43,9 @@ Usage :
 
     # Nettoyer avec suppression forcée des views de compatibilité
     python scripts/cleanup_player_dbs_v5.py --all --remove-compat-views
+
+    # Nettoyer sans vérifier la couverture shared (dangereux)
+    python scripts/cleanup_player_dbs_v5.py --all --backup --skip-coverage-check
 """
 
 from __future__ import annotations
@@ -72,6 +80,8 @@ TABLES_TO_REMOVE = [
     "medals_earned",
     "killer_victim_pairs",
     "teammates_aggregate",
+    "player_match_stats",  # MMR/skill → maintenant dans shared.match_participants
+    "xuid_aliases",  # mapping xuid→gamertag → maintenant dans shared.xuid_aliases
 ]
 
 # Views de compatibilité créées pendant la migration (optionnelles)
@@ -85,13 +95,14 @@ COMPAT_VIEWS = [
 # Tables à CONSERVER (données personnelles)
 TABLES_TO_KEEP = [
     "player_match_enrichment",
+    "personal_score_awards",
     "antagonists",
     "match_citations",
     "career_progression",
     "media_files",
     "media_match_associations",
     "sync_meta",
-    "xuid_aliases",  # Peut contenir des données locales
+    "sessions",
 ]
 
 
@@ -245,20 +256,120 @@ def analyze_player_db(
     return stats
 
 
+def verify_shared_coverage(
+    player_db_path: Path,
+    shared_db_path: Path,
+    gamertag: str,
+) -> dict[str, Any]:
+    """Vérifie que shared_matches.duckdb couvre TOUS les matchs du joueur.
+
+    Compare les match_id de la player DB (match_stats) avec ceux présents
+    dans shared.match_participants pour ce joueur. C'est la vérification
+    critique AVANT toute suppression.
+
+    Returns:
+        Dict avec local_count, shared_count, missing_count, missing_ids.
+    """
+    result: dict[str, Any] = {
+        "local_count": 0,
+        "shared_count": 0,
+        "missing_count": 0,
+        "missing_ids": [],
+        "coverage_pct": 0.0,
+        "ok": False,
+    }
+
+    try:
+        # Ouvrir la player DB pour lister ses matchs
+        player_conn = duckdb.connect(str(player_db_path), read_only=True)
+
+        # Vérifier que match_stats existe encore (pas déjà nettoyé)
+        has_ms = player_conn.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            "WHERE table_schema='main' AND table_name='match_stats'"
+        ).fetchone()[0]
+
+        if not has_ms:
+            logger.info(f"  ℹ️  {gamertag}: match_stats déjà supprimée (déjà nettoyé ?)")
+            player_conn.close()
+            result["ok"] = True  # Rien à vérifier
+            return result
+
+        local_ids = {
+            r[0]
+            for r in player_conn.execute("SELECT DISTINCT match_id FROM match_stats").fetchall()
+        }
+        result["local_count"] = len(local_ids)
+        player_conn.close()
+
+        if not local_ids:
+            result["ok"] = True
+            return result
+
+        # Vérifier la couverture dans shared
+        shared_conn = duckdb.connect(str(shared_db_path), read_only=True)
+
+        # Résoudre le xuid du joueur
+        xuid_row = shared_conn.execute(
+            "SELECT xuid FROM xuid_aliases WHERE LOWER(gamertag) = LOWER(?) LIMIT 1",
+            [gamertag],
+        ).fetchone()
+
+        if not xuid_row:
+            logger.warning(f"  ⚠️  {gamertag}: XUID introuvable dans shared.xuid_aliases")
+            shared_conn.close()
+            result["missing_count"] = len(local_ids)
+            result["missing_ids"] = list(local_ids)[:20]  # Limiter l'affichage
+            return result
+
+        xuid = xuid_row[0]
+
+        shared_ids = {
+            r[0]
+            for r in shared_conn.execute(
+                "SELECT DISTINCT match_id FROM match_participants WHERE xuid = ?",
+                [xuid],
+            ).fetchall()
+        }
+        result["shared_count"] = len(shared_ids)
+        shared_conn.close()
+
+        missing = local_ids - shared_ids
+        result["missing_count"] = len(missing)
+        result["missing_ids"] = sorted(missing)[:20]  # Limiter l'affichage
+        result["coverage_pct"] = (
+            ((len(local_ids) - len(missing)) / len(local_ids)) * 100 if local_ids else 100.0
+        )
+        result["ok"] = len(missing) == 0
+
+    except Exception as exc:
+        logger.error(f"  ❌ Erreur vérification couverture {gamertag}: {exc}")
+        result["ok"] = False
+
+    return result
+
+
 def cleanup_player_db(
     player_db_path: Path,
     gamertag: str,
     *,
+    shared_db_path: Path = DEFAULT_SHARED_DB,
     remove_compat_views: bool = False,
     dry_run: bool = False,
+    skip_coverage_check: bool = False,
 ) -> dict[str, Any]:
     """Nettoie les données redondantes d'une player DB.
 
+    Avant de supprimer, vérifie que shared_matches.duckdb couvre 100%
+    des matchs du joueur (sauf si skip_coverage_check=True).
+
     Args:
-        player_db_path: Chemin vers la DB joueur
-        gamertag: Gamertag du joueur
-        remove_compat_views: Si True, supprime aussi les views de compatibilité
-        dry_run: Si True, simule sans modifier
+        player_db_path: Chemin vers la DB joueur.
+        gamertag: Gamertag du joueur.
+        shared_db_path: Chemin vers shared_matches.duckdb.
+        remove_compat_views: Si True, supprime aussi les views de compatibilité.
+        dry_run: Si True, simule sans modifier.
+        skip_coverage_check: Si True, ne vérifie pas la couverture shared.
 
     Returns:
         Statistiques du nettoyage.
@@ -270,6 +381,7 @@ def cleanup_player_db(
         "errors": [],
         "size_before_kb": 0,
         "size_after_kb": 0,
+        "coverage": None,
     }
 
     if not player_db_path.exists():
@@ -277,6 +389,34 @@ def cleanup_player_db(
         return result
 
     result["size_before_kb"] = player_db_path.stat().st_size // 1024
+
+    # ── Vérification de couverture AVANT suppression ──
+    if not skip_coverage_check:
+        coverage = verify_shared_coverage(player_db_path, shared_db_path, gamertag)
+        result["coverage"] = coverage
+
+        if not coverage["ok"]:
+            msg = (
+                f"❌ Couverture shared incomplète pour {gamertag} : "
+                f"{coverage['shared_count']}/{coverage['local_count']} matchs "
+                f"({coverage['coverage_pct']:.1f}%), "
+                f"{coverage['missing_count']} matchs manquants dans shared"
+            )
+            logger.error(msg)
+            if coverage["missing_ids"]:
+                logger.error(
+                    f"   Exemples de matchs manquants : {', '.join(coverage['missing_ids'][:5])}"
+                )
+            logger.error(
+                "   Lancez d'abord la migration complète ou utilisez --skip-coverage-check"
+            )
+            result["errors"].append(msg)
+            return result
+        else:
+            if coverage["local_count"] > 0:
+                logger.info(
+                    f"  ✅ Couverture shared OK : {coverage['shared_count']}/{coverage['local_count']} matchs (100%)"
+                )
 
     try:
         if dry_run:
@@ -360,6 +500,7 @@ def cleanup_all_players(
     remove_compat_views: bool = False,
     dry_run: bool = False,
     verbose: bool = False,
+    skip_coverage_check: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """Nettoie tous les joueurs de db_profiles.json.
 
@@ -428,8 +569,10 @@ def cleanup_all_players(
         result = cleanup_player_db(
             player_db_path,
             gamertag,
+            shared_db_path=shared_db_path,
             remove_compat_views=remove_compat_views,
             dry_run=dry_run,
+            skip_coverage_check=skip_coverage_check,
         )
         results[gamertag] = result
 
@@ -518,6 +661,11 @@ def main() -> None:
         default=DEFAULT_SHARED_DB,
         help=f"Chemin vers shared_matches.duckdb (défaut: {DEFAULT_SHARED_DB})",
     )
+    parser.add_argument(
+        "--skip-coverage-check",
+        action="store_true",
+        help="Ne pas vérifier la couverture shared avant suppression (dangereux)",
+    )
 
     args = parser.parse_args()
 
@@ -533,6 +681,7 @@ def main() -> None:
             remove_compat_views=args.remove_compat_views,
             dry_run=args.dry_run,
             verbose=args.verbose,
+            skip_coverage_check=args.skip_coverage_check,
         )
     elif args.gamertag:
         # Vérifier que shared_matches.duckdb existe
@@ -583,13 +732,23 @@ def main() -> None:
         result = cleanup_player_db(
             player_db,
             args.gamertag,
+            shared_db_path=args.shared_db,
             remove_compat_views=args.remove_compat_views,
             dry_run=args.dry_run,
+            skip_coverage_check=args.skip_coverage_check,
         )
 
         print(f"\n{'='*60}")
         print("RÉSULTAT")
         print(f"{'='*60}")
+
+        if result.get("coverage") and result["coverage"]["local_count"] > 0:
+            cov = result["coverage"]
+            print(
+                f"📊 Couverture shared : {cov['shared_count']}/{cov['local_count']} matchs ({cov['coverage_pct']:.1f}%)"
+            )
+            if cov["missing_count"] > 0:
+                print(f"   ⚠️  {cov['missing_count']} matchs absents de shared")
 
         if result["tables_dropped"]:
             print(f"✓ Tables supprimées : {', '.join(result['tables_dropped'])}")

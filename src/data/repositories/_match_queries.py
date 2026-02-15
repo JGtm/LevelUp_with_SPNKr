@@ -917,6 +917,19 @@ class MatchQueriesMixin:
                 column_name="personal_score",
             )
 
+        # JOIN pour récupérer le rank du joueur principal depuis match_participants
+        # rank = classement dans le match (1 = meilleur)
+        my_xuid = str(self.xuid or "").strip()
+        rank_join = ""
+        rank_select = "NULL as rank"
+        if my_xuid:
+            rank_join = f"""
+                LEFT JOIN match_participants mp_rank
+                ON match_stats.match_id = mp_rank.match_id
+                AND mp_rank.xuid = '{my_xuid}'
+            """
+            rank_select = "mp_rank.rank"
+
         # Colonnes complètes avec alias standardisés
         all_select_exprs = f"""
                 match_stats.match_id,
@@ -944,12 +957,13 @@ class MatchQueriesMixin:
                 match_stats.enemy_team_score,
                 {team_mmr_expr} as team_mmr,
                 {enemy_mmr_expr} as enemy_mmr,
-                {personal_score_select}
+                {personal_score_select},
+                {rank_select}
         """
 
         sql = f"""
             SELECT {all_select_exprs}
-            FROM {source_sql}{metadata_joins}{pms_join}
+            FROM {source_sql}{metadata_joins}{pms_join}{rank_join}
             WHERE {where_sql}
             ORDER BY match_stats.start_time ASC
         """
@@ -986,8 +1000,9 @@ class MatchQueriesMixin:
                     match_stats.enemy_team_score,
                     {team_mmr_expr} as team_mmr,
                     {enemy_mmr_expr} as enemy_mmr,
-                    {personal_score_select}
-                FROM {source_sql}{pms_join}
+                    {personal_score_select},
+                    {rank_select}
+                FROM {source_sql}{pms_join}{rank_join}
                 WHERE {where_sql}
                 ORDER BY match_stats.start_time ASC
             """

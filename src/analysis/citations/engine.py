@@ -160,8 +160,9 @@ class CitationEngine:
                 "SELECT citation_name_norm, citation_name_display, mapping_type, "
                 "medal_id, medal_ids, stat_name, award_name, award_category, "
                 "custom_function, confidence, notes "
-                "FROM citation_mappings "
-                "WHERE enabled IS NOT FALSE"
+                "FROM citation_mappings"
+                # SUPPRIMÉ : WHERE enabled IS NOT FALSE
+                # On charge TOUTES les citations pour l'affichage UI
             ).fetchall()
 
             columns = [

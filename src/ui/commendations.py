@@ -375,8 +375,6 @@ def render_h5g_commendations_section(
     # Le filtrage des citations se fait désormais via citation_mappings.enabled
     # dans metadata.duckdb (pas besoin du JSON d'exclusion).
 
-    st.subheader("Citations")
-
     if not items:
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -393,13 +391,11 @@ def render_h5g_commendations_section(
 
     # Charger les mappings et agréger les valeurs via CitationEngine
     engine: CitationEngine | None = None
-    citation_mappings: dict[str, dict[str, Any]] = {}
     citations_full: dict[str, int] = {}
     citations_filtered: dict[str, int] = {}
 
     if db_path and xuid:
         engine = CitationEngine(db_path, xuid)
-        citation_mappings = engine.load_mappings()
         # Agrégation complète (tous les matchs)
         citations_full = engine.aggregate_for_display(match_ids=None)
         # Agrégation filtrée si nécessaire
@@ -409,14 +405,10 @@ def render_h5g_commendations_section(
     # Détermine si on est en mode filtré
     is_filtered = filtered_match_ids is not None and all_match_ids is not None
 
-    # N'affiche que les citations ayant un mapping dans citation_mappings
-    mapped_norms = set(citation_mappings.keys())
-
-    def _has_mapping(it: dict[str, Any]) -> bool:
-        norm_name = _normalize_name(str(it.get("name") or "").strip())
-        return norm_name in mapped_norms
-
-    items = [it for it in items if _has_mapping(it)]
+    # SUPPRIMÉ : Ne plus filtrer les citations par mapping
+    # On affiche toutes les citations du JSON, même si elles n'ont pas de valeur
+    # mapped_norms = set(citation_mappings.keys())
+    # items = [it for it in items if _has_mapping(it)]
 
     # Filtres UI
     cats = sorted(
