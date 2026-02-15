@@ -222,6 +222,25 @@ class DuckDBRepository(
         except Exception:
             return False
 
+    def _has_shared_mp_column(self, conn: duckdb.DuckDBPyConnection, column_name: str) -> bool:
+        """Vérifie si match_participants (shared) possède une colonne.
+
+        Consulte le catalog ``shared`` attaché en priorité, puis fallback
+        sur le catalog principal (utile en tests unitaires).
+        """
+        for catalog in ("shared", "main"):
+            try:
+                result = conn.execute(
+                    f"SELECT COUNT(*) FROM {catalog}.information_schema.columns "
+                    "WHERE table_name = 'match_participants' AND column_name = ?",
+                    (column_name,),
+                ).fetchone()
+                if result and result[0] > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def _select_optional_column(
         self,
         conn: duckdb.DuckDBPyConnection,

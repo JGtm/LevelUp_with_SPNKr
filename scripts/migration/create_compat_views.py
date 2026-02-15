@@ -73,6 +73,7 @@ SELECT
     p.shots_hit,
     p.damage_dealt,
     p.damage_taken,
+    p.avg_life_seconds,
     -- Données enrichies depuis la DB locale
     COALESCE(e.performance_score, NULL) AS performance_score,
     COALESCE(e.session_id, NULL) AS session_id,

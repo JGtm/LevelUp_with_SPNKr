@@ -185,6 +185,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force damage pour tous les participants de tous les matchs",
     )
+    parser.add_argument(
+        "--participants-avg-life",
+        action="store_true",
+        help="Backfill avg_life_seconds (durée de vie moyenne) des participants",
+    )
+    parser.add_argument(
+        "--force-participants-avg-life",
+        action="store_true",
+        help="Force avg_life_seconds pour tous les participants de tous les matchs",
+    )
 
     # ── Killer/victim ──
     parser.add_argument(

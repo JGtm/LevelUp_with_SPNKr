@@ -1168,6 +1168,9 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
         damage_dealt_val = _safe_float(stats_dict.get("DamageDealt")) if stats_dict else None
         damage_taken_val = _safe_float(stats_dict.get("DamageTaken")) if stats_dict else None
 
+        # AverageLifeSeconds depuis CoreStats (API)
+        avg_life_val, _ = _extract_life_time_stats(player, match_json)
+
         rows.append(
             MatchParticipantRow(
                 match_id=match_id,
@@ -1184,6 +1187,7 @@ def extract_participants(match_json: dict[str, Any]) -> list[MatchParticipantRow
                 shots_hit=shots_hit_val,
                 damage_dealt=damage_dealt_val,
                 damage_taken=damage_taken_val,
+                avg_life_seconds=avg_life_val,
             )
         )
 

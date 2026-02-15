@@ -103,6 +103,7 @@ def main() -> int:
                     participants_kda=args.participants_kda,
                     participants_shots=args.participants_shots,
                     participants_damage=args.participants_damage,
+                    participants_avg_life=args.participants_avg_life,
                     killer_victim=args.killer_victim,
                     end_time=args.end_time,
                     all_data=args.all_data,
@@ -112,6 +113,7 @@ def main() -> int:
                     force_shots=args.force_shots,
                     force_participants_shots=args.force_participants_shots,
                     force_participants_damage=args.force_participants_damage,
+                    force_participants_avg_life=args.force_participants_avg_life,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
@@ -146,6 +148,7 @@ def main() -> int:
                     participants_kda=args.participants_kda,
                     participants_shots=args.participants_shots,
                     participants_damage=args.participants_damage,
+                    participants_avg_life=args.participants_avg_life,
                     killer_victim=args.killer_victim,
                     end_time=args.end_time,
                     all_data=args.all_data,
@@ -155,6 +158,7 @@ def main() -> int:
                     force_shots=args.force_shots,
                     force_participants_shots=args.force_participants_shots,
                     force_participants_damage=args.force_participants_damage,
+                    force_participants_avg_life=args.force_participants_avg_life,
                     force_enemy_mmr=args.force_enemy_mmr,
                     force_aliases=args.force_aliases,
                     force_assets=args.force_assets,
@@ -227,6 +231,8 @@ def _print_totals(totals: dict, args: object) -> None:
         logger.info(f"Shots participants: {totals.get('participants_shots_updated', 0)}")
     if getattr(args, "participants_damage", False):
         logger.info(f"Damage participants: {totals.get('participants_damage_updated', 0)}")
+    if getattr(args, "participants_avg_life", False):
+        logger.info(f"Durée de vie participants: {totals.get('participants_avg_life_updated', 0)}")
     if getattr(args, "killer_victim", False):
         logger.info(f"Paires killer/victim: {totals.get('killer_victim_pairs_inserted', 0)}")
     if getattr(args, "end_time", False):

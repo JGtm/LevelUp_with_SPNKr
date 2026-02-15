@@ -135,6 +135,7 @@ CAST_PLAN: dict[str, dict[str, str]] = {
         "shots_hit": "INTEGER",
         "damage_dealt": "FLOAT",
         "damage_taken": "FLOAT",
+        "avg_life_seconds": "FLOAT",
     },
     "xuid_aliases": {
         "xuid": "VARCHAR",
@@ -472,6 +473,7 @@ PARTICIPANT_COLUMNS = [
     "shots_hit",
     "damage_dealt",
     "damage_taken",
+    "avg_life_seconds",
 ]
 
 ALIAS_COLUMNS = ["xuid", "gamertag", "last_seen", "source", "updated_at"]

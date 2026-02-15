@@ -35,6 +35,7 @@ def find_matches_missing_data(
     conn: Any,
     xuid: str,
     *,
+    shared_conn: Any | None = None,
     detection_mode: str = "or",
     medals: bool = False,
     events: bool = False,
@@ -49,8 +50,10 @@ def find_matches_missing_data(
     participants_kda: bool = False,
     participants_shots: bool = False,
     participants_damage: bool = False,
+    participants_avg_life: bool = False,
     force_participants_shots: bool = False,
     force_participants_damage: bool = False,
+    force_participants_avg_life: bool = False,
     force_medals: bool = False,
     force_accuracy: bool = False,
     shots: bool = False,
@@ -69,8 +72,9 @@ def find_matches_missing_data(
     un flag --force-* est utilisé pour le type concerné.
 
     Args:
-        conn: Connexion DuckDB.
+        conn: Connexion DuckDB (player DB).
         xuid: XUID du joueur.
+        shared_conn: Connexion optionnelle à shared_matches.duckdb (v5).
         detection_mode: "or" (défaut) ou "and" (strict).
         max_matches: Limite de résultats.
         all_data: True si --all-data est actif.
@@ -79,6 +83,51 @@ def find_matches_missing_data(
         Liste des match_id manquants.
     """
     _ = all_data  # compat signature
+
+    # Détecter le type de flags demandés
+    local_data_requested = any(
+        [
+            medals,
+            events,
+            skill,
+            personal_scores,
+            performance_scores,
+            accuracy,
+            shots,
+            enemy_mmr,
+            assets,
+            participants,
+        ]
+    )
+    participants_data_requested = any(
+        [
+            participants_scores,
+            participants_kda,
+            participants_shots,
+            participants_damage,
+            participants_avg_life,
+        ]
+    )
+
+    # ── Détection participants via shared DB (toujours si shared_conn disponible) ──
+    shared_match_ids: list[str] = []
+    if participants_data_requested and shared_conn is not None:
+        shared_match_ids = _find_matches_in_shared_db(
+            shared_conn=shared_conn,
+            xuid=xuid,
+            max_matches=max_matches,
+            participants_scores=participants_scores,
+            participants_kda=participants_kda,
+            participants_shots=participants_shots,
+            participants_damage=participants_damage,
+            participants_avg_life=participants_avg_life,
+            force_participants_shots=force_participants_shots,
+            force_participants_damage=force_participants_damage,
+            force_participants_avg_life=force_participants_avg_life,
+        )
+        # Si aucun flag local → on retourne directement les résultats shared
+        if not local_data_requested:
+            return shared_match_ids
 
     conditions: list[str] = []
     params: list[Any] = []
@@ -188,8 +237,11 @@ def find_matches_missing_data(
         else:
             _add_participants_condition(conn, conditions, has_col)
 
+    # ── Participants: si shared_conn gère déjà la détection, skip local ──
+    _skip_local_participants = participants_data_requested and shared_conn is not None
+
     # ── Participants scores ──
-    if participants_scores:
+    if participants_scores and not _skip_local_participants:
         _add_participants_column_condition(
             conn,
             conditions,
@@ -200,7 +252,7 @@ def find_matches_missing_data(
         )
 
     # ── Participants KDA ──
-    if participants_kda:
+    if participants_kda and not _skip_local_participants:
         _add_participants_column_condition(
             conn,
             conditions,
@@ -211,7 +263,7 @@ def find_matches_missing_data(
         )
 
     # ── Participants shots ──
-    if participants_shots:
+    if participants_shots and not _skip_local_participants:
         if force_participants_shots:
             conditions.append("1=1")
         else:
@@ -225,7 +277,7 @@ def find_matches_missing_data(
             )
 
     # ── Participants damage ──
-    if participants_damage:
+    if participants_damage and not _skip_local_participants:
         if force_participants_damage:
             conditions.append("1=1")
         else:
@@ -238,8 +290,23 @@ def find_matches_missing_data(
                 has_bf_col=has_col,
             )
 
+    # ── Participants avg_life_seconds ──
+    if participants_avg_life and not _skip_local_participants:
+        if force_participants_avg_life:
+            conditions.append("1=1")
+        else:
+            _add_participants_column_condition(
+                conn,
+                conditions,
+                ["avg_life_seconds"],
+                check_col="avg_life_seconds",
+                flag_name="participants_avg_life",
+                has_bf_col=has_col,
+            )
+
     if not conditions:
-        return []
+        # Pas de conditions locales → retourner les résultats shared uniquement
+        return shared_match_ids
 
     joiner = " AND " if detection_mode == "and" else " OR "
     where_clause = joiner.join(conditions)
@@ -257,10 +324,22 @@ def find_matches_missing_data(
         result = (
             conn.execute(query, params).fetchall() if params else conn.execute(query).fetchall()
         )
-        return [row[0] for row in result]
+        local_match_ids = [row[0] for row in result]
     except Exception as e:
         logger.error(f"Erreur lors de la recherche des matchs manquants: {e}")
-        return []
+        local_match_ids = []
+
+    # Fusionner résultats locaux + shared (dédoublonner, garder l'ordre)
+    if shared_match_ids:
+        seen = set(local_match_ids)
+        merged = list(local_match_ids)
+        for mid in shared_match_ids:
+            if mid not in seen:
+                merged.append(mid)
+                seen.add(mid)
+        return merged
+
+    return local_match_ids
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -280,6 +359,18 @@ def _has_backfill_completed_column(conn: Any) -> bool:
         return False
 
 
+def _has_registry_backfill_column(shared_conn: Any) -> bool:
+    """Vérifie si match_registry possède la colonne backfill_completed."""
+    try:
+        result = shared_conn.execute(
+            "SELECT COUNT(*) FROM information_schema.columns "
+            "WHERE table_name = 'match_registry' AND column_name = 'backfill_completed'"
+        ).fetchone()
+        return bool(result and result[0] > 0)
+    except Exception:
+        return False
+
+
 def _done_guard(flag_name: str, has_column: bool) -> str:
     """Clause SQL excluant les matchs déjà traités pour ce type.
 
@@ -293,6 +384,123 @@ def _done_guard(flag_name: str, has_column: bool) -> str:
     if bit == 0:
         return ""
     return f" AND (COALESCE(ms.backfill_completed, 0) & {bit} = 0)"
+
+
+def _registry_done_guard(flag_name: str, has_column: bool) -> str:
+    """Clause SQL excluant les matchs déjà traités dans match_registry (v5).
+
+    Utilise mr.backfill_completed au lieu de ms.backfill_completed.
+    """
+    if not has_column:
+        return ""
+    bit = BACKFILL_FLAGS.get(flag_name, 0)
+    if bit == 0:
+        return ""
+    return f" AND (COALESCE(mr.backfill_completed, 0) & {bit} = 0)"
+
+
+def _find_matches_in_shared_db(
+    shared_conn: Any,
+    xuid: str,
+    *,
+    max_matches: int | None,
+    participants_scores: bool,
+    participants_kda: bool,
+    participants_shots: bool,
+    participants_damage: bool,
+    participants_avg_life: bool,
+    force_participants_shots: bool,
+    force_participants_damage: bool,
+    force_participants_avg_life: bool,
+) -> list[str]:
+    """Détection des matchs manquants dans shared_matches.duckdb (v5).
+
+    Utilisé pour les backfills participants-only qui travaillent directement
+    sur la base partagée sans dépendre de la DB joueur locale.
+
+    La requête filtre d'abord par xuid dans match_participants, puis
+    applique les conditions de NULL sur les colonnes demandées.
+
+    Args:
+        shared_conn: Connexion à shared_matches.duckdb.
+        xuid: XUID du joueur.
+        max_matches: Limite de résultats.
+        participants_*: Flags de backfill.
+        force_participants_*: Flags de forçage.
+
+    Returns:
+        Liste des match_id nécessitant un backfill.
+    """
+    conditions: list[str] = []
+
+    # Vérifier si backfill_completed existe dans match_registry
+    has_bf_col = _has_registry_backfill_column(shared_conn)
+
+    # ── Participants scores/rank ──
+    if participants_scores:
+        conditions.append(
+            "(mp.score IS NULL OR mp.rank IS NULL)"
+            + _registry_done_guard("participants_scores", has_bf_col)
+        )
+
+    # ── Participants K/D/A ──
+    if participants_kda:
+        conditions.append(
+            "(mp.kills IS NULL OR mp.deaths IS NULL OR mp.assists IS NULL)"
+            + _registry_done_guard("participants_kda", has_bf_col)
+        )
+
+    # ── Participants shots ──
+    if participants_shots:
+        if force_participants_shots:
+            conditions.append("1=1")
+        else:
+            conditions.append(
+                "(mp.shots_fired IS NULL OR mp.shots_hit IS NULL)"
+                + _registry_done_guard("participants_shots", has_bf_col)
+            )
+
+    # ── Participants damage ──
+    if participants_damage:
+        if force_participants_damage:
+            conditions.append("1=1")
+        else:
+            conditions.append(
+                "(mp.damage_dealt IS NULL OR mp.damage_taken IS NULL)"
+                + _registry_done_guard("participants_damage", has_bf_col)
+            )
+
+    # ── Participants avg_life_seconds ──
+    if participants_avg_life:
+        if force_participants_avg_life:
+            conditions.append("1=1")
+        else:
+            conditions.append(
+                "mp.avg_life_seconds IS NULL"
+                + _registry_done_guard("participants_avg_life", has_bf_col)
+            )
+
+    if not conditions:
+        return []
+
+    where_clause = " OR ".join(conditions)
+
+    query = f"""
+        SELECT DISTINCT mp.match_id
+        FROM match_participants mp
+        JOIN match_registry mr ON mr.match_id = mp.match_id
+        WHERE mp.xuid = ? AND ({where_clause})
+        ORDER BY mr.end_time DESC
+    """
+    if max_matches:
+        query += f" LIMIT {max_matches}"
+
+    try:
+        result = shared_conn.execute(query, [xuid]).fetchall()
+        return [row[0] for row in result]
+    except Exception as e:
+        logger.error(f"Erreur lors de la détection dans shared DB: {e}")
+        return []
 
 
 def _add_participants_condition(

@@ -5,6 +5,7 @@ Fonctions d'initialisation, de validation et de rendu du profil.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from typing import TYPE_CHECKING
 
@@ -207,7 +208,10 @@ def render_sidebar_header(db_path: str, xuid: str, settings: AppSettings) -> str
 
 
 def load_profile_api(xuid: str, settings: AppSettings) -> tuple[object | None, str | None]:
-    """Charge le profil depuis l'API SPNKr si activé.
+    """Charge le profil depuis le cache ou l'API SPNKr.
+
+    Tente toujours le cache disque d'abord (même si l'API est désactivée).
+    N'appelle l'API que si le cache est invalide/absent ET l'API est activée.
 
     Returns:
         (api_appearance, error_message)
@@ -217,17 +221,32 @@ def load_profile_api(xuid: str, settings: AppSettings) -> tuple[object | None, s
     api_app = None
     api_err = None
 
-    if api_enabled and str(xuid or "").strip():
-        try:
+    xu = str(xuid or "").strip()
+    if not xu:
+        return None, None
+
+    # Toujours essayer le cache d'abord, même si l'API est désactivée
+    if not api_enabled:
+        # API désactivée : charger depuis le cache sans limite de fraîcheur
+        with contextlib.suppress(Exception):
             api_app, api_err = get_profile_appearance(
-                xuid=str(xuid).strip(),
-                enabled=True,
-                refresh_hours=api_refresh_h,
+                xuid=xu,
+                enabled=False,
+                refresh_hours=999_999,  # Cache "infini" — ne jamais expirer
             )
-        except Exception as e:
-            api_app, api_err = None, str(e)
-        if api_err:
-            st.caption(f"Profil auto (SPNKr): {api_err}")
+        return api_app, api_err
+
+    # API activée : cache + appel API si nécessaire
+    try:
+        api_app, api_err = get_profile_appearance(
+            xuid=xu,
+            enabled=True,
+            refresh_hours=api_refresh_h,
+        )
+    except Exception as e:
+        api_app, api_err = None, str(e)
+    if api_err:
+        st.caption(f"Profil auto (SPNKr): {api_err}")
 
     return api_app, api_err
 

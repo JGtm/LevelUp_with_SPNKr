@@ -114,6 +114,8 @@ class MatchQueriesMixin:
             # Vérifier les colonnes optionnelles dans match_stats local
             has_is_ranked = self._has_column(conn, "match_stats", "is_ranked")
             has_is_firefight = self._has_column(conn, "match_stats", "is_firefight")
+            # Vérifier si match_participants a avg_life_seconds (migration v5.1)
+            has_p_avg_life = self._has_shared_mp_column(conn, "avg_life_seconds")
 
             kda_expr = (
                 "COALESCE(ms.kda, "
@@ -124,7 +126,10 @@ class MatchQueriesMixin:
             )
             spree_expr = "COALESCE(ms.max_killing_spree, 0)"
             hs_expr = "COALESCE(ms.headshot_kills, 0)"
-            avg_life_expr = "COALESCE(ms.avg_life_seconds, 0)"
+            if has_p_avg_life:
+                avg_life_expr = "COALESCE(ms.avg_life_seconds, p.avg_life_seconds, 0)"
+            else:
+                avg_life_expr = "COALESCE(ms.avg_life_seconds, 0)"
             mmr_team = "ms.team_mmr"
             mmr_enemy = "ms.enemy_mmr"
             time_expr = "COALESCE(r.duration_seconds, ms.time_played_seconds)"
@@ -153,6 +158,8 @@ class MatchQueriesMixin:
             is_rk = f"COALESCE(r.is_ranked, {'ms.is_ranked, ' if has_is_ranked else ''}FALSE)"
         else:
             ms_join = ""
+            # Vérifier si match_participants a avg_life_seconds (migration v5.1)
+            has_p_avg_life = self._has_shared_mp_column(conn, "avg_life_seconds")
             kda_expr = (
                 "CASE WHEN p.deaths > 0 "
                 "THEN (CAST(p.kills AS FLOAT) + CAST(p.assists AS FLOAT) / 3.0) "
@@ -161,7 +168,7 @@ class MatchQueriesMixin:
             )
             spree_expr = "0"
             hs_expr = "0"
-            avg_life_expr = "0"
+            avg_life_expr = "COALESCE(p.avg_life_seconds, 0)" if has_p_avg_life else "0"
             mmr_team = "NULL"
             mmr_enemy = "NULL"
             time_expr = "r.duration_seconds"

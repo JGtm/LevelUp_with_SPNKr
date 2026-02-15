@@ -430,3 +430,240 @@ class TestParticipantsColumnConditions:
         )
         result = find_matches_missing_data(conn, "1234567890123456", participants_scores=True)
         assert "m3" in result
+
+
+# ── Tests pour détection dans shared DB (v5) ────────────────────────────────
+
+
+@pytest.fixture
+def shared_conn():
+    """Simule shared_matches.duckdb avec match_registry + match_participants."""
+    c = duckdb.connect(":memory:")
+
+    # Table match_registry avec backfill_completed
+    c.execute("""
+        CREATE TABLE match_registry (
+            match_id VARCHAR PRIMARY KEY,
+            end_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            backfill_completed INTEGER DEFAULT 0
+        )
+    """)
+
+    # Table match_participants
+    c.execute("""
+        CREATE TABLE match_participants (
+            match_id VARCHAR,
+            xuid VARCHAR,
+            gamertag VARCHAR,
+            rank INTEGER,
+            score INTEGER,
+            kills INTEGER,
+            deaths INTEGER,
+            assists INTEGER,
+            shots_fired INTEGER,
+            shots_hit INTEGER,
+            damage_dealt DOUBLE,
+            damage_taken DOUBLE,
+            avg_life_seconds DOUBLE
+        )
+    """)
+
+    # Insert test data
+    c.execute("""
+        INSERT INTO match_registry (match_id, backfill_completed)
+        VALUES ('m1', 0), ('m2', 0), ('m3', 0)
+    """)
+
+    # m1: NULL avg_life, shots/damage renseignés
+    c.execute("""
+        INSERT INTO match_participants
+        (match_id, xuid, gamertag, kills, deaths, assists,
+         shots_fired, shots_hit, damage_dealt, damage_taken, avg_life_seconds)
+        VALUES ('m1', 'player123', 'TestPlayer', 10, 5, 3,
+                200, 80, 1500.0, 1200.0, NULL)
+    """)
+
+    # m2: tout renseigné (aucun NULL)
+    c.execute("""
+        INSERT INTO match_participants
+        (match_id, xuid, gamertag, kills, deaths, assists,
+         shots_fired, shots_hit, damage_dealt, damage_taken, avg_life_seconds)
+        VALUES ('m2', 'player123', 'TestPlayer', 15, 8, 5,
+                300, 120, 2000.0, 1800.0, 45.2)
+    """)
+
+    # m3: player has NULL shots mais avg_life renseigné
+    c.execute("""
+        INSERT INTO match_participants
+        (match_id, xuid, gamertag, kills, deaths, assists, shots_fired, shots_hit, avg_life_seconds)
+        VALUES ('m3', 'player123', 'TestPlayer', 12, 6, 4, NULL, NULL, 28.5)
+    """)
+
+    c.commit()
+    yield c
+    c.close()
+
+
+class TestSharedDBDetection:
+    """Tests pour _find_matches_in_shared_db (v5)."""
+
+    def test_participants_avg_life_null(self, shared_conn):
+        """Détecte les matchs avec avg_life_seconds NULL."""
+        from scripts.backfill.detection import _find_matches_in_shared_db
+
+        result = _find_matches_in_shared_db(
+            shared_conn=shared_conn,
+            xuid="player123",
+            max_matches=None,
+            participants_scores=False,
+            participants_kda=False,
+            participants_shots=False,
+            participants_damage=False,
+            participants_avg_life=True,
+            force_participants_shots=False,
+            force_participants_damage=False,
+            force_participants_avg_life=False,
+        )
+
+        assert "m1" in result  # Has NULL avg_life
+        assert "m2" not in result  # Has avg_life populated
+        assert "m3" not in result  # Has avg_life already populated (28.5)
+
+    def test_participants_shots_null(self, shared_conn):
+        """Détecte les matchs avec shots NULL."""
+        from scripts.backfill.detection import _find_matches_in_shared_db
+
+        result = _find_matches_in_shared_db(
+            shared_conn=shared_conn,
+            xuid="player123",
+            max_matches=None,
+            participants_scores=False,
+            participants_kda=False,
+            participants_shots=True,
+            participants_damage=False,
+            participants_avg_life=False,
+            force_participants_shots=False,
+            force_participants_damage=False,
+            force_participants_avg_life=False,
+        )
+
+        assert "m3" in result  # Has NULL shots
+        assert "m1" not in result
+        assert "m2" not in result
+
+    def test_force_participants_avg_life(self, shared_conn):
+        """Force flag retourne tous les matchs du joueur."""
+        from scripts.backfill.detection import _find_matches_in_shared_db
+
+        result = _find_matches_in_shared_db(
+            shared_conn=shared_conn,
+            xuid="player123",
+            max_matches=None,
+            participants_scores=False,
+            participants_kda=False,
+            participants_shots=False,
+            participants_damage=False,
+            participants_avg_life=True,
+            force_participants_shots=False,
+            force_participants_damage=False,
+            force_participants_avg_life=True,
+        )
+
+        # Tous les matchs du joueur (même ceux avec avg_life déjà rempli)
+        assert len(result) == 3
+        assert "m1" in result
+        assert "m2" in result
+        assert "m3" in result
+
+    def test_max_matches_limit(self, shared_conn):
+        """Limite le nombre de résultats."""
+        from scripts.backfill.detection import _find_matches_in_shared_db
+
+        result = _find_matches_in_shared_db(
+            shared_conn=shared_conn,
+            xuid="player123",
+            max_matches=1,
+            participants_scores=False,
+            participants_kda=False,
+            participants_shots=False,
+            participants_damage=False,
+            participants_avg_life=True,
+            force_participants_shots=False,
+            force_participants_damage=False,
+            force_participants_avg_life=True,
+        )
+
+        assert len(result) == 1
+
+    def test_multiple_conditions_or(self, shared_conn):
+        """Multiple conditions (OR logic)."""
+        from scripts.backfill.detection import _find_matches_in_shared_db
+
+        result = _find_matches_in_shared_db(
+            shared_conn=shared_conn,
+            xuid="player123",
+            max_matches=None,
+            participants_scores=False,
+            participants_kda=False,
+            participants_shots=True,
+            participants_damage=False,
+            participants_avg_life=True,
+            force_participants_shots=False,
+            force_participants_damage=False,
+            force_participants_avg_life=False,
+        )
+
+        # m1 (NULL avg_life) + m3 (NULL shots)
+        assert "m1" in result
+        assert "m3" in result
+        assert "m2" not in result
+
+
+class TestSharedConnIntegration:
+    """Tests d'intégration find_matches_missing_data avec shared_conn."""
+
+    def test_participants_only_uses_shared_conn(self, shared_conn):
+        """Quand shared_conn fourni + participants-only → utilise shared DB."""
+        # Créer une conn locale vide (pas de match_stats)
+        local_conn = duckdb.connect(":memory:")
+
+        try:
+            result = find_matches_missing_data(
+                conn=local_conn,
+                xuid="player123",
+                shared_conn=shared_conn,
+                participants_avg_life=True,
+            )
+
+            # Devrait trouver m1 depuis shared DB (pas besoin de match_stats local)
+            assert "m1" in result
+        finally:
+            local_conn.close()
+
+    def test_mixed_flags_uses_local_conn(self, conn, shared_conn):
+        """Quand flags mixtes (local + participants) → local pour médailles, shared pour participants."""
+        result = find_matches_missing_data(
+            conn=conn,
+            xuid="1234567890123456",
+            shared_conn=shared_conn,
+            medals=True,  # Local flag
+            participants_avg_life=True,
+        )
+
+        # Devrait trouver des matchs locaux (médailles) ET shared (avg_life)
+        # Les matchs locaux du fixture conn n'ont pas de médailles
+        assert "m1" in result or "m3" in result
+
+    def test_mixed_flags_includes_shared_participants(self, conn, shared_conn):
+        """Flags mixtes avec shared_conn : les participants sont détectés via shared DB."""
+        # Le xuid "player123" a des données dans shared_conn
+        result = find_matches_missing_data(
+            conn=conn,
+            xuid="player123",
+            shared_conn=shared_conn,
+            medals=True,  # Local flag
+            participants_avg_life=True,  # Participant flag → détecté via shared
+        )
+
+        # m1 a NULL avg_life dans shared → doit être dans le résultat
+        assert "m1" in result

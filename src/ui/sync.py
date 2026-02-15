@@ -235,14 +235,26 @@ def _sync_duckdb_player(
 
         db_file = Path(db_path)
 
-        # Compter les matchs avant
+        # Résoudre le XUID du joueur (obligatoire pour transformer les stats)
+        from src.ui.cache_loaders import _resolve_player_xuid
+
+        resolved_xuid = _resolve_player_xuid(str(db_file))
+
+        # Compter les matchs avant (player_match_stats = source de vérité v5)
         matches_before = 0
         try:
             import duckdb
 
             conn = duckdb.connect(str(db_file), read_only=True)
-            result = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
-            matches_before = result[0] if result else 0
+            # Essayer player_match_stats (v5), puis match_stats (fallback)
+            for table in ("player_match_stats", "match_stats"):
+                try:
+                    result = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                    if result and result[0]:
+                        matches_before = result[0]
+                        break
+                except Exception:
+                    continue
             conn.close()
         except Exception:
             pass
@@ -262,7 +274,7 @@ def _sync_duckdb_player(
         try:
             engine = DuckDBSyncEngine(
                 player_db_path=db_file,
-                xuid="",  # Sera résolu par l'engine via gamertag
+                xuid=resolved_xuid,
                 gamertag=gamertag,
                 tokens=tokens,
             )
@@ -287,12 +299,18 @@ def _sync_duckdb_player(
         except Exception as e:
             return False, f"Erreur sync: {e}"
 
-        # Compter les matchs après
+        # Compter les matchs après (même logique que avant)
         matches_after = 0
         try:
             conn = duckdb.connect(str(db_file), read_only=True)
-            result = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
-            matches_after = result[0] if result else 0
+            for table in ("player_match_stats", "match_stats"):
+                try:
+                    result = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                    if result and result[0]:
+                        matches_after = result[0]
+                        break
+                except Exception:
+                    continue
             conn.close()
         except Exception:
             pass
@@ -457,20 +475,10 @@ def sync_all_players(
             p = Path(db_path)
             if p.name == "stats.duckdb" and p.parent.parent.name == "players":
                 gamertag = p.parent.name
-                # Essayer de récupérer le XUID depuis xuid_aliases
-                xuid = ""
-                try:
-                    import duckdb
+                # Résoudre le XUID via la même logique que cache_loaders
+                from src.ui.cache_loaders import _resolve_player_xuid
 
-                    conn = duckdb.connect(db_path, read_only=True)
-                    result = conn.execute(
-                        "SELECT xuid FROM xuid_aliases ORDER BY last_seen DESC LIMIT 1"
-                    ).fetchone()
-                    conn.close()
-                    if result and result[0]:
-                        xuid = str(result[0])
-                except Exception:
-                    pass
+                xuid = _resolve_player_xuid(db_path)
                 players = [{"xuid": xuid, "gamertag": gamertag, "label": gamertag}]
         except Exception:
             pass

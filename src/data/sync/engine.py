@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS match_participants (
     shots_hit INTEGER,
     damage_dealt FLOAT,
     damage_taken FLOAT,
+    avg_life_seconds FLOAT,
     PRIMARY KEY (match_id, xuid)
 );
 CREATE INDEX IF NOT EXISTS idx_participants_xuid ON match_participants(xuid);
@@ -255,6 +256,10 @@ class DuckDBSyncEngine:
         self._gamertag = gamertag
         self._tokens = tokens
 
+        # Auto-résolution du XUID si vide (défense en profondeur)
+        if not self._xuid and self._player_db_path.exists():
+            self._xuid = self._resolve_xuid_from_db()
+
         # Auto-détection du chemin metadata.duckdb
         if metadata_db_path is None:
             data_dir = self._player_db_path.parent.parent.parent
@@ -317,6 +322,15 @@ class DuckDBSyncEngine:
             read_only=False,
         )
         self._shared_connection.execute("SET enable_object_cache = true")
+
+        # Appliquer les migrations de colonnes sur les tables shared (v5)
+        try:
+            from src.data.sync.migrations import ensure_match_participants_columns
+
+            ensure_match_participants_columns(self._shared_connection)
+        except Exception as e:
+            logger.debug(f"Migration match_participants shared: {e}")
+
         return self._shared_connection
 
     @property
@@ -442,20 +456,110 @@ class DuckDBSyncEngine:
             return
         ensure_highlight_events_autoincrement(conn)
 
+    def _resolve_xuid_from_db(self) -> str:
+        """Résout le XUID depuis la DB joueur (fallback si non fourni).
+
+        Stratégie identique à cache_loaders._resolve_player_xuid :
+        1. sync_meta (key='xuid')
+        2. player_match_stats.xuid
+        3. xuid_aliases via gamertag
+        """
+        try:
+            conn = duckdb.connect(str(self._player_db_path), read_only=True)
+
+            # 1. sync_meta
+            try:
+                r = conn.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
+                if r and r[0] and str(r[0]).strip():
+                    xuid = str(r[0]).strip()
+                    conn.close()
+                    logger.info(f"XUID résolu depuis sync_meta: {xuid}")
+                    return xuid
+            except Exception:
+                pass
+
+            # 2. player_match_stats
+            try:
+                r = conn.execute(
+                    "SELECT DISTINCT xuid FROM player_match_stats WHERE xuid IS NOT NULL LIMIT 1"
+                ).fetchone()
+                if r and r[0] and str(r[0]).strip():
+                    xuid = str(r[0]).strip()
+                    conn.close()
+                    logger.info(f"XUID résolu depuis player_match_stats: {xuid}")
+                    return xuid
+            except Exception:
+                pass
+
+            # 3. xuid_aliases via gamertag
+            if self._gamertag:
+                try:
+                    r = conn.execute(
+                        "SELECT xuid FROM xuid_aliases WHERE gamertag = ? LIMIT 1",
+                        [self._gamertag],
+                    ).fetchone()
+                    if r and r[0] and str(r[0]).strip():
+                        xuid = str(r[0]).strip()
+                        conn.close()
+                        logger.info(f"XUID résolu depuis xuid_aliases: {xuid}")
+                        return xuid
+                except Exception:
+                    pass
+
+            conn.close()
+        except Exception as e:
+            logger.debug(f"Impossible de résoudre le XUID depuis la DB: {e}")
+
+        return ""
+
     def _load_existing_match_ids(self) -> set[str]:
-        """Charge les IDs des matchs existants depuis la DB."""
+        """Charge les IDs des matchs existants depuis la DB.
+
+        Stratégie de fallback :
+        1. match_stats (table créée par le sync engine)
+        2. player_match_stats (table legacy v3/v4/v5, toujours présente)
+        3. shared.match_participants WHERE xuid (si shared activé)
+        """
         if self._existing_match_ids is not None:
             return self._existing_match_ids
 
+        ids: set[str] = set()
+
+        conn = self._get_connection()
+
+        # Stratégie 1 : match_stats (table sync engine)
         try:
-            conn = self._get_connection()
             result = conn.execute(
                 "SELECT match_id FROM match_stats WHERE match_id IS NOT NULL"
             ).fetchall()
-            self._existing_match_ids = {str(r[0]) for r in result if r[0]}
+            ids = {str(r[0]) for r in result if r[0]}
         except Exception:
-            self._existing_match_ids = set()
+            pass
 
+        # Stratégie 2 : player_match_stats (table legacy, toujours peuplée)
+        if not ids:
+            try:
+                result = conn.execute(
+                    "SELECT DISTINCT match_id FROM player_match_stats WHERE match_id IS NOT NULL"
+                ).fetchall()
+                ids = {str(r[0]) for r in result if r[0]}
+            except Exception:
+                pass
+
+        # Stratégie 3 : shared.match_participants (si XUID connu et shared activé)
+        if not ids and self._xuid:
+            try:
+                shared_conn = self._get_shared_connection()
+                if shared_conn:
+                    result = shared_conn.execute(
+                        "SELECT DISTINCT match_id FROM match_participants WHERE xuid = ?",
+                        (self._xuid,),
+                    ).fetchall()
+                    ids = {str(r[0]) for r in result if r[0]}
+            except Exception:
+                pass
+
+        self._existing_match_ids = ids
         return self._existing_match_ids
 
     def _update_sync_meta(self, key: str, value: str) -> None:
@@ -579,6 +683,12 @@ class DuckDBSyncEngine:
             self._update_sync_meta("last_sync_at", datetime.now(timezone.utc).isoformat())
             self._update_sync_meta("last_sync_mode", "delta" if delta_mode else "full")
             self._update_sync_meta("last_sync_matches", str(result.matches_inserted))
+
+            # Persister xuid + gamertag pour _resolve_player_xuid (stratégie 1)
+            if self._xuid:
+                self._update_sync_meta("xuid", self._xuid)
+            if self._gamertag:
+                self._update_sync_meta("gamertag", self._gamertag)
 
             # Commit final
             conn = self._get_connection()

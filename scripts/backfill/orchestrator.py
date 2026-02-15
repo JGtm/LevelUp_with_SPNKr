@@ -72,6 +72,7 @@ def _empty_result() -> dict[str, int]:
         "participants_kda_updated": 0,
         "participants_shots_updated": 0,
         "participants_damage_updated": 0,
+        "participants_avg_life_updated": 0,
         "killer_victim_pairs_inserted": 0,
         "end_time_updated": 0,
         "sessions_updated": 0,
@@ -99,6 +100,7 @@ async def backfill_player_data(
     participants_kda: bool = False,
     participants_shots: bool = False,
     participants_damage: bool = False,
+    participants_avg_life: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     sessions: bool = False,
@@ -109,6 +111,7 @@ async def backfill_player_data(
     force_shots: bool = False,
     force_participants_shots: bool = False,
     force_participants_damage: bool = False,
+    force_participants_avg_life: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
@@ -137,7 +140,7 @@ async def backfill_player_data(
         medals = events = skill = personal_scores = performance_scores = True
         aliases = accuracy = enemy_mmr = assets = participants = True
         shots = participants_scores = participants_kda = True
-        participants_shots = participants_damage = True
+        participants_shots = participants_damage = participants_avg_life = True
         killer_victim = end_time = sessions = citations = True
 
     # Activer les dépendances force → option
@@ -161,6 +164,8 @@ async def backfill_player_data(
         participants_shots = True
     if force_participants_damage and not participants_damage:
         participants_damage = True
+    if force_participants_avg_life and not participants_avg_life:
+        participants_avg_life = True
     if force_citations and not citations:
         citations = True
 
@@ -182,6 +187,7 @@ async def backfill_player_data(
             participants_kda,
             participants_shots,
             participants_damage,
+            participants_avg_life,
             killer_victim,
             end_time,
             sessions,
@@ -222,35 +228,126 @@ async def backfill_player_data(
     import duckdb
 
     conn = duckdb.connect(str(db_path), read_only=False)
+    shared_conn_for_detection = None
 
     try:
-        # Vérifier que la DB a été synchronisée au moins une fois
-        has_match_stats = conn.execute(
+        # Déterminer si des données locales (match_stats) sont demandées
+        local_flags_requested = any(
+            [
+                medals,
+                events,
+                skill,
+                personal_scores,
+                performance_scores,
+                aliases,
+                accuracy,
+                enemy_mmr,
+                assets,
+                participants,
+                end_time,
+                sessions,
+                citations,
+                shots,
+            ]
+        )
+        participants_flags_requested = any(
+            [
+                participants_scores,
+                participants_kda,
+                participants_shots,
+                participants_damage,
+                participants_avg_life,
+            ]
+        )
+
+        # Vérifier si match_stats existe localement
+        has_match_stats_table = conn.execute(
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = 'main' AND table_name = 'match_stats'"
         ).fetchone()
-        if not has_match_stats or has_match_stats[0] == 0:
-            logger.warning(
-                f"⏭️ {gamertag}: DB vide (jamais synchronisée). "
-                f"Lancer d'abord: python scripts/sync.py --player {gamertag} --delta"
-            )
-            conn.close()
-            return _empty_result()
+        has_match_stats = bool(has_match_stats_table and has_match_stats_table[0] > 0)
 
-        # Migrations de schéma
-        _apply_schema_migrations(
-            conn,
-            accuracy,
-            participants_scores,
-            participants_kda,
-            participants_shots,
-            participants_damage,
-        )
+        # En v5 (pas de match_stats local), désactiver les flags locaux
+        if not has_match_stats and local_flags_requested:
+            if participants_flags_requested or killer_victim:
+                logger.info(
+                    f"ℹ️ {gamertag}: Pas de match_stats local (architecture v5). "
+                    f"Seul le backfill participants/killer_victim via shared DB sera exécuté."
+                )
+                # Désactiver tous les flags locaux
+                medals = events = skill = personal_scores = performance_scores = False
+                aliases = accuracy = enemy_mmr = assets = participants = False
+                end_time = sessions = citations = shots = False
+                local_flags_requested = False
+            else:
+                logger.warning(
+                    f"⏭️ {gamertag}: DB vide (jamais synchronisée). "
+                    f"Lancer d'abord: python scripts/sync.py --player {gamertag} --delta"
+                )
+                conn.close()
+                return _empty_result()
+
+        # Recalculer participants_only après ajustement des flags
+        participants_only = (
+            participants_flags_requested or killer_victim
+        ) and not local_flags_requested
+
+        # Ouvrir shared_conn pour la détection et le backfill participants
+        # En v5 on l'ouvre toujours si des flags participants sont demandés
+        if participants_flags_requested:
+            shared_conn_for_detection = _get_shared_connection(db_path)
+            if shared_conn_for_detection is None:
+                logger.warning(
+                    f"⏭️ {gamertag}: Impossible d'ouvrir shared_matches.duckdb pour détection"
+                )
+                if participants_only:
+                    conn.close()
+                    return _empty_result()
+                # Sinon on peut quand même faire le backfill local
+                participants_scores = participants_kda = participants_shots = False
+                participants_damage = participants_avg_life = False
+                participants_flags_requested = False
+                participants_only = False
+
+        if not participants_only and has_match_stats:
+            # Vérifier que match_stats a des données
+            ms_count = conn.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+            if not ms_count or ms_count[0] == 0:
+                if not participants_flags_requested:
+                    logger.warning(
+                        f"⏭️ {gamertag}: match_stats vide. "
+                        f"Lancer d'abord: python scripts/sync.py --player {gamertag} --delta"
+                    )
+                    conn.close()
+                    return _empty_result()
+                else:
+                    # match_stats vide mais participants demandés → participants-only
+                    logger.info(
+                        f"ℹ️ {gamertag}: match_stats vide, backfill participants-only via shared DB."
+                    )
+                    medals = events = skill = personal_scores = performance_scores = False
+                    aliases = accuracy = enemy_mmr = assets = participants = False
+                    end_time = sessions = citations = shots = False
+                    local_flags_requested = False
+                    participants_only = True
+
+        # Migrations de schéma (skip si participants-only car pas de match_stats local)
+        if not participants_only:
+            _apply_schema_migrations(
+                conn,
+                accuracy,
+                participants_scores,
+                participants_kda,
+                participants_shots,
+                participants_damage,
+                participants_avg_life,
+            )
 
         # Détection des matchs manquants
         match_ids = find_matches_missing_data(
             conn,
             xuid,
+            shared_conn=shared_conn_for_detection,
             detection_mode=detection_mode,
             medals=medals,
             events=events,
@@ -265,8 +362,10 @@ async def backfill_player_data(
             participants_kda=participants_kda,
             participants_shots=participants_shots,
             participants_damage=participants_damage,
+            participants_avg_life=participants_avg_life,
             force_participants_shots=force_participants_shots,
             force_participants_damage=force_participants_damage,
+            force_participants_avg_life=force_participants_avg_life,
             force_medals=force_medals,
             force_accuracy=force_accuracy,
             shots=shots,
@@ -332,6 +431,7 @@ async def backfill_player_data(
             participants_kda=participants_kda,
             participants_shots=participants_shots,
             participants_damage=participants_damage,
+            participants_avg_life=participants_avg_life,
             killer_victim=killer_victim,
             end_time=end_time,
             sessions=sessions,
@@ -343,17 +443,22 @@ async def backfill_player_data(
             force_sessions=force_sessions,
             force_participants_shots=force_participants_shots,
             force_participants_damage=force_participants_damage,
+            force_participants_avg_life=force_participants_avg_life,
             shots=shots,
             citations=citations,
             force_citations=force_citations,
             gamertag=gamertag,
             dry_run=dry_run,
+            existing_shared_conn=shared_conn_for_detection,
         )
 
     finally:
         with contextlib.suppress(Exception):
             conn.commit()
         conn.close()
+        if shared_conn_for_detection is not None:
+            with contextlib.suppress(Exception):
+                shared_conn_for_detection.close()
 
 
 async def backfill_all_players(
@@ -375,6 +480,7 @@ async def backfill_all_players(
     participants_kda: bool = False,
     participants_shots: bool = False,
     participants_damage: bool = False,
+    participants_avg_life: bool = False,
     killer_victim: bool = False,
     end_time: bool = False,
     all_data: bool = False,
@@ -384,6 +490,7 @@ async def backfill_all_players(
     force_shots: bool = False,
     force_participants_shots: bool = False,
     force_participants_damage: bool = False,
+    force_participants_avg_life: bool = False,
     force_enemy_mmr: bool = False,
     force_aliases: bool = False,
     force_assets: bool = False,
@@ -432,6 +539,7 @@ async def backfill_all_players(
             participants_kda=participants_kda,
             participants_shots=participants_shots,
             participants_damage=participants_damage,
+            participants_avg_life=participants_avg_life,
             killer_victim=killer_victim,
             end_time=end_time,
             sessions=sessions,
@@ -442,6 +550,7 @@ async def backfill_all_players(
             force_shots=force_shots,
             force_participants_shots=force_participants_shots,
             force_participants_damage=force_participants_damage,
+            force_participants_avg_life=force_participants_avg_life,
             force_enemy_mmr=force_enemy_mmr,
             force_aliases=force_aliases,
             force_assets=force_assets,
@@ -538,6 +647,7 @@ def _apply_schema_migrations(
     participants_kda: bool,
     participants_shots: bool,
     participants_damage: bool,
+    participants_avg_life: bool = False,
 ) -> None:
     """Applique les migrations de schéma nécessaires avant le backfill."""
     from src.data.sync.migrations import (
@@ -560,9 +670,17 @@ def _apply_schema_migrations(
         _add_column_if_missing(conn, "match_stats", "accuracy", "FLOAT")
 
     # Colonnes participants
-    if participants_scores or participants_kda or participants_shots or participants_damage:
+    if (
+        participants_scores
+        or participants_kda
+        or participants_shots
+        or participants_damage
+        or participants_avg_life
+    ):
+        # En v5 participants-only, la table est dans shared DB, pas local
+        mp_schema_conn = conn
         with contextlib.suppress(Exception):
-            ensure_match_participants_columns(conn)
+            ensure_match_participants_columns(mp_schema_conn)
 
     ensure_backfill_completed_column(conn)
 
@@ -691,6 +809,7 @@ async def _backfill_with_api(
     participants_kda: bool,
     participants_shots: bool,
     participants_damage: bool,
+    participants_avg_life: bool,
     killer_victim: bool,
     end_time: bool,
     sessions: bool,
@@ -702,11 +821,13 @@ async def _backfill_with_api(
     force_sessions: bool,
     force_participants_shots: bool,
     force_participants_damage: bool,
+    force_participants_avg_life: bool,
     shots: bool,
     citations: bool = False,
     force_citations: bool = False,
     gamertag: str,
     dry_run: bool,
+    existing_shared_conn: Any | None = None,
 ) -> dict[str, int]:
     """Traitement des matchs via l'API SPNKr."""
     from src.data.sync.api_client import SPNKrAPIClient, get_tokens_from_env
@@ -728,6 +849,45 @@ async def _backfill_with_api(
         logger.error("Tokens SPNKr non disponibles")
         return _empty_result()
 
+    # Réutiliser la connexion shared existante ou en ouvrir une nouvelle
+    shared_conn = existing_shared_conn or _get_shared_connection(db_path)
+    owns_shared_conn = existing_shared_conn is None  # True si on a ouvert nous-même
+    if shared_conn is not None:
+        from src.data.sync.migrations import ensure_match_participants_columns as _ensure_mp
+
+        try:
+            _ensure_mp(shared_conn)
+            shared_conn.commit()
+        except Exception:
+            pass
+
+    # v5 : Déterminer si on travaille uniquement sur shared DB
+    participants_only = (
+        participants_scores
+        or participants_kda
+        or participants_shots
+        or participants_damage
+        or participants_avg_life
+        or killer_victim
+    ) and not any(
+        [
+            medals,
+            events,
+            skill,
+            personal_scores,
+            performance_scores,
+            aliases,
+            accuracy,
+            enemy_mmr,
+            assets,
+            participants,
+            end_time,
+            sessions,
+            citations,
+            shots,
+        ]
+    )
+
     # Compteurs
     totals = _empty_result()
     totals["matches_checked"] = len(match_ids)
@@ -748,30 +908,36 @@ async def _backfill_with_api(
 
                 inserted = {}
 
-                # ── Participants scores/kda/shots/damage (UPDATE) ──
+                # ── Participants scores/kda/shots/damage/avg_life (UPDATE) ──
                 if (
                     participants_scores
                     or participants_kda
                     or participants_shots
                     or participants_damage
+                    or participants_avg_life
                 ):
-                    ensure_match_participants_columns(conn)
-                    ps, pk, psh, pd = _update_participants_details(
-                        conn,
+                    # Utiliser shared_conn si disponible (v5), sinon conn local
+                    mp_conn = shared_conn if shared_conn is not None else conn
+                    ensure_match_participants_columns(mp_conn)
+                    ps, pk, psh, pd, pal = _update_participants_details(
+                        mp_conn,
                         stats_json,
                         participants_scores=participants_scores,
                         participants_kda=participants_kda,
                         participants_shots=participants_shots,
                         participants_damage=participants_damage,
+                        participants_avg_life=participants_avg_life,
                     )
                     inserted["participants_scores"] = ps
                     inserted["participants_kda"] = pk
                     inserted["participants_shots"] = psh
                     inserted["participants_damage"] = pd
+                    inserted["participants_avg_life"] = pal
                     totals["participants_scores_updated"] += ps
                     totals["participants_kda_updated"] += pk
                     totals["participants_shots_updated"] += psh
                     totals["participants_damage_updated"] += pd
+                    totals["participants_avg_life_updated"] += pal
 
                 # ── Assets ──
                 if assets:
@@ -889,15 +1055,34 @@ async def _backfill_with_api(
                     requested_types.append("participants_shots")
                 if participants_damage:
                     requested_types.append("participants_damage")
+                if participants_avg_life:
+                    requested_types.append("participants_avg_life")
 
-                _mark_backfill_completed(
-                    conn,
-                    match_id,
-                    mask=compute_backfill_mask(*requested_types),
-                )
+                # Marquer backfill_completed
+                # v5: Utiliser shared_conn si participants-only, sinon conn local
+                mask = compute_backfill_mask(*requested_types)
+                if shared_conn is not None and participants_only:
+                    # Pour v5 participants-only → UPDATE match_registry
+                    if mask > 0:
+                        try:
+                            shared_conn.execute(
+                                "UPDATE match_registry "
+                                "SET backfill_completed = COALESCE(backfill_completed, 0) | ? "
+                                "WHERE match_id = ?",
+                                [mask, match_id],
+                            )
+                        except Exception as e:
+                            logger.debug(
+                                f"Impossible de marquer backfill_completed dans match_registry: {e}"
+                            )
+                else:
+                    # v4 ou mixte → UPDATE match_stats (local DB)
+                    _mark_backfill_completed(conn, match_id, mask=mask)
 
                 # Commit après chaque match
                 conn.commit()
+                if shared_conn is not None:
+                    shared_conn.commit()
 
                 logger.info(f"  ✅ Match {match_id[:20]}... traité")
 
@@ -911,10 +1096,10 @@ async def _backfill_with_api(
     # ── Backfill local post-API ──
     if killer_victim:
         logger.info("Backfill des paires killer/victim depuis highlight_events...")
-        shared_conn = _get_shared_connection(db_path)
-        n = backfill_killer_victim_pairs(conn, xuid, shared_conn=shared_conn)
-        if shared_conn is not None:
-            shared_conn.close()
+        kv_shared = shared_conn or _get_shared_connection(db_path)
+        n = backfill_killer_victim_pairs(conn, xuid, shared_conn=kv_shared)
+        if kv_shared is not shared_conn and kv_shared is not None:
+            kv_shared.close()
         totals["killer_victim_pairs_inserted"] = n
         if n > 0:
             logger.info(f"✅ {n} paires killer/victim insérées")
@@ -937,6 +1122,14 @@ async def _backfill_with_api(
         n = backfill_citations(conn, db_path, xuid, force=force_citations)
         totals["citations_computed"] = n
 
+    # Fermer la connexion shared uniquement si on l'a ouverte nous-même
+    if shared_conn is not None and owns_shared_conn:
+        try:
+            shared_conn.commit()
+            shared_conn.close()
+        except Exception:
+            pass
+
     logger.info(f"Backfill terminé pour {gamertag}")
     return totals
 
@@ -954,16 +1147,17 @@ def _update_participants_details(
     participants_kda: bool,
     participants_shots: bool,
     participants_damage: bool,
-) -> tuple[int, int, int, int]:
-    """Met à jour les détails des participants (scores, kda, shots, damage).
+    participants_avg_life: bool = False,
+) -> tuple[int, int, int, int, int]:
+    """Met à jour les détails des participants (scores, kda, shots, damage, avg_life).
 
     Returns:
-        Tuple (scores, kda, shots, damage) nombre de mises à jour.
+        Tuple (scores, kda, shots, damage, avg_life) nombre de mises à jour.
     """
     from src.data.sync.transformers import extract_participants
 
     participant_rows = extract_participants(stats_json)
-    ps = pk = psh = pd = 0
+    ps = pk = psh = pd = pal = 0
 
     for row in participant_rows:
         try:
@@ -995,6 +1189,17 @@ def _update_participants_details(
                     (row.damage_dealt, row.damage_taken, row.match_id, row.xuid),
                 )
                 pd += 1
+            if (
+                participants_avg_life
+                and hasattr(row, "avg_life_seconds")
+                and row.avg_life_seconds is not None
+            ):
+                conn.execute(
+                    "UPDATE match_participants SET avg_life_seconds = ? "
+                    "WHERE match_id = ? AND xuid = ?",
+                    (row.avg_life_seconds, row.match_id, row.xuid),
+                )
+                pal += 1
         except Exception as e:
             logger.debug(f"Update participant {row.xuid}: {e}")
 
@@ -1004,7 +1209,7 @@ def _update_participants_details(
         if participants_kda:
             pk = len(participant_rows)
 
-    return ps, pk, psh, pd
+    return ps, pk, psh, pd, pal
 
 
 def _update_accuracy_shots(

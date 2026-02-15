@@ -141,6 +141,7 @@ def _create_shared_db(db_path: Path) -> None:
             shots_hit INTEGER,
             damage_dealt FLOAT,
             damage_taken FLOAT,
+            avg_life_seconds FLOAT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (match_id, xuid)
         )
