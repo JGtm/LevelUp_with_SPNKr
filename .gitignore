@@ -75,6 +75,7 @@ data/*.db-journal
 data/investigation/
 data/cache/*
 data/backup_legacy/
+backups/
 
 # RAG LanceDB (base vectorielle locale)
 data/rag/
