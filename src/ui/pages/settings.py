@@ -90,9 +90,10 @@ def render_settings_page(
         rps = st.number_input(
             "Requêtes / seconde",
             min_value=1,
-            max_value=20,
+            max_value=50,
             value=int(getattr(settings, "spnkr_refresh_rps", 3) or 3),
             step=1,
+            help="Attention : des valeurs trop élevées peuvent entraîner un bannissement API. Recommandé : 3-10.",
         )
         with_he = st.toggle(
             "Inclure highlight events (plus long)",

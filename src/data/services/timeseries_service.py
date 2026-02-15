@@ -214,7 +214,7 @@ class TimeseriesService:
 
         _wr_df = dff.sort("start_time") if "start_time" in dff.columns else dff
         _wins = (_wr_df["outcome"] == 1).cast(pl.Float64)
-        win_rate_rolling = _wins.rolling_mean(window_size=10, min_periods=10) * 100
+        win_rate_rolling = _wins.rolling_mean(window_size=10, min_samples=10) * 100
         win_rate_clean = win_rate_rolling.drop_nulls()
 
         return RollingWinRateData(

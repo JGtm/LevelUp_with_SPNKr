@@ -681,17 +681,25 @@ def apply_filters(
                     .alias("pair_fr")
                 )
             if "mode_ui" not in dff.columns:
-                derived_exprs.append(
-                    pl.col("pair_name")
-                    .map_elements(normalize_mode_label_fn, return_dtype=pl.Utf8)
-                    .alias("mode_ui")
-                )
+                # Optimisation: si normalize_mode_label_fn est _identity, utiliser cast au lieu de map_elements
+                if normalize_mode_label_fn is _identity:
+                    derived_exprs.append(pl.col("pair_name").cast(pl.Utf8).alias("mode_ui"))
+                else:
+                    derived_exprs.append(
+                        pl.col("pair_name")
+                        .map_elements(normalize_mode_label_fn, return_dtype=pl.Utf8)
+                        .alias("mode_ui")
+                    )
         if "map_name" in dff.columns and "map_ui" not in dff.columns:
-            derived_exprs.append(
-                pl.col("map_name")
-                .map_elements(normalize_map_label_fn, return_dtype=pl.Utf8)
-                .alias("map_ui")
-            )
+            # Optimisation: si normalize_map_label_fn est _identity, utiliser cast au lieu de map_elements
+            if normalize_map_label_fn is _identity:
+                derived_exprs.append(pl.col("map_name").cast(pl.Utf8).alias("map_ui"))
+            else:
+                derived_exprs.append(
+                    pl.col("map_name")
+                    .map_elements(normalize_map_label_fn, return_dtype=pl.Utf8)
+                    .alias("map_ui")
+                )
         if derived_exprs:
             dff = dff.with_columns(derived_exprs)
         # Ajouter les colonnes vides manquantes

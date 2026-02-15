@@ -216,7 +216,7 @@ def plot_objective_breakdown_bars(
         .agg(
             [
                 pl.col("points").sum().alias("total_points"),
-                pl.count().alias("count"),
+                pl.len().alias("count"),
             ]
         )
         .sort("total_points", descending=True)
