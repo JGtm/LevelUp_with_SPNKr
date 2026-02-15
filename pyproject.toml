@@ -3,18 +3,18 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openspartan-graph"
-version = "2.0.0"
-description = "Analyse et visualisation des statistiques Halo Infinite depuis OpenSpartan Workshop"
+name = "levelup-halo"
+version = "5.0.0"
+description = "Dashboard d'analyse de statistiques Halo Infinite avec architecture DuckDB v5 (shared matches)"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 authors = [
-    {name = "Guillaume", email = ""}
+    {name = "Guillaume", email = "guillaume@example.com"}
 ]
-keywords = ["halo", "infinite", "stats", "visualization", "streamlit"]
+keywords = ["halo", "infinite", "stats", "visualization", "streamlit", "duckdb", "analytics"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
     "Framework :: Streamlit",
     "Intended Audience :: End Users/Desktop",
@@ -32,26 +32,42 @@ dependencies = [
     "plotly>=5.18.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0",
+    "tqdm>=4.65.0",
+    "polars>=0.20.0",
+    "duckdb>=0.10.0",
+    "pydantic>=2.5.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-xdist>=3.6.1",
     "black>=23.0.0",
     "isort>=5.12.0",
     "ruff>=0.1.0",
     "mypy>=1.6.0",
     "pyright>=1.1.0",
     "pandas-stubs>=2.0.0",
+    "pre-commit>=3.7.0",
+    "vulture>=2.11",
+    "watchdog>=4.0.0",
+    "detect-secrets>=1.4.0",
+]
+spnkr = [
+    "spnkr>=0.9.0",
+    "aiohttp>=3.8.0",
+    "aiohttp-client-cache>=0.11.0",
+    "aiosqlite>=0.19.0",  # Backend SQLite pour aiohttp-client-cache
 ]
 
 [project.scripts]
 openspartan = "openspartan_launcher:main"
 
 [project.urls]
-Homepage = "https://github.com/username/openspartan-graph"
-Repository = "https://github.com/username/openspartan-graph"
+Homepage = "https://github.com/username/levelup-halo"
+Repository = "https://github.com/username/levelup-halo"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -85,6 +101,10 @@ exclude = '''
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+exclude = [
+    "scripts/_archive",   # Scripts archivés, non maintenus
+    "scripts/migration",  # Scripts de migration legacy, non maintenus
+]
 
 [tool.ruff.lint]
 select = [
@@ -97,17 +117,28 @@ select = [
     "UP",   # pyupgrade
     "ARG",  # flake8-unused-arguments
     "SIM",  # flake8-simplify
+    # "TID",  # flake8-tidy-imports - DÉSACTIVÉ pour tolérance Pandas transitoire
 ]
 ignore = [
     "E501",   # line too long (handled by black)
+    "E402",   # module level import not at top of file (needed for sys.path manipulation)
     "B008",   # do not perform function calls in argument defaults
     "C901",   # too complex
     "ARG001", # unused function argument
 ]
 
+# NOTE: Règle anti-Pandas (TID251 banned-api) préparée mais non activée
+# Politique actuelle = "tolérance contrôlée transitoire" :
+# - Pas de NOUVEAU import pandas dans le code métier (analysis, data, sync)
+# - Imports existants tolérés à la frontière UI/Viz (Streamlit/Plotly)
+# - Migration complète vers Polars planifiée pour la prochaine major version
+# [tool.ruff.lint.flake8-tidy-imports.banned-api]
+# "pandas".msg = "Pandas est interdit. Utilisez Polars."
+
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"tests/*" = ["ARG001"]
+"tests/*" = ["ARG001", "ARG002"]
+
 
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
@@ -148,7 +179,12 @@ addopts = [
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
+    "visualization: marks tests for visualization functions (charts, graphs)",
+    "regression: marks tests as regression tests (e.g. media suite)",
+    "e2e_browser: tests E2E navigateur réel (Playwright), désactivés par défaut",
+    "asyncio: marks tests as async (use pytest-asyncio)",
 ]
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["src"]

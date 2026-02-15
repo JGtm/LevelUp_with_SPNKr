@@ -7,13 +7,12 @@ charts) sans dépendance externe.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import time
-from typing import Iterator
+from collections.abc import Iterator
+from contextlib import contextmanager
 
-import pandas as pd
+import polars as pl
 import streamlit as st
-
 
 _PERF_ENABLED_KEY = "perf_enabled"
 _PERF_TIMINGS_KEY = "_perf_timings_ms"
@@ -43,18 +42,16 @@ def perf_section(name: str) -> Iterator[None]:
         rows.append({"section": str(name), "ms": float(dt_ms)})
 
 
-def perf_dataframe() -> pd.DataFrame:
+def perf_dataframe() -> pl.DataFrame:
+    """Retourne le DataFrame Polars des timings de performance."""
     rows = st.session_state.get(_PERF_TIMINGS_KEY, [])
     if not isinstance(rows, list) or not rows:
-        return pd.DataFrame(columns=["section", "ms"])
-    return pd.DataFrame(rows)
+        return pl.DataFrame(schema={"section": pl.Utf8, "ms": pl.Float64})
+    return pl.DataFrame(rows)
 
 
 def render_perf_panel(*, location: str = "sidebar") -> None:
-    if location == "sidebar":
-        container = st.sidebar
-    else:
-        container = st
+    container = st.sidebar if location == "sidebar" else st
 
     container.checkbox("Mode perf", key=_PERF_ENABLED_KEY)
 
@@ -66,16 +63,17 @@ def render_perf_panel(*, location: str = "sidebar") -> None:
         st.session_state[_PERF_TIMINGS_KEY] = []
         st.rerun()
 
-    df = perf_dataframe()
-    if df.empty:
+    df_pl = perf_dataframe()
+    if df_pl.is_empty():
         c[1].caption("En attente…")
         return
 
-    total = float(df["ms"].sum())
+    total = df_pl.select(pl.col("ms").sum()).item()
     c[1].caption(f"Total: {total:.0f} ms")
 
+    # Streamlit supporte nativement Polars
     container.dataframe(
-        df,
+        df_pl,
         width="stretch",
         hide_index=True,
         column_config={

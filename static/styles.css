@@ -1,14 +1,24 @@
 /* =============================================================================
-   LevelUp - Thème sombre personnalisé
+   LevelUp - Thème sombre personnalisé (Style Halo Waypoint)
    ============================================================================= */
 
+/* Google Fonts - Bebas Neue (titres) + Roboto Condensed (corps) + Material Icons (icônes Streamlit) */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto+Condensed:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons+Outlined');
+@import url('https://fonts.googleapis.com/icon?family=Material+Symbols+Rounded');
+
 :root {
-    /* Palette "dark Halo" (inspiration, pas copie) */
-    --bg0: #070b10;
-    --bg1: #0b111a;
-    --surface: rgba(18, 26, 36, 0.88);
-    --surface-2: rgba(22, 32, 44, 0.78);
-    --surface-3: rgba(10, 14, 20, 0.45);
+    /* Palette "dark Halo" - Style Waypoint */
+    /* IMPORTANT: Ces valeurs doivent correspondre à src/config.py THEME_COLORS */
+    --bg-main: rgb(25, 36, 41);           /* Fond principal */
+    --bg-plot: rgb(29, 35, 40);           /* Fond graphiques (Waypoint news) */
+    --bg-surface: rgb(21, 50, 62);        /* Surfaces (cards) */
+    --bg-dark: rgb(16, 22, 30);           /* Fond sombre (gradients) */
+
+    --surface: rgba(21, 50, 62, 0.95);
+    --surface-2: rgba(21, 50, 62, 0.78);
+    --surface-3: rgba(16, 22, 30, 0.45);
     --border: rgba(255, 255, 255, 0.12);
     --border-strong: rgba(255, 255, 255, 0.18);
     --text: rgba(245, 248, 255, 0.92);
@@ -16,10 +26,202 @@
 
     --accent: #33d6ff;
     --accent-2: #00a7ff;
+    --accent-rgb: 51, 214, 255;
 
     --good: #23d18b;
     --bad: #ff4d4d;
     --warn: #ffb020;
+
+    /* Polices Halo Waypoint */
+    --font-display: 'Bebas Neue', 'Industry', 'Roboto Condensed', 'Arial Narrow', sans-serif;
+    --font-body: 'Roboto Condensed', 'Segoe UI', 'Arial', sans-serif;
+
+    /* Waypoint card corners (taille des coins coupés) */
+    --corner-size: 12px;
+    --corner-size-sm: 8px;
+    --corner-size-lg: 16px;
+
+    /* Couleurs sémantiques (victoire/défaite/score) */
+    --color-win: #4CAF50;
+    --color-loss: #F44336;
+    --color-tie: #9E9E9E;
+    --color-positive: #1B5E20;
+    --color-negative: #B71C1C;
+    --color-neutral: #9E9E9E;
+    --color-excellent: #1B5E20;
+    --color-good: #4CAF50;
+    --color-average: #FF9800;
+    --color-poor: #F44336;
+    --color-bad: #B71C1C;
+}
+
+/* =============================================================================
+   Classes utilitaires - Couleurs texte
+   ============================================================================= */
+
+/* Résultats de match */
+.text-win { color: var(--color-win) !important; font-weight: 800; }
+.text-loss { color: var(--color-loss) !important; font-weight: 800; }
+.text-tie { color: var(--color-tie) !important; font-weight: 800; }
+.text-nf { color: var(--color-tie) !important; font-weight: 800; }  /* Non terminé */
+
+/* Indicateurs positif/négatif (scores, deltas) */
+.text-positive { color: var(--color-positive) !important; }
+.text-negative { color: var(--color-negative) !important; }
+.text-neutral { color: var(--color-neutral) !important; }
+
+/* Niveaux de performance */
+.text-excellent { color: var(--color-excellent) !important; }
+.text-good { color: var(--color-good) !important; }
+.text-average { color: var(--color-average) !important; }
+.text-poor { color: var(--color-poor) !important; }
+.text-bad { color: var(--color-bad) !important; }
+
+/* Poids de police */
+.fw-bold { font-weight: 800 !important; }
+.fw-semibold { font-weight: 600 !important; }
+.fw-normal { font-weight: 400 !important; }
+
+/* Tailles de texte */
+.text-sm { font-size: 0.85rem !important; }
+.text-md { font-size: 1rem !important; }
+.text-lg { font-size: 1.2rem !important; }
+.text-xl { font-size: 1.5rem !important; }
+.text-2xl { font-size: 2rem !important; }
+.text-4xl { font-size: 4rem !important; }
+
+/* Indicateurs flèches */
+.indicator-up::before { content: "▲"; margin-right: 4px; }
+.indicator-down::before { content: "▼"; margin-right: 4px; }
+
+/* =============================================================================
+   Tableaux (Style Waypoint)
+   ============================================================================= */
+
+.os-table-wrap {
+    overflow-x: auto;
+    margin: 12px 0;
+}
+
+.os-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+}
+
+.os-table th {
+    background: transparent;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgba(245, 248, 255, 0.75);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.os-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(245, 248, 255, 0.92);
+}
+
+.os-table tr:hover {
+    background: rgba(51, 214, 255, 0.06);
+}
+
+.os-table a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.os-table a:hover {
+    text-decoration: underline;
+}
+
+/* Session history table (variante) */
+.session-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+}
+
+.session-history-table th {
+    background: transparent;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 700;
+    color: rgba(245, 248, 255, 0.75);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.session-history-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.session-history-table tr:hover {
+    background: rgba(51, 214, 255, 0.06);
+}
+
+/* =============================================================================
+   Cards de performance (Style Waypoint)
+   ============================================================================= */
+
+.os-perf-card {
+    position: relative;
+    background: rgba(21, 50, 62, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 24px;
+    text-align: center;
+}
+
+.os-perf-card:hover {
+    border-color: rgba(255, 255, 255, 0.65);
+}
+
+.os-perf-card__label {
+    color: var(--color-neutral);
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
+
+.os-perf-card__score {
+    font-size: 4rem;
+    font-weight: 800;
+    line-height: 1;
+    font-family: var(--font-display);
+}
+
+.os-perf-card__status {
+    font-size: 1.1rem;
+    margin-top: 8px;
+    font-weight: 600;
+}
+
+.os-perf-card__meta {
+    color: #757575;
+    font-size: 0.85rem;
+    margin-top: 12px;
+}
+
+/* Metric comparison row */
+.os-metric-value {
+    font-weight: 600;
+}
+
+.os-metric-value--better {
+    color: var(--color-good);
+}
+
+.os-metric-value--worse {
+    color: var(--color-loss);
+}
+
+.os-metric-value--neutral {
+    color: #E0E0E0;
 }
 
 /* =============================================================================
@@ -45,12 +247,42 @@
     }
 }
 
+/* Police globale pour tout le document */
+html, body, [class*="st-"] {
+    font-family: var(--font-body) !important;
+}
+
+/* Titres style Waypoint */
+h1, h2, h3, h4, h5, h6,
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+    font-family: var(--font-display) !important;
+    letter-spacing: 0.05em !important;
+    text-transform: uppercase;
+    font-weight: 400 !important;
+}
+
+h1, .stMarkdown h1 {
+    font-size: 2.2rem !important;
+    color: rgba(255, 255, 255, 0.96) !important;
+}
+
+h2, .stMarkdown h2 {
+    font-size: 1.6rem !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+
+h3, .stMarkdown h3 {
+    font-size: 1.25rem !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+
 section.main {
-    /* Fond global : couleur unie RGB 29, 35, 40 */
-    background: rgb(29, 35, 40);
+    /* Fond global : utilise la variable centralisée */
+    background: var(--bg-main);
     color: var(--text);
     position: relative;
     z-index: 1;
+    font-family: var(--font-body);
 }
 
 /* Grain très léger (sans pattern agressif) */
@@ -165,32 +397,94 @@ section.main:after {
 }
 
 /* =============================================================================
-   Hero banner (fallback sans joueur)
+   Expanders - Style Waypoint
+   ============================================================================= */
+
+/* Forcer la police Material Icons sur les icônes Streamlit */
+[data-testid="stIconMaterial"] {
+    font-family: 'Material Icons', 'Material Symbols Rounded', sans-serif !important;
+}
+
+/* Masquer l'icône toggle (flèche) des expanders */
+[data-testid="stExpander"] [data-testid="stExpanderToggleIcon"] {
+    display: none !important;
+}
+
+/* Style des expanders sidebar - angles droits */
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stExpander"] > details {
+    border: none !important;
+    border-radius: 0 !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    padding: 8px 12px !important;
+    font-family: var(--font-body) !important;
+}
+
+/* =============================================================================
+   Hero banner (Style Waypoint épuré)
    ============================================================================= */
 
 .hero {
-    border: 1px solid var(--border);
-    background:
-        radial-gradient(820px 520px at 10% 0%, rgba(51, 214, 255, 0.16) 0%, transparent 58%),
-        radial-gradient(900px 620px at 90% 120%, rgba(0, 167, 255, 0.10) 0%, transparent 58%),
-        linear-gradient(135deg, rgba(18, 26, 36, 0.86), rgba(8, 10, 14, 0.92));
-    box-shadow: 0 16px 34px rgba(0,0,0,0.32);
-    border-radius: 18px;
-    padding: 18px 18px;
-    margin-bottom: 14px;
+    position: relative;
+    background: transparent;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    /* Coins coupés asymétriques */
+    clip-path: polygon(
+        0 var(--corner-size-lg),
+        var(--corner-size-lg) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+}
+
+.hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.25);
+    clip-path: polygon(
+        0 var(--corner-size-lg),
+        var(--corner-size-lg) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+    z-index: -1;
+    padding: 1px;
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
 }
 
 .hero .title {
-    font-size: 28px;
-    font-weight: 750;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     margin: 0;
+    color: rgba(255, 255, 255, 0.96);
 }
 
 .hero .subtitle {
-    margin-top: 4px;
+    font-family: var(--font-body);
+    margin-top: 6px;
     color: var(--muted);
     font-size: 14px;
+    font-weight: 500;
 }
 
 /* =============================================================================
@@ -206,16 +500,26 @@ section.main:after {
 }
 
 .spartan-id-wrapper {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 16px;
+    gap: 20px;
     margin-top: 3.5rem; /* Espace pour la navbar Streamlit */
     margin-bottom: 1rem;
+    padding: 16px 20px;
+    background: transparent;
+    /* Pas de bordure */
+}
+
+/* Supprimé: pseudo-élément ::before avec bordure */
+
+.spartan-id-wrapper:hover {
+    /* Effet subtil au hover si besoin */
 }
 
 /* =============================================================================
-   Career Rank (à gauche du Spartan ID)
+   Career Rank (Style Waypoint)
    ============================================================================= */
 
 .career-rank {
@@ -223,16 +527,48 @@ section.main:after {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-width: 80px;
-    gap: 4px;
+    min-width: 120px;
+    gap: 8px;
+    position: relative;
+}
+
+.career-rank__adornment {
+    position: absolute;
+    width: 350px;
+    height: 350px;
+    object-fit: contain;
+    /* Centré horizontalement, positionné vers le bas de l'icône */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -20%);
+    z-index: 0;
+    opacity: 0.85;
+    filter: drop-shadow(0 2px 8px rgba(51, 214, 255, 0.3));
+    pointer-events: none;
+}
+
+/* Adornment utilisé comme icône principale (sans rank_icon derrière) */
+.career-rank__adornment--primary {
+    position: relative;
+    width: 220px;
+    height: 220px;
+    object-fit: contain;
+    top: auto;
+    left: auto;
+    transform: none;
+    z-index: 1;
+    opacity: 1;
+    filter: drop-shadow(0 4px 12px rgba(51, 214, 255, 0.3));
+    pointer-events: auto;
 }
 
 .career-rank__icon {
-    /* Taille originale de l'image */
-    max-width: 120px;
-    max-height: 120px;
+    width: 192px;
+    height: 192px;
     object-fit: contain;
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+    filter: drop-shadow(0 4px 12px rgba(51, 214, 255, 0.25));
+    position: relative;
+    z-index: 1;
 }
 
 .career-rank__text {
@@ -243,64 +579,71 @@ section.main:after {
 }
 
 .career-rank__label {
-    font-family: 'Industry', 'Segoe UI', 'Roboto Condensed', Arial, sans-serif;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    color: rgba(255, 255, 255, 0.9);
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
     white-space: nowrap;
-    line-height: 1.1;
+    line-height: 1.2;
 }
 
 .career-rank__subtitle {
-    font-family: 'Industry', 'Segoe UI', 'Roboto Condensed', Arial, sans-serif;
-    font-size: 9px;
+    display: none;  /* Masquer l'XP */
+    font-family: var(--font-body);
+    font-size: 10px;
     font-weight: 500;
-    letter-spacing: 0.03em;
-    color: rgba(255, 255, 255, 0.65);
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
     white-space: nowrap;
-    line-height: 1.1;
+    line-height: 1.2;
 }
 
 /* =============================================================================
-   Spartan ID Card
+   Spartan ID Card (Style Waypoint)
    ============================================================================= */
 
 .spartan-id {
     position: relative;
     width: 360px;
-    height: 80px;
-    /* Pas de bordure, pas de cadre */
+    height: 100px;
+    overflow: visible;  /* Permet au backdrop de dépasser */
+    /* Pas de bordure additionnelle, le wrapper gère le style */
 }
 
-/* Backdrop : 2/3 de la largeur (240px), centré, en arrière-plan */
+/* Backdrop : affiché complètement, visible derrière */
 .spartan-id__backdrop {
     position: absolute;
-    width: 240px;
-    height: 100%;
-    left: 50%;
+    width: 100%;
+    height: auto;
+    left: 0;
     top: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateY(-50%);
     z-index: 1;
-    overflow: hidden;
+    overflow: visible;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .spartan-id__backdrop img {
     width: 100%;
-    height: 100%;
+    height: auto;
     object-fit: contain;
-    opacity: 0.85;
+    opacity: 1;
 }
 
-/* Nameplate : 360px, au-dessus du backdrop */
+/* Nameplate : centré verticalement, au-dessus du backdrop */
 .spartan-id__nameplate {
     position: absolute;
     width: 100%;
-    height: 100%;
+    height: 72px;  /* Plus petite que le conteneur pour voir le backdrop dépasser */
     left: 0;
-    top: 0;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 2;
 }
 
@@ -340,10 +683,11 @@ section.main:after {
 }
 
 .spartan-id__gamertag {
-    font-family: 'Industry', 'Segoe UI', 'Roboto Condensed', Arial, sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: #fff;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
     line-height: 1.2;
@@ -351,25 +695,46 @@ section.main:after {
 }
 
 .spartan-id__servicetag {
-    font-family: 'Industry', 'Segoe UI', 'Roboto Condensed', Arial, sans-serif;
+    font-family: var(--font-body);
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.15em;
-    color: rgba(255, 255, 255, 0.85);
+    text-transform: uppercase;
+    color: var(--accent);
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
     margin-top: 2px;
     white-space: nowrap;
 }
 
-/* Variante grille : pas de margin-top, centrée */
+/* Variante grille : pas de margin-top, centrée, coins plus petits */
 .spartan-id-wrapper--grid {
     margin-top: 0;
     margin-bottom: 0.5rem;
     justify-content: center;
+    padding: 12px 16px;
+    clip-path: polygon(
+        0 var(--corner-size),
+        var(--corner-size) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size-sm)),
+        calc(100% - var(--corner-size-sm)) 100%,
+        0 100%
+    );
+}
+
+.spartan-id-wrapper--grid::before {
+    clip-path: polygon(
+        0 var(--corner-size),
+        var(--corner-size) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size-sm)),
+        calc(100% - var(--corner-size-sm)) 100%,
+        0 100%
+    );
 }
 
 /* =============================================================================
-   Chips
+   Chips (Style Waypoint)
    ============================================================================= */
 
 .chips {
@@ -380,102 +745,199 @@ section.main:after {
 }
 
 .chip {
-    border: 1px solid rgba(255,255,255,0.14);
-    background: rgba(10, 14, 20, 0.35);
-    color: rgba(245, 248, 255, 0.86);
-    padding: 6px 10px;
-    border-radius: 999px;
+    position: relative;
+    font-family: var(--font-body);
     font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    background: linear-gradient(145deg, rgba(28, 38, 50, 0.90), rgba(16, 22, 30, 0.88));
+    color: rgba(245, 248, 255, 0.86);
+    padding: 6px 12px;
+    /* Coins coupés petits */
+    clip-path: polygon(
+        0 4px,
+        4px 0,
+        100% 0,
+        100% calc(100% - 4px),
+        calc(100% - 4px) 100%,
+        0 100%
+    );
 }
 
 /* =============================================================================
-   Buttons
+   Buttons (Style Waypoint)
    ============================================================================= */
 
 .stButton>button {
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.14);
-    background: rgba(18, 26, 36, 0.55);
-    color: rgba(245, 248, 255, 0.90);
-    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    position: relative;
+    font-family: var(--font-display);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: linear-gradient(145deg, rgba(28, 38, 50, 0.95), rgba(16, 22, 30, 0.92));
+    color: rgba(245, 248, 255, 0.92);
+    border: none;
+    /* Coins coupés */
+    clip-path: polygon(
+        0 var(--corner-size-sm),
+        var(--corner-size-sm) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size-sm)),
+        calc(100% - var(--corner-size-sm)) 100%,
+        0 100%
+    );
+    transition: all 150ms ease;
 }
 
 .stButton>button:hover {
-    border-color: rgba(51, 214, 255, 0.38);
-    background: rgba(18, 26, 36, 0.72);
+    background: linear-gradient(145deg, rgba(51, 214, 255, 0.20), rgba(28, 38, 50, 0.95));
+    color: var(--accent);
     transform: translateY(-1px);
 }
 
 .stButton>button[kind="primary"] {
-    background: linear-gradient(90deg, rgba(51, 214, 255, 0.98), rgba(0, 167, 255, 0.98));
-    border: 0;
+    background: linear-gradient(145deg, rgba(51, 214, 255, 0.85), rgba(0, 167, 255, 0.90));
+    color: rgba(0, 20, 30, 0.95);
+}
+
+.stButton>button[kind="primary"]:hover {
+    background: linear-gradient(145deg, rgba(51, 214, 255, 1), rgba(0, 167, 255, 1));
 }
 
 /* =============================================================================
-   Tabs
+   Tabs (Style Waypoint)
    ============================================================================= */
 
 .stTabs [data-baseweb="tab-list"] {
-    gap: 6px;
+    gap: 4px;
+    border-bottom: 1px solid rgba(51, 214, 255, 0.20);
+    padding-bottom: 0;
 }
 
 .stTabs [data-baseweb="tab"] {
-    background: rgba(18, 26, 36, 0.44);
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 12px;
-    padding: 10px 12px;
-    color: rgba(245, 248, 255, 0.86);
+    font-family: var(--font-display);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 12px 16px;
+    color: rgba(245, 248, 255, 0.65);
+    transition: all 150ms ease;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    color: rgba(245, 248, 255, 0.90);
+    background: rgba(51, 214, 255, 0.06);
 }
 
 .stTabs [aria-selected="true"] {
-    background: rgba(51, 214, 255, 0.14);
-    border-color: rgba(51, 214, 255, 0.34);
+    color: var(--accent) !important;
+    border-bottom-color: var(--accent);
+    background: rgba(51, 214, 255, 0.08);
 }
 
 /* =============================================================================
-   Metrics
+   Metrics (Style Waypoint - angles droits)
    ============================================================================= */
 
 div[data-testid="stMetric"] {
-    background: rgba(18, 26, 36, 0.58);
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 14px;
-    padding: 14px 14px;
-    box-shadow: 0 14px 28px rgba(0,0,0,0.22);
-    min-height: 118px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    position: relative !important;
+    background: rgba(21, 50, 62, 0.7) !important;
+    padding: 16px 16px !important;
+    min-height: 100px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    /* FORCE angles droits - pas de clip-path */
+    clip-path: none !important;
+    border-radius: 0 !important;
+}
+
+/* Bordure fine blanche */
+div[data-testid="stMetric"]::before {
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    z-index: -1 !important;
+    pointer-events: none !important;
+    /* FORCE pas de clip-path */
+    clip-path: none !important;
+    background: transparent !important;
+}
+
+div[data-testid="stMetric"]:hover::before {
+    border-color: rgba(255, 255, 255, 0.65) !important;
 }
 
 div[data-testid="stMetric"] label {
-    color: rgba(255,255,255,0.74) !important;
+    font-family: var(--font-body) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.65) !important;
 }
 
-div[data-testid="stMetric"] div {
-    color: rgba(255,255,255,0.92) !important;
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    font-family: var(--font-display) !important;
+    font-size: 32px !important;
+    letter-spacing: 0.02em !important;
+    color: rgba(255,255,255,0.96) !important;
 }
 
 /* =============================================================================
-   Bandeau résumé (haut de page)
+   Bandeau résumé (Style Waypoint épuré)
    ============================================================================= */
 
 .os-top-summary {
-    margin: 10px 0 10px 0;
-    padding: 14px 16px;
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background:
-        radial-gradient(900px 420px at 8% 0%, rgba(51, 214, 255, 0.18) 0%, transparent 58%),
-        linear-gradient(135deg, rgba(18, 26, 36, 0.86), rgba(8, 10, 14, 0.92));
-    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.30);
+    position: relative;
+    margin: 10px 0 14px 0;
+    padding: 16px 18px;
+    background: transparent;
+    /* Coins coupés asymétriques style Waypoint */
+    clip-path: polygon(
+        0 var(--corner-size-lg),
+        var(--corner-size-lg) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+}
+
+.os-top-summary::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.25);
+    clip-path: polygon(
+        0 var(--corner-size-lg),
+        var(--corner-size-lg) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+    z-index: -1;
+    padding: 1px;
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
 }
 
 .os-top-summary__title {
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: -0.01em;
-    color: rgba(245, 248, 255, 0.94);
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(245, 248, 255, 0.96);
 }
 
 .os-top-summary__row {
@@ -646,12 +1108,13 @@ div[data-testid="stMetric"] div {
 
 .os-kpi {
     padding: 14px 16px;
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background:
-        radial-gradient(900px 420px at 8% 0%, rgba(51, 214, 255, 0.18) 0%, transparent 58%),
-        linear-gradient(135deg, rgba(18, 26, 36, 0.86), rgba(8, 10, 14, 0.92));
-    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.30);
+    border-radius: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(21, 50, 62, 0.7);
+}
+
+.os-kpi:hover {
+    border-color: rgba(255, 255, 255, 0.65);
 }
 
 .os-kpi__label {
@@ -741,68 +1204,158 @@ div[data-testid="stNumberInput"] input:focus {
     .os-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* =============================================================================
+   Waypoint Cards - Style épuré avec coins coupés
+   Inspiré des cards "REWARDS" et "NEWS" sur halowaypoint.com
+   ============================================================================= */
+
 .os-card {
-    border: 1px solid rgba(255,255,255,0.12);
-    background:
-        radial-gradient(900px 420px at 0% 0%, rgba(51, 214, 255, 0.10) 0%, transparent 55%),
-        linear-gradient(180deg, rgba(255,255,255,0.06), rgba(10, 14, 20, 0.36));
-    border-radius: 14px;
-    padding: 12px 12px;
-    box-shadow: 0 10px 22px rgba(0,0,0,0.18);
-    backdrop-filter: blur(6px);
+    position: relative;
+    padding: 16px 16px;
+    /* Fond semi-transparent */
+    background: rgba(21, 50, 62, 0.7);
+    /* Coins coupés style Waypoint (haut-gauche et bas-droite) */
+    clip-path: polygon(
+        0 var(--corner-size),
+        var(--corner-size) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+    transition: border-color 150ms ease;
 }
 
-.os-card:hover {
-    border-color: rgba(112,205,223,0.38);
-    transform: translateY(-1px);
-    transition: transform 120ms ease, border-color 120ms ease;
+/* Bordure fine blanche/grise (style Waypoint) */
+.os-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    /* Bordure grise subtile */
+    background: rgba(255, 255, 255, 0.25);
+    clip-path: polygon(
+        0 var(--corner-size),
+        var(--corner-size) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+    z-index: -1;
+    padding: 1px;
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    transition: background 150ms ease;
+}
+
+/* Hover : bordure plus lumineuse (blanc) */
+.os-card:hover::before {
+    background: rgba(255, 255, 255, 0.65);
+}
+
+/* Flèche indicateur hover (style Waypoint) */
+.os-card::after {
+    content: "↘";
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0);
+    transition: color 150ms ease;
+}
+
+.os-card:hover::after {
+    color: rgba(255, 255, 255, 0.75);
 }
 
 .os-card-title {
-    font-weight: 700;
-    font-size: 13px;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     line-height: 1.2;
-    color: rgba(255,255,255,0.92);
+    color: rgba(255,255,255,0.88);
     margin-bottom: 8px;
 }
 
 .os-card-kpi {
-    font-weight: 800;
-    font-size: 22px;
-    letter-spacing: -0.02em;
-    color: rgba(255,255,255,0.96);
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 28px;
+    letter-spacing: 0.02em;
+    color: rgba(255,255,255,0.98);
 }
 
 .os-card-sub {
-    margin-top: 2px;
+    font-family: var(--font-body);
+    margin-top: 4px;
     font-size: 12px;
-    color: rgba(180,180,180,0.90);
+    font-weight: 500;
+    color: rgba(182, 196, 214, 0.85);
+    letter-spacing: 0.01em;
 }
 
 /* =============================================================================
-   Tables HTML (pour liens internes "Ouvrir")
+   Tables HTML (Style Waypoint)
    ============================================================================= */
 
 .os-table-wrap {
+    position: relative;
     width: 100%;
     overflow-x: auto;
     overflow-y: auto;
     max-height: 560px;
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 14px;
-    background: rgba(18, 26, 36, 0.35);
+    background: linear-gradient(145deg, rgba(28, 38, 50, 0.90), rgba(16, 22, 30, 0.88));
+    /* Coins coupés style Waypoint */
+    clip-path: polygon(
+        0 var(--corner-size),
+        var(--corner-size) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+}
+
+/* Bordure Waypoint pour tables */
+.os-table-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(145deg, rgba(51, 214, 255, 0.22), rgba(51, 214, 255, 0.06));
+    clip-path: polygon(
+        0 var(--corner-size),
+        var(--corner-size) 0,
+        100% 0,
+        100% calc(100% - var(--corner-size)),
+        calc(100% - var(--corner-size)) 100%,
+        0 100%
+    );
+    z-index: -1;
+    padding: 1px;
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
 }
 
 .os-table {
     width: 100%;
     border-collapse: collapse;
+    font-family: var(--font-body);
     font-size: 0.88rem;
 }
 
 .os-table th,
 .os-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(51, 214, 255, 0.10);
     white-space: nowrap;
     vertical-align: middle;
 }
@@ -811,20 +1364,26 @@ div[data-testid="stNumberInput"] input:focus {
     position: sticky;
     top: 0;
     z-index: 2;
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     text-align: left;
-    font-weight: 800;
-    color: rgba(245, 248, 255, 0.92);
-    background: rgba(10, 14, 20, 0.78);
-    border-bottom: 1px solid rgba(255,255,255,0.12);
+    font-weight: 400;
+    color: var(--accent);
+    background: rgba(10, 14, 20, 0.92);
+    border-bottom: 1px solid rgba(51, 214, 255, 0.20);
 }
 
 .os-table tr:hover td {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(51, 214, 255, 0.05);
 }
 
 .os-table a {
+    font-family: var(--font-display);
     color: var(--accent);
-    font-weight: 800;
+    font-weight: 400;
+    letter-spacing: 0.04em;
     text-decoration: none;
 }
 

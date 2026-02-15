@@ -1,260 +1,188 @@
 # Instructions pour GitHub Copilot & Assistants IA
 
-Ce fichier définit les conventions et règles à suivre lors de modifications sur ce projet.
+Ce fichier définit les conventions et règles à suivre lors de modifications sur le projet LevelUp.
 
 ---
 
-## 🤖 Workflow d'interaction IA
+## Contexte du Projet
+
+**LevelUp** est un dashboard Streamlit pour analyser les statistiques Halo Infinite.
+
+- **Stack** : Python 3.10+, Streamlit, DuckDB, SPNKr (API Halo)
+- **Langue UI** : Français (traductions dans `src/ui/translations.py`)
+- **Architecture** : DuckDB v5 (shared matches)
+
+---
+
+## Environnement de référence (Windows)
+
+Objectif : éviter les confusions d'interpréteur (PowerShell vs Git Bash/MSYS2) et les erreurs "module introuvable".
+
+- **Python officiel** : `.venv` à la racine du repo (Python 3.12.10)
+- **Interdit** : utiliser le Python MSYS2/MinGW (`pacman ... python/pip`) pour exécuter le projet
+- **Règle d'or** : toujours lancer les outils via `python -m ...` (ne pas dépendre du `PATH`)
+
+Packages critiques vérifiés dans `.venv` :
+- `pytest==9.0.2`
+- `duckdb==1.4.4`
+- `polars==1.38.1`
+- `pyarrow==23.0.0`
+- `pandas==2.3.3`
+- `numpy==2.4.2`
+
+Healthcheck (à lancer avant de diagnostiquer un souci d'environnement) :
+- `python scripts/check_env.py`
+
+---
+
+## Architecture des Données (v5)
+
+| Données | Stockage | Chemin |
+|---------|----------|--------|
+| Référentiels | DuckDB | `data/warehouse/metadata.duckdb` |
+| Matchs partagés | DuckDB | `data/warehouse/shared_matches.duckdb` |
+| Enrichissements joueur | DuckDB | `data/players/{gamertag}/stats.duckdb` |
+| Archives | Parquet | `data/players/{gamertag}/archive/` |
+| Config | JSON | `db_profiles.json` |
+
+### Tables Principales
+
+#### shared_matches.duckdb (centralisée)
+
+| Table | Description |
+|-------|-------------|
+| `match_registry` | Registre central (1 ligne par match unique) |
+| `match_participants` | Stats de tous les joueurs de tous les matchs |
+| `highlight_events` | Événements filmés de tous les matchs |
+| `medals_earned` | Médailles de tous les joueurs |
+| `xuid_aliases` | Mapping global xuid→gamertag |
+
+#### stats.duckdb (par joueur)
+
+| Table | Description |
+|-------|-------------|
+| `player_match_enrichment` | performance_score, session_id, is_with_friends |
+| `teammates_aggregate` | Stats coéquipiers (POV joueur) |
+| `antagonists` | Rivalités (killers/victimes) |
+| `match_citations` | Citations calculées par match |
+| `career_progression` | Historique rangs |
+| `mv_*` | Vues matérialisées |
+
+---
+
+## Workflow d'Interaction IA
 
 ### Avant toute modification
 
 1. **Analyser la demande** : Reformuler pour confirmer la compréhension
-2. **Explorer le contexte** : Lire les fichiers concernés, comprendre l'existant
+2. **Explorer le contexte** : Lire les fichiers concernés
 3. **Proposer un plan** : Lister les étapes avant d'implémenter
-4. **Valider avec l'utilisateur** : Attendre le "go" avant les modifications majeures
-5. **Implémenter par phases** : Découper en commits logiques
+4. **Valider** : Attendre le "go" avant les modifications majeures
 
 ### Structure d'une réponse idéale
 
 ```markdown
-## 🎯 Compréhension de la demande
+## Compréhension de la demande
 [Reformulation en 1-2 phrases]
 
-## 🔍 Analyse de l'existant
+## Analyse de l'existant
 - Fichiers impactés : ...
 - Dépendances : ...
-- Risques identifiés : ...
 
-## 📋 Plan d'implémentation
-1. [ ] Étape 1 - Description
-2. [ ] Étape 2 - Description
-3. [ ] Étape 3 - Description
+## Plan d'implémentation
+1. [ ] Étape 1
+2. [ ] Étape 2
 
-## ⚠️ Points de vigilance
+## Points de vigilance
 - ...
 
 Tu veux que je procède ?
 ```
 
-### Bonnes pratiques
-
-| ✅ Faire | ❌ Éviter |
-|----------|-----------|
-| Demander des précisions si ambigu | Deviner les intentions |
-| Proposer plusieurs options | Imposer une solution unique |
-| Expliquer les choix techniques | Modifier silencieusement |
-| Tester avant de valider | Supposer que ça fonctionne |
-| Commiter par petits incréments | Un gros commit monolithique |
-
-### Questions à poser si contexte insuffisant
-
-- "Quel est le comportement attendu ?"
-- "Y a-t-il des contraintes de performance ?"
-- "Faut-il maintenir la rétrocompatibilité ?"
-- "Préfères-tu une solution simple ou extensible ?"
-- "Dois-je ajouter des tests pour cette feature ?"
-
 ---
 
-## 🎯 Contexte du projet
-
-**OpenSpartan Graph** est un dashboard Streamlit pour analyser les statistiques Halo Infinite.
-
-- **Stack** : Python 3.10+, Streamlit, SQLite, SPNKr (API Halo)
-- **Langue UI** : Français (traductions dans `src/ui/translations.py`)
-- **Base de données** : SQLite avec tables `MatchStats`, `XuidAliases`, `SyncMeta`, `HighlightEvents`
-
----
-
-## 📁 Architecture
-
-```
-src/
-├── config.py          # Configuration centralisée (constantes, chemins)
-├── models.py          # Dataclasses uniquement (pas de logique)
-├── db/                # Accès base de données
-│   ├── connection.py  # Gestion connexions SQLite
-│   ├── loaders.py     # Chargement données + cache Streamlit
-│   ├── parsers.py     # Parsing JSON des matchs
-│   ├── profiles.py    # Gestion profils joueurs
-│   └── queries.py     # Requêtes SQL brutes
-├── analysis/          # Fonctions d'analyse (pandas)
-│   ├── filters.py     # Filtres playlists/modes
-│   ├── killer_victim.py # Analyse confrontations
-│   ├── maps.py        # Stats par carte
-│   ├── sessions.py    # Détection sessions de jeu
-│   └── stats.py       # Calculs statistiques
-├── ui/                # Helpers interface
-│   ├── aliases.py     # Gestion alias joueurs
-│   ├── translations.py # Traductions FR (PLAYLIST_FR, PAIR_FR)
-│   ├── medals.py      # Affichage médailles
-│   ├── commendations.py # Citations Halo 5
-│   ├── settings.py    # Paramètres utilisateur (dataclass AppSettings)
-│   ├── components/    # Composants UI réutilisables
-│   │   └── performance.py  # Score de performance
-│   └── pages/         # Pages du dashboard (modulaires)
-│       ├── session_compare.py  # Comparaison sessions
-│       ├── timeseries.py       # Séries temporelles
-│       ├── win_loss.py         # Victoires/Défaites
-│       ├── match_history.py    # Historique parties
-│       ├── teammates.py        # Analyse coéquipiers (~780 lignes)
-│       ├── citations.py        # Citations & Médailles
-│       ├── settings.py         # Page Paramètres (~280 lignes)
-│       └── match_view.py       # Vue détaillée match (~630 lignes)
-└── visualization/     # Graphiques (Plotly)
-    ├── distributions.py # Histogrammes
-    ├── maps.py        # Stats cartes
-    ├── theme.py       # Thème Halo
-    └── timeseries.py  # Graphiques temporels
-```
-
----
-
-## ✅ Conventions de code
+## Conventions de Code
 
 ### Python
 
-- **Type hints** obligatoires sur toutes les fonctions publiques
-- **Docstrings** en français pour les fonctions principales
-- **Imports** : `from __future__ import annotations` en premier
+- **Type hints** obligatoires sur fonctions publiques
+- **Docstrings** en français
 - **Formatage** : Black + isort + ruff
-- **Dataclasses** pour les modèles de données (pas de dicts anonymes)
 
 ```python
-# ✅ Bon
+# Bon
 def compute_kd_ratio(kills: int, deaths: int) -> float:
     """Calcule le ratio kills/deaths."""
     if deaths == 0:
         return float(kills)
     return kills / deaths
-
-# ❌ Mauvais
-def compute_kd_ratio(kills, deaths):
-    return kills / deaths if deaths else kills
 ```
 
-### Streamlit
+### Accès aux Données
 
-- **Cache** : Utiliser `@st.cache_data` pour les fonctions de chargement
-- **Session state** : Préfixer les clés avec le contexte (`filter_`, `ui_`, `sync_`)
-- **Sidebar** : Filtres et paramètres dans la sidebar, contenu principal au centre
-- **Rerun** : Éviter les `st.rerun()` sauf nécessité absolue
-
-### SQL / Base de données
-
-- **Paramètres** : Toujours utiliser des placeholders `?` (jamais de f-strings)
-- **Transactions** : Commit explicite après les modifications
-- **Nouvelles tables** : Documenter dans le README section "Tables de base de données"
+**TOUJOURS** utiliser `DuckDBRepository` :
 
 ```python
-# ✅ Bon
-cur.execute("SELECT * FROM MatchStats WHERE match_id = ?", (match_id,))
+from src.data.repositories import DuckDBRepository
 
-# ❌ Mauvais (injection SQL)
-cur.execute(f"SELECT * FROM MatchStats WHERE match_id = '{match_id}'")
+repo = DuckDBRepository(db_path, xuid)
+matches = repo.load_matches(limit=100)
+```
+
+**INTERDIT** : Utiliser `src/db/loaders.py` (déprécié)
+
+### SQL / DuckDB
+
+```python
+# Bon - Paramètres
+cursor.execute("SELECT * FROM match_stats WHERE match_id = ?", (match_id,))
+
+# Mauvais - Injection SQL
+cursor.execute(f"SELECT * FROM match_stats WHERE match_id = '{match_id}'")
 ```
 
 ---
 
-## 🌍 Traductions
+## Synchronisation
 
-### Ajouter une nouvelle playlist
-
-1. Ajouter dans `PLAYLIST_FR` de `src/ui/translations.py`
-2. Mettre à jour `Playlist_modes_translations.json`
-
-```python
-PLAYLIST_FR: dict[str, str] = {
-    "New Playlist": "Nouvelle playlist",
-    # ...
-}
-```
-
-### Ajouter un nouveau mode de jeu
-
-1. Ajouter dans `PAIR_FR` avec le format `"Prefix:Mode on Map": "Traduction"`
-2. Ajouter aussi le fallback générique `"Prefix:Mode": "Traduction"`
-
-```python
-PAIR_FR: dict[str, str] = {
-    # Fallback générique
-    "Arena:NewMode": "Arène : Nouveau mode",
-    # Entrées spécifiques
-    "Arena:NewMode on Aquarius": "Arène : Nouveau mode",
-    "Arena:NewMode on Bazaar": "Arène : Nouveau mode",
-}
-```
-
----
-
-## 🔄 Sync & Delta
-
-### Mode Delta
-
-Le mode `--delta` ne récupère que les nouveaux matchs depuis la dernière sync.
-
-- **Table `SyncMeta`** : Stocke `last_sync`, `last_match_id`, `total_matches`
-- **Table `XuidAliases`** : Mapping XUID → Gamertag (auto-peuplé)
-
-### Ajouter une métadonnée de sync
-
-```python
-def update_sync_meta(con: sqlite3.Connection, key: str, value: str) -> None:
-    cur = con.cursor()
-    now = datetime.now(timezone.utc).isoformat()
-    cur.execute("""
-        INSERT INTO SyncMeta (key, value, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?
-    """, (key, value, now, value, now))
-    con.commit()
-```
-
----
-
-## 🧪 Tests
-
-### Conventions
-
-- Fichiers dans `tests/test_*.py`
-- Classes de test préfixées `Test*`
-- Un fichier de test par module ou feature
-- Mocks pour les appels API/DB externes
-
-### Lancer les tests
+### Mode Delta (incrémental)
 
 ```bash
-pytest                          # Tous les tests
-pytest tests/test_delta_sync.py # Tests spécifiques
-pytest --cov=src               # Avec couverture
+python scripts/sync.py --delta --gamertag MonGamertag
 ```
 
-### Structure d'un test
+### Mode Full (complet)
 
-```python
-class TestMyFeature:
-    """Tests pour ma fonctionnalité."""
-
-    def test_normal_case(self):
-        """Test avec des valeurs normales."""
-        result = my_function(10, 5)
-        assert result == expected
-
-    def test_edge_case(self):
-        """Test avec cas limites."""
-        assert my_function(0, 0) is None
+```bash
+python scripts/sync.py --full --gamertag MonGamertag --max-matches 500
 ```
 
 ---
 
-## 📝 Commits
+## Tests
+
+```bash
+# Tous les tests (recommandé)
+python -m pytest
+
+# Avec couverture
+python -m pytest --cov=src
+
+# Tests spécifiques
+python -m pytest tests/test_duckdb_repository.py -v
+
+# Suite stable hors intégration (Windows)
+python -m pytest --ignore=tests/integration
+```
+
+---
+
+## Commits
 
 ### Format Conventional Commits
 
 ```
 <type>(<scope>): <description>
-
-[body optionnel]
 ```
 
 ### Types autorisés
@@ -264,104 +192,42 @@ class TestMyFeature:
 | `feat` | Nouvelle fonctionnalité |
 | `fix` | Correction de bug |
 | `docs` | Documentation |
-| `refactor` | Refactoring sans changement fonctionnel |
-| `test` | Ajout/modification de tests |
-| `chore` | Maintenance (deps, config) |
+| `refactor` | Refactoring |
+| `test` | Tests |
+| `chore` | Maintenance |
 
 ### Exemples
 
 ```
-feat(ui): ajouter indicateur de sync dans la sidebar
-fix(filters): inclure Big Team Battle dans les playlists autorisées
-docs: mettre à jour README avec instructions delta sync
-test(translations): ajouter tests pour translate_pair_name
+feat(ui): ajouter graphe radar des stats par minute
+fix(sync): corriger détection des modes Firefight
+docs: mettre à jour README avec branding LevelUp
 ```
 
 ---
 
-## 🚫 À éviter
+## À Éviter
 
-1. **Ne pas** modifier `streamlit_app.py` sans vérifier l'impact sur le rerun
-2. **Ne pas** ajouter de `print()` — utiliser `st.info()` ou logging
-3. **Ne pas** hardcoder des chemins Windows — utiliser `Path` de pathlib
-4. **Ne pas** créer de nouvelles dépendances sans les ajouter à `pyproject.toml`
-5. **Ne pas** modifier les tables DB existantes sans migration
+1. **Ne pas** utiliser les loaders legacy (`src/db/loaders.py`)
+2. **Ne pas** modifier les tables DB sans migration
+3. **Ne pas** hardcoder des chemins Windows
+4. **Ne pas** créer de dépendances sans les ajouter à `pyproject.toml`
+5. **Ne pas** committer des tokens ou secrets
 
 ---
 
-## 📋 Checklist avant PR
+## Checklist avant PR
 
 - [ ] Tests passent (`pytest`)
-- [ ] Pas d'erreurs de type (`pyright` ou Pylance)
+- [ ] Pas d'erreurs de type
 - [ ] Traductions FR à jour si nouvelle UI
-- [ ] README mis à jour si nouvelle feature
+- [ ] Documentation mise à jour si nouvelle feature
 - [ ] Commit message au format Conventional Commits
 
 ---
 
-## 🔧 Configuration IDE recommandée
+## Ressources
 
-### VS Code settings.json
-
-```json
-{
-  "python.analysis.typeCheckingMode": "basic",
-  "python.formatting.provider": "black",
-  "editor.formatOnSave": true,
-  "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter",
-    "editor.codeActionsOnSave": {
-      "source.organizeImports": true
-    }
-  }
-}
-```
-
----
-
-## 💡 Ressources
-
-- [SPNKr Documentation](https://github.com/acurtis166/SPNKr)
+- [DuckDB Documentation](https://duckdb.org/docs/)
 - [Streamlit Docs](https://docs.streamlit.io/)
-- [Halo Infinite API (non officielle)](https://den.dev/blog/halo-infinite-api-authentication/)
-
----
-
-## 🧠 Conseils de prompt engineering (pour l'utilisateur)
-
-### Structurer ses demandes
-
-```markdown
-# ✅ Bon prompt
-"Ajouter un filtre par carte dans la sidebar.
-- Dropdown multi-select avec toutes les cartes du DataFrame
-- Persister la sélection dans session_state
-- Appliquer le filtre avant les calculs de stats"
-
-# ❌ Prompt vague
-"Ajouter un filtre par carte"
-```
-
-### Fournir du contexte
-
-- **Fichiers concernés** : "Dans `streamlit_app.py`, fonction `_render_filters()`..."
-- **Comportement actuel** : "Actuellement, seul le filtre playlist existe..."
-- **Résultat attendu** : "Je veux pouvoir filtrer par Aquarius, Bazaar, etc."
-
-### Mots-clés efficaces
-
-| Mot-clé | Effet |
-|---------|-------|
-| "Analyse d'abord..." | Force l'exploration avant action |
-| "Propose un plan..." | Évite l'implémentation directe |
-| "Étape par étape..." | Découpe en phases validables |
-| "Comme dans [fichier]..." | Référence un pattern existant |
-| "Sans casser..." | Impose la rétrocompatibilité |
-| "Avec tests..." | Inclut les tests unitaires |
-
-### Anti-patterns à éviter
-
-1. ❌ Demandes trop larges : "Refais tout le dashboard"
-2. ❌ Manque de critères : "Améliore les perfs" (quelles métriques ?)
-3. ❌ Contradictions implicites : "Simple mais extensible et performant"
-4. ❌ Validation post-hoc : Valider avant, pas après les modifs massives
+- [SPNKr Documentation](https://github.com/acurtis166/SPNKr)

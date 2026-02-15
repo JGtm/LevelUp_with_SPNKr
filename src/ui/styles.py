@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import os
-from functools import lru_cache
 import html
+import os
 
 from src.ui.player_assets import file_to_data_url
 
@@ -20,26 +19,15 @@ def get_css_path() -> str:
 
 
 def load_css() -> str:
-    """Charge le contenu du fichier CSS.
-    
+    """Charge le contenu du fichier CSS (sans cache pour le dev).
+
     Returns:
         Contenu CSS avec balises <style>.
     """
     css_path = get_css_path()
 
-    mtime: float | None
     try:
-        mtime = os.path.getmtime(css_path)
-    except OSError:
-        mtime = None
-
-    return _load_css_cached(css_path, mtime)
-
-
-@lru_cache(maxsize=8)
-def _load_css_cached(css_path: str, mtime: float | None) -> str:
-    try:
-        with open(css_path, "r", encoding="utf-8") as f:
+        with open(css_path, encoding="utf-8") as f:
             css_content = f.read()
         return f"<style>\n{css_content}\n</style>"
     except FileNotFoundError:
@@ -60,6 +48,7 @@ def get_hero_html(
     rank_label: str | None = None,
     rank_subtitle: str | None = None,
     rank_icon_path: str | None = None,
+    adornment_path: str | None = None,
     banner_path: str | None = None,
     backdrop_path: str | None = None,
     nameplate_path: str | None = None,
@@ -71,13 +60,15 @@ def get_hero_html(
 
     Structure visuelle (de l'arrière vers l'avant):
     1. Career Rank icon (à gauche, aligné horizontalement)
+       - Adornement en arrière-plan (centré derrière l'icône de rang)
     2. Spartan ID card:
        - Backdrop (240px, 2/3 de la nameplate, centré)
        - Nameplate (360px)
        - Emblème (par-dessus, aligné à gauche avec padding 10px)
        - Gamertag + Service tag (à droite de l'emblème)
-    
+
     Args:
+        adornment_path: Chemin vers l'image d'adornement (badge du rang).
         grid_mode: Si True, utilise un style compact pour les grilles (sans margin-top, centré).
     """
 
@@ -97,6 +88,7 @@ def get_hero_html(
     emblem_data = file_to_data_url(emblem_path)
     nameplate_data = file_to_data_url(nameplate_path)
     rank_icon_data = file_to_data_url(rank_icon_path)
+    adornment_data = file_to_data_url(adornment_path)
 
     st = (service_tag or "").strip()
 
@@ -106,17 +98,23 @@ def get_hero_html(
     # Backdrop (arrière-plan, 2/3 de la largeur)
     backdrop_html = ""
     if backdrop_data:
-        backdrop_html = f"<div class='spartan-id__backdrop'><img src='{backdrop_data}' alt='' /></div>"
+        backdrop_html = (
+            f"<div class='spartan-id__backdrop'><img src='{backdrop_data}' alt='' /></div>"
+        )
 
     # Nameplate
     nameplate_html = ""
     if nameplate_data:
-        nameplate_html = f"<div class='spartan-id__nameplate'><img src='{nameplate_data}' alt='' /></div>"
+        nameplate_html = (
+            f"<div class='spartan-id__nameplate'><img src='{nameplate_data}' alt='' /></div>"
+        )
 
     # Emblème
     emblem_html = ""
     if emblem_data:
-        emblem_html = f"<div class='spartan-id__emblem'><img src='{emblem_data}' alt='emblem' /></div>"
+        emblem_html = (
+            f"<div class='spartan-id__emblem'><img src='{emblem_data}' alt='emblem' /></div>"
+        )
 
     # Service tag
     service_tag_html = ""
@@ -124,31 +122,41 @@ def get_hero_html(
         service_tag_html = f"<div class='spartan-id__servicetag'>{safe_service_tag}</div>"
 
     # Classe wrapper (avec ou sans --grid)
-    wrapper_class = "spartan-id-wrapper spartan-id-wrapper--grid" if grid_mode else "spartan-id-wrapper"
-    
+    wrapper_class = (
+        "spartan-id-wrapper spartan-id-wrapper--grid" if grid_mode else "spartan-id-wrapper"
+    )
+
     # Notches uniquement en mode normal (pas en grille)
-    notches = "" if grid_mode else "<div class='wp-notch-top'></div><div class='wp-notch-bottom'></div>"
+    notches = (
+        "" if grid_mode else "<div class='wp-notch-top'></div><div class='wp-notch-bottom'></div>"
+    )
 
     # Career Rank (icône + label, à gauche du Spartan ID)
+    # Priorité: adornment > rank_icon (10C.3.3)
     rank_html = ""
-    if rank_icon_data or rank_label:
+    if adornment_data or rank_icon_data or rank_label:
         safe_rank_label = html.escape(rank_label or "") if rank_label else ""
         safe_rank_subtitle = html.escape(rank_subtitle or "") if rank_subtitle else ""
-        
+
+        # Adornment prioritaire: si disponible, remplace l'icône de rang
+        adornment_html = ""
         rank_icon_html = ""
-        if rank_icon_data:
+        if adornment_data:
+            adornment_html = f"<img src='{adornment_data}' alt='rank' class='career-rank__adornment career-rank__adornment--primary' />"
+        elif rank_icon_data:
             rank_icon_html = f"<img src='{rank_icon_data}' alt='rank' class='career-rank__icon' />"
-        
+
         rank_label_html = ""
         if safe_rank_label:
             rank_label_html = f"<div class='career-rank__label'>{safe_rank_label}</div>"
-        
+
         rank_subtitle_html = ""
         if safe_rank_subtitle:
             rank_subtitle_html = f"<div class='career-rank__subtitle'>{safe_rank_subtitle}</div>"
-        
+
         rank_html = (
             "<div class='career-rank'>"
+            f"  {adornment_html}"
             f"  {rank_icon_html}"
             "  <div class='career-rank__text'>"
             f"    {rank_label_html}"

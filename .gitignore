@@ -1,16 +1,63 @@
+# ============================================
+# 🐍 ENVIRONNEMENTS PYTHON (CRITIQUES!)
+# ============================================
+# Les venv sont VOLUMINEUX (100s MB) + OS-spécifique
+# À JAMAIS commit: chaque dev le régénère via `pip install -e .`
 .venv/
+.venv_windows/
+venv/
+env/
+ENV/
+.python-venv/
+
+# 🔧 BUILD & DISTRIBUTION
 __pycache__/
 *.pyc
-out/
-.streamlit/*
-!.streamlit/secrets.toml.example
-.env
-.env.local
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
 Thumbs.db
-.vscode/
-build/
-dist/
+
+# Tests & Coverage
+.coverage
+coverage.json
+htmlcov/
+.pytest_cache/
+
+# Secrets & Configuration
+.env
+.env.local
+.streamlit/*
+!.streamlit/secrets.toml.example
+!.streamlit/friends_defaults.json
+out/
+
+# Fichier accidentel Windows (nul = device réservé)
+nul
 *.spec
 app_settings.json
 data/xuid_aliases.json
@@ -21,6 +68,15 @@ data/*.db-journal
 data/investigation/
 data/cache/*
 data/backup_legacy/
+
+# RAG LanceDB (base vectorielle locale)
+data/rag/
+
+# Architecture v4 - DuckDB (données locales volumineuses)
+data/players/
+data/warehouse/match_facts/
+data/warehouse/*.duckdb
+data/warehouse/metadata.db
 
 # Fichiers temporaires d'import SPNKr
 *.tmp.*.db
@@ -33,3 +89,11 @@ TODO_LOCAL.md
 Madina97294
 Chocoboflor
 JGtm
+data/halo_unified.db
+data/halo_unified.db.bak
+*.db-shm
+*.db-wal
+data/test_sync.db
+data/spnkr_gt_XxDaemonGamerxX.db
+To do.txt
+To do.txt

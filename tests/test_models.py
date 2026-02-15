@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.models import MatchRow, AggregatedStats, OutcomeRates, FriendMatch, MapBreakdown
+from src.data.domain.models.stats import (
+    AggregatedStats,
+    FriendMatch,
+    MapBreakdown,
+    MatchRow,
+    OutcomeRates,
+)
 
 
 class TestMatchRow:
@@ -67,22 +73,46 @@ class TestMatchRow:
         win_match = MatchRow(
             match_id="win",
             start_time=datetime.now(timezone.utc),
-            map_id=None, map_name=None, playlist_id=None, playlist_name=None,
-            map_mode_pair_id=None, map_mode_pair_name=None,
-            outcome=2, last_team_id=1, kda=None, max_killing_spree=None,
-            headshot_kills=None, average_life_seconds=None, time_played_seconds=None,
-            kills=10, deaths=5, assists=4, accuracy=None,
+            map_id=None,
+            map_name=None,
+            playlist_id=None,
+            playlist_name=None,
+            map_mode_pair_id=None,
+            map_mode_pair_name=None,
+            outcome=2,
+            last_team_id=1,
+            kda=None,
+            max_killing_spree=None,
+            headshot_kills=None,
+            average_life_seconds=None,
+            time_played_seconds=None,
+            kills=10,
+            deaths=5,
+            assists=4,
+            accuracy=None,
         )
         loss_match = MatchRow(
             match_id="loss",
             start_time=datetime.now(timezone.utc),
-            map_id=None, map_name=None, playlist_id=None, playlist_name=None,
-            map_mode_pair_id=None, map_mode_pair_name=None,
-            outcome=3, last_team_id=1, kda=None, max_killing_spree=None,
-            headshot_kills=None, average_life_seconds=None, time_played_seconds=None,
-            kills=5, deaths=10, assists=2, accuracy=None,
+            map_id=None,
+            map_name=None,
+            playlist_id=None,
+            playlist_name=None,
+            map_mode_pair_id=None,
+            map_mode_pair_name=None,
+            outcome=3,
+            last_team_id=1,
+            kda=None,
+            max_killing_spree=None,
+            headshot_kills=None,
+            average_life_seconds=None,
+            time_played_seconds=None,
+            kills=5,
+            deaths=10,
+            assists=2,
+            accuracy=None,
         )
-        
+
         assert win_match.is_win is True
         assert win_match.is_loss is False
         assert loss_match.is_win is False

@@ -1,53 +1,83 @@
 """Graphiques de séries temporelles."""
 
-import pandas as pd
+from __future__ import annotations
+
 import plotly.graph_objects as go
+import polars as pl
 from plotly.subplots import make_subplots
 
 from src.config import HALO_COLORS, PLOT_CONFIG
+from src.ui.components.chart_annotations import add_extreme_annotations
+from src.visualization._compat import (
+    DataFrameLike,
+    ensure_polars,
+    ensure_polars_series,
+    smart_scatter,
+)
 from src.visualization.theme import apply_halo_plot_style, get_legend_horizontal_bottom
 
 
-def _rolling_mean(series: pd.Series, window: int = 10) -> pd.Series:
-    w = int(window) if window and window > 0 else 1
-    return series.rolling(window=w, min_periods=1).mean()
+def _normalize_df(df: DataFrameLike) -> pl.DataFrame:
+    """Normalise un DataFrame en Polars (compat arrière)."""
+    return ensure_polars(df)
 
 
-def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
-    """Graphique principal: Kills/Deaths/Ratio dans le temps.
-    
+def _rolling_mean(series: pl.Series, window: int = 10) -> pl.Series:
+    """Calcule la moyenne mobile.
+
     Args:
-        df: DataFrame avec colonnes kills, deaths, assists, accuracy, ratio, start_time.
-        title: Titre du graphique.
-        
+        series: Série Polars (accepte aussi Pandas pour compat arrière).
+        window: Taille de la fenêtre.
+
     Returns:
-        Figure Plotly.
+        Série Polars avec moyenne mobile.
     """
-    fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
-    colors = HALO_COLORS.as_dict()
+    w = int(window) if window and window > 0 else 1
+    if not isinstance(series, pl.Series):
+        series = ensure_polars_series(series)
+    return series.rolling_mean(window_size=w, min_samples=1)
 
-    d = df.sort_values("start_time").reset_index(drop=True)
-    x_idx = list(range(len(d)))
 
+def _build_kda_customdata(d: pl.DataFrame) -> tuple[list, str]:
+    """Construit le customdata et le template hover commun pour graphiques KDA.
+
+    Args:
+        d: DataFrame trié avec colonnes kills, deaths, assists, accuracy, ratio.
+
+    Returns:
+        Tuple (customdata, common_hover).
+    """
     common_hover = (
         "frags=%{customdata[0]} morts=%{customdata[1]} assistances=%{customdata[2]}<br>"
         "précision=%{customdata[3]}% ratio=%{customdata[4]:.3f}<extra></extra>"
     )
-
+    accuracy = d["accuracy"].cast(pl.Float64, strict=False).fill_null(0).round(2)
     customdata = list(
         zip(
-            d["kills"],
-            d["deaths"],
-            d["assists"],
-            d["accuracy"].round(2).astype(object),
-            d["ratio"],
+            d["kills"].to_list(),
+            d["deaths"].to_list(),
+            d["assists"].to_list(),
+            accuracy.to_list(),
+            d["ratio"].to_list(),
+            strict=False,
         )
     )
+    return customdata, common_hover
 
+
+def _add_kda_traces(
+    fig: go.Figure,
+    x_idx: list[int],
+    d: pl.DataFrame,
+    customdata: list,
+    common_hover: str,
+    colors: dict,
+) -> None:
+    """Ajoute les traces Kills/Deaths/Ratio au subplot KDA."""
     fig.add_trace(
         go.Bar(
             x=x_idx,
-            y=d["kills"],
+            y=d["kills"].to_list(),
             name="Frags",
             marker_color=colors["cyan"],
             opacity=PLOT_CONFIG.bar_opacity,
@@ -59,11 +89,10 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         ),
         secondary_y=False,
     )
-
     fig.add_trace(
         go.Bar(
             x=x_idx,
-            y=d["deaths"],
+            y=d["deaths"].to_list(),
             name="Morts",
             marker_color=colors["red"],
             opacity=PLOT_CONFIG.bar_opacity_secondary,
@@ -75,75 +104,111 @@ def plot_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         ),
         secondary_y=False,
     )
-
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
-            y=d["ratio"],
+            y=d["ratio"].to_list(),
             mode="lines",
             name="Ratio",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["green"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["green"]},
             customdata=customdata,
             hovertemplate=common_hover,
         ),
         secondary_y=True,
     )
 
+
+def plot_timeseries(df: DataFrameLike, title: str = "Frags / Morts / Ratio") -> go.Figure:
+    """Graphique principal: Kills/Deaths/Ratio dans le temps."""
+    df_pl = pl.DataFrame() if df is None else ensure_polars(df)
+
+    if df_pl.is_empty():
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Aucune donnée disponible",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font={"size": 16},
+        )
+        return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
+
+    fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+    colors = HALO_COLORS.as_dict()
+    d = df_pl.sort("start_time")
+    x_idx = list(range(len(d)))
+
+    customdata, common_hover = _build_kda_customdata(d)
+    _add_kda_traces(fig, x_idx, d, customdata, common_hover, colors)
+
     fig.update_layout(
         title=title,
         legend=get_legend_horizontal_bottom(),
-        margin=dict(l=40, r=20, t=80, b=90),
+        margin={"l": 40, "r": 20, "t": 80, "b": 90},
         hovermode="x unified",
         barmode="group",
         bargap=0.15,
         bargroupgap=0.06,
     )
-
     fig.update_xaxes(type="category")
     fig.update_yaxes(title_text="Frags / Morts", rangemode="tozero", secondary_y=False)
     fig.update_yaxes(title_text="Ratio", secondary_y=True)
 
-    # Labels de date/heure espacés
-    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").to_list()
     step = max(1, len(labels) // 10) if len(labels) > 1 else 1
-    tickvals = x_idx[::step]
-    ticktext = labels[::step]
     fig.update_xaxes(
         title_text="Match (chronologique)",
         tickmode="array",
-        tickvals=tickvals,
-        ticktext=ticktext,
+        tickvals=x_idx[::step],
+        ticktext=labels[::step],
     )
-    
+
+    add_extreme_annotations(
+        fig,
+        x_idx,
+        d["ratio"].to_list(),
+        metric_name="ratio",
+        show_max=True,
+        show_min=False,
+        max_color="#FFD700",
+        secondary_y=True,
+    )
+
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.tall_height)
 
 
-def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
+def plot_assists_timeseries(df: DataFrameLike, title: str = "Assistances") -> go.Figure:
     """Graphique des assistances dans le temps.
-    
+
     Args:
         df: DataFrame avec colonnes assists, start_time, etc.
         title: Titre du graphique.
-        
+
     Returns:
         Figure Plotly.
     """
+    df_pl = ensure_polars(df)
+
     colors = HALO_COLORS.as_dict()
-    d = df.sort_values("start_time").reset_index(drop=True)
+    d = df_pl.sort("start_time")
     x_idx = list(range(len(d)))
-    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").to_list()
     step = max(1, len(labels) // 10) if len(labels) > 1 else 1
 
+    accuracy = d["accuracy"].cast(pl.Float64, strict=False).fill_null(0).round(2)
     customdata = list(
         zip(
-            d["kills"],
-            d["deaths"],
-            d["assists"],
-            d["accuracy"].round(2).astype(object),
-            d["ratio"],
-            d["map_name"].fillna(""),
-            d["playlist_name"].fillna(""),
-            d["match_id"],
+            d["kills"].to_list(),
+            d["deaths"].to_list(),
+            d["assists"].to_list(),
+            accuracy.to_list(),
+            d["ratio"].to_list(),
+            d["map_name"].fill_null("").to_list(),
+            d["playlist_name"].fill_null("").to_list(),
+            d["match_id"].to_list(),
+            strict=False,
         )
     )
     hover = (
@@ -156,7 +221,7 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     fig.add_trace(
         go.Bar(
             x=x_idx,
-            y=d["assists"],
+            y=d["assists"].to_list(),
             name="Assistances",
             marker_color=colors["violet"],
             opacity=PLOT_CONFIG.bar_opacity,
@@ -165,21 +230,22 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         )
     )
 
-    smooth = _rolling_mean(pd.to_numeric(d["assists"], errors="coerce"), window=10)
+    assists_series = d["assists"].cast(pl.Float64, strict=False)
+    smooth = _rolling_mean(assists_series, window=10)
     fig.add_trace(
-        go.Scatter(
+        smart_scatter(
             x=x_idx,
-            y=smooth,
+            y=smooth.to_list(),
             mode="lines",
             name="Moyenne (lissée)",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["green"]),
+            line={"width": PLOT_CONFIG.line_width, "color": colors["green"]},
             hovertemplate="moyenne=%{y:.2f}<extra></extra>",
         )
     )
 
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=60, b=90),
+        margin={"l": 40, "r": 20, "t": 60, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
     )
@@ -195,41 +261,97 @@ def plot_assists_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
-def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
-    """Graphique des stats par minute.
-    
-    Args:
-        df: DataFrame avec colonnes kills_per_min, deaths_per_min, assists_per_min.
-        title: Titre du graphique.
-        
-    Returns:
-        Figure Plotly.
-    """
-    colors = HALO_COLORS.as_dict()
-    d = df.sort_values("start_time").reset_index(drop=True)
-    x_idx = list(range(len(d)))
-    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
-    step = max(1, len(labels) // 10) if len(labels) > 1 else 1
+def _add_permin_rolling_lines(
+    fig: go.Figure,
+    x_idx: list[int],
+    kpm: pl.Series,
+    dpm: pl.Series,
+    apm: pl.Series,
+    colors: dict[str, str],
+) -> None:
+    """Ajoute les 3 courbes de moyenne mobile par minute (frags, morts, assistances).
 
-    customdata = list(
-        zip(
-            d["time_played_seconds"].fillna(float("nan")).astype(float),
-            d["kills"],
-            d["deaths"],
-            d["assists"],
-            d["match_id"],
+    Args:
+        fig: Figure Plotly à enrichir.
+        x_idx: Index des matchs.
+        kpm: Série kills per minute.
+        dpm: Série deaths per minute.
+        apm: Série assists per minute.
+        colors: Dict de couleurs HALO.
+    """
+    fig.add_trace(
+        smart_scatter(
+            x=x_idx,
+            y=_rolling_mean(kpm, window=10).to_list(),
+            mode="lines",
+            name="Moy. frags/min",
+            line={"width": PLOT_CONFIG.line_width, "color": colors["cyan"]},
+            hovertemplate="moy=%{y:.2f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        smart_scatter(
+            x=x_idx,
+            y=_rolling_mean(dpm, window=10).to_list(),
+            mode="lines",
+            name="Moy. morts/min",
+            line={"width": PLOT_CONFIG.line_width, "color": colors["red"], "dash": "dot"},
+            hovertemplate="moy=%{y:.2f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        smart_scatter(
+            x=x_idx,
+            y=_rolling_mean(apm, window=10).to_list(),
+            mode="lines",
+            name="Moy. assist./min",
+            line={"width": PLOT_CONFIG.line_width, "color": colors["violet"], "dash": "dot"},
+            hovertemplate="moy=%{y:.2f}<extra></extra>",
         )
     )
 
-    kpm = pd.to_numeric(d["kills_per_min"], errors="coerce")
-    dpm = pd.to_numeric(d["deaths_per_min"], errors="coerce")
-    apm = pd.to_numeric(d["assists_per_min"], errors="coerce")
+
+def plot_per_minute_timeseries(
+    df: DataFrameLike, title: str = "Frags / Morts / Assistances par minute"
+) -> go.Figure:
+    """Graphique des stats par minute.
+
+    Args:
+        df: DataFrame avec colonnes kills_per_min, deaths_per_min, assists_per_min.
+        title: Titre du graphique.
+
+    Returns:
+        Figure Plotly.
+    """
+    df_pl = ensure_polars(df)
+
+    colors = HALO_COLORS.as_dict()
+    d = df_pl.sort("start_time")
+    x_idx = list(range(len(d)))
+    labels = d["start_time"].dt.strftime("%m-%d %H:%M").to_list()
+    step = max(1, len(labels) // 10) if len(labels) > 1 else 1
+
+    time_played = d["time_played_seconds"].cast(pl.Float64, strict=False)
+    customdata = list(
+        zip(
+            time_played.to_list(),
+            d["kills"].to_list(),
+            d["deaths"].to_list(),
+            d["assists"].to_list(),
+            d["match_id"].to_list(),
+            strict=False,
+        )
+    )
+
+    kpm = d["kills_per_min"].cast(pl.Float64, strict=False)
+    dpm = d["deaths_per_min"].cast(pl.Float64, strict=False)
+    apm = d["assists_per_min"].cast(pl.Float64, strict=False)
 
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
             x=x_idx,
-            y=kpm,
+            y=kpm.to_list(),
             name="Frags/min",
             marker_color=colors["cyan"],
             opacity=PLOT_CONFIG.bar_opacity,
@@ -243,7 +365,7 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     fig.add_trace(
         go.Bar(
             x=x_idx,
-            y=dpm,
+            y=dpm.to_list(),
             name="Morts/min",
             marker_color=colors["red"],
             opacity=PLOT_CONFIG.bar_opacity_secondary,
@@ -257,7 +379,7 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     fig.add_trace(
         go.Bar(
             x=x_idx,
-            y=apm,
+            y=apm.to_list(),
             name="Assist./min",
             marker_color=colors["violet"],
             opacity=PLOT_CONFIG.bar_opacity_secondary,
@@ -269,40 +391,11 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
         )
     )
 
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx,
-            y=_rolling_mean(kpm, window=10),
-            mode="lines",
-            name="Moy. frags/min",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["cyan"]),
-            hovertemplate="moy=%{y:.2f}<extra></extra>",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx,
-            y=_rolling_mean(dpm, window=10),
-            mode="lines",
-            name="Moy. morts/min",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["red"], dash="dot"),
-            hovertemplate="moy=%{y:.2f}<extra></extra>",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx,
-            y=_rolling_mean(apm, window=10),
-            mode="lines",
-            name="Moy. assist./min",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["violet"], dash="dot"),
-            hovertemplate="moy=%{y:.2f}<extra></extra>",
-        )
-    )
+    _add_permin_rolling_lines(fig, x_idx, kpm, dpm, apm, colors)
 
     fig.update_layout(
         title=title,
-        margin=dict(l=40, r=20, t=60, b=90),
+        margin={"l": 40, "r": 20, "t": 60, "b": 90},
         hovermode="x unified",
         legend=get_legend_horizontal_bottom(),
         barmode="group",
@@ -321,191 +414,46 @@ def plot_per_minute_timeseries(df: pd.DataFrame, title: str) -> go.Figure:
     return apply_halo_plot_style(fig, title=title, height=PLOT_CONFIG.default_height)
 
 
-def plot_accuracy_last_n(df: pd.DataFrame, n: int) -> go.Figure:
+def plot_accuracy_last_n(df: DataFrameLike, n: int) -> go.Figure:
     """Graphique de précision sur les N derniers matchs.
-    
+
     Args:
         df: DataFrame avec colonne accuracy.
         n: Nombre de matchs à afficher.
-        
+
     Returns:
         Figure Plotly.
     """
+    df_pl = ensure_polars(df)
+
     colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=["accuracy"]).tail(n)
-    
+    d = df_pl.drop_nulls(subset=["accuracy"]).tail(n)
+
     fig = go.Figure(
         data=[
-            go.Scatter(
-                x=d["start_time"],
-                y=d["accuracy"],
+            smart_scatter(
+                x=d["start_time"].to_list(),
+                y=d["accuracy"].to_list(),
                 mode="lines",
                 name="Accuracy",
-                line=dict(width=PLOT_CONFIG.line_width, color=colors["violet"]),
+                line={"width": PLOT_CONFIG.line_width, "color": colors["violet"]},
                 hovertemplate="précision=%{y:.2f}%<extra></extra>",
             )
         ]
     )
-    fig.update_layout(height=PLOT_CONFIG.short_height, margin=dict(l=40, r=20, t=30, b=40))
+    fig.update_layout(height=PLOT_CONFIG.short_height, margin={"l": 40, "r": 20, "t": 30, "b": 40})
     fig.update_yaxes(title_text="%", rangemode="tozero")
-    
-    return apply_halo_plot_style(fig, height=PLOT_CONFIG.short_height)
-
-
-def plot_average_life(df: pd.DataFrame, title: str = "Durée de vie moyenne") -> go.Figure:
-    """Graphique de la durée de vie moyenne.
-    
-    Args:
-        df: DataFrame avec colonne average_life_seconds.
-        title: Titre du graphique.
-        
-    Returns:
-        Figure Plotly.
-    """
-    colors = HALO_COLORS.as_dict()
-    d = df.dropna(subset=["average_life_seconds"]).sort_values("start_time").reset_index(drop=True).copy()
-    x_idx = list(range(len(d)))
-    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
-    step = max(1, len(labels) // 10) if len(labels) > 1 else 1
-
-    y = pd.to_numeric(d["average_life_seconds"], errors="coerce")
-    custom = list(
-        zip(
-            d["deaths"].fillna(0).astype(int),
-            d["time_played_seconds"].fillna(float("nan")).astype(float),
-            d["match_id"].astype(str),
-        )
-    )
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Bar(
-            x=x_idx,
-            y=y,
-            name="Durée de vie (s)",
-            marker_color=colors["green"],
-            opacity=PLOT_CONFIG.bar_opacity,
-            customdata=custom,
-            hovertemplate=(
-                "durée de vie moy.=%{y:.1f}s<br>"
-                "morts=%{customdata[0]}<br>"
-                "temps joué=%{customdata[1]:.0f}s<extra></extra>"
-            ),
-        )
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx,
-            y=_rolling_mean(y, window=10),
-            mode="lines",
-            name="Moyenne (lissée)",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["cyan"]),
-            hovertemplate="moyenne=%{y:.2f}s<extra></extra>",
-        )
-    )
-
-    fig.update_layout(
-        title=title,
-        margin=dict(l=40, r=20, t=50, b=90),
-        hovermode="x unified",
-        legend=get_legend_horizontal_bottom(),
-    )
-    fig.update_yaxes(title_text="Secondes", rangemode="tozero")
-    fig.update_xaxes(
-        title_text="Match (chronologique)",
-        tickmode="array",
-        tickvals=x_idx[::step],
-        ticktext=labels[::step],
-        type="category",
-    )
 
     return apply_halo_plot_style(fig, height=PLOT_CONFIG.short_height)
 
 
-def plot_spree_headshots_accuracy(df: pd.DataFrame) -> go.Figure:
-    """Graphique combiné: Spree, Tirs à la tête et Précision.
-    
-    Args:
-        df: DataFrame avec colonnes max_killing_spree, headshot_kills, accuracy.
-        
-    Returns:
-        Figure Plotly avec axe Y secondaire pour la précision.
-    """
-    colors = HALO_COLORS.as_dict()
-    d = df.sort_values("start_time").reset_index(drop=True).copy()
-    x_idx = list(range(len(d)))
-
-    spree = (
-        pd.to_numeric(d.get("max_killing_spree"), errors="coerce")
-        if "max_killing_spree" in d.columns
-        else pd.Series([float("nan")] * len(d))
-    )
-
-    fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
-
-    fig.add_trace(
-        go.Bar(
-            x=x_idx,
-            y=spree,
-            name="Folie meurtrière (max)",
-            marker_color=colors["amber"],
-            opacity=PLOT_CONFIG.bar_opacity,
-            alignmentgroup="spree_hs",
-            offsetgroup="spree",
-            width=0.42,
-            hovertemplate="folie meurtrière=%{y}<extra></extra>",
-        ),
-        secondary_y=False,
-    )
-
-    fig.add_trace(
-        go.Bar(
-            x=x_idx,
-            y=d["headshot_kills"],
-            name="Tirs à la tête",
-            marker_color=colors["red"],
-            opacity=0.70,
-            alignmentgroup="spree_hs",
-            offsetgroup="headshots",
-            width=0.42,
-            hovertemplate="tirs à la tête=%{y}<extra></extra>",
-        ),
-        secondary_y=False,
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx,
-            y=d["accuracy"],
-            mode="lines",
-            name="Précision (%)",
-            line=dict(width=PLOT_CONFIG.line_width, color=colors["violet"]),
-            hovertemplate="précision=%{y:.2f}%<extra></extra>",
-        ),
-        secondary_y=True,
-    )
-
-    labels = d["start_time"].dt.strftime("%m-%d %H:%M").tolist()
-    step = max(1, len(labels) // 10) if labels else 1
-    fig.update_xaxes(
-        title_text="Match (chronologique)",
-        tickmode="array",
-        tickvals=x_idx[::step],
-        ticktext=labels[::step],
-    )
-
-    fig.update_layout(
-        height=420,
-        margin=dict(l=40, r=50, t=30, b=90),
-        legend=get_legend_horizontal_bottom(),
-        hovermode="x unified",
-        barmode="group",
-        bargap=0.15,
-        bargroupgap=0.06,
-    )
-
-    fig.update_yaxes(title_text="Spree / Tirs à la tête", rangemode="tozero", secondary_y=False)
-    fig.update_yaxes(title_text="Précision (%)", ticksuffix="%", rangemode="tozero", secondary_y=True)
-    
-    return apply_halo_plot_style(fig, height=420)
+# Re-exports depuis timeseries_combat (compat backward — Sprint 16)
+from src.visualization.timeseries_combat import (  # noqa: E402, F401
+    plot_average_life,
+    plot_damage_dealt_taken,
+    plot_performance_timeseries,
+    plot_rank_score,
+    plot_shots_accuracy,
+    plot_spree_headshots_accuracy,
+    plot_streak_chart,
+)

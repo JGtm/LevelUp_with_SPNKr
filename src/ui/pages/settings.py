@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import streamlit as st
 
 from src.config import get_default_db_path
 from src.ui import (
     AppSettings,
-    load_settings,
-    save_settings,
     directory_input,
     file_input,
+    load_settings,
+    save_settings,
 )
 from src.ui.player_assets import download_image_to_cache
 from src.ui.sections import render_source_section
@@ -68,8 +68,14 @@ def render_settings_page(
             "Type de matchs",
             options=["matchmaking", "all", "custom", "local"],
             index=["matchmaking", "all", "custom", "local"].index(
-                str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking").strip().lower()
-                if str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking").strip().lower()
+                str(getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking")
+                .strip()
+                .lower()
+                if str(
+                    getattr(settings, "spnkr_refresh_match_type", "matchmaking") or "matchmaking"
+                )
+                .strip()
+                .lower()
                 in {"matchmaking", "all", "custom", "local"}
                 else "matchmaking"
             ),
@@ -125,7 +131,9 @@ def render_settings_page(
         )
 
     with st.expander("Fichiers (avancé)", expanded=False):
-        st.caption("Optionnel: sélectionne les fichiers JSON utilisés par l'app (sinon valeurs par défaut).")
+        st.caption(
+            "Optionnel: sélectionne les fichiers JSON utilisés par l'app (sinon valeurs par défaut)."
+        )
         aliases_path = file_input(
             "Fichier d'alias XUID (json)",
             value=str(getattr(settings, "aliases_path", "") or ""),
@@ -145,16 +153,24 @@ def render_settings_page(
 
     # Profil joueur (bannière / rang)
     # Par défaut, on masque ces réglages et on garde les valeurs actuelles.
-    profile_assets_download_enabled = bool(getattr(settings, "profile_assets_download_enabled", False))
-    profile_assets_auto_refresh_hours = int(getattr(settings, "profile_assets_auto_refresh_hours", 24) or 0)
+    profile_assets_download_enabled = bool(
+        getattr(settings, "profile_assets_download_enabled", False)
+    )
+    profile_assets_auto_refresh_hours = int(
+        getattr(settings, "profile_assets_auto_refresh_hours", 24) or 0
+    )
     profile_api_enabled = bool(getattr(settings, "profile_api_enabled", False))
-    profile_api_auto_refresh_hours = int(getattr(settings, "profile_api_auto_refresh_hours", 6) or 0)
+    profile_api_auto_refresh_hours = int(
+        getattr(settings, "profile_api_auto_refresh_hours", 6) or 0
+    )
     profile_banner = str(getattr(settings, "profile_banner", "") or "").strip()
     profile_emblem = str(getattr(settings, "profile_emblem", "") or "").strip()
     profile_backdrop = str(getattr(settings, "profile_backdrop", "") or "").strip()
     profile_nameplate = str(getattr(settings, "profile_nameplate", "") or "").strip()
     profile_service_tag = str(getattr(settings, "profile_service_tag", "") or "").strip()
-    profile_id_badge_text_color = str(getattr(settings, "profile_id_badge_text_color", "") or "").strip()
+    profile_id_badge_text_color = str(
+        getattr(settings, "profile_id_badge_text_color", "") or ""
+    ).strip()
     profile_rank_label = str(getattr(settings, "profile_rank_label", "") or "").strip()
     profile_rank_subtitle = str(getattr(settings, "profile_rank_subtitle", "") or "").strip()
 
@@ -260,7 +276,9 @@ def render_settings_page(
                     else:
                         st.warning(f"Téléchargement KO ({label}): {err}")
                 if ok_any:
-                    st.info("Les images sont mises en cache localement et seront utilisées par le header.")
+                    st.info(
+                        "Les images sont mises en cache localement et seront utilisées par le header."
+                    )
 
     cols = st.columns(2)
     if cols[0].button("Enregistrer", width="stretch"):

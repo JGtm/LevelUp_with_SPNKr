@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
-from pathlib import Path
-from collections.abc import Mapping
-from typing import Callable
+from collections.abc import Callable, Mapping
 
-import pandas as pd
 import streamlit as st
 
-from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_WAYPOINT_PLAYER, get_aliases_file_path
-from src.db import (
+from src.config import DEFAULT_PLAYER_GAMERTAG, DEFAULT_WAYPOINT_PLAYER
+from src.ui.aliases import display_name_from_xuid
+from src.utils import (
     guess_xuid_from_db_path,
-    infer_spnkr_player_from_db_path,
     load_profiles,
-    save_profiles,
     resolve_xuid_from_db,
 )
-from src.ui.aliases import load_aliases_file, save_aliases_file, display_name_from_xuid
-from src.ui.path_picker import file_input
 
 
 def _default_identity_from_secrets() -> tuple[str, str]:
@@ -60,7 +55,7 @@ def render_source_section(
     """
 
     # --- Multi-DB / Profils ---
-    profiles = load_profiles()
+    _ = load_profiles()  # Précharge les profils
 
     if "db_path" not in st.session_state:
         st.session_state["db_path"] = default_db
@@ -77,128 +72,25 @@ def render_source_section(
         _secret_player, secret_wp = _default_identity_from_secrets()
         st.session_state["waypoint_player"] = secret_wp
 
-    # DB SPNKr locale (par défaut: data/spnkr.db à la racine du repo)
-    repo_root = Path(__file__).resolve().parents[3]
-    data_dir = repo_root / "data"
-    spnkr_db_path = str(data_dir / "spnkr.db")
-    try:
-        spnkr_candidates = [p for p in data_dir.glob("spnkr*.db") if p.is_file()]
-    except Exception:
-        spnkr_candidates = []
+    # DuckDB v4 uniquement (SQLite legacy supprimé)
 
-    spnkr_candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
-    latest_spnkr_db_path = str(spnkr_candidates[0]) if spnkr_candidates else spnkr_db_path
-
-    current_db_path = str(st.session_state.get("db_path", "") or "")
-    try:
-        cur_parent = Path(current_db_path).resolve().parent
-    except Exception:
-        cur_parent = Path(current_db_path).parent
-    is_spnkr = (
-        os.path.normcase(str(cur_parent)) == os.path.normcase(str(data_dir))
-        and Path(current_db_path).suffix.lower() == ".db"
-        and Path(current_db_path).name.lower().startswith("spnkr")
-    )
-
-    c_top = st.columns(3)
+    c_top = st.columns(2)
     if c_top[0].button("Vider caches", width="stretch"):
         on_clear_caches()
         st.success("Caches vidés.")
         st.rerun()
-    if c_top[1].button("Rafraîchir DB", width="stretch"):
+    if c_top[1].button("Rafraîchir", width="stretch"):
         # Le get_local_dbs est censé être caché côté app (ttl) ; on le force via clear/closure.
-        try:
-            getattr(get_local_dbs, "clear")()  # st.cache_data wrapper
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            get_local_dbs.clear()  # st.cache_data wrapper
         st.rerun()
 
-    switch_label = "Basculer vers DB OpenSpartan" if is_spnkr else "Basculer vers DB SPNKr"
-    if c_top[2].button(switch_label, width="stretch"):
-        if is_spnkr:
-            st.session_state["db_path"] = default_db
-            guessed = guess_xuid_from_db_path(str(default_db)) or ""
-            if guessed:
-                st.session_state["xuid_input"] = guessed
-            st.rerun()
-        else:
-            if not os.path.exists(latest_spnkr_db_path):
-                st.warning("DB SPNKr introuvable (data/spnkr*.db). Lance d'abord le refresh SPNKr.")
-            st.session_state["db_path"] = latest_spnkr_db_path
-            # Si SPNKR_PLAYER est un gamertag, on résout le XUID via la DB.
-            spnkr_player = (os.environ.get("SPNKR_PLAYER") or "").strip()
-            if spnkr_player:
-                if spnkr_player.isdigit():
-                    st.session_state["xuid_input"] = spnkr_player
-                else:
-                    resolved = resolve_xuid_from_db(latest_spnkr_db_path, spnkr_player)
-                    if resolved:
-                        st.session_state["xuid_input"] = resolved
-            else:
-                # Par défaut: déduire le joueur depuis le nom de la DB SPNKr.
-                inferred = infer_spnkr_player_from_db_path(latest_spnkr_db_path) or ""
-                if inferred:
-                    st.session_state["xuid_input"] = inferred
-                else:
-                    # Fallback local pour éviter un état "vide" qui bloque l'app.
-                    secret_player, _secret_wp = _default_identity_from_secrets()
-                    st.session_state["xuid_input"] = secret_player
-            st.rerun()
+    # DuckDB v4 : la DB est sélectionnée via openspartan_launcher ou session_state
 
-    # UI simplifiée: sélection directe parmi les DB SPNKr détectées.
-    if spnkr_candidates:
-        with st.expander("DB détectées (SPNKr)", expanded=False):
-            # Déterminer l'index actuel
-            current_name = Path(current_db_path).name if current_db_path else ""
-            db_names = [p.name for p in spnkr_candidates]
-            try:
-                current_idx = db_names.index(current_name)
-            except ValueError:
-                current_idx = 0
+    # Récupérer le db_path depuis session_state (pas d'UI manuelle)
+    db_path = str(st.session_state.get("db_path", "") or "").strip()
 
-            def _on_db_change():
-                pick = st.session_state.get("_spnkr_db_picker", "")
-                sel_p = next((p for p in spnkr_candidates if p.name == pick), None)
-                if sel_p:
-                    st.session_state["db_path"] = str(sel_p)
-                    inferred = infer_spnkr_player_from_db_path(str(sel_p)) or ""
-                    if inferred:
-                        st.session_state["xuid_input"] = inferred
-                    on_clear_caches()
-
-            st.selectbox(
-                "DB",
-                options=db_names,
-                index=current_idx,
-                key="_spnkr_db_picker",
-                on_change=_on_db_change,
-            )
-
-    # Mémoriser l'ancienne DB pour détecter un changement
-    previous_db = str(st.session_state.get("db_path", "") or "").strip()
-
-    db_path = file_input(
-        "Chemin du .db",
-        key="db_path",
-        exts=(".db",),
-        help="Sélectionne un fichier SQLite (.db).",
-        placeholder="Ex: C:\\Users\\Guillaume\\AppData\\Local\\OpenSpartan.Workshop\\data\\2533....db",
-    )
-
-    # Détection de changement de DB: mettre à jour le xuid_input automatiquement
-    current_db = str(st.session_state.get("db_path", "") or "").strip()
-    if current_db and current_db != previous_db and os.path.exists(current_db):
-        # La DB a changé → déduire le nouveau joueur
-        inferred = infer_spnkr_player_from_db_path(current_db)
-        if not inferred:
-            inferred = guess_xuid_from_db_path(current_db)
-        if inferred:
-            st.session_state["xuid_input"] = inferred
-        # Vider les caches pour forcer le rechargement avec la nouvelle DB
-        on_clear_caches()
-        st.rerun()
-
-    # Identité: UI masquée (on résout et affiche uniquement le XUID effectif)
+    # Identité: résoudre le XUID depuis la DB
     raw_identity = str(st.session_state.get("xuid_input", "") or "").strip()
     xuid = resolve_xuid_from_db(str(db_path), raw_identity) or raw_identity
     if xuid and (not str(xuid).strip().isdigit()) and raw_identity and (not raw_identity.isdigit()):
@@ -212,8 +104,6 @@ def render_source_section(
                     xuid = xu
         except Exception:
             pass
-    # Affichage simplifié (copiable) + déduction du slug Waypoint via alias
-    st.text_input("XUID", value=str(xuid or "").strip(), disabled=True)
 
     name_guess = display_name_from_xuid(str(xuid or "").strip())
     waypoint_player = str(st.session_state.get("waypoint_player", "") or "").strip()

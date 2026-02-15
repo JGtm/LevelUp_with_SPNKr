@@ -5,15 +5,23 @@ Analyse des victoires et défaites par période et par carte.
 
 from __future__ import annotations
 
-from typing import Optional
-
-import pandas as pd
+import pandas as pd  # requis pour l'API .style de Streamlit
+import polars as pl
 import streamlit as st
 
-from src.config import HALO_COLORS, SESSION_CONFIG
-from src.analysis import compute_map_breakdown
-from src.visualization import plot_outcomes_over_time, plot_map_comparison, plot_map_ratio_with_winloss
-from src.ui.cache import cached_same_team_match_ids_with_friend
+from src.config import HALO_COLORS
+from src.data.services.win_loss_service import WinLossService
+from src.visualization import (
+    plot_map_comparison,
+    plot_map_ratio_with_winloss,
+    plot_matches_at_top_by_week,
+    plot_metric_bars_by_match,
+    plot_outcomes_over_time,
+    plot_stacked_outcomes_by_category,
+    plot_streak_chart,
+    plot_win_ratio_heatmap,
+)
+from src.visualization._compat import DataFrameLike, ensure_polars
 
 
 def _clear_min_matches_maps_auto() -> None:
@@ -29,7 +37,7 @@ def _styler_map(styler, func, subset):
         return styler.applymap(func, subset=subset)
 
 
-def _to_float(v: object) -> Optional[float]:
+def _to_float(v: object) -> float | None:
     """Convertit une valeur en float, ou None si impossible."""
     try:
         if v is None:
@@ -46,27 +54,27 @@ def _style_map_table_row(row: pd.Series) -> pd.Series:
     red = str(getattr(HALO_COLORS, "red", "#E74C3C"))
     violet = "#8E6CFF"
 
-    w = _to_float(row.get("Taux victoire (%)"))
-    l = _to_float(row.get("Taux défaite (%)"))
-    r = _to_float(row.get("Ratio global"))
+    win_pct = _to_float(row.get("Taux victoire (%)"))
+    loss_pct = _to_float(row.get("Taux défaite (%)"))
+    ratio_val = _to_float(row.get("Ratio global"))
 
     styles: dict[str, str] = {str(c): "" for c in row.index}
 
-    if w is not None and l is not None:
-        if w > l:
+    if win_pct is not None and loss_pct is not None:
+        if win_pct > loss_pct:
             styles["Taux victoire (%)"] = f"color: {green}; font-weight: 800;"
             styles["Taux défaite (%)"] = f"color: {red}; font-weight: 800;"
-        elif w < l:
+        elif win_pct < loss_pct:
             styles["Taux victoire (%)"] = f"color: {red}; font-weight: 800;"
             styles["Taux défaite (%)"] = f"color: {green}; font-weight: 800;"
         else:
             styles["Taux victoire (%)"] = f"color: {violet}; font-weight: 800;"
             styles["Taux défaite (%)"] = f"color: {violet}; font-weight: 800;"
 
-    if r is not None:
-        if r > 1.0:
+    if ratio_val is not None:
+        if ratio_val > 1.0:
             styles["Ratio global"] = f"color: {green}; font-weight: 800;"
-        elif r < 1.0:
+        elif ratio_val < 1.0:
             styles["Ratio global"] = f"color: {red}; font-weight: 800;"
         else:
             styles["Ratio global"] = f"color: {violet}; font-weight: 800;"
@@ -75,8 +83,8 @@ def _style_map_table_row(row: pd.Series) -> pd.Series:
 
 
 def render_win_loss_page(
-    dff: pd.DataFrame,
-    base: pd.DataFrame,
+    dff: DataFrameLike,
+    base: DataFrameLike,
     picked_session_labels: list[str] | None,
     db_path: str,
     xuid: str,
@@ -92,177 +100,294 @@ def render_win_loss_page(
         xuid: XUID du joueur.
         db_key: Clé de cache de la DB.
     """
+    dff = ensure_polars(dff)
+    base = ensure_polars(base)
+    if dff.is_empty():
+        st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
+        return
+
     with st.spinner("Calcul des victoires/défaites…"):
         current_mode = st.session_state.get("filter_mode")
         is_session_scope = bool(current_mode == "Sessions" and picked_session_labels)
-        fig_out, bucket_label = plot_outcomes_over_time(dff, session_style=is_session_scope)
-        st.markdown(
-            f"Par **{bucket_label}** : on regroupe les parties par {bucket_label} et on compte le nombre de "
-            "victoires/défaites (et autres statuts) pour suivre l'évolution."
-        )
-        st.plotly_chart(fig_out, width="stretch")
 
-        st.subheader("Par période")
-        d = dff.dropna(subset=["outcome"]).copy()
-        if d.empty:
-            st.info("Aucune donnée pour construire le tableau.")
+        bucket_label = _render_outcomes_over_time(dff, is_session_scope)
+        _render_map_mode_breakdown(dff)
+        _render_heatmap_section(dff)
+        _render_top_by_week(dff)
+        _render_streak_section(dff)
+        _render_personal_score_section(dff)
+        _render_period_section(dff, bucket_label, is_session_scope)
+        _render_ratio_by_map_section(dff, base, db_path, xuid, db_key)
+
+
+def _render_outcomes_over_time(dff: pl.DataFrame, is_session_scope: bool) -> str:
+    """Affiche le graphe outcomes over time. Retourne le bucket_label."""
+    fig_out, bucket_label = plot_outcomes_over_time(dff, session_style=is_session_scope)
+    st.markdown(
+        f"Par **{bucket_label}** : on regroupe les parties par {bucket_label} et on compte le nombre de "
+        "victoires/défaites (et autres statuts) pour suivre l'évolution."
+    )
+    st.plotly_chart(fig_out, width="stretch")
+    return bucket_label
+
+
+def _render_map_mode_breakdown(dff: pl.DataFrame) -> None:
+    """Affiche les résultats par carte et mode (Sprint 5.4)."""
+    st.divider()
+    st.subheader("Résultats par carte et mode")
+    col_by_map, col_by_mode = st.columns(2)
+
+    with col_by_map:
+        st.markdown("##### Par carte")
+        if "map_name" in dff.columns and "outcome" in dff.columns:
+            fig_map = plot_stacked_outcomes_by_category(
+                dff,
+                "map_name",
+                title=None,
+                min_matches=2,
+                sort_by="total",
+                max_categories=12,
+            )
+            st.plotly_chart(fig_map, width="stretch")
         else:
-            if is_session_scope:
-                d = d.sort_values("start_time").reset_index(drop=True)
-                if len(d.index) <= 20:
-                    d["bucket"] = d.index + 1
-                else:
-                    t = pd.to_datetime(d["start_time"], errors="coerce")
-                    d["bucket"] = t.dt.floor("h")
-            else:
-                tmin = pd.to_datetime(d["start_time"], errors="coerce").min()
-                tmax = pd.to_datetime(d["start_time"], errors="coerce").max()
-                dt_range = (tmax - tmin) if (tmin == tmin and tmax == tmax) else pd.Timedelta(days=999)
-                days = float(dt_range.total_seconds() / 86400.0) if dt_range is not None else 999.0
-                cfg = SESSION_CONFIG
-                if days < cfg.bucket_threshold_hourly:
-                    d = d.sort_values("start_time").reset_index(drop=True)
-                    d["bucket"] = d.index + 1
-                elif days <= cfg.bucket_threshold_daily:
-                    d["bucket"] = d["start_time"].dt.floor("h")
-                elif days <= cfg.bucket_threshold_weekly:
-                    d["bucket"] = d["start_time"].dt.to_period("D").astype(str)
-                elif days <= cfg.bucket_threshold_monthly:
-                    d["bucket"] = d["start_time"].dt.to_period("W-MON").astype(str)
-                else:
-                    d["bucket"] = d["start_time"].dt.to_period("M").astype(str)
+            st.info("Données insuffisantes.")
 
-            pivot = (
-                d.pivot_table(index="bucket", columns="outcome", values="match_id", aggfunc="count")
-                .fillna(0)
-                .astype(int)
-                .sort_index()
-            )
-            out_tbl = pd.DataFrame(index=pivot.index)
-            out_tbl["Victoires"] = pivot[2] if 2 in pivot.columns else 0
-            out_tbl["Défaites"] = pivot[3] if 3 in pivot.columns else 0
-            out_tbl["Égalités"] = pivot[1] if 1 in pivot.columns else 0
-            out_tbl["Non terminés"] = pivot[4] if 4 in pivot.columns else 0
-            out_tbl["Total"] = out_tbl[["Victoires", "Défaites", "Égalités", "Non terminés"]].sum(axis=1)
-            out_tbl["Taux de victoires"] = (
-                100.0 * (out_tbl["Victoires"] / out_tbl["Total"].where(out_tbl["Total"] > 0))
-            ).fillna(0.0)
-
-            out_tbl = out_tbl.reset_index().rename(columns={"bucket": bucket_label.capitalize()})
-
-            def _style_pct(v) -> str:
-                try:
-                    x = float(v)  # noqa: F841
-                except Exception:
-                    return ""
-                return "color: #E0E0E0; font-weight: 700;"
-
-            win_rate_col = next(
-                (c for c in ("Taux de victoires", "Win rate", "Taux de victoire") if c in out_tbl.columns),
-                None,
-            )
-            if win_rate_col:
-                out_styled = _styler_map(out_tbl.style, _style_pct, subset=[win_rate_col])
-                col_cfg = {win_rate_col: st.column_config.NumberColumn(win_rate_col, format="%.1f%%")}
-            else:
-                out_styled = out_tbl.style
-                col_cfg = {}
-
-            st.dataframe(out_styled, width="stretch", hide_index=True, column_config=col_cfg)
-
-        st.divider()
-        st.subheader("Ratio par cartes")
-        st.caption("Compare tes performances par map.")
-
-        scope = st.radio(
-            "Scope",
-            options=["Moi (filtres actuels)", "Moi (toutes les parties)", "Avec Madina972", "Avec Chocoboflor"],
-            horizontal=True,
+    with col_by_mode:
+        st.markdown("##### Par mode")
+        mode_col = (
+            "mode_ui"
+            if "mode_ui" in dff.columns
+            else ("mode_category" if "mode_category" in dff.columns else "pair_name")
         )
-        min_matches = st.slider(
-            "Minimum de matchs par carte",
-            1,
-            30,
-            1,
-            step=1,
-            key="min_matches_maps",
-            on_change=_clear_min_matches_maps_auto,
-        )
-
-        if scope == "Moi (toutes les parties)":
-            base_scope = base
-        elif scope == "Avec Madina972":
-            match_ids = set(
-                cached_same_team_match_ids_with_friend(
-                    db_path,
-                    xuid.strip(),
-                    "2533274858283686",
-                    db_key=db_key,
-                )
+        if mode_col in dff.columns and "outcome" in dff.columns:
+            fig_mode = plot_stacked_outcomes_by_category(
+                dff,
+                mode_col,
+                title=None,
+                min_matches=2,
+                sort_by="total",
+                max_categories=10,
             )
-            base_scope = base.loc[base["match_id"].astype(str).isin(match_ids)].copy()
-        elif scope == "Avec Chocoboflor":
-            match_ids = set(
-                cached_same_team_match_ids_with_friend(
-                    db_path,
-                    xuid.strip(),
-                    "2535469190789936",
-                    db_key=db_key,
-                )
-            )
-            base_scope = base.loc[base["match_id"].astype(str).isin(match_ids)].copy()
+            st.plotly_chart(fig_mode, width="stretch")
         else:
-            base_scope = dff
-
-        with st.spinner("Calcul des stats par carte…"):
-            breakdown = compute_map_breakdown(base_scope)
-            breakdown = breakdown.loc[breakdown["matches"] >= int(min_matches)].copy()
-
-        if breakdown.empty:
-            st.warning("Pas assez de matchs par map avec ces filtres.")
-        else:
-            metric = st.selectbox(
-                "Métrique",
-                options=[
-                    ("ratio_global", "Ratio Victoire/défaite"),
-                    ("win_rate", "Taux de victoires"),
-                    ("accuracy_avg", "Précision moyenne"),
-                ],
-                format_func=lambda x: x[1],
-            )
-            key, label = metric
-
-            view = breakdown.head(20).iloc[::-1]
-            title = f"{label} par carte — {scope} (min {min_matches} matchs)"
-            if key == "ratio_global":
-                fig = plot_map_ratio_with_winloss(view, title=title)
-            else:
-                fig = plot_map_comparison(view, key, title=title)
-
-            if key in ("win_rate",):
-                fig.update_xaxes(tickformat=".0%")
-            if key in ("accuracy_avg",):
-                fig.update_xaxes(ticksuffix="%")
-
-            st.plotly_chart(fig, width="stretch")
-
-            # Tableau détaillé
-            _render_map_table(breakdown, base_scope)
+            st.info("Données insuffisantes.")
 
 
-def _render_map_table(breakdown: pd.DataFrame, base_scope: pd.DataFrame) -> None:
+def _render_heatmap_section(dff: pl.DataFrame) -> None:
+    """Affiche la heatmap Win Rate par jour et heure."""
+    st.divider()
+    st.subheader("Win Rate par jour et heure")
+    st.caption(
+        "Identifie les créneaux horaires où tu performes le mieux. "
+        "Les cellules affichent le nombre de matchs."
+    )
+    if "start_time" in dff.columns and "outcome" in dff.columns:
+        fig_heat = plot_win_ratio_heatmap(dff, title=None, min_matches=2)
+        st.plotly_chart(fig_heat, width="stretch")
+    else:
+        st.info("Données temporelles manquantes.")
+
+
+def _render_top_by_week(dff: pl.DataFrame) -> None:
+    """Affiche Matchs Top vs Total par semaine (Sprint 5.4.7)."""
+    st.divider()
+    st.subheader("Matchs Top vs Total par semaine")
+    st.caption(
+        "Compare le nombre de matchs où tu as terminé en tête (rang 1) par rapport au total. "
+        'La ligne indique le taux de "Top 1".'
+    )
+    if "start_time" not in dff.columns:
+        st.info("Données temporelles manquantes.")
+        return
+    rank_col = "rank" if "rank" in dff.columns else "outcome"
+    fig_top = plot_matches_at_top_by_week(
+        dff,
+        title=None,
+        rank_col=rank_col,
+        top_n_ranks=1,
+    )
+    st.plotly_chart(fig_top, width="stretch")
+
+
+def _render_streak_section(dff: pl.DataFrame) -> None:
+    """Affiche les séries de victoires/défaites (Sprint 7.2)."""
+    st.divider()
+    st.subheader("Séries de victoires / défaites")
+    st.caption(
+        "Visualise les séries consécutives de victoires (barres positives) "
+        "et de défaites (barres négatives). Les séries longues indiquent "
+        "les phases de momentum positif ou négatif."
+    )
+    if "outcome" in dff.columns and "start_time" in dff.columns:
+        fig_streak = plot_streak_chart(dff, title=None)
+        st.plotly_chart(fig_streak, width="stretch")
+    else:
+        st.info("Données de résultat manquantes.")
+
+
+def _render_personal_score_section(dff: pl.DataFrame) -> None:
+    """Affiche le score personnel par match (Sprint 7.1)."""
+    if "personal_score" not in dff.columns:
+        return
+    st.divider()
+    st.subheader("Score personnel par match")
+    st.caption(
+        "Barres colorées du score personnel pour chaque match, " "avec courbe de moyenne lissée."
+    )
+    colors = HALO_COLORS.as_dict()
+    fig_ps = plot_metric_bars_by_match(
+        dff,
+        metric_col="personal_score",
+        title=None,
+        y_axis_title="Score personnel",
+        hover_label="Score",
+        bar_color=colors["amber"],
+        smooth_color=colors["violet"],
+        smooth_window=10,
+    )
+    if fig_ps is not None:
+        st.plotly_chart(fig_ps, width="stretch")
+    else:
+        st.info("Données de score personnel insuffisantes.")
+
+
+def _render_period_section(
+    dff: pl.DataFrame,
+    bucket_label: str,
+    is_session_scope: bool,
+) -> None:
+    """Affiche le tableau par période."""
+    st.divider()
+    st.subheader("Par période")
+    period = WinLossService.compute_period_table(dff.to_pandas(), bucket_label, is_session_scope)
+    if period.is_empty:
+        st.info("Aucune donnée pour construire le tableau.")
+        return
+
+    out_tbl = period.table
+
+    def _style_pct(v) -> str:
+        try:
+            x = float(v)  # noqa: F841
+        except Exception:
+            return ""
+        return "color: #E0E0E0; font-weight: 700;"
+
+    win_rate_col = next(
+        (c for c in ("Taux de victoires", "Win rate", "Taux de victoire") if c in out_tbl.columns),
+        None,
+    )
+    if win_rate_col:
+        out_styled = _styler_map(out_tbl.style, _style_pct, subset=[win_rate_col])
+        col_cfg = {win_rate_col: st.column_config.NumberColumn(win_rate_col, format="%.1f%%")}
+    else:
+        out_styled = out_tbl.style
+        col_cfg = {}
+
+    st.dataframe(out_styled, width="stretch", hide_index=True, column_config=col_cfg)
+
+
+def _render_ratio_by_map_section(
+    dff: pl.DataFrame,
+    base: pl.DataFrame,
+    db_path: str,
+    xuid: str,
+    db_key: tuple[int, int] | None,
+) -> None:
+    """Affiche le ratio par cartes avec sélection du scope."""
+    st.divider()
+    st.subheader("Ratio par cartes")
+    st.caption("Compare tes performances par map.")
+
+    scope = st.radio(
+        "Scope",
+        options=[
+            "Moi (filtres actuels)",
+            "Moi (toutes les parties)",
+            "Avec Madina972",
+            "Avec Chocoboflor",
+        ],
+        horizontal=True,
+    )
+    min_matches = st.slider(
+        "Minimum de matchs par carte",
+        1,
+        30,
+        1,
+        step=1,
+        key="min_matches_maps",
+        on_change=_clear_min_matches_maps_auto,
+    )
+
+    base_scope_pl = WinLossService.get_friend_scope_df(
+        scope,
+        dff,
+        base,
+        db_path,
+        xuid,
+        db_key,
+    )
+
+    with st.spinner("Calcul des stats par carte\u2026"):
+        map_result = WinLossService.compute_map_breakdown(base_scope_pl, min_matches)
+        breakdown = map_result.breakdown if not map_result.is_empty else pl.DataFrame()
+
+    if map_result.is_empty:
+        st.warning("Pas assez de matchs par map avec ces filtres.")
+        return
+
+    metric = st.selectbox(
+        "Métrique",
+        options=[
+            ("ratio_global", "Ratio Victoire/défaite"),
+            ("win_rate", "Taux de victoires"),
+            ("accuracy_avg", "Précision moyenne"),
+        ],
+        format_func=lambda x: x[1],
+    )
+    key, label = metric
+
+    view = breakdown.head(20).reverse()
+    if key == "ratio_global":
+        fig = plot_map_ratio_with_winloss(view, title=label)
+    else:
+        fig = plot_map_comparison(view, key, title=label)
+
+    if key in ("win_rate",):
+        fig.update_xaxes(tickformat=".0%")
+    if key in ("accuracy_avg",):
+        fig.update_xaxes(ticksuffix="%")
+
+    st.plotly_chart(fig, width="stretch")
+
+    base_scope = base_scope_pl
+    _render_map_table(breakdown, base_scope)
+
+
+def _render_map_table(breakdown: pl.DataFrame, base_scope: pl.DataFrame) -> None:
     """Affiche le tableau détaillé par carte."""
     from src.ui.translations import translate_playlist_name
 
-    tbl = breakdown.copy()
-    tbl["win_rate"] = (tbl["win_rate"] * 100).round(1)
-    tbl["loss_rate"] = (tbl["loss_rate"] * 100).round(1)
-    tbl["accuracy_avg"] = tbl["accuracy_avg"].round(2)
-    tbl["ratio_global"] = tbl["ratio_global"].round(2)
+    # Transformations internes en Polars
+    cols_expr = [
+        (pl.col("win_rate") * 100).round(1).alias("win_rate"),
+        (pl.col("loss_rate") * 100).round(1).alias("loss_rate"),
+        pl.col("accuracy_avg").cast(pl.Float64, strict=False).round(2).alias("accuracy_avg"),
+        pl.col("ratio_global").cast(pl.Float64, strict=False).round(2).alias("ratio_global"),
+    ]
+    if "performance_avg" in breakdown.columns:
+        cols_expr.append(
+            pl.col("performance_avg")
+            .cast(pl.Float64, strict=False)
+            .round(1)
+            .alias("performance_avg")
+        )
+    tbl = breakdown.with_columns(cols_expr)
 
-    def _single_or_multi_label(series: pd.Series) -> str:
+    def _single_or_multi_label(values: list) -> str:
+        """Détermine un label unique ou 'Plusieurs' à partir d'une liste."""
         try:
-            vals = sorted({str(x).strip() for x in series.dropna().tolist() if str(x).strip()})
+            vals = sorted({str(x).strip() for x in values if x is not None and str(x).strip()})
         except Exception:
             return "-"
         if len(vals) == 0:
@@ -272,61 +397,85 @@ def _render_map_table(breakdown: pd.DataFrame, base_scope: pd.DataFrame) -> None
         return "Plusieurs"
 
     def _clean_asset_label(s: str | None) -> str:
+        """Nettoie un label d'asset."""
         if not s:
             return ""
         return str(s).split("/")[-1].replace("-", " ").strip().title()
 
     def _normalize_mode_label(p: str | None) -> str | None:
+        """Normalise un label de mode de jeu."""
         from src.ui.translations import translate_pair_name
+
         return translate_pair_name(p) if p else None
 
     if "playlist_ui" in base_scope.columns:
-        playlist_ctx = _single_or_multi_label(base_scope["playlist_ui"])
+        playlist_ctx = _single_or_multi_label(base_scope["playlist_ui"].drop_nulls().to_list())
     else:
-        playlist_ctx = _single_or_multi_label(
-            base_scope["playlist_name"].apply(_clean_asset_label).apply(translate_playlist_name)
+        playlist_vals = (
+            base_scope["playlist_name"]
+            .map_elements(_clean_asset_label, return_dtype=pl.Utf8)
+            .map_elements(translate_playlist_name, return_dtype=pl.Utf8)
+            .drop_nulls()
+            .to_list()
         )
+        playlist_ctx = _single_or_multi_label(playlist_vals)
 
     if "mode_ui" in base_scope.columns:
-        mode_ctx = _single_or_multi_label(base_scope["mode_ui"])
+        mode_ctx = _single_or_multi_label(base_scope["mode_ui"].drop_nulls().to_list())
     else:
-        mode_ctx = _single_or_multi_label(base_scope["pair_name"].apply(_normalize_mode_label))
+        mode_vals = (
+            base_scope["pair_name"]
+            .map_elements(_normalize_mode_label, return_dtype=pl.Utf8)
+            .drop_nulls()
+            .to_list()
+        )
+        mode_ctx = _single_or_multi_label(mode_vals)
 
-    tbl_disp = tbl.copy()
-    tbl_disp["playlist_ctx"] = playlist_ctx
-    tbl_disp["mode_ctx"] = mode_ctx
-    tbl_disp = tbl_disp.rename(
-        columns={
-            "map_name": "Carte",
-            "matches": "Parties",
-            "accuracy_avg": "Précision moy. (%)",
-            "win_rate": "Taux victoire (%)",
-            "loss_rate": "Taux défaite (%)",
-            "ratio_global": "Ratio global",
-            "playlist_ctx": "Playlist",
-            "mode_ctx": "Mode",
-        }
+    tbl = tbl.with_columns(
+        [
+            pl.lit(playlist_ctx).alias("playlist_ctx"),
+            pl.lit(mode_ctx).alias("mode_ctx"),
+        ]
     )
+    rename_map = {
+        "map_name": "Carte",
+        "matches": "Parties",
+        "accuracy_avg": "Précision moy. (%)",
+        "performance_avg": "Performance moy.",
+        "win_rate": "Taux victoire (%)",
+        "loss_rate": "Taux défaite (%)",
+        "ratio_global": "Ratio global",
+        "playlist_ctx": "Playlist",
+        "mode_ctx": "Mode",
+    }
+    tbl = tbl.rename({k: v for k, v in rename_map.items() if k in tbl.columns})
+
     ordered_cols = [
         "Carte",
         "Playlist",
         "Mode",
         "Parties",
         "Précision moy. (%)",
+        "Performance moy.",
         "Taux victoire (%)",
         "Taux défaite (%)",
         "Ratio global",
     ]
-    tbl_disp = tbl_disp[[c for c in ordered_cols if c in tbl_disp.columns]]
+    tbl = tbl.select([c for c in ordered_cols if c in tbl.columns])
 
-    tbl_styled = tbl_disp.style.apply(_style_map_table_row, axis=1)
+    # Conversion pandas à la frontière .style
+    tbl_pd = tbl.to_pandas()
+    tbl_styled = tbl_pd.style.apply(_style_map_table_row, axis=1)
     st.dataframe(
         tbl_styled,
         width="stretch",
         hide_index=True,
         column_config={
             "Parties": st.column_config.NumberColumn("Parties", format="%d"),
-            "Précision moy. (%)": st.column_config.NumberColumn("Précision moy. (%)", format="%.2f"),
+            "Précision moy. (%)": st.column_config.NumberColumn(
+                "Précision moy. (%)", format="%.2f"
+            ),
+            "Performance moy.": st.column_config.NumberColumn("Performance moy.", format="%.1f"),
             "Taux victoire (%)": st.column_config.NumberColumn("Taux victoire (%)", format="%.1f"),
             "Taux défaite (%)": st.column_config.NumberColumn("Taux défaite (%)", format="%.1f"),
             "Ratio global": st.column_config.NumberColumn("Ratio global", format="%.2f"),

@@ -1,51 +1,53 @@
 """Fonctions de filtrage et helpers pour les options UI."""
 
 import re
-from typing import Dict, List, Callable
+from collections.abc import Callable
 
-import pandas as pd
+import polars as pl
 
 
-def mark_firefight(df: pd.DataFrame) -> pd.DataFrame:
+def mark_firefight(df: pl.DataFrame) -> pl.DataFrame:
     """Ajoute une colonne is_firefight pour identifier les matchs PvE.
-    
+
     Heuristique basée sur les libellés Playlist / Pair contenant "Firefight".
-    
+
     Args:
-        df: DataFrame de matchs.
-        
+        df: DataFrame de matchs (Polars).
+
     Returns:
         DataFrame avec colonne is_firefight ajoutée.
     """
-    d = df.copy()
-    pl = d.get("playlist_name")
-    pair = d.get("pair_name")
-    gv = d.get("game_variant_name")
-    pl_s = pl.fillna("").astype(str) if pl is not None else pd.Series([""] * len(d))
-    pair_s = pair.fillna("").astype(str) if pair is not None else pd.Series([""] * len(d))
-    gv_s = gv.fillna("").astype(str) if gv is not None else pd.Series([""] * len(d))
-
-    pat = r"\bfirefight\b"
-    d["is_firefight"] = (
-        pl_s.str.contains(pat, case=False, regex=True) |
-        pair_s.str.contains(pat, case=False, regex=True) |
-        gv_s.str.contains(pat, case=False, regex=True)
+    pat = r"(?i)\bfirefight\b"
+    pl_col = (
+        pl.col("playlist_name").fill_null("").cast(pl.Utf8)
+        if "playlist_name" in df.columns
+        else pl.lit("")
     )
-    return d
+    pair_col = (
+        pl.col("pair_name").fill_null("").cast(pl.Utf8) if "pair_name" in df.columns else pl.lit("")
+    )
+    gv_col = (
+        pl.col("game_variant_name").fill_null("").cast(pl.Utf8)
+        if "game_variant_name" in df.columns
+        else pl.lit("")
+    )
+
+    is_ff = pl_col.str.contains(pat) | pair_col.str.contains(pat) | gv_col.str.contains(pat)
+    return df.with_columns(is_ff.alias("is_firefight"))
 
 
 def is_allowed_playlist_name(name: str) -> bool:
     """Vérifie si une playlist est dans la liste autorisée.
-    
+
     Playlists autorisées par défaut:
     - Quick Play
     - Ranked Slayer
     - Ranked Arena
     - Big Team Battle
-    
+
     Args:
         name: Nom de la playlist.
-        
+
     Returns:
         True si la playlist est autorisée.
     """
@@ -75,18 +77,19 @@ def is_allowed_playlist_name(name: str) -> bool:
     return False
 
 
-def build_option_map(series_name: pd.Series, series_id: pd.Series) -> Dict[str, str]:
+def build_option_map(series_name: pl.Series, series_id: pl.Series) -> dict[str, str]:
     """Construit un dictionnaire label -> id pour les selectbox.
-    
+
     Nettoie les libellés (supprime les suffixes UUID) et gère les collisions.
-    
+
     Args:
-        series_name: Série des noms.
-        series_id: Série des IDs correspondants.
-        
+        series_name: Série des noms (Polars).
+        series_id: Série des IDs correspondants (Polars).
+
     Returns:
         Dictionnaire {label_propre: id} trié alphabétiquement.
     """
+
     def clean_label(s: str) -> str:
         s = (s or "").strip()
         # Supprime les suffixes type " - <hash/uuid>"
@@ -95,10 +98,12 @@ def build_option_map(series_name: pd.Series, series_id: pd.Series) -> Dict[str, 
             s = (m.group(1) or "").strip()
         return s
 
-    out: Dict[str, str] = {}
-    collisions: Dict[str, int] = {}
+    out: dict[str, str] = {}
+    collisions: dict[str, int] = {}
 
-    for name, _id in zip(series_name.fillna(""), series_id.fillna("")):
+    names = series_name.fill_null("").to_list()
+    ids = series_id.fill_null("").to_list()
+    for name, _id in zip(names, ids, strict=False):
         if not _id:
             continue
         if not (isinstance(name, str) and name.strip()):
@@ -120,24 +125,21 @@ def build_option_map(series_name: pd.Series, series_id: pd.Series) -> Dict[str, 
 
 
 def build_xuid_option_map(
-    xuids: List[str],
+    xuids: list[str],
     display_name_fn: Callable[[str], str] | None = None,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Construit un dictionnaire label -> xuid pour les selectbox.
-    
+
     Args:
         xuids: Liste de XUID.
         display_name_fn: Fonction pour obtenir le display name d'un XUID.
                         Si None, utilise le XUID tel quel.
-        
+
     Returns:
         Dictionnaire {label: xuid} trié alphabétiquement.
     """
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for x in xuids:
-        if display_name_fn:
-            label = display_name_fn(x)
-        else:
-            label = x
+        label = display_name_fn(x) if display_name_fn else x
         out[f"{label} — {x}"] = x
     return dict(sorted(out.items(), key=lambda kv: kv[0].lower()))

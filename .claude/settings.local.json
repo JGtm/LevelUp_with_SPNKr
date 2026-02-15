@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(test -f \"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph/src/analysis/win_streaks.py\")",
+      "Bash(git -C \"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph\" ls-files --error-unmatch out/ levelup_halo.egg-info/ thumbs/ .venv_windows/)",
+      "Bash(\"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph/.venv_windows/Scripts/python.exe\" --version)",
+      "Bash(\"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph/.venv/Scripts/python.exe\" --version)",
+      "Bash(git -C \"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph\" add .ai/CODE_REVIEW_CLEANUP_PLAN.md)",
+      "Bash(git -C \"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph\" commit -m \"$\\(cat <<''EOF''\ndocs\\(.ai\\): plan de revue de code et nettoyage complet du projet\n\nAudit exhaustif couvrant 8 axes : scripts \\(112→~22 actifs\\), suppression\nsrc/db/ legacy, migration Pandas→Polars, éradication SQLite, réorg\narchitecture, nettoyage données/assets/dossiers racine, tests, docs .ai/.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C \"c:/Users/Guillaume/Downloads/Scripts/Openspartan-graph\" status)",
+      "Bash(python -m pytest:*)",
+      "Bash(.venv/Scripts/python.exe -m pip install:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/pip.exe install:*)",
+      "Bash(.venv/Scripts/pip.exe:*)",
+      "Bash(\"/c/Python312/python.exe\" --version)",
+      "Bash(\"/c/Program Files/Python312/python.exe\" --version)",
+      "Bash(py.exe:*)",
+      "Bash(\"/c/Users/Guillaume/AppData/Local/Programs/Python/Python312/python.exe\" --version)",
+      "Bash(/c/msys64/ucrt64/bin/python.exe:*)",
+      "Bash(pacman -Ss:*)",
+      "Bash(pacman -S:*)",
+      "Bash(bash:*)",
+      "Bash(/c/msys64/usr/bin/pacman.exe -S --noconfirm:*)",
+      "Bash(/c/msys64/ucrt64/bin/python3.12.exe:*)",
+      "Bash(python3:*)",
+      "Bash(pacman:*)",
+      "Bash(git rm:*)"
+    ]
+  }
+}

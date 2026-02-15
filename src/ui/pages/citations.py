@@ -2,29 +2,36 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
-import pandas as pd
+import polars as pl
 import streamlit as st
 
 from src.ui.commendations import render_h5g_commendations_section
 from src.ui.medals import medal_label, render_medals_grid
+from src.visualization._compat import DataFrameLike, ensure_polars
+from src.visualization.distributions import plot_medals_distribution
 
 
 def render_citations_page(
     *,
-    dff: pd.DataFrame,
+    dff: DataFrameLike,
+    df_full: DataFrameLike,
     xuid: str | None,
     db_path: str,
     db_key: tuple[int, int] | None,
-    top_medals_fn: Callable[[str, str, list[str], int | None, tuple[int, int] | None], list[tuple[int, int]] | None],
+    top_medals_fn: Callable[
+        [str, str, list[str], int | None, tuple[int, int] | None], list[tuple[int, int]] | None
+    ],
 ) -> None:
     """Rend la page Citations (Commendations H5G + Médailles HI).
 
     Parameters
     ----------
-    dff : pd.DataFrame
+    dff : DataFrameLike
         DataFrame filtré des matchs.
+    df_full : DataFrameLike
+        DataFrame complet (non filtré) pour calculer les deltas.
     xuid : str | None
         XUID du joueur principal.
     db_path : str
@@ -34,48 +41,93 @@ def render_citations_page(
     top_medals_fn : Callable
         Fonction pour récupérer les top médailles (signature: db_path, xuid, match_ids, top_n, db_key).
     """
-    # Agrège les médailles une seule fois (utilisé pour l'UI Citations + la grille Médailles).
-    counts_by_medal: dict[int, int] = {}
-    stats_totals: dict[str, int] = {}
+    # Normaliser en Polars dès l'entrée
+    dff = ensure_polars(dff)
+    df_full = ensure_polars(df_full)
+    # Protection contre les DataFrames vides
+    if dff.is_empty():
+        st.warning("Aucun match à afficher. Vérifiez vos filtres ou synchronisez les données.")
+        return
 
-    if not dff.empty and str(xuid or "").strip():
-        match_ids = [str(x) for x in dff["match_id"].dropna().astype(str).tolist()]
+    xuid_clean = str(xuid or "").strip()
+
+    # Extraire les match_ids pour les filtres et le delta
+    filtered_match_ids: list[str] | None = None
+    all_match_ids: list[str] | None = None
+    is_filtered = len(dff) < len(df_full) if not df_full.is_empty() else False
+
+    if xuid_clean:
+        all_match_ids = (
+            df_full.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
+        )
+        if is_filtered:
+            filtered_match_ids = (
+                dff.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
+            )
+
+    # 1) Commendations Halo 5 (via CitationEngine + match_citations)
+    render_h5g_commendations_section(
+        db_path=db_path,
+        xuid=xuid_clean,
+        filtered_match_ids=filtered_match_ids,
+        all_match_ids=all_match_ids,
+    )
+    st.divider()
+
+    # 2) Médailles (Halo Infinite) - Agrégation des médailles pour la grille
+    counts_by_medal: dict[int, int] = {}
+    if not dff.is_empty() and xuid_clean:
+        match_ids = (
+            dff.select(pl.col("match_id").drop_nulls().cast(pl.String)).to_series().to_list()
+        )
         with st.spinner("Agrégation des médailles…"):
-            top_all = top_medals_fn(db_path, xuid.strip(), match_ids, top_n=None, db_key=db_key)
+            top_all = top_medals_fn(db_path, xuid_clean, match_ids, top_n=None, db_key=db_key)
         try:
             counts_by_medal = {int(nid): int(cnt) for nid, cnt in (top_all or [])}
         except Exception:
             counts_by_medal = {}
 
-        # Stats agrégées (utilisées par certaines citations suivies via candidates.type=stat).
-        for col in ("kills", "deaths", "assists", "headshot_kills"):
-            if col not in dff.columns:
-                continue
-            try:
-                stats_totals[col] = int(pd.to_numeric(dff[col], errors="coerce").fillna(0).sum())
-            except Exception:
-                stats_totals[col] = 0
-
-    # 1) Commendations Halo 5 (référentiel offline)
-    render_h5g_commendations_section(counts_by_medal=counts_by_medal, stats_totals=stats_totals)
-    st.divider()
-
-    # 2) Médailles (Halo Infinite) sur la sélection/filtres actuels
-    st.caption("Médailles sur la sélection/filtres actuels (non limitées).")
-    if dff.empty:
+    # 2) Médailles (Halo Infinite) - Affiche TOUJOURS toutes les médailles.
+    st.caption("Médailles sur la sélection/filtres actuels.")
+    if dff.is_empty():
         st.info("Aucun match disponible avec les filtres actuels.")
     else:
-        show_all = st.toggle("Afficher toutes les médailles (peut être lent)", value=False)
-        top_n = None if show_all else int(st.slider("Nombre de médailles", 25, 500, 100, 25))
-
         top = sorted(counts_by_medal.items(), key=lambda kv: kv[1], reverse=True)
-        if top_n is not None:
-            top = top[:top_n]
 
         if not top:
             st.info("Aucune médaille trouvée (ou payload médailles absent).")
         else:
-            md = pd.DataFrame(top, columns=["name_id", "count"])
-            md["label"] = md["name_id"].apply(lambda x: medal_label(int(x)))
-            md_desc = md.sort_values("count", ascending=False)
-            render_medals_grid(md_desc[["name_id", "count"]].to_dict(orient="records"), cols_per_row=8)
+            md = pl.DataFrame(
+                {"name_id": [t[0] for t in top], "count": [t[1] for t in top]}
+            ).with_columns(
+                pl.col("name_id")
+                .map_elements(lambda x: medal_label(int(x)), return_dtype=pl.String)
+                .alias("label")
+            )
+            md_desc = md.sort("count", descending=True)
+
+            # === Graphique de distribution des médailles (Sprint 5.4.9) ===
+            st.subheader("Distribution des médailles")
+
+            # Préparer les données pour le graphique
+            medal_names_dict = {int(nid): medal_label(int(nid)) for nid, _ in top}
+            fig_medals = plot_medals_distribution(
+                top,
+                medal_names_dict,
+                title=None,
+                top_n=25,
+            )
+            st.plotly_chart(fig_medals, width="stretch")
+
+            st.divider()
+            st.subheader("Toutes les médailles")
+
+            # Passer les deltas par médaille si filtré
+            deltas = None
+            if is_filtered:
+                deltas = {int(nid): int(cnt) for nid, cnt in counts_by_medal.items()}
+            render_medals_grid(
+                md_desc.select("name_id", "count").to_dicts(),
+                cols_per_row=8,
+                deltas=deltas,
+            )

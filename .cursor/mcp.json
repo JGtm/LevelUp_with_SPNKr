@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "duckdb": {
+      "command": "C:\\Users\\Guillaume\\AppData\\Local\\Python\\pythoncore-3.14-64\\Scripts\\duckdb-mcp-server.exe",
+      "args": ["--db-path", ":memory:"],
+      "disabled": false
+    },
+    "halo-rag": {
+      "command": "C:\\Users\\Guillaume\\Downloads\\Scripts\\Openspartan-graph\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "src.ai.mcp_server"],
+      "cwd": "C:\\Users\\Guillaume\\Downloads\\Scripts\\Openspartan-graph",
+      "disabled": false,
+      "description": "RAG local pour documentation Halo API"
+    }
+  }
+}

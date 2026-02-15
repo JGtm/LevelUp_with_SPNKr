@@ -1,23 +1,54 @@
+# === VCS & IDE ===
 .git
+.gitignore
+.vscode
+.idea
+
+# === Python ===
 .venv
 __pycache__
 **/__pycache__
 *.pyc
 *.pyo
 *.pyd
-*.db
-*.sqlite
-*.sqlite3
+*.egg-info
+
+# === Build artifacts ===
+out
+build
+dist
+
+# === Caches outils ===
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# === Données joueurs (montées en volume, pas buildées dans l'image) ===
+data/players/
+data/cache/
+data/backups/
+
+# === IA / docs internes ===
+.ai/
+.github/
+
+# === Media lourds (inutiles dans l'image) ===
 *.png
 *.jpg
 *.jpeg
 *.webp
 *.gif
-out
-build
-dist
-*.egg-info
-.pytest_cache
-.mypy_cache
-.ruff_cache
-.vscode
+*.mp4
+*.mkv
+
+# === Bases legacy (inutiles dans l'image DuckDB v4) ===
+*.db
+*.sqlite
+*.sqlite3
+
+# === Fichiers de test / debug ===
+tests/
+test_*.txt
+check_result.txt
+CLAUDE.md
+To do.txt

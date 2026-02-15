@@ -10,23 +10,20 @@ Fichiers attendus:
 
 from __future__ import annotations
 
+import base64
+import html
 import json
 import os
-import html
 import re
-import base64
 import unicodedata
 from typing import Any
+
 import streamlit as st
 
 from src.config import get_repo_root
 
 DEFAULT_H5G_JSON_PATH = os.path.join("data", "wiki", "halo5_commendations_fr.json")
 DEFAULT_H5G_EXCLUDE_PATH = os.path.join("data", "wiki", "halo5_commendations_exclude.json")
-
-# Référentiel “suivi” (curation manuelle) : définit comment calculer la progression.
-DEFAULT_H5G_TRACKING_ASSUMED_PATH = os.path.join("out", "commendations_mapping_assumed_old.json")
-DEFAULT_H5G_TRACKING_UNMATCHED_PATH = os.path.join("out", "commendations_mapping_unmatched_old.json")
 
 
 _H5G_TITLE_OVERRIDES_FR: dict[str, str] = {
@@ -46,7 +43,6 @@ _H5G_TITLE_OVERRIDES_FR: dict[str, str] = {
     "Till someone loses an eye": "Jusqu'à ce que quelqu'un perde un œil",
     "Too close to the fire": "Trop près du feu",
     "Too fast for you": "Trop rapide pour toi",
-
     # Traductions "idiom" supplémentaires
     "Helping Hand": "Coup de main",
     "Player vs Everything": "Seul contre tous",
@@ -66,6 +62,14 @@ _H5G_TITLE_OVERRIDES_FR: dict[str, str] = {
 }
 
 
+# Descriptions personnalisées pour certaines citations (override du JSON)
+_H5G_DESC_OVERRIDES_FR: dict[str, str] = {
+    # Seul contre tous / Player vs Everything
+    "Player vs Everything": "Gagner des parties en Baptême du feu",
+    "Seul contre tous": "Gagner des parties en Baptême du feu",
+}
+
+
 def _repo_root() -> str:
     # Robuste si le projet est lancé depuis un autre CWD.
     return get_repo_root(__file__)
@@ -82,7 +86,9 @@ def _abs_from_repo(path: str) -> str:
 def _normalize_name(s: str) -> str:
     base = " ".join(str(s or "").strip().lower().split())
     # Ignore les accents pour rendre les exclusions robustes (é/è/ê, etc.).
-    return "".join(ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch))
+    return "".join(
+        ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch)
+    )
 
 
 def _looks_english(text: str) -> bool:
@@ -142,7 +148,26 @@ def _display_citation_name(name: str) -> str:
     return _H5G_TITLE_OVERRIDES_FR.get(n, n)
 
 
-def _display_citation_desc(desc: str) -> str:
+def _display_citation_desc(desc: str, name: str | None = None) -> str:
+    """Retourne la description à afficher pour une citation.
+
+    Args:
+        desc: Description originale de la citation.
+        name: Nom de la citation (pour les overrides).
+
+    Returns:
+        Description traduite/personnalisée.
+    """
+    # Priorité aux overrides de description
+    if name:
+        n = str(name).strip()
+        if n in _H5G_DESC_OVERRIDES_FR:
+            return _H5G_DESC_OVERRIDES_FR[n]
+        # Essayer aussi avec le nom traduit
+        translated_name = _H5G_TITLE_OVERRIDES_FR.get(n, n)
+        if translated_name in _H5G_DESC_OVERRIDES_FR:
+            return _H5G_DESC_OVERRIDES_FR[translated_name]
+
     d = str(desc or "").strip()
     if not d:
         return d
@@ -212,53 +237,6 @@ def _image_basename_from_item(item: dict[str, Any]) -> str | None:
     return None
 
 
-_NOTE_DROP_RE = re.compile(r"\b(a|ha)\s+supprimer\b", re.IGNORECASE)
-_NOTE_MEDAL_IDS_RE = re.compile(r"\b(\d{9,})\b")
-
-
-def _is_dropped_by_notes(notes: str) -> bool:
-    s = str(notes or "").strip()
-    if not s:
-        return False
-    return bool(_NOTE_DROP_RE.search(s))
-
-
-def _medal_ids_from_notes(notes: str) -> list[int]:
-    s = str(notes or "")
-    if not s:
-        return []
-    # On ne considère ces ids que si la note parle explicitement de médaille(s).
-    low = s.lower()
-    if ("médaille" not in low) and ("medaille" not in low) and ("médailles" not in low) and ("medailles" not in low):
-        return []
-    out: list[int] = []
-    seen: set[int] = set()
-    for m in _NOTE_MEDAL_IDS_RE.finditer(s):
-        try:
-            nid = int(m.group(1))
-        except Exception:
-            continue
-        if nid in seen:
-            continue
-        seen.add(nid)
-        out.append(nid)
-    return out
-
-
-_SUM_COL_RE = re.compile(r"sum\(\s*(?P<col>[a-zA-Z_][a-zA-Z0-9_]*)\s*\)")
-
-
-def _stat_col_from_expression(expr: str) -> str | None:
-    s = str(expr or "").strip()
-    if not s:
-        return None
-    m = _SUM_COL_RE.search(s)
-    if not m:
-        return None
-    col = (m.group("col") or "").strip()
-    return col or None
-
-
 @st.cache_data(show_spinner=False)
 def load_h5g_commendations_exclude(
     path: str = DEFAULT_H5G_EXCLUDE_PATH,
@@ -269,7 +247,7 @@ def load_h5g_commendations_exclude(
         return set(), set()
 
     try:
-        with open(abs_path, "r", encoding="utf-8") as f:
+        with open(abs_path, encoding="utf-8") as f:
             raw = json.load(f)
     except Exception:
         return set(), set()
@@ -316,11 +294,13 @@ def load_h5g_commendations_exclude(
 
 
 @st.cache_data(show_spinner=False)
-def load_h5g_commendations_json(path: str = DEFAULT_H5G_JSON_PATH, mtime: float | None = None) -> dict[str, Any]:
+def load_h5g_commendations_json(
+    path: str = DEFAULT_H5G_JSON_PATH, mtime: float | None = None
+) -> dict[str, Any]:
     abs_path = _abs_from_repo(path)
     if not os.path.exists(abs_path):
         return {"items": []}
-    with open(abs_path, "r", encoding="utf-8") as f:
+    with open(abs_path, encoding="utf-8") as f:
         data = json.load(f) or {}
     if not isinstance(data, dict):
         return {"items": []}
@@ -345,7 +325,13 @@ def _img_data_uri(abs_path: str, mtime: float | None = None) -> str | None:
     if not abs_path or not os.path.exists(abs_path):
         return None
     ext = os.path.splitext(abs_path)[1].lower()
-    mime = "image/png" if ext == ".png" else "image/jpeg" if ext in {".jpg", ".jpeg"} else "application/octet-stream"
+    mime = (
+        "image/png"
+        if ext == ".png"
+        else "image/jpeg"
+        if ext in {".jpg", ".jpeg"}
+        else "application/octet-stream"
+    )
     try:
         with open(abs_path, "rb") as f:
             raw = f.read()
@@ -357,103 +343,25 @@ def _img_data_uri(abs_path: str, mtime: float | None = None) -> str | None:
     return f"data:{mime};base64,{b64}"
 
 
-@st.cache_data(show_spinner=False)
-def load_h5g_commendations_tracking_rules(
-    assumed_path: str = DEFAULT_H5G_TRACKING_ASSUMED_PATH,
-    assumed_mtime: float | None = None,
-    unmatched_path: str = DEFAULT_H5G_TRACKING_UNMATCHED_PATH,
-    unmatched_mtime: float | None = None,
-) -> dict[str, dict[str, Any]]:
-    """Index {normalized citation name -> règle de suivi}.
-
-    La règle peut contenir:
-    - medal_ids: list[int]  (somme de plusieurs médailles)
-    - medal_id: int         (médaille unique)
-    - stat: str             (ex: kills)
-    - expression: str       (ex: kills = sum(kills))
-    """
-
-    def _load_one(path: str) -> list[dict[str, Any]]:
-        abs_path = _abs_from_repo(path)
-        if not os.path.exists(abs_path):
-            return []
-        try:
-            with open(abs_path, "r", encoding="utf-8") as f:
-                data = json.load(f) or {}
-        except Exception:
-            return []
-        items = data.get("items")
-        return items if isinstance(items, list) else []
-
-    merged = _load_one(assumed_path) + _load_one(unmatched_path)
-
-    out: dict[str, dict[str, Any]] = {}
-    for it in merged:
-        if not isinstance(it, dict):
-            continue
-        name = str(it.get("name") or "").strip()
-        if not name:
-            continue
-        notes = str(it.get("notes") or "").strip()
-        if _is_dropped_by_notes(notes):
-            continue
-
-        rule: dict[str, Any] = {}
-
-        # 1) Notes explicites : "compter médailles ..." => somme d'ids.
-        medal_ids = _medal_ids_from_notes(notes)
-        if medal_ids:
-            rule["medal_ids"] = medal_ids
-
-        # 2) chosen / candidates
-        chosen = it.get("chosen")
-        candidates = it.get("candidates")
-        picks: list[dict[str, Any]] = []
-        if isinstance(chosen, dict):
-            picks.append(chosen)
-        if isinstance(candidates, list):
-            picks.extend([x for x in candidates if isinstance(x, dict)])
-
-        # Si on a déjà une règle via notes, on ne l'écrase pas.
-        if "medal_ids" not in rule:
-            for p in picks:
-                t = p.get("type")
-                if t == "medal":
-                    nid = p.get("name_id")
-                    if nid is None:
-                        continue
-                    try:
-                        rule["medal_id"] = int(nid)
-                        break
-                    except Exception:
-                        continue
-                if t == "stat":
-                    stat = str(p.get("stat") or "").strip()
-                    expr = str(p.get("expression") or "").strip()
-                    if expr:
-                        rule["expression"] = expr
-                        col = _stat_col_from_expression(expr)
-                        if col:
-                            rule["stat"] = col
-                    if stat and "stat" not in rule:
-                        rule["stat"] = stat
-                    if rule:
-                        break
-
-        # Pas de méthode => non suivie.
-        if not rule:
-            continue
-
-        out[_normalize_name(name)] = rule
-
-    return out
-
-
 def render_h5g_commendations_section(
     *,
-    counts_by_medal: dict[int, int] | None = None,
-    stats_totals: dict[str, int] | None = None,
+    db_path: str | None = None,
+    xuid: str | None = None,
+    filtered_match_ids: list[str] | None = None,
+    all_match_ids: list[str] | None = None,
 ) -> None:
+    """Affiche la section des commendations Halo 5.
+
+    Utilise ``CitationEngine`` pour agréger les valeurs depuis ``match_citations``.
+
+    Args:
+        db_path: Chemin vers la base DuckDB du joueur.
+        xuid: XUID du joueur.
+        filtered_match_ids: IDs des matchs filtrés (pour delta). ``None`` = pas de filtre.
+        all_match_ids: IDs de tous les matchs. ``None`` = agrège tout sans filtre.
+    """
+    from src.analysis.citations.engine import CitationEngine
+
     abs_json = _abs_from_repo(DEFAULT_H5G_JSON_PATH)
     json_mtime = None
     try:
@@ -461,56 +369,14 @@ def render_h5g_commendations_section(
     except OSError:
         json_mtime = None
 
-    abs_excl = _abs_from_repo(DEFAULT_H5G_EXCLUDE_PATH)
-    excl_mtime = None
-    try:
-        excl_mtime = os.path.getmtime(abs_excl)
-    except OSError:
-        excl_mtime = None
-
-    abs_assumed = _abs_from_repo(DEFAULT_H5G_TRACKING_ASSUMED_PATH)
-    assumed_mtime = None
-    try:
-        assumed_mtime = os.path.getmtime(abs_assumed)
-    except OSError:
-        assumed_mtime = None
-
-    abs_unmatched = _abs_from_repo(DEFAULT_H5G_TRACKING_UNMATCHED_PATH)
-    unmatched_mtime = None
-    try:
-        unmatched_mtime = os.path.getmtime(abs_unmatched)
-    except OSError:
-        unmatched_mtime = None
-
-    tracking = load_h5g_commendations_tracking_rules(
-        DEFAULT_H5G_TRACKING_ASSUMED_PATH,
-        assumed_mtime,
-        DEFAULT_H5G_TRACKING_UNMATCHED_PATH,
-        unmatched_mtime,
-    )
-
-    counts_by_medal = counts_by_medal or {}
-    stats_totals = stats_totals or {}
-
     data = load_h5g_commendations_json(DEFAULT_H5G_JSON_PATH, json_mtime)
     items: list[dict[str, Any]] = list(data.get("items") or [])
 
-    excluded_images, excluded_names = load_h5g_commendations_exclude(DEFAULT_H5G_EXCLUDE_PATH, excl_mtime)
-    if items and (excluded_images or excluded_names):
-        kept: list[dict[str, Any]] = []
-        for it in items:
-            key = _image_basename_from_item(it)
-            if key and key in excluded_images:
-                continue
-            if _normalize_name(str(it.get("name") or "")) in excluded_names:
-                continue
-            kept.append(it)
-        excluded_count = len(items) - len(kept)
-        items = kept
-    else:
-        excluded_count = 0
+    # Le filtrage des citations se fait désormais via citation_mappings.enabled
+    # dans metadata.duckdb (pas besoin du JSON d'exclusion).
 
     st.subheader("Citations")
+
     if not items:
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -519,34 +385,52 @@ def render_h5g_commendations_section(
                 "Si le fichier JSON vient d'être créé/modifié, clique sur *Recharger* (cache Streamlit)."
             )
             st.caption(f"Chemin attendu: {abs_json}")
-            if excluded_count:
-                st.caption(
-                    f"Note: {excluded_count} citation(s) sont exclues via {abs_excl} (blacklist)."
-                )
         with c2:
             if st.button("Recharger", width="stretch"):
                 load_h5g_commendations_json.clear()
-                load_h5g_commendations_exclude.clear()
                 st.rerun()
         return
 
-    # Infos offline
-    local_icons_dir = _abs_from_repo(os.path.join("static", "commendations", "h5g"))
-    has_local_icons = os.path.isdir(local_icons_dir)
-    extra = f" — {excluded_count} exclue(s)" if excluded_count else ""
+    # Charger les mappings et agréger les valeurs via CitationEngine
+    engine: CitationEngine | None = None
+    citation_mappings: dict[str, dict[str, Any]] = {}
+    citations_full: dict[str, int] = {}
+    citations_filtered: dict[str, int] = {}
 
-    # N'affiche que les citations suivies (celles ayant une méthode de calcul).
-    items = [it for it in items if _normalize_name(str(it.get("name") or "").strip()) in tracking]
+    if db_path and xuid:
+        engine = CitationEngine(db_path, xuid)
+        citation_mappings = engine.load_mappings()
+        # Agrégation complète (tous les matchs)
+        citations_full = engine.aggregate_for_display(match_ids=None)
+        # Agrégation filtrée si nécessaire
+        if filtered_match_ids is not None:
+            citations_filtered = engine.aggregate_for_display(match_ids=filtered_match_ids)
 
-    # Filtres
-    cats = sorted({str(x.get("category") or "").strip() for x in items if str(x.get("category") or "").strip()})
-    c1, c2, c3 = st.columns([1, 2, 1])
+    # Détermine si on est en mode filtré
+    is_filtered = filtered_match_ids is not None and all_match_ids is not None
+
+    # N'affiche que les citations ayant un mapping dans citation_mappings
+    mapped_norms = set(citation_mappings.keys())
+
+    def _has_mapping(it: dict[str, Any]) -> bool:
+        norm_name = _normalize_name(str(it.get("name") or "").strip())
+        return norm_name in mapped_norms
+
+    items = [it for it in items if _has_mapping(it)]
+
+    # Filtres UI
+    cats = sorted(
+        {
+            str(x.get("category") or "").strip()
+            for x in items
+            if str(x.get("category") or "").strip()
+        }
+    )
+    c1, c2 = st.columns([1, 2])
     with c1:
         picked_cat = st.selectbox("Catégorie", options=["(toutes)"] + cats, index=0)
     with c2:
         q = st.text_input("Recherche", value="", placeholder="ex: assassin, pilote, multifrag…")
-    with c3:
-        limit = int(st.slider("Nombre affiché", 20, 200, 60, 10))
 
     filtered = items
     if picked_cat != "(toutes)":
@@ -561,9 +445,7 @@ def render_h5g_commendations_section(
             or (qn in str(x.get("category") or "").lower())
         ]
 
-    filtered = filtered[:limit]
-
-    # 8 colonnes au lieu de 6 ≈ -25% de largeur par vignette.
+    # Grille 8 colonnes
     cols_per_row = 8
     cols = st.columns(cols_per_row)
     for i, item in enumerate(filtered):
@@ -571,34 +453,22 @@ def render_h5g_commendations_section(
         name_raw = str(item.get("name") or "").strip()
         desc_raw = str(item.get("description") or "").strip()
         name = _display_citation_name(name_raw)
-        desc = _display_citation_desc(desc_raw)
+        desc = _display_citation_desc(desc_raw, name_raw)
         img = _img_src(item)
-        key = _image_basename_from_item(item)
         tiers = item.get("tiers") or []
 
-        rule = tracking.get(_normalize_name(name_raw)) or {}
-        current = 0
-        if isinstance(rule.get("medal_ids"), list):
-            total = 0
-            for mid in rule.get("medal_ids") or []:
-                try:
-                    total += int(counts_by_medal.get(int(mid), 0))
-                except Exception:
-                    continue
-            current = int(total)
-        elif rule.get("medal_id") is not None:
-            try:
-                current = int(counts_by_medal.get(int(rule.get("medal_id")), 0))
-            except Exception:
-                current = 0
-        elif isinstance(rule.get("stat"), str) and rule.get("stat"):
-            key = str(rule.get("stat") or "").strip()
-            try:
-                current = int(stats_totals.get(key, 0))
-            except Exception:
-                current = 0
+        norm_name = _normalize_name(name_raw)
 
-        level_label, counter_label, is_master, progress_ratio = _compute_mastery_display(current, tiers)
+        # Valeurs depuis match_citations (agrégées par CitationEngine)
+        current_full = citations_full.get(norm_name, 0)
+        current_filtered = citations_filtered.get(norm_name, 0) if is_filtered else current_full
+
+        # Calcul du delta pour cette citation
+        delta_citation = current_filtered if (is_filtered and current_filtered > 0) else 0
+
+        level_label, counter_label, is_master, progress_ratio = _compute_mastery_display(
+            current_full, tiers
+        )
 
         with col:
             st.markdown("<div class='os-citation-top-gap'></div>", unsafe_allow_html=True)
@@ -610,28 +480,56 @@ def render_h5g_commendations_section(
                     mtime = None
                 data_uri = _img_data_uri(img, mtime)
 
+            # Tooltip avec la description de la citation.
+            tip = html.escape(desc) if desc else html.escape(name)
+
             if data_uri:
-                ring_class = "os-citation-ring os-citation-ring--master" if is_master else "os-citation-ring"
+                ring_class = (
+                    "os-citation-ring os-citation-ring--master" if is_master else "os-citation-ring"
+                )
                 ring_color = "#d6b35a" if is_master else "#41d6ff"
                 st.markdown(
-                    "<div class='" + ring_class + "' "
-                    + "style=\"--p:" + str(float(progress_ratio)) + ";--ring-color:" + ring_color + ";--img:url('" + data_uri + "')\"></div>",
+                    "<div class='"
+                    + ring_class
+                    + "' title='"
+                    + tip
+                    + "' "
+                    + 'style="--p:'
+                    + str(float(progress_ratio))
+                    + ";--ring-color:"
+                    + ring_color
+                    + ";--img:url('"
+                    + data_uri
+                    + "')\"></div>",
                     unsafe_allow_html=True,
                 )
             else:
-                st.markdown("<div class='os-medal-missing'>?</div>", unsafe_allow_html=True)
+                st.markdown(
+                    "<div class='os-medal-missing' title='" + tip + "'>?</div>",
+                    unsafe_allow_html=True,
+                )
 
-            tip = html.escape(desc) if desc else ""
             st.markdown(
                 "<div class='os-citation-name' title='" + tip + "'>" + html.escape(name) + "</div>",
                 unsafe_allow_html=True,
             )
-            level_class = "os-citation-level os-citation-level--master" if is_master else "os-citation-level"
+            level_class = (
+                "os-citation-level os-citation-level--master" if is_master else "os-citation-level"
+            )
             st.markdown(
                 f"<div class='{level_class}'>{html.escape(level_label)}</div>",
                 unsafe_allow_html=True,
             )
+            # Afficher le compteur avec le delta si filtré
+            delta_html = ""
+            if is_filtered and delta_citation > 0:
+                delta_html = (
+                    f" <span style='color: #4CAF50; font-weight: bold;'>+{delta_citation}</span>"
+                )
             st.markdown(
-                "<div class='os-citation-counter'>" + html.escape(counter_label) + "</div>",
+                "<div class='os-citation-counter'>"
+                + html.escape(counter_label)
+                + delta_html
+                + "</div>",
                 unsafe_allow_html=True,
             )

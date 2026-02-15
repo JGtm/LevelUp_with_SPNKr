@@ -1,0 +1,113 @@
+## CONTEXTE
+
+Assistant IA senior pour LevelUp (dashboard Halo Infinite). Architecture DuckDB unifiée (v4).
+
+## OUTPUT STYLE
+
+**Voir** : `.cursor/rules/output-style.md`
+
+Résumé :
+- **1-4 lignes max** pour réponses courtes
+- **Analyse d'abord**, implémenter sur demande explicite
+- **Étendre l'existant** avant de créer
+- **Faits et code** — pas de fluff
+
+## WORKFLOW AGENTIQUE
+
+**DÉBUT DE SESSION** : Lire `.ai/project_map.md`, `.ai/thought_log.md`, `.ai/data_lineage.md`, `.ai/ARCHITECTURE_ROADMAP.md`
+**FIN DE TÂCHE** : Mettre à jour ces fichiers si modification significative.
+
+---
+
+# COMMANDES AGENTIQUES
+
+## Commande /investigate
+- **Rôle** : Agis comme un Agent de Recherche.
+- **Action** : Parcours récursivement le répertoire courant. Pour chaque module majeur, crée un fichier dans `.ai/features/{nom_du_module}.md`.
+- **Format** : Condense le code en spécifications techniques.
+
+## Commande /plan
+- **Rôle** : Agis comme un Product Owner & Architecte.
+- **Action** : Lis TOUS les fichiers dans `.ai/features/`. Analyse les dépendances.
+- **Output** : Mets à jour `.ai/ARCHITECTURE_ROADMAP.md` avec les tâches.
+
+## Commande /implement
+- **Rôle** : Agis comme un Essaim d'Agents (Swarm).
+- **Action** : Lis le plan et exécute les tâches atomiques.
+- **Auto-Correction** : Si un test échoue, corrige et relance.
+
+## Commande /cleanup
+- **Rôle** : Agis comme un Agent de Nettoyage (Janitor).
+- **Action** : Identifie code mort, imports inutilisés, duplications.
+
+## Commande /test
+- **Rôle** : Agis comme un Agent de Test (QA Engineer).
+- **Action** : Exécute les tests ciblés puis la suite complète.
+
+## Commande /review
+- **Rôle** : Agis comme un Fagan Inspector.
+- **Protocole** : Voir `.cursor/rules/fagan-reviewer.md`
+
+## Commandes Multi-Agent
+
+```
+/pm   ← Active le mode PM Orchestrator
+```
+
+| Commande | Usage |
+|----------|-------|
+| `/orchestrate-audit` | Audit multi-rounds |
+| `/orchestrate-implement` | Exécution parallèle |
+| `/orchestrate-full` | Cycle complet |
+
+---
+
+## LANGUE
+- Répondre en français 100% du temps
+- Variables/code en anglais
+
+## COMPORTEMENT
+1. Lire le fichier avant de modifier
+2. Expliquer ce que tu vas faire AVANT
+3. Proposer un test ou vérification
+4. Générer un message de commit Conventional Commits
+
+## ARCHITECTURE DuckDB UNIFIÉE (v4)
+
+| Données | Stockage | Chemin |
+|---------|----------|--------|
+| Référentiels | DuckDB | `data/warehouse/metadata.duckdb` |
+| Matchs joueur | DuckDB | `data/players/{gamertag}/stats.duckdb` |
+| Archives | Parquet | `data/players/{gamertag}/archive/` |
+| Config | JSON | `db_profiles.json` |
+
+## ACCÈS AUX DONNÉES
+
+```python
+# Toujours utiliser DuckDBRepository
+from src.data.repositories import DuckDBRepository
+
+repo = DuckDBRepository(db_path, xuid)
+matches = repo.load_matches(limit=100)
+```
+
+**INTERDIT** : Utiliser `src/db/loaders.py` (déprécié)
+
+## STACK TECHNIQUE
+
+| Composant | Usage |
+|-----------|-------|
+| **DuckDB** | Moteur OLAP |
+| **Polars** | DataFrames (pas Pandas pour gros volumes) |
+| **Pydantic v2** | Validation |
+| **Streamlit** | UI |
+
+## INTERDIT
+- Halluciner des fonctionnalités
+- Supprimer du code sans validation
+- Ajouter des dépendances sans justification
+- Utiliser les loaders legacy
+- **SQLite** : aucun `sqlite3`, aucune base `.db`, aucun fallback SQLite. Données = DuckDB v4 uniquement (sauf scripts de migration documentés dans `.ai/SQLITE_TO_DUCKDB_AUDIT.md`)
+
+## FORMAT DE RÉPONSE
+Objectif → Analyse → Proposition → Code → Tests → Commit message

@@ -1,0 +1,190 @@
+{
+  "timestamp": "2026-02-01T10:55:47.697224+00:00",
+  "db_path": "data/spnkr_gt_JGtm.db",
+  "xuid": "2533274823110022",
+  "warehouse_path": "data/warehouse",
+  "iterations": 5,
+  "comparisons": [
+    {
+      "name": "load_matches_all",
+      "legacy": {
+        "name": "load_matches_all",
+        "mode": "legacy",
+        "iterations": 5,
+        "times_ms": [
+          4.697524993389379,
+          4.746414000692312,
+          4.264228999090847,
+          4.241531001753174,
+          4.367384004581254
+        ],
+        "mean_ms": 4.463416599901393,
+        "std_ms": 0.24136354690700387,
+        "min_ms": 4.241531001753174,
+        "max_ms": 4.746414000692312,
+        "rows_returned": 407,
+        "success": true,
+        "error": null
+      },
+      "hybrid": {
+        "name": "load_matches_all",
+        "mode": "hybrid",
+        "iterations": 5,
+        "times_ms": [
+          139.15630400151713,
+          14.925500996469054,
+          14.745169995876495,
+          14.754739000636619,
+          15.40146899787942
+        ],
+        "mean_ms": 39.79663659847574,
+        "std_ms": 55.544382499671826,
+        "min_ms": 14.745169995876495,
+        "max_ms": 139.15630400151713,
+        "rows_returned": 407,
+        "success": true,
+        "error": null
+      },
+      "speedup": 0.11215562372605999,
+      "diff_percent": -791.6182414913934
+    },
+    {
+      "name": "load_matches_ranked",
+      "legacy": {
+        "name": "load_matches_ranked",
+        "mode": "legacy",
+        "iterations": 5,
+        "times_ms": [
+          1.1379240022506565,
+          0.8772069995757192,
+          0.8491999979014508,
+          0.8440320016234182,
+          0.8402599996770732
+        ],
+        "mean_ms": 0.9097246002056636,
+        "std_ms": 0.1283904563855786,
+        "min_ms": 0.8402599996770732,
+        "max_ms": 1.1379240022506565,
+        "rows_returned": 0,
+        "success": true,
+        "error": null
+      },
+      "hybrid": {
+        "name": "load_matches_ranked",
+        "mode": "hybrid",
+        "iterations": 5,
+        "times_ms": [
+          10.438408004119992,
+          9.921790995576885,
+          10.158343997318298,
+          9.664356999564916,
+          9.816751000471413
+        ],
+        "mean_ms": 9.9999301994103,
+        "std_ms": 0.30398496802668934,
+        "min_ms": 9.664356999564916,
+        "max_ms": 10.438408004119992,
+        "rows_returned": 0,
+        "success": true,
+        "error": null
+      },
+      "speedup": 0.09097309501813426,
+      "diff_percent": -999.2260951445738
+    },
+    {
+      "name": "get_match_count",
+      "legacy": {
+        "name": "get_match_count",
+        "mode": "legacy",
+        "iterations": 5,
+        "times_ms": [
+          0.9490730008110404,
+          0.7607109946548007,
+          0.7437390013365075,
+          0.7716760010225698,
+          0.7361970056081191
+        ],
+        "mean_ms": 0.7922792006866075,
+        "std_ms": 0.08875063772121936,
+        "min_ms": 0.7361970056081191,
+        "max_ms": 0.9490730008110404,
+        "rows_returned": 1,
+        "success": true,
+        "error": null
+      },
+      "hybrid": {
+        "name": "get_match_count",
+        "mode": "hybrid",
+        "iterations": 5,
+        "times_ms": [
+          11.981340998318046,
+          8.54878199606901,
+          8.274795000033919,
+          8.94904199958546,
+          8.218502000090666
+        ],
+        "mean_ms": 9.19449239881942,
+        "std_ms": 1.5844646969067495,
+        "min_ms": 8.218502000090666,
+        "max_ms": 11.981340998318046,
+        "rows_returned": 1,
+        "success": true,
+        "error": null
+      },
+      "speedup": 0.08616888962661351,
+      "diff_percent": -1060.5116467592813
+    },
+    {
+      "name": "get_storage_info",
+      "legacy": {
+        "name": "get_storage_info",
+        "mode": "legacy",
+        "iterations": 5,
+        "times_ms": [
+          3.0204260037862696,
+          2.5946730020223185,
+          2.576095001131762,
+          2.582310997240711,
+          2.7829659957205877
+        ],
+        "mean_ms": 2.7112941999803297,
+        "std_ms": 0.19314198935004603,
+        "min_ms": 2.576095001131762,
+        "max_ms": 3.0204260037862696,
+        "rows_returned": 7,
+        "success": true,
+        "error": null
+      },
+      "hybrid": {
+        "name": "get_storage_info",
+        "mode": "hybrid",
+        "iterations": 5,
+        "times_ms": [
+          14.742865001608152,
+          14.317601999209728,
+          14.921169997251127,
+          14.149145004921593,
+          14.146280998829752
+        ],
+        "mean_ms": 14.45541260036407,
+        "std_ms": 0.3563400007758764,
+        "min_ms": 14.146280998829752,
+        "max_ms": 14.921169997251127,
+        "rows_returned": 7,
+        "success": true,
+        "error": null
+      },
+      "speedup": 0.18756256047039735,
+      "diff_percent": -433.1554429050504
+    }
+  ],
+  "summary": {
+    "total_benchmarks": 4,
+    "successful": 4,
+    "failed": 0,
+    "avg_speedup": 0.11921504221030127,
+    "hybrid_faster_count": 0,
+    "legacy_faster_count": 4,
+    "hybrid_available": true
+  }
+}

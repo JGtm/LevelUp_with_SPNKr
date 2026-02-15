@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
-from src.config import HALO_COLORS, PLOT_CONFIG
+from src.config import PLOT_CONFIG, THEME_COLORS
 
 
 def apply_halo_plot_style(
@@ -14,30 +14,33 @@ def apply_halo_plot_style(
     height: int | None = None,
 ) -> go.Figure:
     """Applique le thème Halo aux graphiques Plotly.
-    
-    Style sombre avec fond noir opaque et uni (les graphes doivent rester lisibles
-    même si le site a un background rayé).
-    
+
+    Style sombre avec fond Waypoint (rgb 29,35,40) pour cohérence visuelle.
+    Utilise THEME_COLORS de config.py pour centraliser les couleurs.
+
     Args:
         fig: Figure Plotly à styliser.
         title: Titre optionnel à ajouter.
         height: Hauteur optionnelle en pixels.
-        
+
     Returns:
         La figure stylisée (modifiée in-place).
     """
+    # Couleurs centralisées depuis config.py
+    bg_color = THEME_COLORS.bg_plot_rgba(1.0)
+
     fig.update_layout(
         template="plotly_dark",
-        # Fond opaque, cohérent avec le thème global (dark navy)
-        paper_bgcolor="rgba(7,11,16,1)",
-        plot_bgcolor="rgba(7,11,16,1)",
-        font=dict(color="rgba(245,248,255,0.90)", size=13),
+        # Fond Waypoint (section news) pour cohérence avec l'UI
+        paper_bgcolor=bg_color,
+        plot_bgcolor=bg_color,
+        font=dict(color=THEME_COLORS.text_primary, size=13),
         hoverlabel=dict(
-            bgcolor="rgba(12,16,22,0.96)",
-            bordercolor="rgba(255,255,255,0.16)",
+            bgcolor=THEME_COLORS.bg_plot_rgba(0.96),
+            bordercolor=THEME_COLORS.border,
         ),
     )
-    
+
     if title is not None:
         fig.update_layout(title=title)
     if height is not None:
@@ -48,25 +51,25 @@ def apply_halo_plot_style(
         gridcolor="rgba(255,255,255,0.07)",
         zeroline=False,
         showline=True,
-        linecolor="rgba(255,255,255,0.12)",
+        linecolor=THEME_COLORS.border,
     )
     fig.update_yaxes(
         showgrid=True,
         gridcolor="rgba(255,255,255,0.07)",
         zeroline=False,
         showline=True,
-        linecolor="rgba(255,255,255,0.12)",
+        linecolor=THEME_COLORS.border,
     )
-    
+
     return fig
 
 
 def get_default_layout_kwargs(height: int | None = None) -> dict:
     """Retourne les kwargs de layout par défaut.
-    
+
     Args:
         height: Hauteur en pixels (default: PLOT_CONFIG.default_height).
-        
+
     Returns:
         Dictionnaire de kwargs pour fig.update_layout().
     """

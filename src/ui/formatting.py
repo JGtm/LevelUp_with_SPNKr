@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Fonctions de formatage pour l'interface utilisateur.
 
 Ce module centralise les utilitaires de formatage :
@@ -6,13 +5,12 @@ Ce module centralise les utilitaires de formatage :
 - Durées (mm:ss, hh:mm:ss, jours)
 - Scores et styles
 """
+
 from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
-
-import pandas as pd
 
 from src.config import HALO_COLORS
 
@@ -43,6 +41,51 @@ _SCORE_LABEL_RE = re.compile(r"^\s*(-?\d+)\s*[-–—]\s*(-?\d+)\s*$")
 _DATE_FR_RE = re.compile(r"^\s*(\d{1,2})\s*[\-/]\s*(\d{1,2})\s*[\-/]\s*(\d{4})\s*$")
 
 
+def _parse_datetime(value) -> datetime | None:
+    """Parse une valeur en datetime Python natif."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    if isinstance(value, int | float):
+        # Timestamp Unix
+        try:
+            return datetime.fromtimestamp(float(value))
+        except Exception:
+            return None
+    # String : essayer plusieurs formats
+    s = str(value).strip()
+    if not s:
+        return None
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    # Fallback dateutil si disponible
+    try:
+        from dateutil.parser import parse as _dateutil_parse
+
+        dt = _dateutil_parse(s)
+        if dt is not None:
+            return dt
+    except Exception:
+        pass
+    return None
+
+
 def to_paris_naive(dt_value) -> datetime | None:
     """Convertit une date en datetime naïf (sans tzinfo) en heure de Paris.
 
@@ -52,17 +95,10 @@ def to_paris_naive(dt_value) -> datetime | None:
     if dt_value is None:
         return None
     try:
-        ts = pd.to_datetime(dt_value, errors="coerce")
-        if pd.isna(ts):
+        d = _parse_datetime(dt_value)
+        if d is None:
             return None
 
-        try:
-            if getattr(ts, "tz", None) is not None:
-                ts = ts.tz_convert(PARIS_TZ_NAME).tz_localize(None)
-        except Exception:
-            pass
-
-        d = ts.to_pydatetime()
         if getattr(d, "tzinfo", None) is not None:
             d = d.astimezone(PARIS_TZ).replace(tzinfo=None)
         return d
@@ -94,10 +130,9 @@ def format_date_fr(dt_value) -> str:
     if dt_value is None:
         return "-"
     try:
-        ts = pd.to_datetime(dt_value)
-        if pd.isna(ts):
+        d = _parse_datetime(dt_value)
+        if d is None:
             return "-"
-        d = ts.to_pydatetime()
     except Exception:
         return str(dt_value)
 
@@ -120,6 +155,15 @@ def format_date_fr(dt_value) -> str:
     return f"{jours[d.weekday()]} {d.day} {mois[d.month - 1]} {d.year}"
 
 
+def _is_nan(value) -> bool:
+    """Vérifie si une valeur est NaN (compatible float/None)."""
+    if value is None:
+        return True
+    if isinstance(value, float):
+        return value != value  # NaN != NaN
+    return False
+
+
 def format_mmss(seconds: float | int | None) -> str:
     """Formate une durée en mm:ss.
 
@@ -129,7 +173,7 @@ def format_mmss(seconds: float | int | None) -> str:
     Returns:
         Chaîne formatée "mm:ss" ou "-" si invalide.
     """
-    if seconds is None or (isinstance(seconds, float) and pd.isna(seconds)):
+    if seconds is None or _is_nan(seconds):
         return "-"
     try:
         secs = int(seconds)

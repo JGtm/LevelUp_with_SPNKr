@@ -1,0 +1,15 @@
+# Règles pour scripts/
+
+## Convention
+- Shebang: `#!/usr/bin/env python3`
+- Docstring avec HOW IT WORKS
+- argparse pour les CLI
+- logging au lieu de print
+
+## Ingestion
+- Valider avec Pydantic avant insertion
+- Toujours vérifier avec DuckDB après
+
+## Migration
+- Backup avant modification destructive
+- Dry-run disponible avec `--dry-run`

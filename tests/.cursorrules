@@ -1,0 +1,14 @@
+# Règles pour tests/
+
+## Convention
+- Fichiers: `test_*.py`
+- Classes: `Test*`
+- Méthodes: `test_*`
+
+## Fixtures
+- Utiliser pytest fixtures pour les données de test
+- Pas de données réelles dans les tests
+
+## Assertions
+- Messages d'erreur explicites
+- Tester cas nominal + erreurs + edge cases
