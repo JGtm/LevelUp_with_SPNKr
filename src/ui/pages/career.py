@@ -248,14 +248,20 @@ def render_career_page(
 
     with col_gauge:
         # Gauge de progression
-        gauge_fig = create_career_progress_gauge(
-            current_xp=current_xp,
-            xp_for_next_rank=xp_for_next,
-            progress_pct=progress_pct,
-            rank_name_fr=rank_label_fr,
-            is_max_rank=is_max,
-        )
-        st.plotly_chart(gauge_fig, key="career_gauge")
+        try:
+            gauge_fig = create_career_progress_gauge(
+                current_xp=current_xp,
+                xp_for_next_rank=xp_for_next,
+                progress_pct=progress_pct,
+                rank_name_fr=rank_label_fr,
+                is_max_rank=is_max,
+            )
+            if gauge_fig is not None:
+                st.plotly_chart(gauge_fig, key="career_gauge")
+            else:
+                st.info("Impossible de générer la jauge de progression.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher la jauge de progression : {e}")
 
     # --- Historique de progression ---
     st.divider()
@@ -263,9 +269,14 @@ def render_career_page(
     history = _load_career_history(db_path, xuid)
 
     if history:
-        history_fig = _create_xp_history_chart(history)
-        if history_fig:
-            st.plotly_chart(history_fig, key="career_xp_history")
+        try:
+            history_fig = _create_xp_history_chart(history)
+            if history_fig:
+                st.plotly_chart(history_fig, key="career_xp_history")
+            else:
+                st.info("Pas assez de données pour afficher l'historique.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher l'historique de progression : {e}")
 
         # Tableau récapitulatif des derniers snapshots
         with st.expander("Historique détaillé", expanded=False):

@@ -379,15 +379,21 @@ def _render_antagonist_chart(
             me_xuid = str(
                 parse_xuid_input(str(xuid or "").strip()) or str(xuid or "").strip()
             ).strip()
-            fig = plot_killer_victim_stacked_bars(
-                pairs_df,
-                match_id=match_id,
-                me_xuid=me_xuid,
-                rank_by_xuid=rank_by_xuid,
-                title="Interactions Killer-Victim (match)",
-                height=400,
-            )
-            st.plotly_chart(fig, width="stretch")
+            try:
+                fig = plot_killer_victim_stacked_bars(
+                    pairs_df,
+                    match_id=match_id,
+                    me_xuid=me_xuid,
+                    rank_by_xuid=rank_by_xuid,
+                    title="Interactions Killer-Victim (match)",
+                    height=400,
+                )
+                if fig is not None:
+                    st.plotly_chart(fig, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour les interactions killer-victim.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher les interactions killer-victim : {e}")
         except Exception:
             pass
 

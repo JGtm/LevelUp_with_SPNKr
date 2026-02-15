@@ -110,14 +110,20 @@ def render_citations_page(
             st.subheader("Distribution des médailles")
 
             # Préparer les données pour le graphique
-            medal_names_dict = {int(nid): medal_label(int(nid)) for nid, _ in top}
-            fig_medals = plot_medals_distribution(
-                top,
-                medal_names_dict,
-                title=None,
-                top_n=25,
-            )
-            st.plotly_chart(fig_medals, width="stretch")
+            try:
+                medal_names_dict = {int(nid): medal_label(int(nid)) for nid, _ in top}
+                fig_medals = plot_medals_distribution(
+                    top,
+                    medal_names_dict,
+                    title=None,
+                    top_n=25,
+                )
+                if fig_medals is not None:
+                    st.plotly_chart(fig_medals, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour la distribution des médailles.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher la distribution des médailles : {e}")
 
             st.divider()
             st.subheader("Toutes les médailles")

@@ -218,32 +218,50 @@ def render_objective_analysis_page(
             "Chaque point représente un match. "
             "Les points au-dessus de la tendance indiquent une meilleure contribution aux objectifs."
         )
-        fig_scatter = plot_objective_vs_kills_scatter(
-            my_awards_df,
-            match_stats_df,
-            title="Score Objectifs vs Frags par Match",
-        )
-        st.plotly_chart(fig_scatter, width="stretch")
+        try:
+            fig_scatter = plot_objective_vs_kills_scatter(
+                my_awards_df,
+                match_stats_df,
+                title="Score Objectifs vs Frags par Match",
+            )
+            if fig_scatter is not None:
+                st.plotly_chart(fig_scatter, width="stretch")
+            else:
+                st.info("Données insuffisantes pour la corrélation objectifs/kills.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher la corrélation objectifs/kills : {e}")
 
     with tab_breakdown:
         col_bars, col_gauge = st.columns([2, 1])
 
         with col_bars:
             st.markdown("### Répartition par Catégorie")
-            fig_bars = plot_objective_breakdown_bars(
-                my_awards_df,
-                xuid=xuid,
-                title="Points Totaux par Catégorie",
-            )
-            st.plotly_chart(fig_bars, width="stretch")
+            try:
+                fig_bars = plot_objective_breakdown_bars(
+                    my_awards_df,
+                    xuid=xuid,
+                    title="Points Totaux par Catégorie",
+                )
+                if fig_bars is not None:
+                    st.plotly_chart(fig_bars, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour la répartition.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher la répartition : {e}")
 
         with col_gauge:
             st.markdown("### Ratio Objectifs")
-            fig_gauge = plot_objective_ratio_gauge(
-                objective_ratio,
-                title="% du score sur objectifs",
-            )
-            st.plotly_chart(fig_gauge, width="stretch")
+            try:
+                fig_gauge = plot_objective_ratio_gauge(
+                    objective_ratio,
+                    title="% du score sur objectifs",
+                )
+                if fig_gauge is not None:
+                    st.plotly_chart(fig_gauge, width="stretch")
+                else:
+                    st.info("Impossible de générer la jauge.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher le ratio objectifs : {e}")
 
     with tab_trend:
         st.markdown("### Évolution dans le temps")
@@ -259,11 +277,17 @@ def render_objective_analysis_page(
                 .sort("start_time")
             )
 
-            fig_trend = plot_objective_trend_over_time(
-                summary_with_time,
-                title="Score Objectifs au fil des matchs",
-            )
-            st.plotly_chart(fig_trend, width="stretch")
+            try:
+                fig_trend = plot_objective_trend_over_time(
+                    summary_with_time,
+                    title="Score Objectifs au fil des matchs",
+                )
+                if fig_trend is not None:
+                    st.plotly_chart(fig_trend, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour la tendance.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher la tendance : {e}")
         else:
             st.info("Pas assez de données pour afficher la tendance.")
 

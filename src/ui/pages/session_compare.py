@@ -627,16 +627,20 @@ def _render_cumulative_section(
             st.caption(
                 "Évolution du net score (Frags − Deaths) au fil des matchs de chaque session."
             )
-            st.plotly_chart(
-                plot_cumulative_comparison(
+            try:
+                fig_cumul = plot_cumulative_comparison(
                     pl_a,
                     pl_b,
                     label_a=session_a_label,
                     label_b=session_b_label,
                     title="",
-                ),
-                width="stretch",
-            )
+                )
+                if fig_cumul is not None:
+                    st.plotly_chart(fig_cumul, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour le net score cumulé.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher le net score cumulé : {e}")
     except Exception:
         pass
 

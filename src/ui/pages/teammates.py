@@ -167,9 +167,13 @@ def render_teammates_page(
             pl_dff = dff.sort("start_time").select(_req_trend)
             st.subheader("Tendance de session (matchs affichés)")
             st.caption("Compare ta performance en première vs seconde moitié des matchs affichés.")
-            st.plotly_chart(plot_session_trend(pl_dff), width="stretch")
-        except Exception:
-            pass
+            fig_trend = plot_session_trend(pl_dff)
+            if fig_trend is not None:
+                st.plotly_chart(fig_trend, width="stretch")
+            else:
+                st.info("Données insuffisantes pour la tendance de session.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher la tendance de session : {e}")
 
     if len(picked_xuids) < 1:
         st.info("Sélectionne au moins un coéquipier.")

@@ -242,7 +242,13 @@ def render_expected_vs_actual(
     # K/D/A et Folie meurtrière sur la même rangée
     chart_cols = st.columns(2)
     with chart_cols[0]:
-        st.plotly_chart(exp_fig, width="stretch")
+        try:
+            if exp_fig is not None:
+                st.plotly_chart(exp_fig, width="stretch")
+            else:
+                st.info("Données insuffisantes pour le graphique K/D/A.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher le graphique K/D/A : {e}")
     with chart_cols[1]:
         _render_spree_headshots(
             row,
@@ -364,7 +370,14 @@ def _render_spree_headshots(
             legend=get_legend_horizontal_bottom(),
         )
         fig_sh.update_yaxes(rangemode="tozero")
-        st.plotly_chart(apply_halo_plot_style(fig_sh, height=260), width="stretch")
+        try:
+            styled_fig = apply_halo_plot_style(fig_sh, height=260)
+            if styled_fig is not None:
+                st.plotly_chart(styled_fig, width="stretch")
+            else:
+                st.info("Données insuffisantes pour le graphique Spree/Headshots.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher le graphique Spree/Headshots : {e}")
 
 
 # =============================================================================

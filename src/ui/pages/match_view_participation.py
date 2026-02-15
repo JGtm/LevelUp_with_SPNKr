@@ -77,12 +77,18 @@ def render_participation_section(
 
     col_radar, col_legend = st.columns([2, 1])
     with col_radar:
-        fig = create_participation_profile_radar(
-            [profile],
-            title="Profil de participation",
-            height=380,
-        )
-        st.plotly_chart(fig, width="stretch")
+        try:
+            fig = create_participation_profile_radar(
+                [profile],
+                title="Profil de participation",
+                height=380,
+            )
+            if fig is not None:
+                st.plotly_chart(fig, width="stretch")
+            else:
+                st.info("Impossible de générer le radar de participation.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher le radar de participation : {e}")
     with col_legend:
         st.markdown("**Axes**")
         for line in RADAR_AXIS_LINES:
@@ -158,8 +164,14 @@ def render_participation_comparison(
         st.subheader("📊 Comparaison de participation")
         col_radar, col_legend = st.columns([2, 1])
         with col_radar:
-            fig = create_participation_profile_radar(profiles, title="", height=400)
-            st.plotly_chart(fig, width="stretch")
+            try:
+                fig = create_participation_profile_radar(profiles, title="", height=400)
+                if fig is not None:
+                    st.plotly_chart(fig, width="stretch")
+                else:
+                    st.info("Impossible de générer le radar de comparaison.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher le radar de comparaison : {e}")
         with col_legend:
             st.markdown("**Axes**")
             for line in RADAR_AXIS_LINES:

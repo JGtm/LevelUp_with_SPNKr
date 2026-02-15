@@ -245,9 +245,16 @@ def render_multi_teammate_view(
         if breakdown_all.is_empty():
             st.info("Pas assez de matchs avec tes coéquipiers (selon le filtre actuel).")
         else:
-            view_all = breakdown_all.head(20).reverse()
-            title = f"Ratio global par carte — avec mes coéquipiers (min {min_matches_maps_friends} matchs)"
-            st.plotly_chart(plot_map_ratio_with_winloss(view_all, title=title), width="stretch")
+            try:
+                view_all = breakdown_all.head(20).reverse()
+                title = f"Ratio global par carte — avec mes coéquipiers (min {min_matches_maps_friends} matchs)"
+                fig_map = plot_map_ratio_with_winloss(view_all, title=title)
+                if fig_map is not None:
+                    st.plotly_chart(fig_map, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour le ratio par carte.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher le ratio par carte : {e}")
 
             st.subheader("Historique — matchs avec mes coéquipiers")
 
@@ -625,7 +632,13 @@ def _render_per_minute_stats(
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0.5, "xanchor": "center"},
     )
     fig_pm = apply_halo_plot_style(fig_pm, title=None, height=None)
-    st.plotly_chart(fig_pm, width="stretch")
+    try:
+        if fig_pm is not None:
+            st.plotly_chart(fig_pm, width="stretch")
+        else:
+            st.info("Données insuffisantes pour les stats/min.")
+    except Exception as e:
+        st.warning(f"Impossible d'afficher les stats/min : {e}")
 
 
 def _merge_trio_dataframes(

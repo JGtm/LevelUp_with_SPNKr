@@ -122,13 +122,20 @@ def render_win_loss_page(
 
 def _render_outcomes_over_time(dff: pl.DataFrame, is_session_scope: bool) -> str:
     """Affiche le graphe outcomes over time. Retourne le bucket_label."""
-    fig_out, bucket_label = plot_outcomes_over_time(dff, session_style=is_session_scope)
-    st.markdown(
-        f"Par **{bucket_label}** : on regroupe les parties par {bucket_label} et on compte le nombre de "
-        "victoires/défaites (et autres statuts) pour suivre l'évolution."
-    )
-    st.plotly_chart(fig_out, width="stretch")
-    return bucket_label
+    try:
+        fig_out, bucket_label = plot_outcomes_over_time(dff, session_style=is_session_scope)
+        st.markdown(
+            f"Par **{bucket_label}** : on regroupe les parties par {bucket_label} et on compte le nombre de "
+            "victoires/défaites (et autres statuts) pour suivre l'évolution."
+        )
+        if fig_out is not None:
+            st.plotly_chart(fig_out, width="stretch")
+        else:
+            st.info("Données insuffisantes pour afficher l'évolution des résultats.")
+        return bucket_label
+    except Exception as e:
+        st.warning(f"Impossible d'afficher l'évolution des résultats : {e}")
+        return "période"
 
 
 def _render_map_mode_breakdown(dff: pl.DataFrame) -> None:
@@ -140,15 +147,21 @@ def _render_map_mode_breakdown(dff: pl.DataFrame) -> None:
     with col_by_map:
         st.markdown("##### Par carte")
         if "map_name" in dff.columns and "outcome" in dff.columns:
-            fig_map = plot_stacked_outcomes_by_category(
-                dff,
-                "map_name",
-                title=None,
-                min_matches=2,
-                sort_by="total",
-                max_categories=12,
-            )
-            st.plotly_chart(fig_map, width="stretch")
+            try:
+                fig_map = plot_stacked_outcomes_by_category(
+                    dff,
+                    "map_name",
+                    title=None,
+                    min_matches=2,
+                    sort_by="total",
+                    max_categories=12,
+                )
+                if fig_map is not None:
+                    st.plotly_chart(fig_map, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour les résultats par carte.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher les résultats par carte : {e}")
         else:
             st.info("Données insuffisantes.")
 
@@ -160,15 +173,21 @@ def _render_map_mode_breakdown(dff: pl.DataFrame) -> None:
             else ("mode_category" if "mode_category" in dff.columns else "pair_name")
         )
         if mode_col in dff.columns and "outcome" in dff.columns:
-            fig_mode = plot_stacked_outcomes_by_category(
-                dff,
-                mode_col,
-                title=None,
-                min_matches=2,
-                sort_by="total",
-                max_categories=10,
-            )
-            st.plotly_chart(fig_mode, width="stretch")
+            try:
+                fig_mode = plot_stacked_outcomes_by_category(
+                    dff,
+                    mode_col,
+                    title=None,
+                    min_matches=2,
+                    sort_by="total",
+                    max_categories=10,
+                )
+                if fig_mode is not None:
+                    st.plotly_chart(fig_mode, width="stretch")
+                else:
+                    st.info("Données insuffisantes pour les résultats par mode.")
+            except Exception as e:
+                st.warning(f"Impossible d'afficher les résultats par mode : {e}")
         else:
             st.info("Données insuffisantes.")
 
@@ -182,8 +201,14 @@ def _render_heatmap_section(dff: pl.DataFrame) -> None:
         "Les cellules affichent le nombre de matchs."
     )
     if "start_time" in dff.columns and "outcome" in dff.columns:
-        fig_heat = plot_win_ratio_heatmap(dff, title=None, min_matches=2)
-        st.plotly_chart(fig_heat, width="stretch")
+        try:
+            fig_heat = plot_win_ratio_heatmap(dff, title=None, min_matches=2)
+            if fig_heat is not None:
+                st.plotly_chart(fig_heat, width="stretch")
+            else:
+                st.info("Données insuffisantes pour la heatmap win rate.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher la heatmap win rate : {e}")
     else:
         st.info("Données temporelles manquantes.")
 
@@ -199,14 +224,20 @@ def _render_top_by_week(dff: pl.DataFrame) -> None:
     if "start_time" not in dff.columns:
         st.info("Données temporelles manquantes.")
         return
-    rank_col = "rank" if "rank" in dff.columns else "outcome"
-    fig_top = plot_matches_at_top_by_week(
-        dff,
-        title=None,
-        rank_col=rank_col,
-        top_n_ranks=1,
-    )
-    st.plotly_chart(fig_top, width="stretch")
+    try:
+        rank_col = "rank" if "rank" in dff.columns else "outcome"
+        fig_top = plot_matches_at_top_by_week(
+            dff,
+            title=None,
+            rank_col=rank_col,
+            top_n_ranks=1,
+        )
+        if fig_top is not None:
+            st.plotly_chart(fig_top, width="stretch")
+        else:
+            st.info("Données insuffisantes pour les matchs Top.")
+    except Exception as e:
+        st.warning(f"Impossible d'afficher les matchs Top : {e}")
 
 
 def _render_streak_section(dff: pl.DataFrame) -> None:
@@ -219,8 +250,14 @@ def _render_streak_section(dff: pl.DataFrame) -> None:
         "les phases de momentum positif ou négatif."
     )
     if "outcome" in dff.columns and "start_time" in dff.columns:
-        fig_streak = plot_streak_chart(dff, title=None)
-        st.plotly_chart(fig_streak, width="stretch")
+        try:
+            fig_streak = plot_streak_chart(dff, title=None)
+            if fig_streak is not None:
+                st.plotly_chart(fig_streak, width="stretch")
+            else:
+                st.info("Données insuffisantes pour les séries.")
+        except Exception as e:
+            st.warning(f"Impossible d'afficher les séries de victoires/défaites : {e}")
     else:
         st.info("Données de résultat manquantes.")
 
@@ -348,17 +385,22 @@ def _render_ratio_by_map_section(
     key, label = metric
 
     view = breakdown.head(20).reverse()
-    if key == "ratio_global":
-        fig = plot_map_ratio_with_winloss(view, title=label)
-    else:
-        fig = plot_map_comparison(view, key, title=label)
+    try:
+        if key == "ratio_global":
+            fig = plot_map_ratio_with_winloss(view, title=label)
+        else:
+            fig = plot_map_comparison(view, key, title=label)
 
-    if key in ("win_rate",):
-        fig.update_xaxes(tickformat=".0%")
-    if key in ("accuracy_avg",):
-        fig.update_xaxes(ticksuffix="%")
-
-    st.plotly_chart(fig, width="stretch")
+        if fig is not None:
+            if key in ("win_rate",):
+                fig.update_xaxes(tickformat=".0%")
+            if key in ("accuracy_avg",):
+                fig.update_xaxes(ticksuffix="%")
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info(f"Données insuffisantes pour {label}.")
+    except Exception as e:
+        st.warning(f"Impossible d'afficher le graphique {label} : {e}")
 
     base_scope = base_scope_pl
     _render_map_table(breakdown, base_scope)
