@@ -1,0 +1,370 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\Guillaume\Downloads\Scripts\LevelUp
+configfile: pyproject.toml
+testpaths: tests
+plugins: asyncio-1.3.0, cov-7.0.0, xdist-3.8.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2890 items
+
+tests\e2e\test_streamlit_browser_e2e.py sssssssssssss                    [  0%]
+tests\migration\test_migration_integrity.py .........................    [  1%]
+tests\migration\test_migration_v5.py ...........                         [  1%]
+tests\migration\test_shared_schema.py .................................. [  2%]
+...........                                                              [  3%]
+tests\performance\test_load_v5.py ....F...                               [  3%]
+tests\test_analysis.py ............................                      [  4%]
+tests\test_antagonists_persistence.py .................                  [  5%]
+tests\test_app_module.py ...............                                 [  5%]
+tests\test_app_phase2.py .......................                         [  6%]
+tests\test_app_sidebar.py ...........................                    [  7%]
+tests\test_arrow_polars_bridge.py ........                               [  7%]
+tests\test_backfill_bitmask.py .....................F....                [  8%]
+tests\test_backfill_citations.py ....                                    [  8%]
+tests\test_backfill_cli.py ............................................. [ 10%]
+...................................                                      [ 11%]
+tests\test_backfill_core.py ....................                         [ 12%]
+tests\test_backfill_detection.py ....................................... [ 13%]
+...                                                                      [ 13%]
+tests\test_backfill_orchestrator.py ...................                  [ 14%]
+tests\test_backfill_performance_score.py ........                        [ 14%]
+tests\test_backfill_strategies.py ...............                        [ 15%]
+tests\test_batch_insert.py ............................................. [ 16%]
+.....                                                                    [ 16%]
+tests\test_cache_duckdb_regressions.py ..........                        [ 17%]
+tests\test_cache_integrity.py sssssssssss                                [ 17%]
+tests\test_career_medals_aliases.py ................................     [ 18%]
+tests\test_career_page.py ..........                                     [ 18%]
+tests\test_career_ranks_translation.py .....                             [ 19%]
+tests\test_citation_engine.py ..........................F......          [ 20%]
+tests\test_commendations.py ............................................ [ 21%]
+..                                                                       [ 21%]
+tests\test_commendations_ui.py ............                              [ 22%]
+tests\test_config_db_path.py ..........                                  [ 22%]
+tests\test_cross_page_filter_persistence.py .....                        [ 22%]
+tests\test_data_architecture.py ...........                              [ 23%]
+tests\test_data_contract_assets_aliases.py ...                           [ 23%]
+tests\test_data_contract_medals.py ...                                   [ 23%]
+tests\test_data_contract_participants.py ...                             [ 23%]
+tests\test_data_contract_performance_metrics.py ...                      [ 23%]
+tests\test_data_contract_sessions.py ...                                 [ 23%]
+tests\test_data_contract_shots_accuracy.py ...                           [ 23%]
+tests\test_data_services_contracts.py ..............................     [ 24%]
+tests\test_data_validation_regressions.py .....                          [ 24%]
+tests\test_delta_sync.py ........................                        [ 25%]
+tests\test_duckdb_repo_regressions.py .........                          [ 26%]
+tests\test_duckdb_repository.py ...............ssssssssss                [ 26%]
+tests\test_duckdb_repository_schema_contract.py ......                   [ 27%]
+tests\test_duckdb_repository_v5.py ...................................   [ 28%]
+tests\test_enemy_mmr.py ..........                                       [ 28%]
+tests\test_filter_state.py ........................                      [ 29%]
+tests\test_filters_and_visualization_contracts.py .............          [ 30%]
+tests\test_formatting.py ............................................... [ 31%]
+........................................................................ [ 34%]
+                                                                         [ 34%]
+tests\test_friends_impact.py ....................                        [ 34%]
+tests\test_friends_impact_viz.py .................                       [ 35%]
+tests\test_hero_rank_adornment_priority.py ......                        [ 35%]
+tests\test_hotpath_no_global_pandas_conversion.py ................       [ 36%]
+tests\test_ingestion_duckdb_first.py ..F.........................        [ 37%]
+tests\test_killer_victim_antagonists.py .FFFFF.                          [ 37%]
+tests\test_killer_victim_polars.py ....................                  [ 38%]
+tests\test_last_match_fixes.py .......                                   [ 38%]
+tests\test_lazy_loading.py .....sss....                                  [ 38%]
+tests\test_legacy_free_global.py ..F.................................... [ 40%]
+.............                                                            [ 40%]
+tests\test_legacy_free_ui_viz_wave_a.py ................................ [ 41%]
+.................                                                        [ 42%]
+tests\test_match_citations_table.py ...........                          [ 42%]
+tests\test_materialized_views.py .............                           [ 43%]
+tests\test_medals_labels.py ..........                                   [ 43%]
+tests\test_media_components_sprint4.py ............                      [ 43%]
+tests\test_media_improvements.py ..                                      [ 43%]
+tests\test_media_indexer.py ....................                         [ 44%]
+tests\test_media_library_keys.py .......                                 [ 44%]
+tests\test_media_regression_sprint6.py .                                 [ 44%]
+tests\test_media_tab_sprint5.py ....                                     [ 45%]
+tests\test_metadata_resolver.py .................                        [ 45%]
+tests\test_metadata_resolver_standalone.py ........                      [ 45%]
+tests\test_migrations.py ..............................                  [ 46%]
+tests\test_mode_categories_custom.py ...                                 [ 47%]
+tests\test_mode_normalization_winloss.py ..                              [ 47%]
+tests\test_models.py ............                                        [ 47%]
+tests\test_multiplayer.py ..........................                     [ 48%]
+tests\test_navigation_state_regressions.py .............                 [ 48%]
+tests\test_new_timeseries_sections.py .......................            [ 49%]
+tests\test_objective_participation.py ..........................         [ 50%]
+tests\test_page_router_regressions.py ...                                [ 50%]
+tests\test_page_router_smoke.py ............                             [ 51%]
+tests\test_parsers.py .........                                          [ 51%]
+tests\test_participants_damage.py .........                              [ 51%]
+tests\test_participation_radar.py .......                                [ 51%]
+tests\test_pending_page_navigation_regressions.py ....                   [ 52%]
+tests\test_performance_cumulative.py ........................            [ 52%]
+tests\test_performance_score.py ...                                      [ 53%]
+tests\test_performance_score_v4.py ...........................           [ 53%]
+tests\test_phase6_refactoring.py ...............................         [ 55%]
+tests\test_player_assets.py .........................................    [ 56%]
+tests\test_player_assets_rank_dedup.py .....                             [ 56%]
+tests\test_polars_migration.py ss.................                       [ 57%]
+tests\test_post_refactor_perf_contracts.py ....................          [ 57%]
+tests\test_profile_api.py .................                              [ 58%]
+tests\test_profile_api_urls.py .......................................   [ 59%]
+tests\test_profile_appearance_cache_fields.py ......                     [ 60%]
+tests\test_query_module.py ....s................                         [ 60%]
+tests\test_query_params_routing_regressions.py ....                      [ 60%]
+tests\test_rag.py ...s..........sss.                                     [ 61%]
+tests\test_refactor_wave_a_contracts.py ..................               [ 62%]
+tests\test_refdata.py ......................................             [ 63%]
+tests\test_repository_shared_v5.py ...........................           [ 64%]
+tests\test_season_archive.py .s........sss.                              [ 64%]
+tests\test_session_compare_hist_avg_category.py ..                       [ 65%]
+tests\test_session_last_button.py ........                               [ 65%]
+tests\test_sessions_advanced.py ...........                              [ 65%]
+tests\test_sessions_teammates.py ........                                [ 65%]
+tests\test_settings_backfill.py ..............                           [ 66%]
+tests\test_spnkr_refactoring.py .............                            [ 66%]
+tests\test_sprint1_antagonists.py ..................                     [ 67%]
+tests\test_sync_button_regression.py ..............                      [ 67%]
+tests\test_sync_cli_integration.py ......                                [ 68%]
+tests\test_sync_engine.py ...........................................    [ 69%]
+tests\test_sync_performance_score.py .......                             [ 69%]
+tests\test_sync_shared_matches.py .................................      [ 71%]
+tests\test_sync_shared_v5.py ......................                      [ 71%]
+tests\test_sync_sprint6_optimizations.py ..............                  [ 72%]
+tests\test_sync_ui.py .....................                              [ 73%]
+tests\test_teammates_impact_tab.py ....                                  [ 73%]
+tests\test_teammates_new_comparisons.py ............                     [ 73%]
+tests\test_teammates_refonte.py ..                                       [ 73%]
+tests\test_timeseries_performance_score.py ....                          [ 73%]
+tests\test_to_pandas_for_plotly.py ............                          [ 74%]
+tests\test_transformers_coverage.py .................................... [ 75%]
+........................................................................ [ 77%]
+..............................................................           [ 80%]
+tests\test_transformers_metadata.py ......                               [ 80%]
+tests\test_transformers_metadata_standalone.py .......                   [ 80%]
+tests\test_transformers_refdata.py ....................                  [ 81%]
+tests\test_transformers_teammates.py ........                            [ 81%]
+tests\test_ui_misc.py .............                                      [ 81%]
+tests\test_ui_sync.py ..................                                 [ 82%]
+tests\test_utils_coverage.py ........................................... [ 84%]
+...................................F                                     [ 85%]
+tests\test_v5_match_queries.py ....................FFFFF.....F....       [ 86%]
+tests\test_visualizations.py ........................................... [ 88%]
+................................                                         [ 89%]
+tests\test_viz_charts_s7b.py .......................                     [ 89%]
+tests\test_viz_participation.py ........................................ [ 91%]
+....................                                                     [ 92%]
+tests\test_win_streaks.py ............................                   [ 92%]
+tests\test_xuid_resolution_regression.py ...........F......              [ 93%]
+tests\ui\test_all_pages_v5.py .......................................... [ 95%]
+.............................                                            [ 96%]
+tests\ui\test_components.py .......................................      [ 97%]
+tests\ui\test_match_history_page.py .......................              [ 98%]
+tests\ui\test_settings_page.py FFFF                                      [ 98%]
+tests\ui\test_teammates_helpers.py .................                     [ 98%]
+tests\ui\test_teammates_views_page.py .....                              [ 99%]
+tests\ui\test_timeseries_page.py ...........                             [ 99%]
+tests\ui\test_win_loss_page.py ...............                           [100%]
+
+================================== FAILURES ===================================
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 65:                 LEFT JOIN match_participants mp_rank
+                                       ^
+
+During handling of the above exception, another exception occurred:
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 64:                 LEFT JOIN match_participants mp_rank
+                                       ^
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.repositories._match_queries:_match_queries.py:975 Requête avec jointures échouée: Catalog Error: Table with name match_participants does not exist!
+Did you mean "shared.match_participants"?
+
+LINE 65:                 LEFT JOIN match_participants mp_rank
+                                   ^. Fallback.
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\data\repositories\_match_queries.py:1010: _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+E   AssertionError: Mask=32767, attendu=65535
+    assert 32767 == 65535
+c:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\tests\test_backfill_bitmask.py:515: AssertionError: Mask=32767, attendu=65535
+E   AssertionError: assert 'ecrasement' not in {'assistant': {'award_category': None, 'award_name': None, 'citation_name_display': 'Assistant', 'confidence': 'high',..., 'pilote': {'award_category': None, 'award_name': None, 'citation_name_display': 'Pilote', 'confidence': 'high', ...}}
+c:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\tests\test_citation_engine.py:549: AssertionError: assert 'ecrasement' not in {'assistant': {'award_category': None, 'award_name': None, 'citation_name_display': 'Assistant', 'confidence': 'high',..., 'pilote': {'award_category': None, 'award_name': None, 'citation_name_display': 'Pilote', 'confidence': 'high', ...}}
+E   assert 0 == 2
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.sync.batch_insert:batch_insert.py:415 Upsert échoué match_participants: Binder Error: Table "match_participants" does not have a column with name "avg_life_seconds"
+
+Did you mean: "score"
+WARNING  src.data.sync.batch_insert:batch_insert.py:415 Upsert échoué match_participants: Binder Error: Table "match_participants" does not have a column with name "avg_life_seconds"
+
+Did you mean: "score"
+c:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\tests\test_ingestion_duckdb_first.py:274: assert 0 == 2
+E   TypeError: 'MockMatchPlayerStats' object is not subscriptable
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\analysis\killer_victim.py:383: TypeError: 'MockMatchPlayerStats' object is not subscriptable
+E   TypeError: 'MockMatchPlayerStats' object is not subscriptable
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\analysis\killer_victim.py:383: TypeError: 'MockMatchPlayerStats' object is not subscriptable
+E   TypeError: 'MockMatchPlayerStats' object is not subscriptable
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\analysis\killer_victim.py:383: TypeError: 'MockMatchPlayerStats' object is not subscriptable
+E   TypeError: 'MockMatchPlayerStats' object is not subscriptable
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\analysis\killer_victim.py:166: TypeError: 'MockMatchPlayerStats' object is not subscriptable
+E   TypeError: 'MockMatchPlayerStats' object is not subscriptable
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\analysis\killer_victim.py:166: TypeError: 'MockMatchPlayerStats' object is not subscriptable
+E   AssertionError: cache_loaders.py a 846 lignes (cible < 800)
+    assert 846 < 800
+c:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\tests\test_legacy_free_global.py:52: AssertionError: cache_loaders.py a 846 lignes (cible < 800)
+E   assert 0 == 2
+     +  where 0 = len([])
+c:\Users\Guillaume\Downloads\Scripts\Openspartan-graph\tests\test_utils_coverage.py:474: assert 0 == 2
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 65:                 LEFT JOIN match_participants mp_rank
+                                       ^
+
+During handling of the above exception, another exception occurred:
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 64:                 LEFT JOIN match_participants mp_rank
+                                       ^
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.repositories._match_queries:_match_queries.py:975 Requête avec jointures échouée: Catalog Error: Table with name match_participants does not exist!
+Did you mean "shared.match_participants"?
+
+LINE 65:                 LEFT JOIN match_participants mp_rank
+                                   ^. Fallback.
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\data\repositories\_match_queries.py:1010: _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 65:                 LEFT JOIN match_participants mp_rank
+                                       ^
+
+During handling of the above exception, another exception occurred:
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 64:                 LEFT JOIN match_participants mp_rank
+                                       ^
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.repositories._match_queries:_match_queries.py:975 Requête avec jointures échouée: Catalog Error: Table with name match_participants does not exist!
+Did you mean "shared.match_participants"?
+
+LINE 65:                 LEFT JOIN match_participants mp_rank
+                                   ^. Fallback.
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\data\repositories\_match_queries.py:1010: _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 65:                 LEFT JOIN match_participants mp_rank
+                                       ^
+
+During handling of the above exception, another exception occurred:
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 64:                 LEFT JOIN match_participants mp_rank
+                                       ^
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.repositories._match_queries:_match_queries.py:975 Requête avec jointures échouée: Catalog Error: Table with name match_participants does not exist!
+Did you mean "shared.match_participants"?
+
+LINE 65:                 LEFT JOIN match_participants mp_rank
+                                   ^. Fallback.
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\data\repositories\_match_queries.py:1010: _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 65:                 LEFT JOIN match_participants mp_rank
+                                       ^
+
+During handling of the above exception, another exception occurred:
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 64:                 LEFT JOIN match_participants mp_rank
+                                       ^
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.repositories._match_queries:_match_queries.py:975 Requête avec jointures échouée: Catalog Error: Table with name match_participants does not exist!
+Did you mean "shared.match_participants"?
+
+LINE 65:                 LEFT JOIN match_participants mp_rank
+                                   ^. Fallback.
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\data\repositories\_match_queries.py:1010: _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "match_stats"?
+
+    LINE 32:                 LEFT JOIN match_participants mp_rank
+                                       ^
+
+During handling of the above exception, another exception occurred:
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "match_stats"?
+
+    LINE 31:                 LEFT JOIN match_participants mp_rank
+                                       ^
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.repositories._match_queries:_match_queries.py:975 Requête avec jointures échouée: Catalog Error: Table with name match_participants does not exist!
+Did you mean "match_stats"?
+
+LINE 32:                 LEFT JOIN match_participants mp_rank
+                                   ^. Fallback.
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\data\repositories\_match_queries.py:1012: _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+E   AssertionError: assert 'match_stats AS match_stats' == 'match_stats'
+
+      - match_stats
+      + match_stats AS match_stats
+c:\Users\Guillaume\Downloads\Scripts\LevelUp\tests\test_v5_match_queries.py:547: AssertionError: assert 'match_stats AS match_stats' == 'match_stats'
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 65:                 LEFT JOIN match_participants mp_rank
+                                       ^
+
+During handling of the above exception, another exception occurred:
+E   _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+    Did you mean "shared.match_participants"?
+
+    LINE 64:                 LEFT JOIN match_participants mp_rank
+                                       ^
+------------------------------ Captured log call ------------------------------
+WARNING  src.data.repositories._match_queries:_match_queries.py:975 Requête avec jointures échouée: Catalog Error: Table with name match_participants does not exist!
+Did you mean "shared.match_participants"?
+
+LINE 65:                 LEFT JOIN match_participants mp_rank
+                                   ^. Fallback.
+C:\Users\Guillaume\Downloads\Scripts\LevelUp\src\data\repositories\_match_queries.py:1010: _duckdb.CatalogException: Catalog Error: Table with name match_participants does not exist!
+E   AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+C:\Users\Guillaume\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py:1437: AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+E   AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+C:\Users\Guillaume\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py:1437: AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+E   AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+C:\Users\Guillaume\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py:1437: AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+E   AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+C:\Users\Guillaume\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py:1437: AttributeError: <module 'src.ui.pages.settings' from 'C:\\Users\\Guillaume\\Downloads\\Scripts\\LevelUp\\src\\ui\\pages\\settings.py'> does not have the attribute 'file_input'
+=========================== short test summary info ===========================
+FAILED tests/performance/test_load_v5.py::TestLoadPerformance::test_load_matches_as_polars_fast
+FAILED tests/test_backfill_bitmask.py::TestSyncEngineBackfillBitmask::test_sync_bitmask_all_options_enabled
+FAILED tests/test_citation_engine.py::TestEnabledColumn::test_disabled_citation_excluded
+FAILED tests/test_ingestion_duckdb_first.py::TestBatchInsertRows::test_batch_insert_participants
+FAILED tests/test_killer_victim_antagonists.py::TestKillerVictimAntagonists::test_tiebreaker_uses_rank_when_equal_score
+FAILED tests/test_killer_victim_antagonists.py::TestKillerVictimAntagonists::test_validation_with_official_stats
+FAILED tests/test_killer_victim_antagonists.py::TestKillerVictimAntagonists::test_validation_detects_inconsistency
+FAILED tests/test_killer_victim_antagonists.py::TestValidateAndAdjustPairs::test_consistent_pairs
+FAILED tests/test_killer_victim_antagonists.py::TestValidateAndAdjustPairs::test_inconsistent_pairs
+FAILED tests/test_legacy_free_global.py::TestSprintTargetsFileSize::test_cache_loaders_under_800_lines
+FAILED tests/test_utils_coverage.py::TestListLocalDbs::test_with_dbs - assert...
+FAILED tests/test_v5_match_queries.py::TestLoadMatchesAsPolars::test_polars_shared_returns_all
+FAILED tests/test_v5_match_queries.py::TestLoadMatchesAsPolars::test_polars_shared_has_ratio
+FAILED tests/test_v5_match_queries.py::TestLoadMatchesAsPolars::test_polars_shared_renames_avg_life
+FAILED tests/test_v5_match_queries.py::TestLoadMatchesAsPolars::test_polars_shared_column_projection
+FAILED tests/test_v5_match_queries.py::TestLoadMatchesAsPolars::test_polars_v4_fallback
+FAILED tests/test_v5_match_queries.py::TestGetMatchSource::test_v4_returns_match_stats
+FAILED tests/test_xuid_resolution_regression.py::TestEndToEndMatchLoading::test_polars_loading_with_resolved_xuid
+FAILED tests/ui/test_settings_page.py::TestRenderSettingsPage::test_returns_settings
+FAILED tests/ui/test_settings_page.py::TestRenderSettingsPage::test_expanders_rendered
+FAILED tests/ui/test_settings_page.py::TestRenderSettingsPage::test_toggles_rendered
+FAILED tests/ui/test_settings_page.py::TestRenderSettingsPage::test_custom_settings_values
+=========== 22 failed, 2820 passed, 48 skipped in 93.56s (0:01:33) ============
