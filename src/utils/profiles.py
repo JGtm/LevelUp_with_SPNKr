@@ -107,19 +107,13 @@ def save_profiles(profiles: dict[str, dict[str, str]]) -> tuple[bool, str]:
 def list_local_dbs() -> list[str]:
     """Liste les fichiers .db dans le dossier OpenSpartan.Workshop.
 
+    Note: Depuis DuckDB v4/v5, les bases SQLite legacy ne sont plus supportées.
+    Cette fonction retourne toujours une liste vide.
+    Les données joueurs sont dans data/players/{gamertag}/stats.duckdb.
+
     Returns:
-        Liste des chemins absolus vers les fichiers .db, triés par date
-        de modification décroissante. Liste vide si aucun trouvé.
+        Liste vide (bases SQLite legacy non supportées).
     """
-    local = os.environ.get("LOCALAPPDATA")
-    if not local:
-        return []
-    base = os.path.join(local, "OpenSpartan.Workshop", "data")
-    if not os.path.isdir(base):
-        return []
-    try:
-        dbs = [os.path.join(base, f) for f in os.listdir(base) if f.lower().endswith(".db")]
-    except Exception:
-        return []
-    dbs.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return dbs
+    # Ne cherche plus de bases SQLite legacy
+    # (migration DuckDB v4/v5 complétée)
+    return []

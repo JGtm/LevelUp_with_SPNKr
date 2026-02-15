@@ -437,27 +437,41 @@ def plot_correlation_scatter(
             x_valid = x_np[valid]
             y_valid = y_np[valid]
 
-            # Régression linéaire simple
-            m, b = np.polyfit(x_valid, y_valid, 1)
-            x_range = np.linspace(x_valid.min(), x_valid.max(), 50)
-            y_trend = m * x_range + b
+            # Vérifier que les données ont une variance suffisante
+            x_std = np.std(x_valid)
+            y_std = np.std(y_valid)
 
-            # Calcul R²
-            y_pred = m * x_valid + b
-            ss_res = np.sum((y_valid - y_pred) ** 2)
-            ss_tot = np.sum((y_valid - y_valid.mean()) ** 2)
-            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            # Skipper si variance nulle (tous les points alignés verticalement/horizontalement)
+            if x_std > 1e-10 and y_std > 1e-10:
+                try:
+                    # Régression linéaire simple avec suppression des warnings NumPy
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        m, b = np.polyfit(x_valid, y_valid, 1)
 
-            fig.add_trace(
-                go.Scatter(
-                    x=x_range,
-                    y=y_trend,
-                    mode="lines",
-                    name=f"Tendance (R²={r_squared:.2f})",
-                    line={"color": colors["amber"], "width": 2, "dash": "dash"},
-                    hoverinfo="skip",
-                )
-            )
+                    x_range = np.linspace(x_valid.min(), x_valid.max(), 50)
+                    y_trend = m * x_range + b
+
+                    # Calcul R²
+                    y_pred = m * x_valid + b
+                    ss_res = np.sum((y_valid - y_pred) ** 2)
+                    ss_tot = np.sum((y_valid - y_valid.mean()) ** 2)
+                    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+                    # Vérifier que le résultat est valide
+                    if np.isfinite(m) and np.isfinite(b) and np.isfinite(r_squared):
+                        fig.add_trace(
+                            go.Scatter(
+                                x=x_range,
+                                y=y_trend,
+                                mode="lines",
+                                name=f"Tendance (R²={r_squared:.2f})",
+                                line={"color": colors["amber"], "width": 2, "dash": "dash"},
+                                hoverinfo="skip",
+                            )
+                        )
+                except (np.linalg.LinAlgError, ValueError):
+                    # Skipper silencieusement si la régression échoue
+                    pass
 
     fig.update_layout(
         height=PLOT_CONFIG.default_height,

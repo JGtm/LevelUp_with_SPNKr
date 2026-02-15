@@ -98,6 +98,67 @@ def _is_duckdb_v4_path(db_path: str) -> bool:
     return db_path.endswith(".duckdb") or db_path.endswith("stats.duckdb")
 
 
+def _resolve_player_xuid(db_path: str) -> str:
+    """Résout le XUID du joueur depuis sa DB.
+
+    Stratégie de fallback :
+    1. sync_meta (key='xuid') — source canonique v5
+    2. player_match_stats.xuid — source legacy v3/v4 (toujours présente)
+    3. shared.xuid_aliases via gamertag — dernier recours
+
+    Returns:
+        XUID en string, ou "" si introuvable.
+    """
+    import duckdb
+
+    try:
+        conn = duckdb.connect(db_path, read_only=True)
+
+        # Stratégie 1 : sync_meta (source canonique v5)
+        try:
+            result = conn.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
+            if result and result[0] and str(result[0]).strip():
+                xuid = str(result[0]).strip()
+                conn.close()
+                return xuid
+        except Exception:
+            pass
+
+        # Stratégie 2 : player_match_stats.xuid (legacy v3/v4)
+        try:
+            result = conn.execute(
+                "SELECT DISTINCT xuid FROM player_match_stats WHERE xuid IS NOT NULL LIMIT 1"
+            ).fetchone()
+            if result and result[0] and str(result[0]).strip():
+                xuid = str(result[0]).strip()
+                conn.close()
+                return xuid
+        except Exception:
+            pass
+
+        # Stratégie 3 : xuid_aliases via gamertag (dernier recours)
+        try:
+            from pathlib import Path
+
+            gamertag = Path(db_path).parent.name
+            # Chercher dans la table locale xuid_aliases
+            result = conn.execute(
+                "SELECT xuid FROM xuid_aliases WHERE gamertag = ? LIMIT 1", [gamertag]
+            ).fetchone()
+            if result and result[0] and str(result[0]).strip():
+                xuid = str(result[0]).strip()
+                conn.close()
+                return xuid
+        except Exception:
+            pass
+
+        conn.close()
+    except Exception:
+        pass
+
+    return ""
+
+
 def _load_matches_duckdb_v4(db_path: str, include_firefight: bool = True) -> list:
     """Charge les matchs depuis une DB DuckDB v4 (legacy — retourne MatchRow).
 
@@ -106,9 +167,9 @@ def _load_matches_duckdb_v4(db_path: str, include_firefight: bool = True) -> lis
     try:
         from src.data.repositories.duckdb_repo import DuckDBRepository
 
-        # Le XUID n'est pas nécessaire pour DuckDB v4 (un joueur par DB)
-        # On utilise un placeholder
-        repo = DuckDBRepository(db_path, xuid="", read_only=True)
+        player_xuid = _resolve_player_xuid(db_path)
+
+        repo = DuckDBRepository(db_path, xuid=player_xuid, read_only=True)
         try:
             matches = repo.load_matches(include_firefight=include_firefight)
             return matches
@@ -139,7 +200,9 @@ def _load_matches_duckdb_v4_polars(
     try:
         from src.data.repositories.duckdb_repo import DuckDBRepository
 
-        repo = DuckDBRepository(db_path, xuid="", read_only=True)
+        player_xuid = _resolve_player_xuid(db_path)
+
+        repo = DuckDBRepository(db_path, xuid=player_xuid, read_only=True)
         try:
             return repo.load_matches_as_polars(
                 include_firefight=include_firefight,

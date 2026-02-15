@@ -240,15 +240,62 @@ def list_duckdb_v4_players() -> list[DuckDBPlayerInfo]:
 
         try:
             con = _get_duckdb_connection(str(db_path))
-            # Compter les matchs
-            result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
-            total_matches = result[0] if result else 0
-            # Récupérer le XUID depuis sync_meta si disponible
+            # Compter les matchs avec fallback intelligent
+            # Chaîne de priorité : player_match_enrichment → match_stats → player_match_stats
+            # Si une table existe mais est vide (0), on essaie la suivante
+            total_matches = 0
+
+            # Tentative 1 : player_match_enrichment (v5)
             try:
-                result = con.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
-                xuid = result[0] if result else None
+                result = con.execute("SELECT COUNT(*) FROM player_match_enrichment").fetchone()
+                total_matches = result[0] if result else 0
             except Exception:
                 pass
+
+            # Tentative 2 : match_stats (v4) si player_match_enrichment vide ou absente
+            if total_matches == 0:
+                try:
+                    result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+                    total_matches = result[0] if result else 0
+                except Exception:
+                    pass
+
+            # Tentative 3 : player_match_stats (legacy v3) si tout le reste vide
+            if total_matches == 0:
+                try:
+                    result = con.execute("SELECT COUNT(*) FROM player_match_stats").fetchone()
+                    total_matches = result[0] if result else 0
+                except Exception:
+                    pass
+
+            # Récupérer le XUID avec fallback intelligent
+            # 1. sync_meta (v5) → 2. player_match_stats (v3/v4) → 3. xuid_aliases
+            try:
+                result = con.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
+                if result and result[0] and str(result[0]).strip():
+                    xuid = str(result[0]).strip()
+            except Exception:
+                pass
+
+            if not xuid:
+                try:
+                    result = con.execute(
+                        "SELECT DISTINCT xuid FROM player_match_stats WHERE xuid IS NOT NULL LIMIT 1"
+                    ).fetchone()
+                    if result and result[0] and str(result[0]).strip():
+                        xuid = str(result[0]).strip()
+                except Exception:
+                    pass
+
+            if not xuid:
+                try:
+                    result = con.execute(
+                        "SELECT xuid FROM xuid_aliases WHERE gamertag = ? LIMIT 1", [gamertag]
+                    ).fetchone()
+                    if result and result[0] and str(result[0]).strip():
+                        xuid = str(result[0]).strip()
+                except Exception:
+                    pass
             con.close()
         except Exception:
             pass
@@ -395,13 +442,14 @@ def render_player_selector_unified(
     if is_duckdb_v4_path(db_path):
         new_db_path = render_duckdb_v4_player_selector(db_path, key=f"{key}_v4")
         if new_db_path:
-            # Récupérer le XUID du nouveau joueur si disponible
+            # Récupérer le XUID du nouveau joueur avec fallback intelligent
             new_xuid = None
             try:
-                con = _get_duckdb_connection(new_db_path)
-                result = con.execute("SELECT value FROM sync_meta WHERE key = 'xuid'").fetchone()
-                new_xuid = result[0] if result else None
-                con.close()
+                from src.ui.cache_loaders import _resolve_player_xuid
+
+                resolved = _resolve_player_xuid(new_db_path)
+                if resolved:
+                    new_xuid = resolved
             except Exception:
                 pass
             return new_db_path, new_xuid

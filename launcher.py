@@ -239,9 +239,26 @@ def _list_players() -> list[PlayerInfo]:
         try:
             con = duckdb.connect(str(db_path), read_only=True)
             try:
-                # Compter les matchs
-                result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
-                total_matches = result[0] if result else 0
+                # Architecture v5 : utilise player_match_enrichment si disponible
+                # (plus fiable que player_match_stats qui peut contenir des stats agrégées)
+                try:
+                    result = con.execute("SELECT COUNT(*) FROM player_match_enrichment").fetchone()
+                    total_matches = result[0] if result else 0
+                except Exception:
+                    # Fallback v4 : chercher match_stats
+                    try:
+                        result = con.execute("SELECT COUNT(*) FROM match_stats").fetchone()
+                        total_matches = result[0] if result else 0
+                    except Exception:
+                        # Dernier fallback : player_match_stats (v5 avec sync récent)
+                        try:
+                            result = con.execute(
+                                "SELECT COUNT(*) FROM player_match_stats"
+                            ).fetchone()
+                            total_matches = result[0] if result else 0
+                        except Exception:
+                            pass
+
                 # Récupérer le XUID depuis sync_meta si disponible
                 try:
                     result = con.execute(

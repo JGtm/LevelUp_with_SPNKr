@@ -7,10 +7,20 @@ depuis la base de données SPNKr.
 import contextlib
 import logging
 import os
+import sys
 import threading
 import urllib.parse
 
 import streamlit as st
+
+# Vérification : s'assurer que le script est exécuté via `streamlit run`
+if not hasattr(st, "runtime") or not st.runtime.exists():
+    print("\n[ERREUR] Ce script doit etre execute via Streamlit\n")
+    print("Usage correct:")
+    print("  streamlit run streamlit_app.py\n")
+    print("ou via le launcher:")
+    print("  python launcher.py\n")
+    sys.exit(1)
 
 # Suppression des warnings connus et non bloquants
 logging.getLogger("streamlit.runtime.caching.cache_data_api").setLevel(logging.ERROR)

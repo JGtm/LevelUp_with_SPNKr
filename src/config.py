@@ -46,27 +46,31 @@ def get_repo_root(start_path: str | None = None) -> str:
 
 
 def get_default_db_path() -> str:
-    """Retourne le chemin par défaut de la DB OpenSpartan Workshop."""
+    """Retourne le chemin par défaut de la DB joueur.
+
+    Architecture v5 : cherche le premier joueur dans data/players/{gamertag}/stats.duckdb.
+    Si aucun joueur trouvé, retourne une chaîne vide.
+    """
     # Override explicite (utile en Docker/Linux)
     override = os.environ.get("OPENSPARTAN_DB") or os.environ.get("OPENSPARTAN_DB_PATH")
     if override and os.path.exists(override):
         return override
 
-    local = os.environ.get("LOCALAPPDATA")
-    if not local:
-        return ""
-    base = os.path.join(local, "OpenSpartan.Workshop", "data")
-    if not os.path.isdir(base):
-        return ""
-    try:
-        dbs = [os.path.join(base, f) for f in os.listdir(base) if f.lower().endswith(".db")]
-    except Exception:
-        return ""
-    if not dbs:
-        return ""
-    # Si plusieurs DB, prend la plus récente (modification).
-    dbs.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return dbs[0]
+    # Cherche le premier joueur dans data/players/*/stats.duckdb
+    repo_root = get_repo_root()
+    players_dir = Path(repo_root) / "data" / "players"
+
+    if players_dir.exists():
+        # Trier par ordre alphabétique pour avoir un résultat déterministe
+        for player_dir in sorted(players_dir.iterdir()):
+            if not player_dir.is_dir():
+                continue
+            stats_db = player_dir / "stats.duckdb"
+            if stats_db.exists():
+                return str(stats_db)
+
+    # Aucun joueur trouvé
+    return ""
 
 
 def get_default_workshop_exe_path() -> str:

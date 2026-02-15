@@ -36,6 +36,37 @@ class MatchQueriesMixin:
     # Source de données matchs (v5 shared / v4 local)
     # =========================================================================
 
+    def _get_match_table_name(self, conn) -> str:
+        """Détecte la table de matchs disponible (fallback v4 → v3).
+
+        Returns:
+            Nom de la table : "match_stats" (v4) ou "player_match_stats" (v3 legacy)
+        """
+        # Essayer match_stats (v4) en premier
+        try:
+            result = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'match_stats'"
+            ).fetchone()
+            if result and result[0] > 0:
+                return "match_stats"
+        except Exception:
+            pass
+
+        # Fallback sur player_match_stats (v3 legacy)
+        try:
+            result = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'main' AND table_name = 'player_match_stats'"
+            ).fetchone()
+            if result and result[0] > 0:
+                return "player_match_stats"
+        except Exception:
+            pass
+
+        # Par défaut, retourner match_stats (va probablement échouer mais c'est attendu v4+)
+        return "match_stats"
+
     def _get_match_source(self, conn) -> tuple[str, list[str]]:
         """Retourne l'expression FROM pour les matchs (v5 shared ou v4 local).
 
@@ -45,17 +76,29 @@ class MatchQueriesMixin:
         La sous-requête est aliasée ``match_stats`` pour que toutes les références
         externes (jointures metadata, MMR, filtres) restent inchangées.
 
-        En mode v4, retourne simplement ``"match_stats"`` (table locale directe).
+        En mode v4/v3, retourne le nom de la table locale directe (match_stats ou player_match_stats).
 
         Returns:
             Tuple (from_expression, params).
         """
+        # Forcer mode local si XUID vide ou None (DBs v3/legacy)
+        if not self._xuid or self._xuid.strip() == "":
+            match_table = self._get_match_table_name(conn)
+            logger.debug(f"Mode v4/v3 (XUID vide) : requête via table locale {match_table}")
+            # Retourner avec alias AS match_stats pour compatibilité avec le reste de la requête
+            return f"{match_table} AS match_stats", []
+
+        # Forcer mode local si tables shared absentes
         if not (
             self.has_shared
             and self._has_shared_table("match_registry")
             and self._has_shared_table("match_participants")
         ):
-            return "match_stats", []
+            # Mode v4/v3 local : déterminer la table de matchs disponible
+            match_table = self._get_match_table_name(conn)
+            logger.debug(f"Mode v4/v3 : requête via table locale {match_table}")
+            # Retourner avec alias AS match_stats pour compatibilité avec le reste de la requête
+            return f"{match_table} AS match_stats", []
 
         # Vérifier si la table match_stats locale existe (période de transition)
         has_ms = (
